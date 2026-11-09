@@ -1,0 +1,219 @@
+{
+  "id": "cpp-compilation-model",
+  "moduleId": "ph4-cpp-l1",
+  "title": "Compilation, Source Files and Headers",
+  "estMinutes": 26,
+  "difficulty": "foundation",
+  "prereqs": ["cf-execution-model"],
+  "objectives": [
+    "Trace a C++ program through the preprocessor, compiler and linker, and name what each stage consumes and produces",
+    "Distinguish declarations from definitions and explain the role of headers and include guards",
+    "Build a multi-file C++17 program with g++ and interpret compile-time versus link-time errors",
+    "Write a correct minimal main() and explain what its return value means to the operating system"
+  ],
+  "motivation": "Every trading system you will ever touch arrives as hundreds of .cpp and .h files, never as one script. When a build breaks with *undefined reference* or *was not declared*, you can only fix it fast if you know which stage of the pipeline failed and why. This lesson turns the black box between your source code and the running executable into a map you can navigate.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "The pipeline: preprocessor, compiler, linker"
+    },
+    {
+      "type": "p",
+      "md": "A C++ build is a factory line with three very different stations. The **preprocessor** runs first and is a pure text machine: it handles every line beginning with `#` - pasting the full contents of each `#include`'d file in place, expanding `#define` macros, and deleting the branches of `#if`/`#ifdef` that evaluate false. Its output is a **translation unit**: one source file with all includes resolved. The **compiler** then translates each translation unit into machine code, producing an **object file** (`.o`) that contains the file's functions plus a symbol table listing which symbols it defines and which it still needs from elsewhere. Finally the **linker** merges all object files and libraries, resolving every pending reference to a real definition, and emits the executable. Because resolution happens last, a symbol that is declared but never defined fails at *link* time - which is exactly why *undefined reference* errors appear only at the end of the build, no matter how early the mistake was made."
+    },
+    {
+      "type": "code",
+      "lang": "bash",
+      "code": "g++ -std=c++17 -c prices.cpp    # preprocess + compile only -> prices.o\ng++ -std=c++17 -c main.cpp      # -> main.o (grossPnl still unresolved)\ng++ -std=c++17 main.o prices.o -o pricer   # linker resolves symbols\n./pricer                        # runs; exit status 0 on success",
+      "caption": "One command per stage: -c stops after compiling, the last line links."
+    },
+    {
+      "type": "steps",
+      "title": "Worked example: building the two-file pricer",
+      "items": [
+        "`g++ -std=c++17 -c prices.cpp` - the preprocessor resolves `#include \"prices.h\"`; the compiler emits `prices.o` containing a *definition* of `grossPnl`.",
+        "`g++ -std=c++17 -c main.cpp` - same pipeline for `main.o`; it calls `grossPnl` but has only seen the *declaration*, so the symbol is recorded as still-needed.",
+        "`g++ -std=c++17 main.o prices.o -o pricer` - the linker matches `main.o`'s unresolved reference against the definition exported by `prices.o` and writes the executable.",
+        "`./pricer` prints `PnL: 220` because $250 \\times (43.05 - 42.17) = 250 \\times 0.88 = 220$, and returns exit status 0."
+      ]
+    },
+    {
+      "type": "h2",
+      "text": "Headers versus source files"
+    },
+    {
+      "type": "p",
+      "md": "The convention that lets this scale to millions of lines: a **header** (`.h`) is the public interface - declarations of functions, definitions of classes, constants and type aliases, i.e. everything other files need to *see*. A **source file** (`.cpp`) holds the implementations - the definitions with bodies. Since `#include` is literal text pasting, a header included by ten translation units is processed ten times, so headers should contain only what must be shared, and every header is wrapped in an **include guard** (or `#pragma once`, supported by all mainstream compilers). Guards make repeated inclusion harmless: without one, a header included twice in one translation unit would paste a class definition twice and violate the **One Definition Rule** - declarations may repeat freely across and within translation units, but definitions may not."
+    },
+    {
+      "type": "list",
+      "ordered": false,
+      "items": [
+        "In the header: function *declarations*, class/struct definitions, `constexpr` constants, type aliases.",
+        "In the source file: function *definitions* (the bodies), file-local helpers, internal state.",
+        "In neither: a non-`inline` function *definition* in a header included by multiple `.cpp` files - the linker rejects the duplicate definitions."
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "// Shown as one file so it compiles standalone; in a real build the three\n// sections live in prices.h, prices.cpp and main.cpp respectively.\n\n// --- prices.h : the interface -------------------------------------------\n#ifndef PRICES_H\n#define PRICES_H\n\ndouble grossPnl(double entryPrice, double exitPrice, int shares);  // declaration\n\n#endif\n\n// --- prices.cpp : the implementation ------------------------------------\ndouble grossPnl(double entryPrice, double exitPrice, int shares) {  // definition\n    return (exitPrice - entryPrice) * shares;\n}\n\n// --- main.cpp : the user -------------------------------------------------\n#include <iostream>\n\nint main() {\n    std::cout << \"PnL: \" << grossPnl(42.17, 43.05, 250) << '\\n';\n    return 0;\n}",
+      "caption": "Declare in the header, define once in a source, include the interface where needed. Output: PnL: 220"
+    },
+    {
+      "type": "h2",
+      "text": "main() and the exit status"
+    },
+    {
+      "type": "p",
+      "md": "Execution starts in **main()** - either `int main()` or `int main(int argc, char* argv[])` when command-line arguments matter (`argc` counts them; `argv` points at their C-style strings). `main` returns an **exit status** to the operating system: 0 conventionally means success, and any nonzero value is an error code your shell scripts can branch on. If `main` ends without a `return`, it implicitly returns 0 - the one function where that is allowed. The return type must be `int`; `void main` is a portability bug. For output, `std::cout` from `<iostream>` is the standard stream, and `'\\n'` is preferable to `std::endl` in loops because `endl` also flushes the stream buffer every time, which can dominate runtime in tight print loops."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Two errors, two stages",
+      "md": "`error: 'cout' was not declared` is a **compile** error - a declaration is missing, usually a forgotten `#include <iostream>`. `undefined reference to grossPnl(double, double, int)` is a **link** error - a declaration was seen but no definition exists; the usual cause is a `.cpp` file missing from the build command. Diagnosing by stage turns most build failures into a ten-second fix."
+    },
+    {
+      "type": "p",
+      "md": "One habit to build immediately: compile with warnings enabled from day one - `g++ -std=c++17 -Wall -Wextra`. Most *it compiles but is wrong* bugs are things the compiler will happily report if you ask it. Professional desks treat warnings as errors; from now on, so should you."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "For each build symptom, name the failing stage (preprocessor, compiler or linker) and the most likely cause:\n\n(a) `fatal error: prices.h: No such file or directory`\n(b) `error: 'grossPnl' was not declared in this scope`\n(c) `undefined reference to 'grossPnl(double, double, int)'` reported while linking",
+    "hints": [
+      "(a) asks who actually opens files on disk.",
+      "(b) is about what the *compiler* needs to type-check a call.",
+      "(c) is about what the *linker* needs: a definition, not a promise."
+    ],
+    "solution": "(a) **Preprocessor** - `#include` could not find the header: wrong include path or a misspelled file name.\n(b) **Compiler** - the name was never declared in this translation unit: `#include \"prices.h\"` is missing (or the declaration was never written).\n(c) **Linker** - the declaration was seen, but no translation unit *defines* `grossPnl`: typically `prices.cpp` was never compiled or never passed to the link command."
+  },
+  "independentExercise": {
+    "prompt": "Create three files for a tiny fill-statistics tool. `stats.h` declares `double mean(const int* values, int count);` (with an include guard). `stats.cpp` defines it. `main.cpp` fills an array with today's four fill sizes 101, 103, 99, 105 and prints `mean(fills, 4)`. Write all three files and the exact g++ commands to produce an executable named `fills`. What does the program print, and what does `echo $?` show immediately afterwards?",
+    "hints": [
+      "Sum the four values first: 101 + 103 + 99 + 105, then divide by the count.",
+      "408 / 4 is an exact division - watch out that it is done in double, not int, in `mean`.",
+      "Build each `.cpp` to an object file with `-c`, then link the objects into `fills`."
+    ],
+    "solution": "`stats.h`:\n```cpp\n#ifndef STATS_H\n#define STATS_H\n\ndouble mean(const int* values, int count);\n\n#endif\n```\n`stats.cpp`:\n```cpp\n#include \"stats.h\"\n\ndouble mean(const int* values, int count) {\n    int total = 0;\n    for (int i = 0; i < count; ++i) total += values[i];\n    return static_cast<double>(total) / count;\n}\n```\n`main.cpp`:\n```cpp\n#include <iostream>\n#include \"stats.h\"\n\nint main() {\n    int fills[4] = {101, 103, 99, 105};\n    std::cout << mean(fills, 4) << '\\n';\n    return 0;\n}\n```\nBuild: `g++ -std=c++17 -c stats.cpp` then `g++ -std=c++17 -c main.cpp` then `g++ -std=c++17 main.o stats.o -o fills`. Output: `102` (since $101+103+99+105 = 408$ and $408/4 = 102$). `echo $?` prints `0` because `main` returned success."
+  },
+  "commonMistakes": [
+    "Running g++ main.cpp alone and expecting object files: without -c, g++ compiles *and* links, which fails when main.cpp is not a whole program.",
+    "Reading 'undefined reference' as a compiler error - it is the linker reporting that a promised definition never arrived.",
+    "Defining a non-inline function with its body in a header included by multiple .cpp files, tripping the One Definition Rule at link time.",
+    "Omitting include guards (or #pragma once), so a header included twice pastes a class definition twice into one translation unit.",
+    "Writing void main() - the standard requires int main(), whose return value is the process exit status."
+  ],
+  "realWorldApplication": "Large quant codebases build thousands of translation units every night; engineers who cannot read a linker error or write a clean header spend their sprint fighting the build system instead of shipping strategy code.",
+  "quantFinanceApplication": "A pricing library declares model functions in headers consumed by both the research backtester and the C++ execution engine - one definition, many users, with the linker guaranteeing that every caller binds to the same implementation.",
+  "summary": [
+    "Build pipeline: preprocessor (text inclusion and macros) -> compiler (each translation unit to an object file) -> linker (resolves symbols into one executable).",
+    "Headers hold declarations and interface; source files hold definitions; #include is literal text paste controlled by include guards.",
+    "Declarations may repeat freely; definitions may not - that is the One Definition Rule.",
+    "main() returns an int exit status to the OS: 0 = success; an omitted return still yields 0.",
+    "Compile with -Wall -Wextra and read errors by stage: 'not declared' = compile, 'undefined reference' = link."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "Which stage processes #include and #define directives?",
+      "options": [
+        "The compiler, during code generation",
+        "The preprocessor, as pure text manipulation",
+        "The linker, while resolving symbols",
+        "The operating system's loader"
+      ],
+      "answerIndex": 1,
+      "explanation": "The preprocessor is a text-level tool: it pastes included files and expands macros before the compiler ever sees the resulting translation unit."
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "`g++ main.o prices.o -o pricer` fails with `undefined reference to grossPnl(double, double, int)`. Which stage failed?",
+      "options": [
+        "Preprocessing",
+        "Compilation",
+        "Assembly",
+        "Linking"
+      ],
+      "answerIndex": 3,
+      "explanation": "An unresolved symbol is a link-time failure: a declaration was seen but no object file defines grossPnl - typically prices.cpp is missing from the build."
+    },
+    {
+      "id": "q3",
+      "type": "ms",
+      "prompt": "Which of these belong in a header file?",
+      "options": [
+        "A function declaration: double grossPnl(double, double, int);",
+        "A struct definition: struct Order { std::string symbol; int quantity; };",
+        "A compile-time constant: constexpr double kTickSize = 0.01;",
+        "A non-inline function definition with body: double grossPnl(...) { return ...; }"
+      ],
+      "answerIndices": [0, 1, 2],
+      "explanation": "Headers carry the interface: declarations, class/struct definitions and constexpr constants. A non-inline function *definition* in a multiply-included header violates the One Definition Rule at link time."
+    },
+    {
+      "id": "q4",
+      "type": "code-output",
+      "prompt": "What does this C++17 program print?",
+      "language": "cpp",
+      "code": "#include <iostream>\n\nint main() {\n    std::cout << 3 + 4 * 2 << '\\n';\n    return 0;\n}",
+      "answer": "11",
+      "explanation": "Multiplication binds tighter than addition: 3 + 4*2 = 11. The program links because a single self-contained main() needs no unresolved symbols, and it exits with status 0."
+    },
+    {
+      "id": "q5",
+      "type": "numeric",
+      "prompt": "You compile three .cpp files separately with `g++ -std=c++17 -c`. How many object files are produced?",
+      "answer": 3,
+      "explanation": "One translation unit (one .cpp with its includes resolved) becomes one object file: three inputs produce three .o files, which are then combined at link time."
+    },
+    {
+      "id": "q6",
+      "type": "short",
+      "prompt": "In one or two sentences: why does every header need an include guard (or #pragma once)?",
+      "modelAnswer": "Because #include pastes text literally, a header included twice in one translation unit would paste duplicate definitions and break the One Definition Rule; the guard's #ifndef makes the second inclusion paste nothing.",
+      "keywords": ["paste", "definition", "twice", "guard"],
+      "explanation": "Include guards make repeated inclusion idempotent, so a class definition is never pasted twice into the same translation unit."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "definition",
+      "front": "What is a translation unit?",
+      "back": "The output of the preprocessor for one .cpp file: that file's text with every #include pasted in and macros expanded. The compiler turns each translation unit into one object file."
+    },
+    {
+      "type": "concept",
+      "front": "Declaration vs definition",
+      "back": "A declaration introduces a name and its type ('this exists somewhere'); a definition supplies the actual body or storage. Declare often, define once."
+    },
+    {
+      "type": "concept",
+      "front": "Order of the C++ build pipeline",
+      "back": "Preprocessor (text) -> compiler (object code per translation unit) -> linker (resolves symbols, emits the executable)."
+    },
+    {
+      "type": "code-output",
+      "front": "Where does `undefined reference to f()` come from?",
+      "back": "The linker: f was declared but never defined in any object file that was linked into the program."
+    },
+    {
+      "type": "definition",
+      "front": "What does main() return?",
+      "back": "An int exit status for the OS: 0 means success, nonzero is an error code; an omitted return implicitly yields 0."
+    }
+  ],
+  "references": [
+    {
+      "label": "cppreference — Translation phases",
+      "url": "https://en.cppreference.com/w/cpp/language/translation_phases"
+    },
+    {
+      "label": "GCC manual — Link options (-c, -o)",
+      "url": "https://gcc.gnu.org/onlinedocs/gcc/Link-Options.html"
+    }
+  ],
+  "skills": ["cpp"]
+}

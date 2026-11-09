@@ -1,0 +1,223 @@
+{
+  "id": "stp-markov-chains",
+  "moduleId": "ph1-stochastic-processes",
+  "title": "Markov Chains and Transition Matrices",
+  "estMinutes": 28,
+  "difficulty": "advanced",
+  "prereqs": ["prob-conditional-bayes"],
+  "objectives": [
+    "State the Markov property and explain what it does and does not assume",
+    "Build a valid transition matrix and evolve a state distribution one step via $p_{n+1} = p_n P$",
+    "Compute multi-step transition probabilities as powers of the transition matrix",
+    "Solve for the stationary distribution of a two-state chain exactly and interpret it as long-run occupancy"
+  ],
+  "motivation": "Markets, credit ratings and queues all flip between discrete states: bull or bear, investment grade or high yield, idle or busy. Markov chains are the simplest honest model of such systems - the future depends on where you are, not on how you got there. That one assumption buys enormous tractability: everything about the system's long-run behaviour reduces to one matrix and one eigenvector. This lesson builds the machinery on a two-state example small enough to compute exactly by hand, so the matrix algebra is never a black box.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "From conditional probability to evolving systems"
+    },
+    {
+      "type": "p",
+      "md": "Conditional probability tells you $P(\\text{tomorrow's state} \\mid \\text{today's state})$. A **stochastic process** strings those conditionals through time: a sequence of random states $X_0, X_1, X_2, \\dots$. The full joint distribution of such a sequence is hopeless to specify in general, so we make one simplifying assumption - the **Markov property**: given the present state, the future is independent of the past. Formally $P(X_{n+1} \\mid X_n, X_{n-1}, \\dots, X_0) = P(X_{n+1} \\mid X_n)$. The chain is memoryless about *history*, not about *current conditions* - today's state still fully informs tomorrow; only the path that led to today is forgotten. When regime behaviour really is captured by the current state (a bear market is risky regardless of whether you arrived via crash or slow decline), the assumption is defensible and the model becomes tractable."
+    },
+    {
+      "type": "p",
+      "md": "A **Markov chain** is a Markov process on a discrete state space with discrete time. All dynamics live in the **transition matrix** $P$, where entry $P_{ij}$ is the probability of moving to state $j$ next, given current state $i$. Rows correspond to the current state, so **every row sums to 1** - from wherever you are, something must happen next."
+    },
+    {
+      "type": "math",
+      "tex": "P \\;=\\; \\begin{pmatrix} 0.9 & 0.1 \\\\ 0.5 & 0.5 \\end{pmatrix} \\qquad \\text{states: Bull (row 1), Bear (row 2)}",
+      "caption": "A two-state market regime chain. From Bull: 90% stay, 10% flip. From Bear: 50/50 each way."
+    },
+    {
+      "type": "p",
+      "md": "If $p_n$ is a **row vector** of probabilities over states at time $n$ (entries summing to 1), one step of the chain is matrix multiplication, $p_{n+1} = p_n P$. Each component is the law of total probability: the new probability of Bull is (chance we were Bull)×(chance Bull stays) + (chance we were Bear)×(chance Bear turns Bull). No new mathematics - just bookkeeping."
+    },
+    {
+      "type": "steps",
+      "title": "Worked example: evolving from 'certainly Bull'",
+      "items": [
+        "Start: $p_0 = (1,\\ 0)$.",
+        "One step: $p_1 = p_0 P = (1 \\times 0.9 + 0 \\times 0.5,\\; 1 \\times 0.1 + 0 \\times 0.5) = (0.9,\\ 0.1)$.",
+        "Two steps: $p_2 = p_1 P = (0.9 \\times 0.9 + 0.1 \\times 0.5,\\; 0.9 \\times 0.1 + 0.1 \\times 0.5) = (0.81 + 0.05,\\; 0.09 + 0.05) = (0.86,\\ 0.14)$.",
+        "Three steps: $p_3 = p_2 P = (0.86 \\times 0.9 + 0.14 \\times 0.5,\\; 0.86 \\times 0.1 + 0.14 \\times 0.5) = (0.774 + 0.07,\\; 0.086 + 0.07) = (0.844,\\ 0.156)$.",
+        "Watch the trend: $0.9 \\to 0.86 \\to 0.844 \\to \\dots$ slowing down, seemingly pinned near $0.8333$. That settling value is the next section's subject."
+      ]
+    },
+    {
+      "type": "interactive",
+      "component": "MarkovChainSim",
+      "params": {
+        "states": ["Bull", "Bear"],
+        "transitionMatrix": [[0.9, 0.1], [0.5, 0.5]],
+        "steps": 20
+      },
+      "caption": "Run many sample paths of the regime chain. Individual paths keep jumping forever - it is the *fraction of time* in each state that stabilises."
+    },
+    {
+      "type": "h2",
+      "text": "Multi-step probabilities are matrix powers"
+    },
+    {
+      "type": "p",
+      "md": "Two steps of the chain is one application of $P$ twice, so $n$-step probabilities are $P^n$ - each entry computed by the law of total probability over intermediate states. For our chain: $(P^2)_{11} = 0.9 \\times 0.9 + 0.1 \\times 0.5 = 0.86$; $(P^2)_{12} = 0.9 \\times 0.1 + 0.1 \\times 0.5 = 0.14$; $(P^2)_{21} = 0.5 \\times 0.9 + 0.5 \\times 0.5 = 0.70$; $(P^2)_{22} = 0.5 \\times 0.1 + 0.5 \\times 0.5 = 0.30$. Rows still sum to 1 - powers of a transition matrix are transition matrices, which is exactly why the two-step formula must mix over intermediate states rather than multiply probabilities pairwise."
+    },
+    {
+      "type": "h2",
+      "text": "The stationary distribution"
+    },
+    {
+      "type": "p",
+      "md": "A distribution $\\pi$ is **stationary** when one step leaves it unchanged: $\\pi P = \\pi$. It answers the operating question 'if this system runs forever, what fraction of time does it spend in each state?' For a two-state chain, solve it exactly. Let $\\pi = (a,\\ 1-a)$ for the Bull/Bear chain. The Bull equation:"
+    },
+    {
+      "type": "math",
+      "tex": "a = 0.9a + 0.5(1 - a) \\quad\\Longrightarrow\\quad a = 0.4a + 0.5 \\quad\\Longrightarrow\\quad 0.6a = 0.5 \\quad\\Longrightarrow\\quad a = \\tfrac{5}{6}",
+      "caption": "So $\\pi = (5/6,\\ 1/6)$: the chain spends 5 out of every 6 steps Bull in the long run."
+    },
+    {
+      "type": "p",
+      "md": "Check exactly, as you always should: $\\pi P$'s first entry is $\\tfrac{5}{6}(0.9) + \\tfrac{1}{6}(0.5) = \\tfrac{3}{4} + \\tfrac{1}{12} = \\tfrac{10}{12} = \\tfrac{5}{6}$, and the second is $\\tfrac{5}{6}(0.1) + \\tfrac{1}{6}(0.5) = \\tfrac{1}{12} + \\tfrac{1}{12} = \\tfrac{1}{6}$. Verified. Notice the sequence from the worked example ($0.9, 0.86, 0.844, \\dots$) converging toward $\\tfrac{5}{6} = 0.8333$: for an **irreducible, aperiodic** chain (every state reachable, no forced cycling) the distribution converges to the unique stationary one regardless of the start. But do not over-read convergence: the *distribution* settles, while a single sample path keeps jumping between states forever. The long-run fraction of Bull days is 5/6; the probability of a Bull day tomorrow, conditional on being Bull today, is still 0.9."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Where desks actually use this",
+      "md": "Credit rating agencies publish transition matrices (AAA→AA, AA→A, …, default) whose stationary row approximates long-run grade occupancy; regime-switching models use a hidden Markov chain over calm/stressed states to modulate volatility; market microstructure models track order book state (bid-heavy/neutral/ask-heavy) as a chain. In every case the workflow is identical: estimate $P$ from data, evolve or solve for $\\pi$, sanity-check the rows."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "p = [1.0, 0.0]                      # start: certainly Bull\nP = [[0.9, 0.1], [0.5, 0.5]]        # rows: current state Bull, Bear\n\nfor _ in range(3):\n    p = [p[0]*P[0][0] + p[1]*P[1][0], p[0]*P[0][1] + p[1]*P[1][1]]\n    print(round(p[0], 3), round(p[1], 3))\n\n# converges to (5/6, 1/6) = (0.8333..., 0.1666...)",
+      "caption": "Plain-python evolution $p \\to pP$. Compare each printed row with the hand computation above."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "A Calm/Storm volatility regime chain has transition matrix $P = \\begin{pmatrix} 0.8 & 0.2 \\\\ 0.6 & 0.4 \\end{pmatrix}$. (a) Verify the rows sum to 1. (b) Compute the two-step row starting from Calm. (c) Solve for the stationary distribution exactly.",
+    "hints": [
+      "Two-step: multiply the row $(0.8, 0.2)$ by $P$.",
+      "Set up $a = 0.8a + 0.6(1-a)$ for $\\pi = (a, 1-a)$.",
+      "Check $\\pi P = \\pi$ with your answer before declaring victory."
+    ],
+    "solution": "(a) $0.8 + 0.2 = 1$ and $0.6 + 0.4 = 1$. (b) $p_1 = (0.8, 0.2)$; $p_2 = (0.8 \\times 0.8 + 0.2 \\times 0.6,\\; 0.8 \\times 0.2 + 0.2 \\times 0.4) = (0.64 + 0.12,\\; 0.16 + 0.08) = (0.76,\\ 0.24)$. (c) $a = 0.8a + 0.6 - 0.6a \\Rightarrow 0.8a = 0.6 \\Rightarrow a = 3/4$, so $\\pi = (3/4,\\ 1/4)$. Check: $\\tfrac{3}{4}(0.8) + \\tfrac{1}{4}(0.6) = 0.6 + 0.15 = 0.75$ ✓ and $\\tfrac{3}{4}(0.2) + \\tfrac{1}{4}(0.4) = 0.15 + 0.10 = 0.25$ ✓. The system spends 75% of its time Calm."
+  },
+  "independentExercise": {
+    "prompt": "A liquidity state chain: states Liquid (L) and Stressed (S) with $P = \\begin{pmatrix} 0.7 & 0.3 \\\\ 0.4 & 0.6 \\end{pmatrix}$. (a) Starting certainly Liquid, compute the two-step probability of being Stressed. (b) Find the stationary distribution as exact fractions. (c) Interpret $\\pi$ and explain why a Stressed day today still carries probability 0.6 of Stressed tomorrow even though $\\pi_S = 3/7$.",
+    "hints": [
+      "Two-step from L: use the second entry of $(1,0)P^2$.",
+      "Solve $a = 0.7a + 0.4(1-a)$.",
+      "Distinguish one-step conditional probabilities from long-run occupancy."
+    ],
+    "solution": "(a) $p_1 = (0.7, 0.3)$; $p_2 = (0.7 \\times 0.7 + 0.3 \\times 0.4,\\; 0.7 \\times 0.3 + 0.3 \\times 0.6) = (0.61,\\ 0.39)$, so $P^2(L \\to S) = 0.39$. (b) $a = 0.7a + 0.4 - 0.4a \\Rightarrow 0.7a = 0.4 \\Rightarrow a = 4/7$, so $\\pi = (4/7,\\ 3/7) \\approx (0.5714, 0.4286)$. Check: $\\tfrac{4}{7}(0.7) + \\tfrac{3}{7}(0.4) = 0.4 + 0.1714 = 4/7$ ✓. (c) $\\pi_S = 3/7$ is the unconditional long-run fraction of Stressed days; $P_{SS} = 0.6$ is the conditional one-step probability given you are in Stressed now. Stationarity balances flows - enough L-days feed into S to offset S's own persistence - but it does not freeze the chain: transitions keep happening forever."
+  },
+  "commonMistakes": [
+    "Making columns instead of rows sum to 1: with the convention 'entry $P_{ij}$ = from $i$ to $j$', ROWS must sum to 1.",
+    "Multiplying entrywise instead of matrix-multiplying when computing $p_{n+1} = p_n P$ or $P^2$ - two-step probabilities must sum over intermediate states.",
+    "Claiming the chain 'stops moving' once the distribution converges: single paths keep jumping; only the distribution settles.",
+    "Interpreting $\\pi_i$ as the probability of being in state $i$ *tomorrow given today* - $\\pi$ is the unconditional long-run occupancy, not a conditional transition probability."
+  ],
+  "realWorldApplication": "PageRank is the stationary distribution of a web-surfing chain; queueing systems, board games and speech recognition all run on Markov machinery - anywhere a system's next move depends on its current situation but not its biography.",
+  "quantFinanceApplication": "Rating migration matrices drive credit portfolio risk; regime-switching volatility models condition risk on a Markov state; and the stationary distribution of an order-flow chain estimates long-run inventory exposure. The two-state chain computed exactly here is the smallest instance of all of them.",
+  "summary": [
+    "Markov property: given the present state, the future is independent of the past - memoryless about history, not about current conditions.",
+    "Transition matrix rows sum to 1; one-step evolution of a distribution is $p_{n+1} = p_n P$ (row vector times matrix).",
+    "Multi-step probabilities are matrix powers: $(P^2)_{ij} = \\sum_k P_{ik}P_{kj}$; for the example chain $P^2 = \\begin{pmatrix} 0.86 & 0.14 \\\\ 0.70 & 0.30 \\end{pmatrix}$.",
+    "Stationary distribution solves $\\pi P = \\pi$: for $\\begin{pmatrix} 0.9 & 0.1 \\\\ 0.5 & 0.5 \\end{pmatrix}$ it is exactly $\\pi = (5/6,\\ 1/6)$.",
+    "Irreducible + aperiodic chains converge to $\\pi$ from any start ($0.9, 0.86, 0.844, \\dots \\to 5/6$), while sample paths keep jumping forever."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "The Markov property states that:",
+      "options": [
+        "the next state depends only on the current state, not on the path taken to reach it",
+        "the next state is independent of everything, including the current state",
+        "the system eventually stops changing",
+        "transition probabilities change over time"
+      ],
+      "answerIndex": 0,
+      "explanation": "Markov = memoryless about history: $P(X_{n+1} \\mid X_n, \\dots, X_0) = P(X_{n+1} \\mid X_n)$. The current state still fully drives the next one - the chain does not freeze, and probabilities are constant by the time-homogeneity assumption, not the Markov property."
+    },
+    {
+      "id": "q2",
+      "type": "numeric",
+      "prompt": "For the chain $P = \\begin{pmatrix} 0.9 & 0.1 \\\\ 0.5 & 0.5 \\end{pmatrix}$, what is the long-run (stationary) probability of the Bull state? Give a decimal to 3 places.",
+      "answer": 0.833,
+      "tolerance": 0.01,
+      "explanation": "Solving $a = 0.9a + 0.5(1-a)$ gives $a = 5/6 = 0.8333...$, the fraction of time spent Bull in the long run."
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "For the same chain, what is the two-step probability of going Bull now → Bear in two steps, i.e. $(P^2)_{12}$?",
+      "answer": 0.14,
+      "tolerance": 0.001,
+      "explanation": "$(P^2)_{12} = 0.9 \\times 0.1 + 0.1 \\times 0.5 = 0.09 + 0.05 = 0.14$: stay Bull then flip, or flip then stay Bear."
+    },
+    {
+      "id": "q4",
+      "type": "code-output",
+      "prompt": "What does this Python code print?",
+      "language": "python",
+      "code": "p = [1.0, 0.0]\nP = [[0.9, 0.1], [0.5, 0.5]]\n\nfor _ in range(3):\n    p = [p[0]*P[0][0] + p[1]*P[1][0], p[0]*P[0][1] + p[1]*P[1][1]]\n    print(round(p[0], 3), round(p[1], 3))",
+      "answer": "0.9 0.1\n0.86 0.14\n0.844 0.156",
+      "explanation": "Each line is $p \\to pP$ rounded to 3 decimals: $p_1 = (0.9, 0.1)$, $p_2 = (0.86, 0.14)$, $p_3 = (0.844, 0.156)$ - marching toward the stationary $(0.833, 0.167)$."
+    },
+    {
+      "id": "q5",
+      "type": "ms",
+      "prompt": "Which of these are VALID transition matrices (rows = current state)?",
+      "options": [
+        "$\\begin{pmatrix} 0.9 & 0.1 \\\\ 0.5 & 0.5 \\end{pmatrix}$",
+        "$\\begin{pmatrix} 0.9 & 0.2 \\\\ 0.5 & 0.5 \\end{pmatrix}$",
+        "$\\begin{pmatrix} 1.0 & 0.0 \\\\ 0.3 & 0.7 \\end{pmatrix}$",
+        "$\\begin{pmatrix} 0.5 & 0.6 \\\\ 0.5 & 0.4 \\end{pmatrix}$"
+      ],
+      "answerIndices": [0, 2],
+      "explanation": "Every row must sum to exactly 1. Option 1: $0.9+0.1 = 1$, $0.5+0.5 = 1$ ✓. Option 3: $1+0 = 1$, $0.3+0.7 = 1$ ✓ (an absorbing state is fine). Options 2 and 4 have a row summing to 1.1 and 1.0 vs 0.9 respectively - invalid."
+    },
+    {
+      "id": "q6",
+      "type": "short",
+      "prompt": "The distribution of the regime chain converges to $(5/6, 1/6)$. Does that mean the market eventually settles permanently into Bull? Explain in a sentence or two.",
+      "modelAnswer": "No - convergence is of the distribution, not the sample path: the chain keeps flipping between states forever with transition probabilities 0.9/0.1 and 0.5/0.5. What stabilises is the long-run fraction of time spent in each state (5/6 Bull).",
+      "keywords": ["distribution", "path", "jump", "fraction"],
+      "explanation": "Stationarity balances the flows into and out of each state; individual realisations continue to transition indefinitely. Confusing distributional convergence with path convergence is the classic error."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "definition",
+      "front": "Markov property",
+      "back": "Given the present state, the future is independent of the past: $P(X_{n+1} \\mid X_n, \\dots, X_0) = P(X_{n+1} \\mid X_n)$."
+    },
+    {
+      "type": "formula",
+      "front": "One-step and multi-step evolution",
+      "back": "$p_{n+1} = p_n P$ (row vector); $n$-step probabilities from $P^n$; $(P^2)_{ij} = \\sum_k P_{ik}P_{kj}$."
+    },
+    {
+      "type": "formula",
+      "front": "Stationary distribution of a two-state chain",
+      "back": "Solve $a = P_{11}a + P_{21}(1-a)$ with $\\pi = (a, 1-a)$; e.g. $0.9/0.5$ chain gives $\\pi = (5/6, 1/6)$."
+    },
+    {
+      "type": "code-output",
+      "front": "Third iterate from all-Bull for the 0.9/0.5 chain, rounded to 3 dp?",
+      "back": "$(0.844, 0.156)$ - marching toward $(0.833, 0.167)$ but never becoming it."
+    }
+  ],
+  "references": [
+    {
+      "label": "Wikipedia — Markov chain",
+      "url": "https://en.wikipedia.org/wiki/Markov_chain"
+    },
+    {
+      "label": "Wikipedia — Examples of Markov chains (two-state)",
+      "url": "https://en.wikipedia.org/wiki/Examples_of_Markov_chains"
+    }
+  ],
+  "skills": ["stochastic-processes"]
+}

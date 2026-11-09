@@ -1,0 +1,295 @@
+{
+  "id": "ll-methodology",
+  "moduleId": "ph10-low-latency",
+  "title": "Benchmarking Methodology and Latency Distributions",
+  "estMinutes": 27,
+  "difficulty": "specialist",
+  "prereqs": [
+    "ll-kernel-bypass"
+  ],
+  "objectives": [
+    "Compute mean, median and tail percentiles for a latency sample and explain when each is honest",
+    "Explain why warmup is required and what cold-start costs look like",
+    "Diagnose coordinated omission in a load generator and fix it with open-loop design",
+    "Define a benchmarking discipline that makes p99 regressions visible"
+  ],
+  "motivation": "A benchmark that says 'mean 2 µs' can hide a 12 µs mode that fires exactly when the market moves - the only time latency matters. Low-latency engineering is a measurement discipline: percentiles over averages, warmup over cold starts, and load generators that keep sending when things get slow.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Why the average lies"
+    },
+    {
+      "type": "p",
+      "md": "Latency distributions are not tidy bells; they are **mixtures** - a fast mode (cache-resident, branch-predicted) and a slow tail (cache misses, TLB misses, interrupts, page faults). The mean blends the modes into a number that *nothing ever measured*. And the tail is not cosmetic: your slowest responses cluster when the market is busiest - which is exactly when being slow costs the trade."
+    },
+    {
+      "type": "math",
+      "tex": "\\bar{x} = \\frac{1}{n}\\sum_{i=1}^{n} x_i \\qquad \\text{vs} \\qquad p_{99} = \\text{the value below which } 99\\% \\text{ of samples fall}",
+      "caption": "The mean summarises everything at once; a percentile points at the part that trades."
+    },
+    {
+      "type": "steps",
+      "title": "A 100-sample illustration (µs, synthetic)",
+      "items": [
+        "95 samples at 1.0 (the fast mode), 4 at 1.5, 1 at 12.0 (one page-faulted outlier).",
+        "Mean $= (95 \\times 1.0 + 4 \\times 1.5 + 12.0) / 100 = (95 + 6 + 12) / 100 = 113 / 100 = 1.13\\,\\mu s$.",
+        "Median (p50) $= 1.0\\,\\mu s$; p99 $≈ 12\\,\\mu s$ - more than ten times the mean.",
+        "The mean said 'fast'; the tail said 'occasionally catastrophic'. In trading terms: 99 of 100 quotes are fine, and the 1 slow one arrives after the market moved - which is the one that trades against you."
+      ]
+    },
+    {
+      "type": "h2",
+      "text": "Percentiles you actually publish"
+    },
+    {
+      "type": "p",
+      "md": "Report at least **p50, p90, p99, p99.9 and max**, with sample counts. Percentiles are rank statistics: robust to outlier scaling and interpretable as service levels. **Regression gates** belong on p99, not the mean - a change that improves the mean 5% while worsening p99 by 50% is a traded-tail disaster wearing a good headline. Beware small samples: p99.9 of 200 samples is essentially the worst sample you happened to record. Gather more data, or honestly report fewer nines."
+    },
+    {
+      "type": "h2",
+      "text": "Warmup: the first N measurements are fiction"
+    },
+    {
+      "type": "p",
+      "md": "Cold runs pay one-time costs that steady state never repeats: page faults mapping memory, TLB and cache fills, branch-predictor training, allocator arenas growing. A benchmark that includes them reports a mixture of 'first time' and 'every time'. Discipline: run a **warmup phase** (discard it, or record it separately), then measure a **steady-state** window. Production behaves like steady state - except at 4 a.m. restarts, which is why cold-start behaviour is measured too, just never averaged in."
+    },
+    {
+      "type": "h2",
+      "text": "Coordinated omission: the benchmark's blind spot"
+    },
+    {
+      "type": "p",
+      "md": "A **closed-loop** load generator sends the next request only after the previous response returns. Suppose response #7 hangs for 500 ms at an intended rate of 10 requests/s: about $10 \\times 0.5 = 5$ requests that *should* have been sent were never issued, so their (probably terrible) latencies are missing from the histogram. The system got in trouble and the benchmark **coordinated its silence with the outage** - measurements look fine while users suffer. Fixes: run **open-loop** (send on a fixed schedule regardless of responses), or record each request's *virtual start time* and correct the intervals afterwards. Rule: a benchmark only measures the requests it dared to send."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "samples = [1.0] * 95 + [1.5] * 4 + [12.0]\nxs = sorted(samples)\nn = len(xs)\nmean = sum(xs) / n\nprint(round(mean, 2), xs[n // 2], xs[-1])",
+      "caption": "Prints: 1.13 1.0 12.0 - mean, median and max for the illustration above. Three honest numbers, three different stories."
+    },
+    {
+      "type": "p",
+      "md": "Benchmarking latency is measurement science, not stopwatch use. The three failure modes that invalidate most naive benchmarks — measuring the wrong thing (wall clock including setup), measuring on an uncontrollable system (CPU frequency scaling, other processes), and summarising with the wrong statistic (the mean, always the mean) — all have standard defences. Learn the defences once; every measurement you take afterwards becomes trustworthy."
+    },
+    {
+      "type": "steps",
+      "title": "The methodology, as a checklist that fits on a sticky note",
+      "items": [
+        "**Pin the environment**: performance governor set, turbo behaviour known (or disabled), the benchmark pinned to specific cores (`taskset`), background noise off. An unpinned benchmark is a weather report.",
+        "**Warm up, then measure**: cold caches and lazy page faults belong to the first iterations; discard them. Measure steady state, and separately measure the cold case only if cold is the production scenario (it usually is not).",
+        "**Collect the distribution, not the total**: every iteration is a sample of a distribution that is never normal (GC-like pauses, page faults, IRQ storms live in the tail). Save per-iteration latencies; report p50/p99/p99.9/max — never a lone mean. The PercentileExplorer lab makes the mean-vs-tail gap visceral.",
+        "**Repeat to bound noise**: run the whole benchmark $k$ times and compare the *spread of the p99s* across runs. If run-to-run p99 varies by 30%, your measurement resolution is 30% — no optimisation smaller than that is detectable, and claiming one is astrology.",
+        "**Compare like with like**: before/after on the same machine, same pinning, same warmup — and report the environment with the numbers. A latency claim without an environment description is not a result."
+      ]
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Tool",
+        "What it sees",
+        "Blind spot"
+      ],
+      "rows": [
+        [
+          "perf stat",
+          "cache misses, IPC, branch misses (hardware counters)",
+          "nothing per-iteration unless you sample"
+        ],
+        [
+          "perf record",
+          "where cycles go (sampling profiler)",
+          "biases toward long-running code"
+        ],
+        [
+          "custom rdtsc harness",
+          "exact per-iteration latency",
+          "you must handle frequency scaling yourself"
+        ],
+        [
+          "bpftrace/ftrace",
+          "kernel events: syscalls, context switches, scheduling",
+          "needs root, steep syntax"
+        ],
+        [
+          "std::chrono steady_clock",
+          "portable monotonic time",
+          "coarse (~20-30ns) vs rdtsc; fine for µs+"
+        ]
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "The optimisation you cannot measure, twice",
+      "md": "The most expensive engineering sin in low latency: shipping an optimisation whose gain is smaller than measurement noise — it added complexity and bought nothing, and now nobody dares remove it. The sticky-note checklist exists to make your noise floor explicit so every change is either *proven* or *rejected*. That binary is the entire value of methodology."
+    },
+    {
+      "type": "interactive",
+      "component": "PercentileExplorer",
+      "params": {}
+    },
+    {
+      "type": "h2",
+      "text": "The discipline checklist"
+    },
+    {
+      "type": "list",
+      "ordered": false,
+      "items": [
+        "Fix CPU frequency / disable deep idle on benchmark machines; pin threads (previous lessons).",
+        "Warm up; measure steady state separately from cold start.",
+        "Use open-loop load at realistic rates, including bursts; never let the generator pause under load.",
+        "Record raw distributions (histograms), not just summaries; report conditions - hardware, kernel, versions, data sizes.",
+        "Gate releases on p99/p99.9 deltas, and rerun anything suspicious - noise reproduces itself."
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Averages in production dashboards",
+      "md": "A 'mean latency 2 µs' panel hides the 14:32 spike that cost the afternoon. Instrument percentiles end-to-end (NIC to order out), alert on p99, and keep the raw histogram - you will need it for the incident review."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "20 steady-state samples (µs): eighteen at 2.0, one at 2.5, one at 30.0. (a) Mean? (b) Median? (c) Max? (d) Which number would you gate a release on, and what would the mean have hidden?",
+    "hints": [
+      "Mean = total / count.",
+      "Median of 20 sorted samples sits between the 10th and 11th values."
+    ],
+    "solution": "(a) $(18 \\times 2.0 + 2.5 + 30.0) / 20 = (36 + 32.5) / 20 = 68.5 / 20 = 3.425\\,\\mu s$. (b) Sorted, ranks 10 and 11 are both 2.0, so the median is $2.0\\,\\mu s$. (c) $30.0\\,\\mu s$. (d) Gate on the tail (max / p99): the mean of 3.425 blends one pathological 30 µs event into invisibility - exactly the event that trades against you."
+  },
+  "independentExercise": {
+    "prompt": "Two builds, 100 samples each (µs). Build A: 98 samples at 2.0 and two at 6.0. Build B: 99 samples at 2.1 and one at 3.0. (a) Mean of each. (b) Approximate p99 of each (with 100 samples, p99 ≈ the 99th sorted value). (c) Which build ships, and why is 'A has the lower mean' the wrong reason?",
+    "hints": [
+      "Mean = sum / 100.",
+      "Sort each set and take the 99th value."
+    ],
+    "solution": "(a) A: $(98 \\times 2.0 + 2 \\times 6.0)/100 = (196 + 12)/100 = 2.08\\,\\mu s$; B: $(99 \\times 2.1 + 3.0)/100 = (207.9 + 3.0)/100 = 2.109\\,\\mu s$. (b) A's 99th sorted value is 6.0; B's is 3.0. (c) Ship **B**: the mean difference (2.109 vs 2.08) is noise, but the tail (3.0 vs 6.0) is structural - in trading, the p99 quote is the one that trades when the market moves."
+  },
+  "commonMistakes": [
+    "Reporting only the mean (or worse, best-of-N) - tails are the traded risk.",
+    "Benchmarking cold: page faults and TLB misses measure the reboot, not the design.",
+    "Closed-loop generators that pause during slow responses: coordinated omission hides exactly the samples that matter.",
+    "Changing several things between runs - one variable at a time, or the delta is unattributable."
+  ],
+  "realWorldApplication": "Latency-sensitive teams publish percentile SLOs and gate releases on p99 regressions; open-loop load tools and HdrHistogram-style recorder percentiles are standard kit in performance engineering.",
+  "quantFinanceApplication": "A market maker's slow 1% of quotes is the 1% that trades when news hits - percentile discipline converts 'usually fast' into a defensible statement about worst-case exposure.",
+  "summary": [
+    "Latency distributions are mixtures; the mean blends modes into a value nothing measured - publish p50/p90/p99/p99.9/max.",
+    "Warmup discards one-time cold costs (page faults, TLB/cache fills, predictor training); production ≈ steady state, cold starts measured separately.",
+    "Coordinated omission: closed-loop generators stop sending during slow responses, hiding the worst latency; fix with open-loop schedules or virtual start times.",
+    "Gate releases on tail percentiles with recorded conditions; a benchmark only measures the requests it dared to send."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "numeric",
+      "prompt": "The 100-sample illustration: 95 samples at 1.0 µs, 4 at 1.5 µs, 1 at 12.0 µs. What is the mean, in µs?",
+      "answer": 1.13,
+      "tolerance": 0.01,
+      "unit": "µs",
+      "explanation": "$(95 \\times 1.0 + 4 \\times 1.5 + 12.0)/100 = 113/100 = 1.13\\,\\mu s$ - while p99 sits near 12 µs."
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "What does p99 mean?",
+      "options": [
+        "The average of the slowest 1% of samples",
+        "The value below which 99% of samples fall (≈1% exceed it)",
+        "The 99th sample in arrival order",
+        "A latency that occurs 99 times per second"
+      ],
+      "answerIndex": 1,
+      "explanation": "p99 is a rank statistic on the sorted distribution - the 99th percentile - not an average of anything and not arrival order."
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "Open-loop arithmetic: intended rate 10 requests/s; one response takes 500 ms. How many requests should have been sent during that window (and were suppressed by a closed-loop generator)?",
+      "answer": 5,
+      "tolerance": 0.1,
+      "explanation": "$10 / s \\times 0.5\\,s = 5$ requests - five unmeasured, probably-terrible latencies: coordinated omission."
+    },
+    {
+      "id": "q4",
+      "type": "ms",
+      "prompt": "Which belong in a sound benchmarking discipline?",
+      "options": [
+        "Warm up before measuring; report steady state separately",
+        "Pin threads and fix CPU frequency",
+        "Use open-loop load generation at realistic rates",
+        "Report only the mean to keep dashboards clean"
+      ],
+      "answerIndices": [
+        0,
+        1,
+        2
+      ],
+      "explanation": "Warmup, controlled hardware and open-loop load are the discipline; mean-only reporting is precisely what hides tails."
+    },
+    {
+      "id": "q5",
+      "type": "short",
+      "prompt": "Why must benchmarks warm up before measuring?",
+      "modelAnswer": "Cold runs pay one-time costs - page faults, TLB and cache fills, branch-predictor training - that steady state never repeats; including them measures the restart, not the system under production conditions.",
+      "keywords": [
+        "cache",
+        "TLB",
+        "page fault",
+        "branch"
+      ],
+      "explanation": "Warmup separates 'first time' costs from 'every time' costs so the measured distribution describes production behaviour."
+    },
+    {
+      "id": "q6",
+      "type": "code-output",
+      "prompt": "What does this Python snippet print?",
+      "language": "python",
+      "code": "samples = [1.0] * 95 + [1.5] * 4 + [12.0]\nxs = sorted(samples)\nn = len(xs)\nmean = sum(xs) / n\nprint(round(mean, 2), xs[n // 2], xs[-1])",
+      "answer": "1.13 1.0 12.0",
+      "explanation": "Mean $= 113/100 = 1.13$; with 95 ones sorted first, `xs[50] = 1.0` (median); `xs[-1] = 12.0` (max)."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "formula",
+      "front": "Mean vs p99",
+      "back": "Mean: sum/n - blends modes into a value nothing measured. p99: value below which 99% of samples fall - the traded tail. Release gates belong on p99."
+    },
+    {
+      "type": "definition",
+      "front": "Coordinated omission",
+      "back": "A closed-loop load generator pauses while responses are slow, so the worst latencies are never sampled. Fix: open-loop sending or virtual start-time correction."
+    },
+    {
+      "type": "concept",
+      "front": "Warmup",
+      "back": "Discard or record separately the first N runs: page faults, TLB/cache fills and predictor training are one-time costs, not steady-state behaviour."
+    },
+    {
+      "type": "concept",
+      "front": "Why tails rule trading",
+      "back": "The slow 1% of responses clusters when the market is busiest - exactly when stale quotes trade against you."
+    }
+  ],
+  "references": [
+    {
+      "label": "Gil Tene - 'How NOT to Measure Latency' (talk)",
+      "url": "https://www.youtube.com/watch?v=lJ8ydIuPFeU"
+    },
+    {
+      "label": "HdrHistogram - percentile recording",
+      "url": "https://hdrhistogram.github.io/HdrHistogram/"
+    },
+    {
+      "label": "Latency numbers every programmer should know (community gist)",
+      "url": "https://gist.github.com/jboner/2841832"
+    }
+  ],
+  "skills": [
+    "low-latency",
+    "cpp-performance"
+  ]
+}

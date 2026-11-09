@@ -1,0 +1,247 @@
+{
+  "id": "linux-pipes-scripting",
+  "moduleId": "ph2-linux",
+  "title": "Pipes, Redirection and Shell Scripting",
+  "estMinutes": 26,
+  "difficulty": "foundation",
+  "prereqs": [
+    "linux-permissions-processes"
+  ],
+  "objectives": [
+    "Redirect stdin, stdout and stderr with >, >>, <, 2> and 2>&1 and predict where each stream lands",
+    "Build multi-stage pipelines from grep, sort, uniq -c, wc, awk and head to answer questions about logs",
+    "Write a small bash script with a shebang, variables, a for loop, an if test and meaningful exit codes",
+    "Explain why set -euo pipefail changes script behaviour and how grep's exit codes interact with it"
+  ],
+  "motivation": "Yesterday's fills log has 40 million lines and the risk team wants the top rejected symbols by 9am. You can open it in an editor (it will not open), import it into a database (setup overhead), or compose a five-command pipeline that answers in seconds. Pipes, redirection and a 20-line shell script are the quant developer's first-responder toolkit on any production box - and every lesson in the systems phase assumes you can read one.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Three streams and where to send them"
+    },
+    {
+      "type": "p",
+      "md": "Every Linux process starts with three open channels: **stdin** (file descriptor 0, input), **stdout** (1, normal output) and **stderr** (2, errors and diagnostics). Redirection rewires them at the shell level, before the program even runs - the program cannot tell the difference between your terminal and a file. The operators you will use daily: `> file` writes stdout (clobbering), `>> file` appends, `< file` feeds a file as stdin, `2> file` captures stderr separately, and `2>&1` merges stderr into wherever stdout currently points - order matters, `cmd > f 2>&1` sends both to f, while `cmd 2>&1 > f` sends stderr to the old stdout (the terminal) and only stdout to f."
+    },
+    {
+      "type": "code",
+      "lang": "bash",
+      "code": "grep \"REJECT\" fills.log > rejects.txt      # stdout to file (clobber)\ngrep \"REJECT\" fills.log >> rejects.txt     # append instead\ncat rejects.txt\n./risk_engine < input.csv > out.csv 2> err.log   # in, out, errors split\n./risk_engine < input.csv > all.log 2>&1         # both streams to one file",
+      "caption": "Redirection is per-stream: keeping stderr separate keeps crashes out of your data files."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Clobbering is silent",
+      "md": "`>` truncates the target instantly, before the command runs. `results_v2 > results.txt` where you meant `>>` has destroyed the file you were keeping - and if you redirect **into the file you are reading from**, you truncate your own input. There is no undo outside backups."
+    },
+    {
+      "type": "h2",
+      "text": "Pipelines: small filters, composed"
+    },
+    {
+      "type": "p",
+      "md": "The pipe `|` connects stdout of one command to stdin of the next, running them concurrently - Unix's original composability trick. Each stage is a **filter** doing one job: grep keeps matching lines, sort orders them, `uniq -c` collapses **adjacent** duplicates into counts, wc counts, head trims, awk prints or reshapes columns. Worked example on a (hypothetical) day of fill reports, where each line looks like `09:31:02 REJECT AAPL size=300`:"
+    },
+    {
+      "type": "code",
+      "lang": "bash",
+      "code": "$ grep \"REJECT\" fills.log | wc -l\n6\n$ grep \"REJECT\" fills.log | awk '{print $3}' | sort | uniq -c | sort -rn | head -5\n      3 AAPL\n      2 TSLA\n      1 XOM",
+      "caption": "Six rejects; field 3 of each (time, status, symbol, size) is the symbol. sort -rn sorts numerically, descending."
+    },
+    {
+      "type": "steps",
+      "title": "Reading the pipeline one stage at a time",
+      "items": [
+        "`grep \"REJECT\" fills.log` - keep only rejected fills (6 of 9 lines in our sample).",
+        "`awk '{print \\$3}'` - print the 3rd whitespace-separated field: the symbol.",
+        "`sort` - group equal symbols together; uniq only ever collapses ADJACENT duplicates.",
+        "`uniq -c` - one line per symbol, prefixed by its count.",
+        "`sort -rn` - order by count, biggest first (`-r` reverse, `-n` numeric; plain sort would put 10 before 9).",
+        "`head -5` - keep the worst five. Swap the log for a 40M-line file and nothing else changes."
+      ]
+    },
+    {
+      "type": "p",
+      "md": "Two adjacent tools complete the kit: `tee file` lets a stream pass through **and** be captured (`... | tee debug.txt | wc -l`), and `xargs` turns stdin lines into arguments of another command (`grep -rl TODO . | xargs wc -l`). Also worth knowing: `cut -d, -f3` prints the third comma-separated field - lighter than awk when you just need a column."
+    },
+    {
+      "type": "h2",
+      "text": "Shell scripting: making the pipeline reusable"
+    },
+    {
+      "type": "p",
+      "md": "Anything you type twice belongs in a script. The first line, the **shebang** `#!/usr/bin/env bash`, tells the kernel which interpreter to use when you run `./script.sh` (chmod +x required - the permission lesson's 755 in action). Variables expand as `\\$name`; a quoted `\\$f` survives filenames with spaces. Positional parameters arrive as `\\$1, \\$2, ...` with `\\$@` meaning all of them, and \\${1:-default} supplies a fallback. The exit status `\\$?` is 0 for success and non-zero for failure - 0 meaning success is the convention every CI system and `&&` chain leans on:"
+    },
+    {
+      "type": "code",
+      "lang": "bash",
+      "code": "#!/usr/bin/env bash\nset -euo pipefail\n\nTHRESHOLD=100\ntotal=0\n\nfor f in \"$@\"; do\n  n=$(grep -c \"REJECT\" \"$f\" || true)   # || true: grep exits 1 when count is 0\n  printf \"%s: %d rejects\\n\" \"$f\" \"$n\"\n  total=$((total + n))\ndone\n\nif [ \"$total\" -gt \"$THRESHOLD\" ]; then\n  echo \"ALERT: $total rejects across files\" >&2\n  exit 1\nfi\n\necho \"OK: $total rejects today\"\n\n# $ ./reject_report.sh fills.log\n# fills.log: 6 rejects\n# OK: 6 rejects today",
+      "caption": "A 20-line safety net: per-file counts, an aggregate, and a non-zero exit for paging systems to catch."
+    },
+    {
+      "type": "interactive",
+      "component": "PipePipeline",
+      "params": {
+        "commands": [
+          "cat fills.csv",
+          "grep BUY",
+          "awk -F, '{print $3}'",
+          "sort -n",
+          "head -5"
+        ]
+      }
+    },
+    {
+      "type": "p",
+      "md": "`set -euo pipefail` is the professional default, one flag each: **-e** abort on the first failing command, **-u** error on unset variables (catches a \\$NME typo instantly), **-o pipefail** make a pipeline fail if *any* stage fails, not just the last. That last flag is why the script writes `grep -c ... || true`: `grep` exits 1 when it finds zero matches, which under `set -e` would kill the script mid-loop for perfectly ordinary empty files - one of those interactions nobody warns you about, until 3am."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Pipelines are the desk's ETL",
+      "md": "Tick captures, exchange message logs and settlement files arrive as gigabytes of text. The production reflex is to grep-filter, awk-extract, sort and count **on the box**, near the data, instead of pulling it somewhere else - a pipeline streams the file once through constant memory where a naive Python script would load it all and swap."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Using fills.log with lines shaped like `09:31:02 REJECT AAPL size=300` and `09:31:04 FILL MSFT size=100`: (1) Build a pipeline that prints each status (field 2) with its line count, e.g. how many FILL vs REJECT lines. (2) Build a pipeline printing the average order size of REJECT lines (integer division is fine). (3) Explain why deleting the `sort` from the symbol-count pipeline of the lesson can produce two lines for the same symbol.",
+    "hints": [
+      "Field positions: \\$1 time, \\$2 status, \\$3 symbol, \\$4 'size=300' - awk can also compute, not just print.",
+      "For averages: sum field 4 after stripping the 'size=' prefix, then divide by the count.",
+      "uniq -c collapses only adjacent duplicates; sort guarantees adjacency."
+    ],
+    "solution": "(1) `awk '{print \\$2}' fills.log | sort | uniq -c` prints `3 FILL` and `6 REJECT` for the 9-line sample. (2) `grep REJECT fills.log | awk '{s+=substr(\\$4,6)} END {print int(s/NR)}'` - substr(\\$4,6) strips 'size=' (positions 1-5), accumulating 300+200+100+400+100+50 = 1150 over NR = 6 rejects, and int() rounds the average down to 191. (3) Without sort, identical symbols may not be adjacent (e.g. AAPL, TSLA, AAPL), so uniq emits a count line for each run - two `AAPL` lines instead of one aggregated `3 AAPL`."
+  },
+  "independentExercise": {
+    "prompt": "The risk team wants a daily guard. Write a script `check_rejects.sh` that: takes any number of log files as arguments; prints `<file>: <count>` for the REJECT lines in each; exits with status 1 and a message on stderr if the TOTAL rejects exceed 50; otherwise prints a one-line OK summary. Explain every non-obvious line, including why `|| true` belongs next to grep under `set -euo pipefail`, and state what a monitoring system (cron job, CI step) does with your exit code.",
+    "hints": [
+      "Model it on the lesson script - change THRESHOLD and the messages, nothing else structural.",
+      "grep -c prints 0 and exits 1 on zero matches; set -e would treat that as a crash.",
+      "Exit 0 means 'fine', non-zero means 'page someone' - that contract is what automation consumes."
+    ],
+    "solution": "Use the lesson's script verbatim with THRESHOLD=50. Key lines: shebang picks bash; `set -euo pipefail` fails fast and safely; `\"$@\"` iterates all arguments (quoted, so spaces survive); `n=$(grep -c ... || true)` captures the count while neutralising grep's no-match exit code 1; `printf ... >&2`-style stderr output keeps alerts out of stdout; `exit 1` after the alert and implicit `exit 0` otherwise. A cron job or CI step branches on exactly that exit status: 0 -> stay green, 1 -> raise the alert. For the sample log (6 rejects) it prints `fills.log: 6 rejects` then `OK: 6 rejects today` and exits 0."
+  },
+  "commonMistakes": [
+    "Piping into uniq -c without sorting first: only adjacent duplicates collapse, so counts fragment.",
+    "Writing cmd 2>&1 > file and expecting both streams in the file - redirections apply left to right; use cmd > file 2>&1.",
+    "Unquoted \"\\$f\" in a for loop mangling filenames that contain spaces.",
+    "Forgetting that grep exits 1 on zero matches: under set -e an empty-but-valid log aborts the script unless you append || true."
+  ],
+  "realWorldApplication": "DevOps runbooks, CI log triage, data engineering quick-joins and security audits are all pipelines; interviewers routinely ask candidates to compose one live because it tests parsing, composition and Unix literacy at once.",
+  "quantFinanceApplication": "A quant developer's morning is this lesson: grep the overnight fills for REJECT, count by symbol with sort | uniq -c, check for aborted sessions with grep -c, and leave a scripted guard running with the right exit codes so monitoring pages before the open.",
+  "summary": [
+    "Processes own three streams - stdin (0), stdout (1), stderr (2) - and >, >>, <, 2>, 2>&1 rewire them; order of redirection matters.",
+    "Pipes compose single-purpose filters: grep keeps, awk extracts, sort groups, uniq -c counts adjacent duplicates, wc/head trim - and the result is streamable and memory-light.",
+    "Scripts start with a shebang, use quoted \"\\$@\" for arguments, and communicate success through exit codes: \\$? is 0 on success.",
+    "set -euo pipefail makes scripts fail fast; remember grep's exit-1-on-no-match and neutralise it with || true."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "Which command appends BOTH stdout and stderr to results.txt?",
+      "options": [
+        "cmd >> results.txt 2>&1",
+        "cmd > results.txt 2>&1",
+        "cmd 2> results.txt",
+        "cmd | tee results.txt"
+      ],
+      "answerIndex": 0,
+      "explanation": ">> appends stdout, and 2>&1 then points stderr at the same (already opened, appending) destination. Option 2 overwrites; option 3 captures stderr only (clobbering); tee captures stdout only and overwrites."
+    },
+    {
+      "id": "q2",
+      "type": "numeric",
+      "prompt": "How many lines does `printf \"x\\ny\\nz\\nx\\n\" | sort | uniq -c | wc -l` print as its final count? (The input has four lines: x, y, z, x.)",
+      "answer": 3,
+      "explanation": "sort groups the two x's together, uniq -c collapses them into a single counted line, leaving one line each for x, y, z - so wc -l counts 3."
+    },
+    {
+      "id": "q3",
+      "type": "code-output",
+      "prompt": "What does this pipeline print? `printf \"b\\na\\nb\\n\" | sort | uniq -c | awk '{print $1}'`",
+      "language": "bash",
+      "code": "printf \"b\\na\\nb\\n\" | sort | uniq -c | awk '{print $1}'",
+      "answer": "1\n2",
+      "explanation": "sort yields a, b, b; uniq -c emits `1 a` and `2 b`; awk prints only the first field of each line - the counts 1 and 2, one per line."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "In bash, what does the special parameter \\$? hold?",
+      "options": [
+        "The exit status of the most recently executed command (0 = success)",
+        "The PID of the last background job",
+        "The number of arguments passed to the script",
+        "The script's first argument"
+      ],
+      "answerIndex": 0,
+      "explanation": "\\$? is the exit status of the last command - the convention every if-test, && chain and CI system consumes. (The distractors are \\$!, \\$# and \\$1.)"
+    },
+    {
+      "id": "q5",
+      "type": "short",
+      "prompt": "Why must input be sorted before piping into uniq -c, and what does uniq -c actually collapse?",
+      "modelAnswer": "uniq only collapses ADJACENT duplicate lines, so unsorted input leaves the same value in several separate runs, each counted separately; sort guarantees duplicates are adjacent so uniq -c emits one line per distinct value with its total count.",
+      "keywords": [
+        "adjacent",
+        "sorted",
+        "duplicate",
+        "count"
+      ],
+      "explanation": "uniq is deliberately streaming and memory-light: it compares each line only to its predecessor, which is why sorting is the caller's job."
+    },
+    {
+      "id": "q6",
+      "type": "ms",
+      "prompt": "Which of these are valid bash redirections?",
+      "options": [
+        "2> err.log",
+        ">> results.txt",
+        "sort < input.txt",
+        "cmd >>> file.txt"
+      ],
+      "answerIndices": [
+        0,
+        1,
+        2
+      ],
+      "explanation": "2> captures stderr, >> appends stdout, < feeds a file to stdin. >>> does not exist in bash (that would be >>> in some other shells' prompt-syntax, not a redirection)."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "definition",
+      "front": "The three standard streams",
+      "back": "stdin = fd 0 (input), stdout = fd 1 (normal output), stderr = fd 2 (errors); redirection rewires them: >, >>, <, 2>, 2>&1."
+    },
+    {
+      "type": "concept",
+      "front": "Why sort before uniq -c?",
+      "back": "uniq collapses only ADJACENT duplicates; sort guarantees adjacency, so counts aggregate per distinct value."
+    },
+    {
+      "type": "concept",
+      "front": "Exit codes",
+      "back": "\\$? holds the last command's status; 0 means success, non-zero means failure - consumed by if, && and every CI/cron system."
+    },
+    {
+      "type": "definition",
+      "front": "set -euo pipefail",
+      "back": "-e: abort on first error; -u: unset variables are errors; -o pipefail: a pipeline fails if ANY stage fails. Note grep exits 1 on zero matches - neutralise with || true."
+    }
+  ],
+  "references": [
+    {
+      "label": "GNU Coreutils manual (sort, uniq, wc, tee)",
+      "url": "https://www.gnu.org/software/coreutils/manual/"
+    },
+    {
+      "label": "Bash Reference Manual - Redirections",
+      "url": "https://www.gnu.org/software/bash/manual/html_node/Redirections.html"
+    }
+  ],
+  "skills": [
+    "linux"
+  ]
+}

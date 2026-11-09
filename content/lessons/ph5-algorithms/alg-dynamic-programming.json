@@ -1,0 +1,416 @@
+{
+  "id": "alg-dynamic-programming",
+  "moduleId": "ph5-algorithms",
+  "title": "Dynamic Programming",
+  "estMinutes": 30,
+  "difficulty": "core",
+  "prereqs": [
+    "alg-shortest-paths-mst"
+  ],
+  "objectives": [
+    "Identify optimal substructure and overlapping subproblems, the two conditions that make DP applicable",
+    "Solve a problem top-down with memoisation and bottom-up with tabulation, and compare the trade-offs",
+    "Fill LCS and 0/1 knapsack DP tables by hand, cell by cell, from the recurrences",
+    "Implement the space-optimised 1D knapsack and explain why its capacity loop runs backwards"
+  ],
+  "motivation": "Option pricing on a lattice, optimal trade execution over a day, and the longest matching subsequence between two event streams all share one structure: the best answer now depends on the best answers to smaller versions of the same problem. Dynamic programming turns exponential brute force into a table of reusable subanswers - and being able to fill that table by hand is the single most requested interview skill in this phase.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "When dynamic programming applies"
+    },
+    {
+      "type": "p",
+      "md": "Two conditions unlock DP. **Optimal substructure**: the optimal solution to a problem contains optimal solutions to its subproblems (best knapsack packing of capacity 5 uses best packings of smaller capacities). **Overlapping subproblems**: the same small problems recur many times, so caching them pays. Naive recursion of Fibonacci recomputes $F(2)$ exponentially many times - $O(\\phi^n)$ - while caching collapses it to $O(n)$. That is the whole trick: *recursion plus memory*, either a cache around recursion (**memoisation**) or a table filled in dependency order (**tabulation**)."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "def fib(n, memo=None):\n    if memo is None:\n        memo = {}\n    if n in memo:\n        return memo[n]\n    if n < 2:\n        return n\n    memo[n] = fib(n - 1, memo) + fib(n - 2, memo)\n    return memo[n]\n\nprint(fib(10))   # 55",
+      "caption": "Memoisation: the recursion stays, the recomputation vanishes. O(n) instead of O(2^n)."
+    },
+    {
+      "type": "h2",
+      "text": "Memoisation vs tabulation"
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Aspect",
+        "Memoisation (top-down)",
+        "Tabulation (bottom-up)"
+      ],
+      "rows": [
+        [
+          "Direction",
+          "Start from the goal, recurse into subproblems",
+          "Start from base cases, fill forward"
+        ],
+        [
+          "Subproblems computed",
+          "Only those actually needed",
+          "All of them"
+        ],
+        [
+          "Overhead",
+          "Recursion stack; deep inputs can overflow",
+          "Plain loops; no recursion limit issues"
+        ],
+        [
+          "Space",
+          "Cache plus stack",
+          "Table only; can often be flattened to one row"
+        ],
+        [
+          "Best when",
+          "Exploring a problem for the first time",
+          "The dependency order is clear and all cells matter"
+        ]
+      ]
+    },
+    {
+      "type": "p",
+      "md": "The two produce identical answers; the choice is ergonomic. A working memoised recursion converts to tabulation by reading the recurrence bottom-up - and tabulation often admits a **space optimisation**: when a cell depends only on the previous row (as in knapsack), keep one row and overwrite it. In finance terms, a lattice option pricer is tabulation: fill today's values from tomorrow's, layer by layer."
+    },
+    {
+      "type": "h2",
+      "text": "Worked table 1: longest common subsequence"
+    },
+    {
+      "type": "p",
+      "md": "Given $X = \\text{ABCB}$ and $Y = \\text{BDCB}$, the longest common subsequence (LCS) satisfies $\\text{dp}[i][j] = \\text{LCS}$ of the first $i$ letters of $X$ and first $j$ of $Y$: if the letters match, $\\text{dp}[i][j] = \\text{dp}[i-1][j-1] + 1$; otherwise $\\max(\\text{dp}[i-1][j], \\text{dp}[i][j-1])$. Each cell depends only on its top, left and top-left neighbours - fill row by row."
+    },
+    {
+      "type": "table",
+      "headers": [
+        "",
+        "B",
+        "D",
+        "C",
+        "B"
+      ],
+      "rows": [
+        [
+          "A (row 1)",
+          "0",
+          "0",
+          "0",
+          "0"
+        ],
+        [
+          "B (row 2)",
+          "1",
+          "1",
+          "1",
+          "1"
+        ],
+        [
+          "C (row 3)",
+          "1",
+          "1",
+          "2",
+          "2"
+        ],
+        [
+          "B (row 4)",
+          "1",
+          "2",
+          "2",
+          "3"
+        ]
+      ]
+    },
+    {
+      "type": "steps",
+      "title": "Reading the table",
+      "items": [
+        "Row A: no letter of $Y$ is A, so all zeros.",
+        "Row B, column B: match, $\\text{dp}[1][0] + 1 = 1$. Everything in row 2 is at least 1 (B is common).",
+        "Row C, column C: match, $\\text{dp}[2][2] + 1 = 2$ - the common prefix is BC.",
+        "Row B, column B: match again, $\\text{dp}[3][3] + 1 = 3$. Answer: $\\text{dp}[4][4] = 3$, the subsequence **BCB**."
+      ]
+    },
+    {
+      "type": "h2",
+      "text": "Worked table 2: 0/1 knapsack"
+    },
+    {
+      "type": "p",
+      "md": "Items A(2,3), B(3,4), C(4,5), D(5,6) - (weight, value) - with capacity 5. Row $i$, column $c$ answers: best value using the first $i$ items within weight $c$. Recurrence: $\\text{dp}[i][c] = \\max(\\text{dp}[i-1][c], \\text{dp}[i-1][c-w_i] + v_i)$ - skip the item, or take it on top of the best smaller-capacity packing."
+    },
+    {
+      "type": "table",
+      "headers": [
+        "item \\ capacity",
+        "0",
+        "1",
+        "2",
+        "3",
+        "4",
+        "5"
+      ],
+      "rows": [
+        [
+          "none",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0"
+        ],
+        [
+          "A w2 v3",
+          "0",
+          "0",
+          "3",
+          "3",
+          "3",
+          "3"
+        ],
+        [
+          "B w3 v4",
+          "0",
+          "0",
+          "3",
+          "4",
+          "4",
+          "7"
+        ],
+        [
+          "C w4 v5",
+          "0",
+          "0",
+          "3",
+          "4",
+          "5",
+          "7"
+        ],
+        [
+          "D w5 v6",
+          "0",
+          "0",
+          "3",
+          "4",
+          "5",
+          "7"
+        ]
+      ]
+    },
+    {
+      "type": "steps",
+      "title": "Reading the table",
+      "items": [
+        "Row A: item A fits at capacity 2, so columns 2-5 all become 3.",
+        "Row B, capacity 3: $\\max(\\text{skip}=3, \\text{take}=4) = 4$. Capacity 5: take B on top of A at capacity 2: $3+4 = 7$.",
+        "Row C, capacity 4: $\\max(4, \\text{take C}=5) = 5$; capacity 5: taking C needs capacity 1 left, worth $0+5=5 < 7$, so 7 stands.",
+        "Row D, capacity 5: $\\max(7, 0+6) = 7$. Answer: $\\text{dp}[4][5] = 7$ via items **A + B** ($2+3$ weight, $3+4$ value)."
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "cap = 5\nweights = [2, 3, 4, 5]\nvalues = [3, 4, 5, 6]\ndp = [0] * (cap + 1)\nfor w, v in zip(weights, values):\n    for c in range(cap, w - 1, -1):    # backwards: each item used at most once\n        dp[c] = max(dp[c], dp[c - w] + v)\nprint(dp[cap])                         # 7",
+      "caption": "Space-optimised knapsack: one row. The backwards loop prevents reusing an item twice."
+    },
+    {
+      "type": "p",
+      "md": "Dynamic programming is not a technique so much as a *recognition*: some problems have overlapping subproblems and optimal substructure, and when both hold, caching the subproblem answers turns exponential brute force into polynomial exactness. The skill is entirely in the recognition — spotting that a search space revisits the same states — and the discipline of writing the recurrence *before* any code."
+    },
+    {
+      "type": "steps",
+      "title": "Coin change [1, 4, 5], amount 13 — the greedy trap, then the DP",
+      "items": [
+        "Greedy (largest first): $5 + 5 + 1 + 1 + 1 = 13$ — five coins. Feels right, is wrong.",
+        "Recurrence: $dp[a] = 1 + \\min_{c \\in \\{1,4,5\\}, c \\le a} dp[a - c]$, with $dp[0] = 0$. One line, and the whole problem.",
+        "Fill the table left to right: $dp[1..13] = [1, 2, 3, 1, 1, 2, 3, 2, 2, 2, 3, 3, 3]$. Check a few: $dp[4] = 1$ (one 4-coin), $dp[8] = 2$ (4+4), $dp[13] = 3$.",
+        "Answer: 3 coins ($4 + 4 + 5$). Greedy's five-coin answer came from committing to a 5 at step one — an irrevocable local choice that no global optimum contains. **Greedy never revisits; DP tries everything and remembers.**",
+        "Complexity: $O(n \\cdot |coins|)$ time, $O(n)$ space. The same recurrence with a parent pointer table reconstructs *which* coins, not just how many."
+      ]
+    },
+    {
+      "type": "p",
+      "md": "The second canonical example — longest increasing subsequence on $[3, 1, 4, 1, 5, 9, 2, 6]$ — shows the other DP shape. Recurrence: $L[i] = 1 + \\max_{j < i, a_j < a_i} L[j]$. Filling gives $L = [1, 1, 2, 1, 3, 4, 2, 4]$: the LIS has length 4 (e.g. $3, 4, 5, 9$ or $1, 4, 5, 6$). $O(n^2)$ as written; the $O(n \\log n)$ variant (patience sorting with binary search) is the standard interview follow-up, and LIS itself is the pattern behind diff tools and volatility-regime sequence analysis."
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Property",
+        "Meaning",
+        "Quick check"
+      ],
+      "rows": [
+        [
+          "Property",
+          "Meaning",
+          "Quick check"
+        ],
+        [
+          "Optimal substructure",
+          "optimal solution contains optimal solutions to subproblems",
+          "can you combine two optimal sub-answers into an optimal answer?"
+        ],
+        [
+          "Overlapping subproblems",
+          "the naive recursion revisits the same states",
+          "draw the recursion tree: do branches repeat?"
+        ]
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Where DP lives in finance",
+      "md": "Optimal execution (the classic trading trajectory / liquidation problems), vega-neutral hedge rebalancing over discrete dates, and the exercise boundary of American options are all DP in the wild: a value today is a max/min over what you can do today plus the (cached) value of the state you land in. When you see \"multi-stage decision under uncertainty with a Markov state\", think Bellman equation — DP is just Bellman with the stochastic parts stripped."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Backwards or forwards?",
+      "md": "Iterating capacity **backwards** reads $\\text{dp}[c-w]$ from the *previous* item row - correct 0/1 behaviour. Iterating **forwards** lets an item contribute to $\\text{dp}[c-w]$ built from itself, which silently computes the *unbounded* knapsack (unlimited copies). Same loop, opposite problem: a one-character bug."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "DP in quant finance",
+      "md": "Binomial/trinomial option pricers are DP tables filled backwards from expiry; optimal execution and inventory problems write Hamilton-Jacobi-Bellman recurrences that discretise into exactly the knapsack-shaped tables above; LCS-style alignment scores similarity between two trade-signature streams."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Using coins $\\{1, 3, 4\\}$, build the min-coins table $\\text{dp}[a]$ = fewest coins making amount $a$, for $a = 0..6$, with recurrence $\\text{dp}[a] = \\min_c (\\text{dp}[a-c] + 1)$. Write every cell and state $\\text{dp}[5]$ and $\\text{dp}[6]$.",
+    "hints": [
+      "$\\text{dp}[0] = 0$; only coins $\\le a$ participate at each amount.",
+      "At amount 6, try ending with each coin in turn: 1, 3, then 4."
+    ],
+    "solution": "$\\text{dp} = [0, 1, 2, 1, 1, 2, 2]$. Trace: $\\text{dp}[1]=1$, $\\text{dp}[2]=2$ (1+1), $\\text{dp}[3]=1$, $\\text{dp}[4]=1$, $\\text{dp}[5]=\\min(\\text{dp}[4]+1, \\text{dp}[2]+1, \\text{dp}[1]+1)=\\min(2,3,2)=2$ (4+1), $\\text{dp}[6]=\\min(\\text{dp}[5]+1, \\text{dp}[3]+1, \\text{dp}[2]+1)=\\min(3,2,3)=\\textbf{2}$ via $3+3$. DP finds the optimum the greedy missed."
+  },
+  "independentExercise": {
+    "prompt": "Knapsack with capacity 6 and items A(2,3), B(3,4), C(4,5), D(5,7). (a) Fill the dp table for capacities 0..6 (you may do it row by row) and give the optimal value. (b) Which items achieve it? (c) What would the forward-loop bug compute, and for which variant of the problem is that behaviour actually correct?",
+    "hints": [
+      "Row D's take-branch at capacity 6 is $\\text{dp}[\\text{prev row}][1] + 7$.",
+      "Compare combinations of weight 6: which pairs/triples fit?"
+    ],
+    "solution": "(a) Key cells: after B, $\\text{dp}[5] = \\text{dp}[6] = 7$ (A+B). Row C: capacity 4 becomes 5; capacity 6: $\\max(7, \\text{dp}[2]+5=8) = 8$. Row D: capacity 6: $\\max(8, \\text{dp}[1]+7=7) = 8$. Optimal value **8**. (b) A + C: weights $2+4=6$, values $3+5=8$. (c) A forward capacity loop lets each item build on itself - the **unbounded knapsack** (unlimited copies), for which forwards is the correct order."
+  },
+  "commonMistakes": [
+    "Using a mutable default argument like `memo={}` in Python - the cache leaks across calls; pass the cache explicitly.",
+    "Iterating knapsack capacity forwards when items are 0/1, silently solving the unbounded variant.",
+    "Filling a DP table in the wrong dependency order, reading cells that are not computed yet.",
+    "Claiming DP applies whenever there is recursion - without overlapping subproblems, memoisation saves nothing.",
+    "Forgetting that memoisation caches *answers to states*, not inputs: state must capture everything the future depends on."
+  ],
+  "realWorldApplication": "Spell-checkers and diff tools compute edit distance/LCS; resource allocation and cutting-stock problems are knapsacks; bioinformatics sequence alignment is the LCS table at genome scale.",
+  "quantFinanceApplication": "Lattice option pricers fill DP tables backwards from expiry; optimal execution and inventory management discretise HJB equations into DP recurrences over time and holdings.",
+  "summary": [
+    "DP applies when a problem has optimal substructure AND overlapping subproblems.",
+    "Memoisation = top-down recursion plus a cache; tabulation = bottom-up table in dependency order; results are identical.",
+    "LCS recurrence: match extends the diagonal ($\\text{dp}[i-1][j-1]+1$), otherwise take the best of top and left.",
+    "0/1 knapsack recurrence: $\\max(\\text{skip}, \\text{take} = \\text{dp}[i-1][c-w_i] + v_i)$; one row suffices with a backwards capacity loop.",
+    "The backwards loop is load-bearing: forwards iteration turns 0/1 knapsack into unbounded knapsack."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "code-output",
+      "prompt": "What does this Python code print?",
+      "language": "python",
+      "code": "def fib(n, memo=None):\n    if memo is None:\n        memo = {}\n    if n in memo:\n        return memo[n]\n    if n < 2:\n        return n\n    memo[n] = fib(n - 1, memo) + fib(n - 2, memo)\n    return memo[n]\n\nprint(fib(10))",
+      "answer": "55",
+      "explanation": "Memoised Fibonacci: each $F(k)$ computed once, $F(10) = 55$, in $O(n)$ time instead of exponential."
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "Which pair of properties must a problem have for dynamic programming to help?",
+      "options": [
+        "Optimal substructure and overlapping subproblems",
+        "Sorted input and unique solution",
+        "Non-negative weights and acyclicity",
+        "Greedy-choice property and planarity"
+      ],
+      "answerIndex": 0,
+      "explanation": "Optimal substructure lets small optimal answers build large ones; overlap makes caching those answers worthwhile. Without overlap, memoisation buys nothing."
+    },
+    {
+      "id": "q3",
+      "type": "code-output",
+      "prompt": "What does this space-optimised 0/1 knapsack print?",
+      "language": "python",
+      "code": "cap = 5\nweights = [2, 3, 4, 5]\nvalues = [3, 4, 5, 6]\ndp = [0] * (cap + 1)\nfor w, v in zip(weights, values):\n    for c in range(cap, w - 1, -1):\n        dp[c] = max(dp[c], dp[c - w] + v)\nprint(dp[cap])",
+      "answer": "7",
+      "explanation": "Items A(2,3) + B(3,4) fill capacity 5 exactly for value $3+4=7$; C and D each add less when constrained to capacity 5."
+    },
+    {
+      "id": "q4",
+      "type": "numeric",
+      "prompt": "What is the length of the longest common subsequence of X = ABCB and Y = BDCB?",
+      "answer": 3,
+      "explanation": "The LCS is BCB (length 3), the value of the bottom-right cell of the dp table."
+    },
+    {
+      "id": "q5",
+      "type": "code-output",
+      "prompt": "What does this min-coin DP print?",
+      "language": "python",
+      "code": "coins = [1, 3, 4]\ndp = [0] + [99] * 6\nfor a in range(1, 7):\n    for c in coins:\n        if c <= a:\n            dp[a] = min(dp[a], dp[a - c] + 1)\nprint(dp[6])",
+      "answer": "2",
+      "explanation": "$\\text{dp}[6] = \\text{dp}[3] + 1 = 2$: coins $3+3$. The DP finds the optimum greedy missed."
+    },
+    {
+      "id": "q6",
+      "type": "ms",
+      "prompt": "Which statements about memoisation vs tabulation are true?",
+      "options": [
+        "Memoisation computes only the subproblems actually reached",
+        "Tabulation fills the table bottom-up in dependency order",
+        "Memoisation always uses less memory than tabulation",
+        "Both produce the same final answer for the same recurrence"
+      ],
+      "answerIndices": [
+        0,
+        1,
+        3
+      ],
+      "explanation": "Memoisation is lazy (only needed states), tabulation is systematic (all cells). Memory is not guaranteed smaller for memoisation - the cache plus recursion stack can exceed a flattened table. Both evaluate the same recurrence, so answers agree."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "formula",
+      "front": "LCS recurrence",
+      "back": "If $X_i = Y_j$: $dp[i][j] = dp[i-1][j-1] + 1$; else $dp[i][j] = \\max(dp[i-1][j], dp[i][j-1])$."
+    },
+    {
+      "type": "formula",
+      "front": "0/1 knapsack recurrence",
+      "back": "$dp[i][c] = \\max(dp[i-1][c],\\ dp[i-1][c-w_i] + v_i)$; iterate capacity backwards to keep each item single-use."
+    },
+    {
+      "type": "concept",
+      "front": "Memoisation vs tabulation in one line each",
+      "back": "Memoisation: top-down recursion + cache, computes only needed states. Tabulation: bottom-up loops in dependency order, computes all states, often flattens to one row."
+    },
+    {
+      "type": "error-identification",
+      "front": "A 0/1 knapsack implemented with a forward capacity loop returns too-large values. What is the bug?",
+      "back": "The forward loop lets item i build on dp cells it just created - each item is reusable. That computes the unbounded knapsack. Fix: iterate capacity from high to low."
+    }
+  ],
+  "references": [
+    {
+      "label": "Wikipedia - Dynamic programming",
+      "url": "https://en.wikipedia.org/wiki/Dynamic_programming"
+    },
+    {
+      "label": "Wikipedia - Longest common subsequence problem",
+      "url": "https://en.wikipedia.org/wiki/Longest_common_subsequence"
+    },
+    {
+      "label": "Wikipedia - Knapsack problem",
+      "url": "https://en.wikipedia.org/wiki/Knapsack_problem"
+    }
+  ],
+  "skills": [
+    "algorithms"
+  ]
+}

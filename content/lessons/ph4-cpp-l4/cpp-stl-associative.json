@@ -1,0 +1,232 @@
+{
+  "id": "cpp-stl-associative",
+  "moduleId": "ph4-cpp-l4",
+  "title": "Maps, Sets and Their Hashed Counterparts",
+  "estMinutes": 27,
+  "difficulty": "core",
+  "prereqs": ["cpp-stl-vector"],
+  "objectives": [
+    "Describe how std::map's red-black tree and std::unordered_map's hash table organise keys, and what each guarantees about ordering and complexity",
+    "Look up, insert and erase entries in both container families and predict the cost of each operation",
+    "Define custom key types correctly: operator< for ordered containers, operator== plus a hash for unordered ones",
+    "Maintain a price ladder in a std::map and extract the best bid or ask without scanning"
+  ],
+  "motivation": "An order book is a keyed structure: given a price, find the resting quantity - millions of times per second. The STL offers two associative families with different guarantees: red-black trees that keep keys ordered with a hard O(log n) bound, and hash tables with average O(1) but no ordering and an ugly worst case. Choosing between them is a daily decision in trading-system design, and it hinges on whether you fear the average or the tail.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Two families of associative containers"
+    },
+    {
+      "type": "p",
+      "md": "std::map<Key, Value> stores each entry in a node of a self-balancing binary search tree - in practice a **red-black tree**, whose colour invariants keep the height within a small constant multiple of $\\log_2 n$. Every find, insert and erase walks at most that height, giving a worst-case bound of $O(\\log n)$ regardless of input, and iterating the map always visits keys in ascending order. That ordering is not a bonus feature; it is the reason books, curves and ladders are built on map."
+    },
+    {
+      "type": "p",
+      "md": "std::unordered_map<Key, Value> is a hash table: a bucket array plus one node per entry. The key's hash selects a bucket; colliding keys share it through chaining. A lookup costs one hash plus a short chain walk - $O(1)$ on average - but there is no order to iterate, and when the load factor exceeds max_load_factor the table **rehashes** into a bigger array, invalidating every iterator. Under unlucky or adversarial hashing, a single lookup can degrade to $O(n)$."
+    },
+    {
+      "type": "interactive",
+      "component": "ComplexityCompare",
+      "params": {
+        "title": "One lookup among 1,000,000 keys",
+        "n": 1000000,
+        "operations": [
+          { "name": "unsorted vector scan", "complexity": "O(n)", "ops": 1000000 },
+          { "name": "std::map tree walk", "complexity": "O(log n)", "ops": 20 },
+          { "name": "std::unordered_map hash probe", "complexity": "O(1) average", "ops": 2 }
+        ]
+      },
+      "caption": "20 hops versus 1-2: the tree pays a constant-factor premium for hard worst-case bounds and sorted iteration."
+    },
+    {
+      "type": "table",
+      "headers": ["Aspect", "std::map", "std::unordered_map"],
+      "rows": [
+        ["find / insert / erase", "O(log n) worst case", "O(1) average, O(n) worst case"],
+        ["Iteration order", "ascending key order", "unspecified, implementation-defined"],
+        ["Memory per element", "node: key + value + 3 pointers + colour", "node: key + value + next pointer, plus bucket array"],
+        ["Iterator invalidation", "only when that element is erased", "rehash kills all iterators; references and pointers survive"],
+        ["Guaranteed bound", "yes - tree height", "no - depends on hash quality and load factor"]
+      ]
+    },
+    {
+      "type": "h2",
+      "text": "A bid ladder with std::map"
+    },
+    {
+      "type": "p",
+      "md": "Key a map by price and value it by resting size, and the tree hands you the ladder. operator[] default-creates a level with size 0 and then accumulates, while the tree keeps prices sorted automatically. The best bid is the last key - one step back from end() via std::prev - and the best ask on an ask-side map is begin(). Both reads are O(1) on top of the O(log n) insert, and no scan of the book is ever needed to find the top."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <map>\n#include <iterator>\n#include <iostream>\n\nint main() {\n    std::map<double, int> book;          // price -> resting size, ascending\n    book[101.50] += 300;\n    book[101.25] += 500;\n    book[101.50] += 200;                 // same level: accumulates\n    book[100.75] += 100;\n\n    std::cout << \"levels=\" << book.size() << \"\\n\";\n    auto best = std::prev(book.end());   // highest price = best bid\n    std::cout << \"best=\" << best->first << \" size=\" << best->second << \"\\n\";\n    best->second -= 350;                 // lift 350 at the top level\n    std::cout << \"best=\" << best->first << \" size=\" << best->second << \"\\n\";\n}",
+      "caption": "The tree is the bookkeeping: merged levels, sorted prices, top-of-book in one step."
+    },
+    {
+      "type": "p",
+      "md": "The trace shows the tree doing the work: two orders at 101.50 accumulate into one level, 100.75 slots in below, and prev(end()) finds the top of the book without scanning. After 350 lots are lifted at 101.50 the level shrinks to 150 in place - no reordering was needed because the key never changed. When a level's size hits zero you erase it with book.erase(price), which removes the node in O(log n)."
+    },
+    {
+      "type": "h2",
+      "text": "Custom keys for both families"
+    },
+    {
+      "type": "p",
+      "md": "An ordered container needs a strict weak ordering on its keys: either the type defines bool operator<(const T&, const T&) const, or you pass a comparator as the third template argument of map. A hash container needs two different things: operator== for equality (used to confirm a candidate after the hash matches) and a hash functor - either a std::hash specialization or a type you pass as the third template argument of unordered_map. Forgetting equality is the classic bug: hashing alone only narrows candidates, it cannot decide them."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <unordered_map>\n#include <string>\n#include <cstdint>\n#include <functional>\n#include <iostream>\n\nstruct Symbol {\n    std::string venue;\n    std::uint32_t id;\n    bool operator==(const Symbol& o) const { return venue == o.venue && id == o.id; }\n};\n\nstruct SymbolHash {\n    std::size_t operator()(const Symbol& s) const {\n        std::size_t h = std::hash<std::string>{}(s.venue);\n        return h ^ (std::hash<std::uint32_t>{}(s.id) << 1);\n    }\n};\n\nint main() {\n    std::unordered_map<Symbol, double, SymbolHash> position;\n    position[{\"XEUR\", 1177}] = 12.0;     // e.g. FGBM futures\n    position[{\"XEUR\", 1177}] += 3.0;\n    std::cout << position[{\"XEUR\", 1177}] << \"\\n\";\n}",
+      "caption": "Hash narrows to one bucket, operator== confirms the entry: both are required."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "double keys on a price ladder",
+      "md": "Using double prices as map keys works only if the same price is always built the same way: $0.1 + 0.2 \\neq 0.3$ in floating point, so a level computed by summation lands on a different key than the literal 0.3, splitting one price level in two. Production books store **integer tick counts** (price / tickSize as a long long) and convert for display - exact keys, exact matching."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Tail latency is a feature",
+      "md": "unordered_map's average O(1) hides an O(n) worst case whenever the table rehashes mid-session or collisions cluster. A matching core that occasionally stalls while a million-entry table rehashes has a tail-latency problem even if its mean lookup time is superb. Risk-sensitive paths often pay map's O(log n) - roughly 20 hops instead of 1-2 - for a bound that never surprises."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "An ask ladder is a std::map<double, int> keyed by price (asks hold the sell side, so the *lowest* price is best). Orders arrive: (100.50, 300), (100.75, 200), (100.50, 400), (100.25, 100). (a) State asks.size() after the four arrivals. (b) State asks.begin()->first and its size. (c) 150 lots then trade at the best level, which had size 100. What does begin() point to afterwards?",
+    "hints": [
+      "Map keys are unique: two orders at the same price merge into one level.",
+      "begin() of a map keyed by price is the lowest price - on the ask side that is the best ask."
+    ],
+    "solution": "(a) Levels: 100.25 -> 100, 100.50 -> 300 + 400 = 700, 100.75 -> 200, so **size() == 3**. (b) begin() is the lowest price: **100.25 with size 100** - the best ask. (c) Lifting 150 exceeds the 100 resting there, the level empties and is erased, so the new begin() is **100.50 with size 700**. On the ask side the best price is the smallest - the exact mirror of the bid side, where the best is the largest."
+  },
+  "independentExercise": {
+    "prompt": "Fills arrive as (BUY 100 ABC), (SELL 40 ABC), (BUY 10 DEF), (SELL 130 ABC). Maintain net positions in a std::map<std::string, int> where BUY adds and SELL subtracts. (a) Report the net position per symbol. (b) State the order in which std::map iterates the symbols. (c) Name one concrete reason a desk might keep the same data in std::unordered_map<std::string, int> instead, and one guarantee they would give up by doing so.",
+    "hints": [
+      "Signed arithmetic: SELL 130 against a +60 long flips the position short.",
+      "Map iteration visits keys in ascending order."
+    ],
+    "solution": "(a) ABC: $100 - 40 - 130 = $ **-70** (short 70); DEF: **+10**. (b) Alphabetical by key: ABC, then DEF - the tree iterates ascending. (c) An unordered_map gives average O(1) lookup for a hot symbol-to-position cache over thousands of instruments; what is given up is the hard O(log n) worst case (collisions or a rehash can degrade to O(n)) and ordered iteration, which matters whenever reports need symbols sorted."
+  },
+  "commonMistakes": [
+    "Using book[price] to probe for a level's existence - operator[] inserts a zero-size level on a miss; use find() or count().",
+    "Expecting unordered_map iteration in insertion or sorted order - it is unspecified and changes across rehashes and implementations.",
+    "Writing a hash functor but no operator== for a custom key - the table cannot confirm which entry in a bucket is the match.",
+    "Keying a book by double when prices are built by summation - floating-point drift splits one level into two; use integer ticks.",
+    "Assuming rehash invalidates unordered_map references - iterators die, but references and pointers to elements remain valid."
+  ],
+  "realWorldApplication": "Price ladders, symbol-to-position caches, reference-data lookups and fixing-time calendars are all keyed structures; the map-versus-unordered_map decision appears in nearly every trading-system code review.",
+  "quantFinanceApplication": "The lesson's ladder is the core of every book builder: keyed by tick, accumulated by order, read at prev(end()) for the best bid - and the tick-count key trick is how real systems avoid floating-point key drift.",
+  "summary": [
+    "std::map is a red-black tree: O(log n) worst-case find/insert/erase and always-sorted iteration; node-based, so iterators are stable except on erase.",
+    "std::unordered_map is a hash table: O(1) average and O(n) worst case; no ordering; rehash invalidates iterators but references and pointers survive.",
+    "Ordered containers need operator< (or a comparator); hash containers need operator== plus a hash functor.",
+    "The best bid is prev(map.end()) on a price-keyed bid map; the best ask is begin() on the ask map - both O(1).",
+    "Prefer integer tick counts over double keys for prices: exactness of keys decides correctness of matching."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "What is the worst-case complexity of std::map::find?",
+      "options": [
+        "O(1)",
+        "O(log n)",
+        "O(n)",
+        "O(n log n)"
+      ],
+      "answerIndex": 1,
+      "explanation": "The map is a self-balancing red-black tree, so its height is O(log n) and every lookup walks at most that many nodes - a hard guarantee, not an average."
+    },
+    {
+      "id": "q2",
+      "type": "code-output",
+      "prompt": "What does this program print?",
+      "language": "cpp",
+      "code": "#include <map>\n#include <iterator>\n#include <iostream>\n\nint main() {\n    std::map<double, int> book;\n    book[101.50] += 300;\n    book[101.25] += 500;\n    book[101.50] += 200;\n    book[100.75] += 100;\n\n    std::cout << \"levels=\" << book.size() << \"\\n\";\n    auto best = std::prev(book.end());\n    std::cout << \"best=\" << best->first << \" size=\" << best->second << \"\\n\";\n    best->second -= 350;\n    std::cout << \"best=\" << best->first << \" size=\" << best->second << \"\\n\";\n}",
+      "answer": "levels=3\nbest=101.5 size=500\nbest=101.5 size=150",
+      "explanation": "operator[] merges the two 101.50 orders into one level, so 3 levels exist (100.75, 101.25, 101.50). prev(end()) is the highest key 101.50 with 300+200=500 resting; subtracting 350 leaves 150. The tree stays ordered throughout, so no scan is needed."
+    },
+    {
+      "id": "q3",
+      "type": "mcq",
+      "prompt": "To use your own struct Key in std::unordered_map<Key, Value>, you must provide:",
+      "options": [
+        "operator< only",
+        "operator== and a hash functor (or a std::hash specialization)",
+        "operator< and operator==",
+        "nothing - any type works as a key"
+      ],
+      "answerIndex": 1,
+      "explanation": "The hash selects a bucket, then operator== confirms which entry in it matches. operator< is irrelevant to hash containers - that is the ordered family's requirement."
+    },
+    {
+      "id": "q4",
+      "type": "numeric",
+      "prompt": "An unordered_map holds 1024 entries and every key hashes to the same bucket. How many element comparisons can a failed find make in the worst case?",
+      "answer": 1024,
+      "explanation": "One hash lands on the bucket, then the whole collision chain is walked with operator==: all 1024 entries. That O(n) worst case is what the tree's O(log n) bound protects against."
+    },
+    {
+      "id": "q5",
+      "type": "ms",
+      "prompt": "Which statements are true?",
+      "options": [
+        "std::map iterates keys in ascending order",
+        "Rehashing an unordered_map invalidates references to its elements",
+        "map[key] on a missing key inserts a default-constructed value",
+        "unordered_map offers O(1) average lookup"
+      ],
+      "answerIndices": [0, 2, 3],
+      "explanation": "Tree invariants give sorted iteration; operator[] inserts a default on a miss (use find() to probe); hashing gives average O(1). Rehash invalidates iterators, but references and pointers to elements stay valid because nodes do not move."
+    },
+    {
+      "id": "q6",
+      "type": "short",
+      "prompt": "Name two concrete reasons a trading system might choose std::map over std::unordered_map for its price ladder.",
+      "modelAnswer": "map guarantees worst-case O(log n) with no rehash or collision tail, and it keeps prices sorted so best bid/ask and ordered sweeps are direct.",
+      "keywords": ["worst", "log", "rehash", "ordered", "sorted", "tail", "predictable"],
+      "explanation": "Predictability (hard bounds, no mid-session rehash stall) and ordering (best price, range sweeps, adjacent-level walks) are the two standard answers; both trade a small constant-factor cost for guarantees."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "formula",
+      "front": "Complexity: std::map vs std::unordered_map (find / insert / erase)",
+      "back": "map: O(log n) worst case (balanced tree height). unordered_map: O(1) average, O(n) worst case (collisions or rehash)."
+    },
+    {
+      "type": "definition",
+      "front": "Why is std::map's bound guaranteed?",
+      "back": "It is a self-balancing red-black tree: the height stays within a small multiple of log2(n), so every operation walks at most O(log n) nodes no matter the input."
+    },
+    {
+      "type": "code-output",
+      "front": "map<double,int> book; book[101.50] += 300; book[101.50] += 200; - what is book[101.50] and how many levels exist?",
+      "back": "500, in one level - operator[] default-creates a missing key with value 0, then both orders accumulate at the same key."
+    },
+    {
+      "type": "concept",
+      "front": "What survives a rehash of std::unordered_map?",
+      "back": "References and pointers to elements remain valid (nodes do not move); all iterators are invalidated. Rehash happens when the load factor exceeds max_load_factor."
+    }
+  ],
+  "references": [
+    {
+      "label": "cppreference - std::map",
+      "url": "https://en.cppreference.com/w/cpp/container/map"
+    },
+    {
+      "label": "cppreference - std::unordered_map",
+      "url": "https://en.cppreference.com/w/cpp/container/unordered_map"
+    },
+    {
+      "label": "cppreference - std::hash",
+      "url": "https://en.cppreference.com/w/cpp/utility/hash"
+    }
+  ],
+  "skills": ["cpp-stl"]
+}

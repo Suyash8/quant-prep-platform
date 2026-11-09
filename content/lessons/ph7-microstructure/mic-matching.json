@@ -1,0 +1,356 @@
+{
+  "id": "mic-matching",
+  "moduleId": "ph7-microstructure",
+  "title": "Matching Engines and Price-Time Priority",
+  "estMinutes": 27,
+  "difficulty": "advanced",
+  "prereqs": [
+    "mic-order-books"
+  ],
+  "objectives": [
+    "State the price-time priority rule and apply it to a queue of orders",
+    "Step through a sequence of incoming orders and determine every trade, price and remaining book state",
+    "Explain why the resting order's price wins in a cross",
+    "Describe queue position and why microseconds of arrival order have economic value"
+  ],
+  "motivation": "When a buy at \\$100.02 meets a sell at \\$99.99, which price executes? The answer is decided by the matching engine's priority rules, and those rules shape how every participant trades - from why market makers race to update quotes to why your order sometimes fills at a better price than you offered. Walking a matching engine by hand is the fastest way to internalise market behaviour.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "The priority rules"
+    },
+    {
+      "type": "list",
+      "items": [
+        "**Price priority**: better prices first. Bids: highest buys first. Asks: lowest sells first.",
+        "**Time priority**: at equal price, the order that arrived earlier fills first - first in, first out (FIFO) within each price level.",
+        "**Crossing rule**: when a new marketable order meets a resting order, the trade executes at the **resting order's price** - the reward for having supplied liquidity first."
+      ]
+    },
+    {
+      "type": "p",
+      "md": "These three rules - price, then time, then resting-price execution - are the heart of price-time priority matching, used by most major exchanges (some venues add pro-rata or size priority for particular products, but the logic here generalises). An order that cannot immediately trade *rests* in the book; one that can is a *marketable limit order*, aggressive even though it is technically a limit order."
+    },
+    {
+      "type": "h2",
+      "text": "Walking the engine: seven orders, step by step"
+    },
+    {
+      "type": "p",
+      "md": "A matching engine is a deterministic function from an incoming order and a book state to a new book state plus zero or more fills. That sounds bureaucratic until you realise that *everything* about market fairness — who gets filled, at what price, in what order — is decided by two tie-break rules the engine applies: price priority first, then time priority within a price. There is no judgement call inside the engine. That is the point."
+    },
+    {
+      "type": "steps",
+      "title": "Worked match: a market buy arrives at a resting book",
+      "items": [
+        "Resting asks (the sell side): $300@100.10$ (arrived 09:30:01), $500@100.10$ (09:30:04), $400@100.12$ (09:29:58), $200@100.15$ (09:30:02).",
+        "An aggressive **market buy for 600** arrives. Price priority scans ask levels upward: everything at $100.10$ is cheaper than anything at $100.12$.",
+        "At $100.10$ two orders rest. Time priority ranks them by arrival: the $300$ from 09:30:01 is first, then the $500$ from 09:30:04.",
+        "Fills: $300@100.10$ (fully filled, removed), $300@100.10$ against the second order (partially filled, $200$ remains resting at $100.10$). The incoming order is fully satisfied and disappears.",
+        "Post-trade book state: asks are now $200@100.10$, $400@100.12$, $200@100.15$. Note the $100.12$ order arrived *earlier* than the $100.15$ one but sits at a better price — price always outranks time."
+      ]
+    },
+    {
+      "type": "p",
+      "md": "Two consequences follow. First, **queue position is an asset**: an order resting at a popular price is effectively holding an option on being filled, and strategies that cancel-and-replace pay for it with queue loss. Second, the engine's determinism is what makes a provable audit trail possible — given the same sequence of inputs, any correct re-implementation produces the same fills, which is how exchanges defend themselves in disputes."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Where you will meet this",
+      "md": "Interview favourite: *\"You are first in queue at the best bid; a market sell for 10× your size arrives — what happens to your fill?\"* Answer: you are filled fully at your price before anyone behind you gets anything. Follow-up: what if the incoming order was priced *through* the book? Then it sweeps levels — each level fills in time order until the incoming price limit binds."
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Design choice",
+        "Common default",
+        "Why it matters"
+      ],
+      "rows": [
+        [
+          "Priority at same price",
+          "FIFO (time)",
+          "Later designs (e.g. pro-rata in some futures) change queueing strategy fundamentally"
+        ],
+        [
+          "Matching price",
+          "Resting order's price",
+          "Price improvement exists in some venues; matters for expected fill quality"
+        ],
+        [
+          "Self-trade prevention",
+          "Reject / cancel newest",
+          "A firm's own two orders must not wash volume"
+        ],
+        [
+          "Lot handling",
+          "Round lots first",
+          "Odd lots can match after round lots on some venues"
+        ]
+      ]
+    },
+    {
+      "type": "steps",
+      "title": "Hypothetical sequence on one symbol (all quantities in shares)",
+      "items": [
+        "**1. Buy limit 500 @ 100.00.** Empty book: no match; it rests. Book: bid 500@100.00.",
+        "**2. Sell limit 300 @ 100.02.** 100.02 > 100.00 - no cross; rests. Book: bid 500@100.00, ask 300@100.02. Spread = 0.02.",
+        "**3. Buy limit 200 @ 100.02.** Crosses the resting ask. Trade: **200 @ 100.02** (resting price). Remaining: ask 100@100.02. The buyer's aggressive limit just paid the full spread.",
+        "**4. Sell limit 400 @ 99.99.** 99.99 < best bid 100.00 - crosses. Trade: **400 @ 100.00** (resting bid's price). Remaining: bid 100@100.00.",
+        "**5. Buy limit 300 @ 100.01.** Best ask is 100.02; 100.01 does not reach it. Rests. Book: bids 300@100.01 and 100@100.00; ask 100@100.02.",
+        "**6. Buy limit 200 @ 100.01.** Same price as step 5's bid - joins the back of the FIFO queue. Bids: 300@100.01 (older), 200@100.01 (newer), 100@100.00.",
+        "**7. Sell limit 250 @ 100.01.** Crosses the 100.01 bid level. Time priority: the older 300-lot fills first. Trade: **250 @ 100.01**; the remaining bid queue is 50@100.01 (old) ahead of 200@100.01 (new)."
+      ]
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Step",
+        "Incoming order",
+        "Trade(s)",
+        "Book after"
+      ],
+      "rows": [
+        [
+          "1",
+          "Buy 500 @ 100.00",
+          "none",
+          "B: 500@100.00"
+        ],
+        [
+          "2",
+          "Sell 300 @ 100.02",
+          "none",
+          "B: 500@100.00 / A: 300@100.02"
+        ],
+        [
+          "3",
+          "Buy 200 @ 100.02",
+          "200 @ 100.02",
+          "B: 500@100.00 / A: 100@100.02"
+        ],
+        [
+          "4",
+          "Sell 400 @ 99.99",
+          "400 @ 100.00",
+          "B: 100@100.00 / A: 100@100.02"
+        ],
+        [
+          "5",
+          "Buy 300 @ 100.01",
+          "none",
+          "B: 300@100.01, 100@100.00 / A: 100@100.02"
+        ],
+        [
+          "6",
+          "Buy 200 @ 100.01",
+          "none (queues)",
+          "same, queue behind step 5"
+        ],
+        [
+          "7",
+          "Sell 250 @ 100.01",
+          "250 @ 100.01",
+          "B: 50@100.01, 200@100.01 / A: 100@100.02"
+        ]
+      ]
+    },
+    {
+      "type": "interactive",
+      "component": "MatchingSim",
+      "params": {
+        "orders": [
+          {
+            "side": "buy",
+            "qty": 500,
+            "price": 100.0
+          },
+          {
+            "side": "sell",
+            "qty": 300,
+            "price": 100.02
+          },
+          {
+            "side": "buy",
+            "qty": 200,
+            "price": 100.02
+          },
+          {
+            "side": "sell",
+            "qty": 400,
+            "price": 99.99
+          },
+          {
+            "side": "buy",
+            "qty": 300,
+            "price": 100.01
+          }
+        ]
+      },
+      "caption": "Replay the worked sequence: watch trades print at the resting order's price and the queue form behind equal-priced bids."
+    },
+    {
+      "type": "h2",
+      "text": "Why queue position is a traded asset"
+    },
+    {
+      "type": "p",
+      "md": "Step 7 shows the economics: of 250 shares sold, all went to the *older* 300-lot. Being first in the FIFO queue converts directly into fill probability, so firms invest in the fastest links to the exchange - colocation, direct feeds, kernel-bypass networking - to gain microseconds of arrival-time advantage. Note what matters is the *engine's* receipt order, not your send order: two packets arriving nearly simultaneously are sequenced by the venue, which is why latency competition exists at all."
+    },
+    {
+      "type": "callout",
+      "variant": "info",
+      "title": "Matching engines are deterministic",
+      "md": "Given the same sequence of order events, a price-time engine produces exactly the same trades - no randomness anywhere. This determinism is what makes exchange simulators faithful: you can unit-test your strategy logic against a replayed book and get identical fills to a recorded session (modulo data completeness)."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Partial fills and resting remainder",
+      "md": "Every match consumes only the smaller of the two quantities; the larger order survives with the remainder. Step 3 traded 200 of a 300-lot sell - the remaining 100 stayed at the front of its queue. Forgetting the remainder is the classic bug in hand-rolled matching engines."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Continue the sequence: step 8 is a **sell limit 150 @ 100.00**. State which order(s) it trades with, at what price(s), the trade quantity, and the resulting bid-side book (prices and queue order).",
+    "hints": [
+      "A sell at 100.00 crosses the best bid 100.01, not 100.00.",
+      "Time priority inside the 100.01 level: the 50-share remainder is older than the 200-share order."
+    ],
+    "solution": "The sell crosses bids at 100.01. Trade: **150 @ 100.01**, taken entirely from the older 50@100.01 first, then 100 more from the 200@100.01 order. After: 50@100.01 (fully filled, removed) and 100@100.01 remaining, then 100@100.00 behind it. The resting-price rule paid the resting bids their quoted 100.01."
+  },
+  "independentExercise": {
+    "prompt": "Starting from an empty book: (1) sell limit 600 @ 10.05 rests; (2) buy limit 250 @ 10.07 arrives; (3) buy limit 100 @ 10.05 arrives; (4) sell limit 200 @ 10.05 arrives. For each step, give any trade (quantity and price) and the book state. What is the ask-side queue at the end, and why does step 4 produce no trade?",
+    "hints": [
+      "Step 3: decide whether a buy priced exactly at the best ask is marketable (it is: buy price $\\ge$ best ask).",
+      "Step 4: a sell crosses only against *bids* - check whether any bids exist by then."
+    ],
+    "solution": "Step 1: no trade; ask 600@10.05. Step 2: the buy crosses the resting ask - trade **250 @ 10.05** (resting ask's price); ask remainder 350@10.05. Step 3: a buy at 10.05 with best ask 10.05 crosses, because a buy price $\\ge$ best ask is marketable - trade **100 @ 10.05**; ask remainder 250@10.05. Step 4: the sell at 10.05 looks for bids to cross - none exist - so it rests on the ask side *behind* the older 250@10.05 (time priority). No trade occurs because no bid exists to cross."
+  },
+  "commonMistakes": [
+    "Executing crosses at the incoming order's price instead of the resting order's price - the resting side earned its price by waiting.",
+    "Ignoring the FIFO queue at a price level: equal-price orders fill oldest first.",
+    "Forgetting the unfilled remainder of the larger order stays in the book.",
+    "Believing a buy at exactly the ask cannot cross - buy price $\\ge$ best ask matches in standard engines."
+  ],
+  "realWorldApplication": "Exchange matching engines (NYSE, Nasdaq, CME, crypto venues) implement these rules in low-latency software; compliance teams reconstruct the exact book from order-level audit trails to investigate trade executions, using precisely the step-by-step replay shown here.",
+  "quantFinanceApplication": "Backtesters and execution simulators implement price-time matching to generate fills; a quant dev who can walk this algorithm by hand can audit the simulator that decides whether a strategy looks profitable.",
+  "summary": [
+    "Priority is price first, then time (FIFO within a price level), and crosses execute at the resting order's price.",
+    "Marketable limit orders cross the spread immediately; non-marketable ones rest and provide liquidity.",
+    "Partial fills leave the remainder resting, keeping its queue priority.",
+    "Queue position has economic value, which is why latency competition exists - the engine's arrival order decides fills."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "A new buy limit at 100.02 meets a resting sell at 100.00. At what price does the trade execute?",
+      "options": [
+        "100.02 - the incoming order's price",
+        "100.00 - the resting order's price",
+        "101.00 - the midpoint... actually 100.01",
+        "No trade occurs"
+      ],
+      "answerIndex": 1,
+      "explanation": "The resting order's price wins: it supplied liquidity first, and the aggressor accepts that price to trade immediately."
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "Two buy orders rest at the same price. Which fills first when a sell arrives?",
+      "options": [
+        "The larger order",
+        "The order that arrived earlier (FIFO)",
+        "The one from the faster broker",
+        "Pro-rata, split by size"
+      ],
+      "answerIndex": 1,
+      "explanation": "Price-time priority uses time as the tie-breaker at equal price: first in, first out. (Some derivatives venues use pro-rata, but the standard equity rule is FIFO.)"
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "Book: ask 100@100.02. An incoming buy limit for 200 @ 100.02 executes fully. How many shares remain at the 100.02 ask level?",
+      "answer": 0,
+      "explanation": "The resting 100 shares fill; the level is exhausted and removed - the incoming order's remainder (100 shares) would then rest as a new bid at 100.02."
+    },
+    {
+      "id": "q4",
+      "type": "short",
+      "prompt": "Explain in one or two sentences why firms pay for colocation and low-latency links in a price-time market.",
+      "modelAnswer": "Fill priority within a price level depends on the engine's arrival order, so arriving microseconds earlier converts directly into higher fill probability and better queue position; colocation and fast links buy that arrival advantage.",
+      "keywords": [
+        "arrival",
+        "queue",
+        "latency"
+      ],
+      "explanation": "Time priority makes arrival order economically valuable; latency is the mechanism that improves it."
+    },
+    {
+      "id": "q5",
+      "type": "mcq",
+      "prompt": "A buy limit for 300 @ 99.99 arrives with best ask at 99.98. What happens?",
+      "options": [
+        "No trade - the buy price is above the ask, which is illegal",
+        "It crosses: trades 300 @ 99.98 (resting ask price)",
+        "It crosses: trades 300 @ 99.99",
+        "It rests as a bid at 99.99"
+      ],
+      "answerIndex": 1,
+      "explanation": "Buy $\\ge$ best ask means marketable: it fills immediately at the resting ask's 99.98. If a remainder existed it would rest at 99.99 as the new best bid."
+    },
+    {
+      "id": "q6",
+      "type": "ms",
+      "prompt": "Which statements about matching engines are TRUE?",
+      "options": [
+        "They are deterministic: same event sequence, same trades",
+        "Partial fills leave the unfilled remainder resting with its original priority",
+        "They always execute at the mid-price",
+        "Price priority outranks time priority"
+      ],
+      "answerIndices": [
+        0,
+        1,
+        3
+      ],
+      "explanation": "Engines are deterministic replays of their event streams, remainders keep their queue position, and price priority is evaluated before time priority. Mid-price execution is not part of standard price-time matching."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "Price-time priority rules",
+      "back": "Price priority first (best prices), then FIFO within each price level; crosses execute at the resting order's price."
+    },
+    {
+      "type": "concept",
+      "front": "Whose price wins in a cross?",
+      "back": "The resting (liquidity-providing) order's price - the aggressor pays the quoted price to trade immediately."
+    },
+    {
+      "type": "definition",
+      "front": "Marketable limit order",
+      "back": "A limit order whose price crosses the opposite best quote; it executes immediately like a market order but with a price cap/floor."
+    },
+    {
+      "type": "concept",
+      "front": "Why is queue position valuable?",
+      "back": "FIFO means earlier arrival fills first when liquidity trades at that level, so arrival time maps directly to fill probability."
+    }
+  ],
+  "references": [
+    {
+      "label": "Harris - Trading and Exchanges, Chapter on priority rules",
+      "url": "https://global.oup.com/academic/product/trading-and-exchanges-9780195164608"
+    },
+    {
+      "label": "Nasdaq - Matching and execution overview",
+      "url": "https://www.nasdaq.com/solutions/matching-technology"
+    }
+  ],
+  "skills": [
+    "microstructure"
+  ]
+}

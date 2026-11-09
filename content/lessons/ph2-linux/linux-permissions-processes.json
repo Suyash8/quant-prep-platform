@@ -1,0 +1,271 @@
+{
+  "id": "linux-permissions-processes",
+  "moduleId": "ph2-linux",
+  "title": "Permissions, Users and Processes",
+  "estMinutes": 25,
+  "difficulty": "foundation",
+  "prereqs": [
+    "linux-terminal-filesystem"
+  ],
+  "objectives": [
+    "Read ls -l permission strings and translate between rwx triplets and octal notation",
+    "Apply chmod and chown appropriately for shared production directories and secrets",
+    "Explain users, groups and least privilege, and why services run under dedicated accounts",
+    "List processes with ps and top, and terminate them with SIGTERM before resorting to SIGKILL"
+  ],
+  "motivation": "A graduate once 'fixed' a deployment by running chmod -R 777 /opt/quant; two weeks later the audit flagged that every service account could rewrite the order gateway. Permissions are how a shared production box keeps strategies, secrets and logs separated, and process management is how you deal with the strategy spinning at 400% CPU at 3am. Both skills are pure reflexes once built.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Users, groups and three triplets of bits"
+    },
+    {
+      "type": "p",
+      "md": "Linux is multi-user to its bones: every file has an **owning user** and an **owning group**, and there are three classes of accessor - the owner, the group, and everyone else (**others**). Each class gets a triplet of permission bits: **r** (read), **w** (write), **x** (execute). For files, x means 'can run this program'; for directories it means 'can enter and access entries inside' - a distinction people forget until they can list a directory but not cd into it."
+    },
+    {
+      "type": "code",
+      "lang": "bash",
+      "code": "$ ls -l /opt/quant/feed/run.sh\n-rwxr-x--- 1 quant ops 214 Mar  3 09:14 run.sh",
+      "caption": "Owner quant: rwx; group ops: r-x; others: nothing at all."
+    },
+    {
+      "type": "p",
+      "md": "That string decodes positionally: the first character is the type (- a regular file, d a directory), then three triplets. It is conventional to write each triplet as an **octal digit**, three bits valued 4 (read), 2 (write), 1 (execute):"
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Octal",
+        "Bits",
+        "Meaning"
+      ],
+      "rows": [
+        [
+          "7",
+          "rwx",
+          "read, write, execute"
+        ],
+        [
+          "6",
+          "rw-",
+          "read and write"
+        ],
+        [
+          "5",
+          "r-x",
+          "read and execute"
+        ],
+        [
+          "4",
+          "r--",
+          "read only"
+        ],
+        [
+          "0",
+          "---",
+          "no access"
+        ]
+      ]
+    },
+    {
+      "type": "p",
+      "md": "So run.sh's mode is 750. The workhorse commands: **chmod 640 secrets.key** sets rw-r-----; **chown quant:ops file** transfers ownership (it needs privilege); and ls -l is your X-ray. The desk defaults you should internalise: **600** for keys and secrets (owner only), **644** for ordinary data files, **755** for programs and shared directories, **750** when a group needs access but outsiders must not."
+    },
+    {
+      "type": "callout",
+      "variant": "warn",
+      "title": "The 777 reflex",
+      "md": "chmod -R 777 'fixes' permission errors by giving the whole machine write access. On a production box that means any compromised account - or any buggy service - can rewrite your binaries and config. Fix the ownership (chown) or the specific mode instead; least privilege is the rule, and auditors look for exactly this."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Secrets and service users",
+      "md": "API keys and certificates belong to a dedicated service user (deploy, feedhandler), not to you and never to root: mode 600 on the file, owned by the service. If your risk engine can read another team's credentials, that is an incident waiting for a timestamp. You will use this exact scheme when you first SSH into a production box in the monitoring lesson."
+    },
+    {
+      "type": "h2",
+      "text": "Processes: programs in motion"
+    },
+    {
+      "type": "p",
+      "md": "A **program** is bytes on disk; a **process** is that program running with a **PID** (process id), its own memory, and its own file descriptors. ps lists them:"
+    },
+    {
+      "type": "code",
+      "lang": "bash",
+      "code": "$ ps -u quant -o pid,pcpu,comm\n  PID %CPU COMMAND\n 8412  3.0 feedhandler\n 8417 97.2 strategy",
+      "caption": "97.2% CPU on a strategy is either real work or a runaway loop - top tells you which over time."
+    },
+    {
+      "type": "p",
+      "md": "**top** (or htop) is the live view: per-process CPU and memory, plus system-wide load. One subtlety: a process's CPU percentage can exceed 100 when it uses multiple cores. When a process misbehaves you send it a **signal**: kill -15 PID requests **SIGTERM** - a polite request the process may catch to flush logs and cancel open orders. kill -9 PID sends **SIGKILL**, which the kernel delivers without the process ever running code: guaranteed death, zero cleanup, possibly stale lock files and half-written state. The professional order of operations is TERM, wait, then KILL as the last resort."
+    },
+    {
+      "type": "code",
+      "lang": "bash",
+      "code": "$ kill -15 8417\n$ ps -p 8417 > /dev/null || echo 'process exited'\nprocess exited",
+      "caption": "Send TERM, verify with ps; reach for -9 only if the process refuses to die."
+    },
+    {
+      "type": "interactive",
+      "component": "PermissionBits",
+      "params": {
+        "initialOctal": "755"
+      }
+    },
+    {
+      "type": "p",
+      "md": "Shells can also start processes in the background with **&** (for example, a long backtest you want to keep running), list them with **jobs**, and bring one back to the foreground with **fg %1** - handy when one terminal must juggle several long-running tasks."
+    },
+    {
+      "type": "h2",
+      "text": "top in thirty seconds"
+    },
+    {
+      "type": "p",
+      "md": "Open top on a busy box and read three things first: the load line (what the monitoring lesson teaches you to interpret against core count), the per-process list sorted by CPU (press P; press M for memory), and the RES column (physical RAM actually used). htop presents the same data with colours and tree view. This is also where the process states you will meet in the OS module - running, sleeping, waiting on I/O - become visible in the wild."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "run.sh shows -rwxr-x---. (1) Express its mode in octal. (2) Write the chmod that grants the group write access while keeping others at nothing. (3) What is the resulting ls -l string?",
+    "hints": [
+      "Triplets: rwx = 7, r-x = 5, --- = 0.",
+      "Adding group write changes r-x to rwx."
+    ],
+    "solution": "(1) 750. (2) chmod 770 run.sh (or chmod g+w run.sh). (3) -rwxrwx---: owner and group have full access, others none."
+  },
+  "independentExercise": {
+    "prompt": "Set up a production directory trio on one box: (1) /opt/quant/secrets/api.key must be readable and writable only by its owner; (2) the binary /opt/quant/engine/engine must be runnable by everyone but writable only by its owner; (3) /opt/quant/reports must be fully usable by the owner, readable and enterable by the ops group, and closed to everyone else. Give the three chmod commands and each resulting triplet.",
+    "hints": [
+      "For secrets, think 6xx.",
+      "Directories need x for a class to enter and r for a class to list."
+    ],
+    "solution": "(1) chmod 600 api.key -> rw-------. (2) chmod 755 engine -> rwxr-xr-x. (3) chmod 750 reports -> rwxr-x---: the group's r-x lets members list and cd in but not create or delete; others get nothing."
+  },
+  "commonMistakes": [
+    "Reaching for -9 first: SIGKILL skips cleanup, leaving locks held and files half-written; TERM comes first.",
+    "chmod -R 777 as a 'fix' - it converts a permission bug into a security incident.",
+    "Forgetting the x bit on directories: you can list names but not enter or use the files.",
+    "Running services as root 'to avoid permission problems' - the blast radius of a bug or breach becomes the whole machine."
+  ],
+  "realWorldApplication": "Every shared server, CI runner and container host leans on this model; engineers who cannot read ls -l output or use ps and kill safely end up paging someone else to do it.",
+  "quantFinanceApplication": "Production desks isolate services with dedicated users and tight modes (600 on secrets, 750/755 on binaries) so that a compromised dashboard cannot reach the order gateway - permission discipline is part of the risk control stack.",
+  "summary": [
+    "Files carry owner/group/others, each with rwx; for directories x means 'enter and traverse', not 'run'.",
+    "Triplets compress to octal: 7 rwx, 6 rw-, 5 r-x, 4 r--, 0 ---; ls -l decodes instantly.",
+    "Desk defaults: 600 secrets, 644 data, 755 programs, 750 group-private; least privilege over convenience.",
+    "Processes have PIDs; SIGTERM (15) is a catchable, polite stop, SIGKILL (9) is uncatchable and skips cleanup - TERM, wait, then KILL."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "numeric",
+      "prompt": "What octal mode corresponds to rw-r-----?",
+      "answer": 640,
+      "explanation": "rw- = 6, r-- = 4, --- = 0: 640 - the classic secrets-and-group-read mode."
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "Which signal cannot be caught or ignored by the target process?",
+      "options": [
+        "SIGKILL",
+        "SIGTERM",
+        "SIGHUP",
+        "SIGINT"
+      ],
+      "answerIndex": 0,
+      "explanation": "SIGKILL (9) is enforced by the kernel; the others can be caught so a process can clean up."
+    },
+    {
+      "id": "q3",
+      "type": "code-output",
+      "prompt": "What does this command sequence print?",
+      "language": "bash",
+      "code": "touch report.csv\nchmod 644 report.csv\nstat -c \"%A\" report.csv",
+      "answer": "-rw-r--r--",
+      "explanation": "644 = rw- r-- r--; stat's %A renders the permission string, with a leading dash for a regular file."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "To enter a directory (cd into it and access its entries), a user needs which permission bit?",
+      "options": [
+        "execute (x)",
+        "read (r)",
+        "write (w)",
+        "none - directories are always enterable"
+      ],
+      "answerIndex": 0,
+      "explanation": "On directories, x grants traversal; r alone only lists names, and w allows creating and deleting entries."
+    },
+    {
+      "id": "q5",
+      "type": "ms",
+      "prompt": "Which statements are true?",
+      "options": [
+        "SIGTERM can be handled by the process to flush state",
+        "A process's CPU percentage in top can exceed 100 when it uses multiple cores",
+        "kill -9 guarantees the process runs its cleanup handlers",
+        "PIDs identify running processes uniquely"
+      ],
+      "answerIndices": [
+        0,
+        1,
+        3
+      ],
+      "explanation": "SIGKILL never lets the process run code, so option 3 is false; the others are standard behaviour."
+    },
+    {
+      "id": "q6",
+      "type": "short",
+      "prompt": "Why should a production service run under its own user instead of root?",
+      "modelAnswer": "Least privilege: a bug or breach in the service then damages only what that user owns, not the whole machine; root touches every file and device, so one flaw becomes a full compromise.",
+      "keywords": [
+        "least",
+        "privilege",
+        "root",
+        "compromise",
+        "blast"
+      ],
+      "explanation": "Blast-radius thinking: containment is a design goal, and the service user is the containment boundary."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "formula",
+      "front": "Octal permission digits",
+      "back": "r=4, w=2, x=1 per triplet: 7=rwx, 6=rw-, 5=r-x, 4=r--, 0=---. Directories need x to be enterable."
+    },
+    {
+      "type": "definition",
+      "front": "SIGTERM vs SIGKILL",
+      "back": "SIGTERM (15): catchable request to shut down cleanly. SIGKILL (9): uncatchable, kernel-enforced death with no cleanup."
+    },
+    {
+      "type": "concept",
+      "front": "Least privilege in production",
+      "back": "Services get their own user and the minimum modes: 600 secrets, 755 executables; never root 'for convenience'."
+    },
+    {
+      "type": "definition",
+      "front": "What is a PID?",
+      "back": "The kernel's unique id for a running process; ps and kill address processes by it."
+    }
+  ],
+  "references": [
+    {
+      "label": "man7.org - chmod(1)",
+      "url": "https://man7.org/linux/man-pages/man1/chmod.1.html"
+    },
+    {
+      "label": "man7.org - signal(7)",
+      "url": "https://man7.org/linux/man-pages/man7/signal.7.html"
+    }
+  ],
+  "skills": [
+    "linux"
+  ]
+}

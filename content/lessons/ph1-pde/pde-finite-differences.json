@@ -1,0 +1,226 @@
+{
+  "id": "pde-finite-differences",
+  "moduleId": "ph1-pde",
+  "title": "Finite Difference Methods: Explicit, Implicit, Crank-Nicolson",
+  "estMinutes": 30,
+  "difficulty": "specialist",
+  "prereqs": ["pde-classification"],
+  "objectives": [
+    "Discretize $u_t = \\alpha u_{xx}$ on a space-time grid and write down the explicit, implicit and Crank-Nicolson update rules",
+    "Derive the von Neumann amplification factor and the stability bound $r \\le 1/2$ for the explicit scheme",
+    "Execute one explicit step and one implicit (tridiagonal) step by hand with real numbers",
+    "Explain why Crank-Nicolson is the standard production choice for pricing PDEs despite explicit schemes being cheaper per step"
+  ],
+  "motivation": "The heat equation and Black-Scholes rarely admit closed-form solutions on real contract terms, so pricers replace the continuum with a grid and algebra with arithmetic: finite differences. The catch is that naive schemes explode - tiny time steps or silent instability - and the difference between a working pricer and a broken one is exactly the stability analysis in this lesson. By the end you can hand-execute every scheme on a five-point grid and know why production desks run Crank-Nicolson.",
+  "blocks": [
+    { "type": "h2", "text": "From continuum to grid" },
+    {
+      "type": "p",
+      "md": "Replace the domain with a lattice: space points $x_i = i\\,\\Delta x$, $i = 0, \\dots, N$, time levels $t_n = n\\,\\Delta t$, and write $u_i^n \\approx u(x_i, t_n)$. Taylor expansion turns derivatives into differences. The forward difference approximates the time derivative to accuracy $O(\\Delta t)$; the standard second difference approximates $u_{xx}$ to accuracy $O(\\Delta x^2)$:"
+    },
+    { "type": "math", "tex": "u_t \\approx \\frac{u_i^{n+1} - u_i^n}{\\Delta t}, \\qquad u_{xx} \\approx \\frac{u_{i+1}^n - 2u_i^n + u_{i-1}^n}{\\Delta x^2}", "caption": "Both formulas come from Taylor series; the second difference is exact for quadratics." },
+    { "type": "h2", "text": "The explicit scheme and the CFL condition" },
+    {
+      "type": "p",
+      "md": "Insert both differences into $u_t = \\alpha u_{xx}$, using the *old* time level on the right-hand side, and solve for the new value - every grid point updates in one cheap pass:"
+    },
+    { "type": "math", "tex": "u_i^{n+1} = u_i^n + r\\left(u_{i+1}^n - 2u_i^n + u_{i-1}^n\\right), \\qquad r = \\frac{\\alpha\\, \\Delta t}{\\Delta x^2}", "caption": "Explicit (forward Euler) scheme: a weighted average with mixing parameter $r$." },
+    {
+      "type": "p",
+      "md": "Cheap is not the same as safe. The **von Neumann stability analysis** feeds a Fourier mode $u_i^n = \\xi^n e^{ikx_i}$ into the update and asks whether its amplitude $\\xi$ can grow. Each step multiplies the mode by the amplification factor $G = 1 - 4r\\sin^2(k\\Delta x/2)$. Requiring $|G| \\le 1$ for every wave number gives the famous **CFL-type condition** for the heat equation:"
+    },
+    { "type": "math", "tex": "r = \\frac{\\alpha\\, \\Delta t}{\\Delta x^2} \\le \\frac{1}{2} \\quad\\Longleftrightarrow\\quad \\Delta t \\le \\frac{\\Delta x^2}{2\\alpha}", "caption": "Halving $\\Delta x$ forces quartering $\\Delta t$: parabolic equations are stiff." },
+    {
+      "type": "steps",
+      "title": "Worked explicit steps on the heat equation ($\\alpha = 1$)",
+      "items": [
+        "Grid: rod $0 \\le x \\le 1$ with $\\Delta x = 0.25$ (five points, indices $0 \\dots 4$), Dirichlet ends $u = 0$. Choose $\\Delta t = 0.03125$, giving $r = 1 \\times 0.03125 / 0.0625 = 0.5$ - exactly at the stability edge.",
+        "Initial condition $u(x,0) = \\sin(\\pi x)$ sampled on the grid: $u^0 = [0,\\ 0.7071,\\ 1,\\ 0.7071,\\ 0]$.",
+        "With $r = 0.5$ the update reads $u_i^{n+1} = \\tfrac{1}{2}(u_{i-1}^n + u_{i+1}^n)$. Step 1: $u_1^1 = \\tfrac12(0 + 1) = 0.5$; $u_2^1 = \\tfrac12(0.7071 + 0.7071) = 0.7071$; $u_3^1 = 0.5$ by symmetry.",
+        "So $u^1 = [0,\\ 0.5,\\ 0.7071,\\ 0.5,\\ 0]$. Exact solution is $e^{-\\pi^2 t}\\sin(\\pi x)$: at $t = 0.03125$ the decay factor is $e^{-0.3084} = 0.7346$, giving $[0,\\ 0.5195,\\ 0.7346,\\ \\dots]$ - the scheme is in the right neighbourhood after one crude step.",
+        "Sanity check on physics: total heat $\\sum u_i$ is $2.4142$ before the step and $1.7071$ after - heat *left* through the zero-temperature ends, as it should; the ends are drains, not reflectors."
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "u = [0.0, 0.7071, 1.0, 0.7071, 0.0]\nr = 0.5\nun = [u[0]] + [u[i] + r * (u[i+1] - 2*u[i] + u[i-1]) for i in range(1, 4)] + [u[4]]\nprint([round(v, 4) for v in un])",
+      "caption": "One explicit step with $r = 0.5$ - the numbers from the worked example, confirmed by machine."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "What breaking CFL looks like",
+      "md": "Take the same grid but $r = 1$ (double the time step) and start from a single hot point $u^0 = [0, 0, 1, 0, 0]$. The update $u_i^{n+1} = u_{i-1}^n - u_i^n + u_{i+1}^n$ produces $[0, 1, -1, 1, 0]$, then $[0, -2, 3, -2, 0]$: amplitudes *grow* while signs alternate - the numerical signature of instability, and the amplitude would keep multiplying until floating-point overflow. No amount of output smoothing fixes it; only $\\Delta t$ does."
+    },
+    {
+      "type": "interactive",
+      "component": "FunctionPlotter",
+      "params": {
+        "functions": ["exp(-9.87*x)", "exp(-39.48*x)"],
+        "xMin": 0,
+        "xMax": 0.3,
+        "yMin": 0,
+        "yMax": 1.1
+      },
+      "caption": "What the schemes are approximating: amplitudes of the heat modes $e^{-\\pi^2 t}$ (rate 9.87) and $e^{-4\\pi^2 t}$ (rate 39.48). The $n=2$ ripple dies $4\\times$ faster - the diffusion smooths its own solution."
+    },
+    { "type": "h2", "text": "Implicit (backward Euler): stable at any step size" },
+    {
+      "type": "p",
+      "md": "Evaluate the right-hand side at the **new** time level instead, and the update can no longer be done pointwise - each step requires solving a linear system:"
+    },
+    { "type": "math", "tex": "-r\\, u_{i-1}^{n+1} + (1 + 2r)\\, u_i^{n+1} - r\\, u_{i+1}^{n+1} = u_i^n", "caption": "Implicit scheme: a tridiagonal system per time step." },
+    {
+      "type": "p",
+      "md": "The matrix is tridiagonal, so the Thomas algorithm solves it in $O(N)$ operations - barely more work than the explicit sweep. The payoff: the amplification factor becomes $G = 1/(1 + 4r\\sin^2(k\\Delta x/2)) \\le 1$ for **every** $r > 0$ - **unconditionally stable**. You may take big time steps; the cost is paying $O(N)$ linear algebra per step and slightly more damping at large $r$ (first-order accuracy in time, $O(\\Delta t)$)."
+    },
+    { "type": "h2", "text": "Crank-Nicolson: the production compromise" },
+    {
+      "type": "p",
+      "md": "Crank-Nicolson averages the explicit and implicit right-hand sides - evaluating the diffusion at the midpoint of $[t_n, t_{n+1}]$:"
+    },
+    { "type": "math", "tex": "(1 + r)\\,u_i^{n+1} - \\frac{r}{2}\\left(u_{i+1}^{n+1} + u_{i-1}^{n+1}\\right) = (1 - r)\\,u_i^n + \\frac{r}{2}\\left(u_{i+1}^n + u_{i-1}^n\\right)", "caption": "Crank-Nicolson: second-order in time $O(\\Delta t^2)$ and space, unconditionally stable, still tridiagonal." },
+    {
+      "type": "p",
+      "md": "It keeps the implicit scheme's unconditional stability while restoring second-order time accuracy - the reason it is the default time-stepper in option-pricing engines. Two practical footnotes: for discontinuous starting data (a digital option's step payoff) the midpoint averaging causes spurious oscillations in the first few steps, so production code often runs a few fully-implicit **Rannacher** startup steps before switching to CN; and the far boundaries still need conditions from the classification lesson - the grid inherits the contract's Dirichlet barriers and Neumann asymptotics."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Scheme choice on a trading desk",
+      "md": "A one-factor option pricer discretizes Black-Scholes (a heat equation in disguise) with Crank-Nicolson plus Rannacher startup: unconditional stability means the time grid is chosen for accuracy, not survival, and the tridiagonal solve keeps each step $O(N)$ across all strikes in a smile. Explicit schemes survive only in teaching examples and quick prototypes, where the CFL bound $\\Delta t \\le \\Delta x^2/2\\alpha$ is harmless. American options add a linear-complementarity tweak to the same tridiagonal solve - the PDE skeleton stays identical."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Continue the worked example: from $u^1 = [0,\\ 0.5,\\ 0.7071,\\ 0.5,\\ 0]$ with $r = 0.5$, compute $u^2$ (one more explicit step, $u_i^{n+1} = \\tfrac12(u_{i-1}^n + u_{i+1}^n)$). Then compare the midpoint value $u_2^2$ with the exact solution $e^{-\\pi^2 t}\\sin(\\pi x_2)$ at $t = 0.0625$ and comment on the size of the error.",
+    "hints": [
+      "Apply the averaging rule at interior indices 1, 2, 3; the ends stay 0.",
+      "$\\pi^2 \\approx 9.87$; at $t = 0.0625$ the decay factor is $e^{-0.6169}$."
+    ],
+    "solution": "$u_1^2 = \\tfrac12(0 + 0.7071) = 0.3536$; $u_2^2 = \\tfrac12(0.5 + 0.5) = 0.5$; $u_3^2 = \\tfrac12(0.7071 + 0) = 0.3536$ (mirror of the left end, as symmetry demands). So $u^2 = [0,\\ 0.3536,\\ 0.5,\\ 0.3536,\\ 0]$. Exact at $t = 0.0625$: $e^{-9.87 \\times 0.0625} = e^{-0.6169} = 0.5396$, so the true midpoint is $0.5396$ against the numerical $0.5$ - an error of about $0.04$ (7%). Two coarse steps of a first-order-in-time scheme at the stability edge: the right shape, decaying a bit too fast. Refining $\\Delta t$ and $\\Delta x$ shrinks it systematically."
+  },
+  "independentExercise": {
+    "prompt": "Do one **implicit** step by hand. Take $r = 1$ (legal for implicit schemes at any size) on a grid with three interior points and zero-Dirichlet ends, current values $u^0$ interior $= [0.6,\\ 1.0,\\ 0.6]$. The update is $-r u_{i-1}^{n+1} + (1+2r)u_i^{n+1} - r u_{i+1}^{n+1} = u_i^n$ with $u_0^{n+1} = u_4^{n+1} = 0$. (a) Write the $3 \\times 3$ system. (b) Solve it (use the symmetry $u_1^{n+1} = u_3^{n+1}$). (c) Verify your solution satisfies all three equations. (d) Why would this step size be forbidden for the explicit scheme?",
+    "hints": [
+      "With $r = 1$: $3a - b = 0.6$; $-a + 3b - c = 1.0$; $-b + 3c = 0.6$, where $[a, b, c] = u^{n+1}$ interior.",
+      "Symmetry collapses the system to two equations in $a$ and $b$."
+    ],
+    "solution": "(a) With $r = 1$: $3a - b = 0.6$, $-a + 3b - c = 1.0$, $-b + 3c = 0.6$. (b) Symmetry gives $a = c$. First equation: $b = 3a - 0.6$. Substitute into the middle: $-a + 3(3a - 0.6) - a = 1.0 \\Rightarrow 7a - 1.8 = 1.0 \\Rightarrow 7a = 2.8 \\Rightarrow a = 0.4$, then $b = 3(0.4) - 0.6 = 0.6$. Solution: $u^{n+1}$ interior $= [0.4,\\ 0.6,\\ 0.4]$. (c) Check: $3(0.4) - 0.6 = 0.6$ ok; $-0.4 + 3(0.6) - 0.4 = 1.0$ ok; $-0.6 + 3(0.4) = 0.6$ ok. (d) For the explicit scheme $r = 1 > 1/2$ violates the CFL bound - the same setup blew up in the lesson's pitfall callout. The implicit scheme tolerates it because its amplification factor $1/(1 + 4r\\sin^2(k\\Delta x/2))$ never exceeds 1."
+  },
+  "commonMistakes": [
+    "Forgetting the factor $\\alpha$ in $r$: the stability bound is on $\\alpha\\Delta t/\\Delta x^2$, not on $\\Delta t$ alone.",
+    "Updating the boundary points with the interior formula - Dirichlet ends are fixed and must be re-pinned to their boundary values each step.",
+    "Confusing the explicit scheme's cheap sweep with safety: it is the only one of the three that can explode.",
+    "Writing the Crank-Nicolson system as tridiagonal on the right-hand side too - the unknowns appear only on the left; the right side is computed from known values.",
+    "Assuming unconditional stability means unconditional accuracy: big $r$ keeps the scheme stable but the solution is damped and time-accuracy suffers."
+  ],
+  "realWorldApplication": "Weather and climate models, groundwater flow, semiconductor diffusion simulation and image denoising all use explicit/implicit/Crank-Nicolson time stepping on diffusion equations, with stability analysis deciding their time-step budgets.",
+  "quantFinanceApplication": "Production option pricers discretize Black-Scholes with Crank-Nicolson (plus Rannacher startup for discontinuous payoffs), solving a tridiagonal system per time step across the strike grid; barrier and American features slot in as Dirichlet rows and complementarity fixes - the schemes in this lesson, unchanged.",
+  "summary": [
+    "Finite differences replace derivatives with grid arithmetic: forward difference for $u_t$ ($O(\\Delta t)$), second difference for $u_{xx}$ ($O(\\Delta x^2)$).",
+    "Explicit scheme: $u_i^{n+1} = u_i^n + r(u_{i+1}^n - 2u_i^n + u_{i-1}^n)$ with $r = \\alpha\\Delta t/\\Delta x^2$; cheap $O(N)$ sweep but stable only for $r \\le 1/2$ (CFL-type bound from the von Neumann factor $G = 1 - 4r\\sin^2(k\\Delta x/2)$).",
+    "Violating $r \\le 1/2$ produces alternating-sign, growing amplitudes - the worked $r = 1$ example went $[0,1,-1,1,0] \\to [0,-2,3,-2,0]$.",
+    "Implicit (backward Euler) solves a tridiagonal system each step ($O(N)$ via Thomas) and is unconditionally stable; worked example: $r=1$ on $[0.6, 1.0, 0.6]$ gives $[0.4, 0.6, 0.4]$.",
+    "Crank-Nicolson averages explicit and implicit fluxes: unconditionally stable and second-order in time - the production default for option PDEs, with Rannacher startup for jumpy payoffs.",
+    "Stability governs the time-step budget; accuracy governs it after that - choose the scheme so survival is guaranteed and then refine."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "numeric",
+      "prompt": "One explicit step with $r = 0.5$ on the profile $u^0 = [0,\\ 0.6,\\ 1.0,\\ 0.6,\\ 0]$ (zero ends): what is $u_2^1$, the new value at the hot middle point?",
+      "answer": 0.6,
+      "explanation": "$u_2^1 = u_2^0 + r(u_3^0 - 2u_2^0 + u_1^0) = 1.0 + 0.5(0.6 + 0.6 - 2.0) = 1.0 - 0.4 = 0.6$ - with $r = 0.5$ each interior point becomes the average of its neighbours."
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "For the explicit scheme on $u_t = \\alpha u_{xx}$, stability requires:",
+      "options": [
+        "$\\alpha \\Delta t \\le \\Delta x$",
+        "$r = \\alpha \\Delta t / \\Delta x^2 \\le 1/2$",
+        "$r \\ge 1/2$",
+        "No condition - explicit schemes are always stable"
+      ],
+      "answerIndex": 1,
+      "explanation": "The von Neumann factor $G = 1 - 4r\\sin^2(k\\Delta x/2)$ satisfies $|G| \\le 1$ for all wave numbers exactly when $r \\le 1/2$. Beyond it, short modes grow without bound."
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "With $\\alpha = 1$ and $\\Delta x = 0.1$, what is the largest stable explicit time step $\\Delta t$?",
+      "answer": 0.005,
+      "tolerance": 0.0001,
+      "explanation": "$\\Delta t \\le \\Delta x^2/(2\\alpha) = 0.01/2 = 0.005$. Note the quadratic penalty: halving $\\Delta x$ cuts the allowed step by $4\\times$ - parabolic stiffness."
+    },
+    {
+      "id": "q4",
+      "type": "code-output",
+      "prompt": "This script runs TWO explicit steps with the unstable choice $r = 1.0$ starting from a single hot interior point (zero-temperature ends). What does it print?",
+      "language": "python",
+      "code": "r = 1.0\nu = [0.0, 0.0, 1.0, 0.0, 0.0]\nfor n in range(2):\n    u = [u[0]] + [u[i] + r * (u[i+1] - 2*u[i] + u[i-1]) for i in range(1, 4)] + [u[4]]\nprint([round(v, 2) for v in u])",
+      "answer": "[0.0, -2.0, 3.0, -2.0, 0.0]",
+      "explanation": "Step 1 gives $[0, 1, -1, 1, 0]$; step 2 gives $[0, -2, 3, -2, 0]$: amplitudes grow and signs alternate - the classic instability signature when $r > 1/2$."
+    },
+    {
+      "id": "q5",
+      "type": "mcq",
+      "prompt": "What combination of properties makes Crank-Nicolson the standard choice in option-pricing engines?",
+      "options": [
+        "No linear system per step and unconditional stability",
+        "Unconditional stability plus second-order accuracy in time, while staying a tridiagonal ($O(N)$) solve",
+        "It avoids boundary conditions entirely",
+        "It is stable only for $r \\le 1/2$ but needs no matrix"
+      ],
+      "answerIndex": 1,
+      "explanation": "CN averages the explicit and implicit fluxes: the tridiagonal structure (and $O(N)$ Thomas solve) survives, stability holds for any $r$, and the midpoint evaluation restores $O(\\Delta t^2)$ time accuracy - the best of both, at the cost of mild oscillations on jumpy payoffs (fixed by Rannacher startup)."
+    },
+    {
+      "id": "q6",
+      "type": "short",
+      "prompt": "Why can the implicit scheme take time steps far larger than the explicit scheme's CFL bound, and what does each implicit step cost?",
+      "modelAnswer": "Because its amplification factor 1/(1 + 4r sin^2(k dx/2)) is at most 1 for any r > 0 - unconditionally stable. Each step requires solving a tridiagonal linear system, which the Thomas algorithm does in O(N) operations.",
+      "keywords": ["unconditional", "tridiagonal", "O(N)"],
+      "explanation": "Implicitness damps every Fourier mode instead of amplifying any; the price is a linear solve per step - cheap for tridiagonal matrices, which is the whole trade."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "formula",
+      "front": "Explicit heat-scheme update",
+      "back": "$u_i^{n+1} = u_i^n + r(u_{i+1}^n - 2u_i^n + u_{i-1}^n)$ with $r = \\alpha\\Delta t/\\Delta x^2$; one cheap sweep, stable iff $r \\le 1/2$."
+    },
+    {
+      "type": "formula",
+      "front": "Von Neumann amplification factor (explicit)",
+      "back": "$G = 1 - 4r\\sin^2(k\\Delta x/2)$; requiring $|G| \\le 1$ for all $k$ yields $r \\le 1/2$."
+    },
+    {
+      "type": "formula",
+      "front": "Implicit (backward Euler) step",
+      "back": "$-r\\,u_{i-1}^{n+1} + (1+2r)u_i^{n+1} - r\\,u_{i+1}^{n+1} = u_i^n$ - a tridiagonal solve, unconditionally stable, $O(\\Delta t)$ accurate."
+    },
+    {
+      "type": "concept",
+      "front": "Why Crank-Nicolson for pricing PDEs",
+      "back": "Averages explicit and implicit fluxes: unconditionally stable, $O(\\Delta t^2)$ in time, still tridiagonal; add Rannacher startup steps for discontinuous payoffs."
+    },
+    {
+      "type": "code-output",
+      "front": "In the lesson's $r=1$ blow-up demo, what does the profile become after two explicit steps from $[0,0,1,0,0]$?",
+      "back": "$[0, -2, 3, -2, 0]$ - growing, alternating amplitudes: the numeric fingerprint of CFL violation."
+    }
+  ],
+  "references": [
+    {
+      "label": "LeVeque - Finite Difference Methods for Ordinary and Partial Differential Equations (overview)",
+      "url": "https://epubs.siam.org/doi/book/10.1137/1.9780898717839"
+    },
+    {
+      "label": "Wilmott, Howison & Dewynne - The Mathematics of Financial Derivatives (PDE pricing chapters)",
+      "url": "https://www.cambridge.org/core/books/mathematics-of-financial-derivatives/26E8F5A9F3B93B5A3BAEA45A9B0F5F06"
+    }
+  ],
+  "skills": ["pde", "numerical-analysis"]
+}

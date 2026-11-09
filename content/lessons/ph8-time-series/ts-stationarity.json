@@ -1,0 +1,240 @@
+{
+  "id": "ts-stationarity",
+  "moduleId": "ph8-time-series",
+  "title": "Trend, Seasonality, Stationarity and Differencing",
+  "estMinutes": 27,
+  "difficulty": "advanced",
+  "prereqs": ["stat-regression"],
+  "objectives": [
+    "Decompose a series into trend, seasonal and noise components and choose additive vs multiplicative structure",
+    "Define weak stationarity and explain why standard time-series models require it",
+    "Apply differencing (first, second, seasonal) to a series and judge whether the transformed series looks stationary",
+    "Describe the idea of the ADF test, including its non-standard null hypothesis and critical values"
+  ],
+  "motivation": "Fit a regression of today's price on yesterday's price and you will get a spectacular $R^2$ that predicts nothing. The reason is not bad code - it is that most price series are non-stationary: their mean and spread wander over time, so statistics computed on one window say nothing about the next. Decomposition, differencing and stationarity tests are the gate every serious time-series model must pass first.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Anatomy of a series"
+    },
+    {
+      "type": "p",
+      "md": "Most series you meet are composites. A **trend** is the slow level movement; **seasonality** is a repeating pattern with a fixed period (hour of day, day of week, quarter); a **cycle** is a longer, irregular swing; and the rest is **noise**. Decomposition separates them, and the first modelling decision is additive versus multiplicative:"
+    },
+    {
+      "type": "math",
+      "tex": "\\text{additive: } y_t = T_t + S_t + \\varepsilon_t \\qquad \\text{multiplicative: } y_t = T_t \\cdot S_t \\cdot \\varepsilon_t",
+      "caption": "Seasonal swings of constant size suggest additive; swings that grow with the level suggest multiplicative (or log-transform to make it additive)"
+    },
+    {
+      "type": "interactive",
+      "component": "TimeSeriesDecompose",
+      "params": {
+        "n": 48,
+        "trend": 0.4,
+        "seasonalAmp": 2,
+        "noise": 0.8,
+        "period": 4
+      },
+      "caption": "Drag the trend slope and seasonal amplitude: watch the series split into level drift, repeating pattern and residual noise."
+    },
+    {
+      "type": "h2",
+      "text": "Stationarity: the modelling contract"
+    },
+    {
+      "type": "p",
+      "md": "A series is **weakly stationary** if its mean is constant over time, its variance is constant over time, and the autocovariance between $y_t$ and $y_{t+k}$ depends only on the lag $k$, not on $t$. Strict stationarity asks that the whole distribution be shift-invariant; weak stationarity asks only for these moments, and it is what the standard models (ARMA, coming next lesson) actually need. Why care? Because a model estimated on a stationary series is *one model* describing a stable process - on a non-stationary series, parameters fitted last year describe a world that no longer exists."
+    },
+    {
+      "type": "table",
+      "headers": ["Series", "Mean over time", "Variance over time", "ACF behaviour"],
+      "rows": [
+        ["White noise", "constant", "constant", "$\\rho_k = 0$ for all $k \\ge 1$"],
+        ["Random walk", "wanders", "grows linearly", "$\\rho_k$ stays near 1 for long stretches"],
+        ["Trend stationary", "trending", "constant", "high, decaying slowly with lag"],
+        ["Seasonal series", "periodic", "roughly constant", "spikes at lags that are multiples of the period"]
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Prices vs returns",
+      "md": "A random-walk price is the canonical non-stationary series: no fixed mean, variance growing with horizon. Its **first difference** - the return - is approximately stationary. This single observation explains why the whole industry models returns, not prices."
+    },
+    {
+      "type": "h2",
+      "text": "Differencing: the workhorse transformation"
+    },
+    {
+      "type": "math",
+      "tex": "\\Delta y_t = y_t - y_{t-1} \\qquad \\Delta^2 y_t = \\Delta y_t - \\Delta y_{t-1} \\qquad \\Delta_m y_t = y_t - y_{t-m}",
+      "caption": "First, second and seasonal differencing (lag $m$ = seasonal period)"
+    },
+    {
+      "type": "p",
+      "md": "First differencing removes a linear trend: the difference of $a + bt$ is the constant $b$. Take a short level series (hypothetical, in index points): $100, 102, 105, 104, 107, 110, 109, 112$. First differences: $2, 3, -1, 3, 3, -1, 3$ - a series fluctuating around $12/7 \\approx 1.71$ with no visible trend. The level series had an obvious upward drift; the differenced series looks like stable noise. A second difference would be needed if the *trend itself* were curved (quadratic); a seasonal difference at lag $m$ removes a repeating seasonal shape."
+    },
+    {
+      "type": "p",
+      "md": "Two cautions. First, differencing removes information too - a trend-stationary series (stable around a rising line) becomes white noise when differenced, throwing away the predictable part; choose by diagnosis, not habit. Second, for multiplicative (proportional) behaviour, take logs first: the log difference is then the *growth rate*, which is exactly what a return is."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import numpy as np\nlevels = np.array([100, 102, 105, 104, 107, 110, 109, 112])\nprint(np.diff(levels))            # [ 2  3 -1  3  3 -1  3]\nprint(round(np.diff(levels).mean(), 3))   # 1.714 - estimated drift per step\nprint(np.diff(levels, 2))         # [ 1 -4  4  0 -2  4] - second differences",
+      "caption": "Differencing in one call: the drift survives as the mean of the differences."
+    },
+    {
+      "type": "h2",
+      "text": "Testing: the ADF idea"
+    },
+    {
+      "type": "p",
+      "md": "The Augmented Dickey-Fuller (ADF) test turns the question into a regression. It estimates $\\Delta y_t = \\alpha + \\beta t + \\gamma\\, y_{t-1} + \\sum_{j=1}^{p} \\delta_j \\Delta y_{t-j} + \\varepsilon_t$ and asks whether $\\gamma$ is significantly negative: for a stationary series, today's level pulls the change back toward the mean ($\\gamma < 0$); for a unit-root series like a random walk, the level carries no pull and $\\gamma = 0$. The null is **the series has a unit root (non-stationary)** - so 'reject the null' is the *good* outcome, the reverse of most tests. The catch: under the null the usual $t$-distribution is invalid, so ADF uses special critical-value tables, and $p$ (the lag count) is chosen so the residual behaves like white noise."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import numpy as np\nfrom statsmodels.tsa.stattools import adfuller\nrng = np.random.default_rng(11)\nwalk = np.cumsum(rng.normal(0, 1, 300))          # random walk: expect fail-to-reject\nnoise = rng.normal(0, 1, 300)                     # stationary: expect rejection\nprint(round(adfuller(walk)[1], 3), round(adfuller(noise)[1], 3))\n# typical output: 0.66 0.0  (p-values vary run to run)",
+      "caption": "ADF in one call: high p-value says 'cannot reject a unit root' for the walk; near-zero p-value rejects it for the noise."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Over-differencing",
+      "md": "Differencing a stationary series injects negative autocorrelation (an MA unit root) and degrades forecasts. If ADF already rejects a unit root on levels, model the levels; difference once only when the evidence demands it."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "A level series reads $10, 12, 13, 16, 17, 19, 22, 23$. (a) Compute the first differences. (b) Estimate the mean drift per step from the differences. (c) Compute the sample standard deviation of the differences and comment on whether the differenced series looks stationary.",
+    "hints": [
+      "Subtract neighbouring values: seven differences from eight levels.",
+      "The mean of the differences is the total change divided by seven.",
+      "Use the $n-1$ sample-variance convention from the statistics phase."
+    ],
+    "solution": "(a) Differences: $2, 1, 3, 1, 2, 3, 1$. (b) Mean $= 13/7 \\approx 1.86$ per step. (c) Squared deviations: $0.020, 0.735, 1.306, 0.735, 0.020, 1.306, 0.735$, sum $\\approx 4.857$; variance $= 4.857/6 \\approx 0.810$, so $s \\approx 0.90$. The differences fluctuate around a stable mean with no trend - the differenced series looks stationary, while the levels clearly drift."
+  },
+  "independentExercise": {
+    "prompt": "Quarterly sales: $100, 110, 120, 130, 104, 114, 124, 134$. (a) Compute the ordinary first differences and explain the pattern you see. (b) Compute the seasonal differences at lag $4$ and comment. (c) Which transform would you feed to a forecasting model, and why?",
+    "hints": [
+      "First differences: $y_t - y_{t-1}$ for $t = 2..8$.",
+      "Seasonal differences compare each quarter with the same quarter a year earlier: $y_t - y_{t-4}$.",
+      "A good transform removes the seasonal pattern without destroying the signal."
+    ],
+    "solution": "(a) First differences: $10, 10, 10, -26, 10, 10, 10$ - mostly $10$ with one violent $-26$ at each year boundary: the seasonal jump masquerading as an outlier. (b) Lag-4 differences: $104-100 = 4$, $114-110 = 4$, $124-120 = 4$, $134-130 = 4$ - a constant $4$ per quarter, the underlying growth with seasonality cancelled. (c) Feed the lag-4 differenced series (or log and lag-4 difference if growth were proportional): it is stationary-looking, while the ordinary first-difference series still carries a deterministic seasonal shock."
+  },
+  "commonMistakes": [
+    "Fitting ARMA-style models directly to trending or wandering levels - residual autocorrelation and spurious fits follow.",
+    "Differencing by reflex without checking whether the series is trend-stationary (where detrending, not differencing, is right).",
+    "Reading 'fail to reject' in an ADF test as proof the series *is* stationary - the null is the unit root, so a high $p$-value is the bad outcome.",
+    "Ignoring seasonality until it appears as a mysterious outlier at period boundaries in the differenced series."
+  ],
+  "realWorldApplication": "Retail demand planners decompose weekly sales into trend, seasonality and noise before any forecast; electricity grid operators do the same with daily load curves, where hour-of-day seasonality dwarfs the trend.",
+  "quantFinanceApplication": "Return series (log differences of prices) are the near-stationary objects that volatility models, factor models and backtests all assume; running those tools on raw price levels is the classic unit-root mistake this lesson prevents.",
+  "summary": [
+    "Series decompose into trend, seasonal, cycle and noise; seasonal swings that scale with the level suggest multiplicative structure or a log transform.",
+    "Weak stationarity means constant mean, constant variance and autocovariances depending only on the lag - the contract standard models assume.",
+    "First differencing removes linear trends, second differences handle curvature, lag-$m$ differencing removes seasonality; over-differencing injects its own pathology.",
+    "The ADF test's null is a unit root: rejecting it (small $p$) is evidence of stationarity, and it uses special critical values because ordinary $t$-tables do not apply."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "Weak stationarity of a series $y_t$ requires:",
+      "options": [
+        "Constant mean, constant variance, and autocovariances depending only on the lag",
+        "A linear trend with constant slope",
+        "The full distribution to be normal at every time $t$",
+        "$y_t$ and $y_{t-1}$ to be independent"
+      ],
+      "answerIndex": 0,
+      "explanation": "Those three moment conditions define weak stationarity. A trend violates the constant-mean condition, normality is not required, and independence would mean zero autocovariance - a much stronger, special case."
+    },
+    {
+      "id": "q2",
+      "type": "numeric",
+      "prompt": "For the levels $100, 102, 105, 104, 107, 110, 109, 112$, what is the first difference at $t=3$ (i.e. $y_3 - y_2$, with $y_1 = 100$)?",
+      "answer": 3,
+      "tolerance": 0.001,
+      "explanation": "$105 - 102 = 3$; the full difference sequence is $2, 3, -1, 3, 3, -1, 3$."
+    },
+    {
+      "id": "q3",
+      "type": "mcq",
+      "prompt": "The null hypothesis of the Augmented Dickey-Fuller test is:",
+      "options": [
+        "The series is stationary",
+        "The series has a unit root (is non-stationary)",
+        "The series has zero autocorrelation",
+        "The series is normally distributed"
+      ],
+      "answerIndex": 1,
+      "explanation": "ADF's $H_0$ is the unit root, so a small $p$-value is evidence *for* stationarity - the reverse of most hypothesis tests, and a common source of confusion."
+    },
+    {
+      "id": "q4",
+      "type": "short",
+      "prompt": "In one or two sentences, why do practitioners model asset *returns* rather than *prices* with ARMA-style models?",
+      "modelAnswer": "Price levels behave like random walks with no fixed mean and growing variance (unit roots), while returns are approximately stationary, satisfying the constant-mean/variance conditions the models require.",
+      "keywords": ["stationarity", "unit root", "mean"],
+      "explanation": "Stationarity is the modelling contract; differencing prices into returns is how the contract gets met."
+    },
+    {
+      "id": "q5",
+      "type": "ms",
+      "prompt": "Which operations can plausibly turn a non-stationary series into a stationary one? Select all that apply.",
+      "options": [
+        "First differencing",
+        "Seasonal differencing at lag $m$",
+        "Taking logs of a multiplicative series (removing level-dependent variance/growth)",
+        "Squaring the series"
+      ],
+      "answerIndices": [0, 1, 2],
+      "explanation": "Differencing removes trends and seasonal shapes; logs stabilise proportional growth. Squaring a trending series is still trending (and adds skew), so it does not help."
+    },
+    {
+      "id": "q6",
+      "type": "code-output",
+      "prompt": "What does this Python code print?",
+      "language": "python",
+      "code": "import numpy as np\nprint(np.diff([100, 102, 105, 104]))",
+      "answer": "[ 2  3 -1]",
+      "explanation": "np.diff computes successive differences $102-100, 105-102, 104-105$, and NumPy's default array printing pads positive values to align with the negative one: [ 2  3 -1]."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "definition",
+      "front": "Weak stationarity",
+      "back": "Constant mean, constant variance, and autocovariance depending only on the lag - the conditions standard time-series models assume."
+    },
+    {
+      "type": "formula",
+      "front": "Differencing operators",
+      "back": "$\\Delta y_t = y_t - y_{t-1}$ (trend), $\\Delta^2$ (curvature), $\\Delta_m y_t = y_t - y_{t-m}$ (seasonality)."
+    },
+    {
+      "type": "concept",
+      "front": "ADF null hypothesis",
+      "back": "The series has a unit root (non-stationary); rejecting it with a small p-value is the evidence of stationarity. Critical values come from special tables."
+    },
+    {
+      "type": "concept",
+      "front": "Prices vs returns",
+      "back": "Prices are typically I(1) (unit root); their differences - returns - are approximately I(0) (stationary), which is why models live on returns."
+    }
+  ],
+  "references": [
+    {
+      "label": "Hyndman & Athanasopoulos, Forecasting: Principles and Practice (fpp3) - Time series decomposition",
+      "url": "https://otexts.com/fpp3/"
+    },
+    {
+      "label": "statsmodels - adfuller documentation",
+      "url": "https://www.statsmodels.org/stable/generated/statsmodels.tsa.stattools.adfuller.html"
+    }
+  ],
+  "skills": ["time-series"]
+}

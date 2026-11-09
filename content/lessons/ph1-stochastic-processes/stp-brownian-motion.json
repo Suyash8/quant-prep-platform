@@ -1,0 +1,224 @@
+{
+  "id": "stp-brownian-motion",
+  "moduleId": "ph1-stochastic-processes",
+  "title": "Brownian Motion and Random Walks",
+  "estMinutes": 28,
+  "difficulty": "advanced",
+  "prereqs": ["stp-martingales"],
+  "objectives": [
+    "Explain how scaling a random walk by $\\sqrt{n}$ produces Brownian motion, and why the square root is the right scale",
+    "State the defining properties of standard Brownian motion and their immediate consequences, including $W_t \\sim N(0, t)$",
+    "Convert an annual volatility to a daily or multi-day volatility using the $\\sigma\\sqrt{t}$ rule",
+    "Simulate a Brownian path on a grid with the Euler construction $\\Delta W = \\sqrt{\\Delta t}\\, Z$"
+  ],
+  "motivation": "Prices do not jump only at integer times, so we need a random process that evolves in continuous time yet still behaves like the fair games of the previous lessons. Brownian motion is that process - the limit of a coin-flip random walk viewed from far away, and the atomic building block of every continuous-time model in finance: Itô calculus, the Black-Scholes world and diffusion PDEs all assume it underneath. This lesson shows exactly how the walk becomes Brownian motion, what properties survive the limit, and how the $\\sigma\\sqrt{t}$ rule used daily on every trading desk falls straight out of the construction.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "From coin flips to continuous paths"
+    },
+    {
+      "type": "p",
+      "md": "Take the symmetric random walk $S_k$ from the martingale lesson: after $k$ fair $\\pm 1$ steps, $\\mathbb{E}[S_k] = 0$ and $\\text{Var}(S_k) = k$ - variances of independent increments **add**. Now zoom out. Watch the walk for one unit of time but refine it: split the hour into $n$ micro-steps of size $\\pm 1/\\sqrt{n}$. After all $n$ micro-steps the variance is $n \\times (1/n) = 1$: dividing the step by $\\sqrt{n}$ is precisely what keeps the one-hour picture statistically the same while packing infinitely many, ever-smaller wiggles into it. The central limit theorem says the accumulated position converges to a normal distribution, and the path itself converges to a continuous random curve. That limit is **standard Brownian motion** $W_t$ (also called the Wiener process). The square root is not a convention: scaling by $n$ would explode the variance, scaling by $n$ would collapse it - only $\\sqrt{n}$ preserves it."
+    },
+    {
+      "type": "p",
+      "md": "Standard Brownian motion is characterised by four properties, all inherited from the walk:"
+    },
+    {
+      "type": "list",
+      "ordered": false,
+      "items": [
+        "$W_0 = 0$ (start at the origin);",
+        "**Independent increments** - disjoint time intervals move independently (like disjoint sets of coin flips);",
+        "**Stationary increments** - $W_{t+s} - W_t \\sim N(0, s)$: the distribution of a move depends only on its *length*, not its *location*;",
+        "**Continuous paths** - no jumps (the walk's telegraphing $\\pm$ hops get infinitely fine in the limit)."
+      ]
+    },
+    {
+      "type": "p",
+      "md": "The third property alone gives the most-used fact in the whole subject: $W_t$ is the sum of $t$ worth of tiny independent increments, so $W_t \\sim N(0, t)$ - **mean zero, variance $t$, standard deviation $\\sqrt{t}$**. Two consequences worth internalising: uncertainty grows like the square root of time, and Brownian paths are so rough that they have no derivative anywhere - 'velocity' does not exist, only displacement over intervals. The quadratic variation identity $[W]_t = t$ (the sum of squared increments converges to elapsed time) is the key that unlocks Itô calculus in the next module."
+    },
+    {
+      "type": "interactive",
+      "component": "BrownianMotion",
+      "params": {
+        "steps": 250,
+        "dt": 0.004
+      },
+      "caption": "A year of daily Brownian increments ($\\Delta t = 1/252$). The fan of typical outcomes widens like $\\sqrt{t}$, and each path is continuous but wildly wiggly."
+    },
+    {
+      "type": "h2",
+      "text": "The $\\sigma\\sqrt{t}$ rule, derived not memorised"
+    },
+    {
+      "type": "p",
+      "md": "Volatility is quoted annually, risk is managed daily - the bridge is Brownian scaling. If a log-price follows Brownian motion with annual standard deviation $\\sigma$, then over a horizon of $t$ years the standard deviation is $\\sigma\\sqrt{t}$ (variance scales with $t$, so deviation scales with $\\sqrt{t}$). One trading day is $t = 1/252$:"
+    },
+    {
+      "type": "steps",
+      "title": "Worked example: annual volatility 20% → daily and weekly",
+      "items": [
+        "Daily: $\\sigma\\sqrt{1/252} = 0.20 \\times 0.062994 = 0.0126$, i.e. a **1.26% daily standard deviation**.",
+        "Five days: $\\sigma\\sqrt{5/252} = 0.20 \\times 0.140861 = 0.0282$, i.e. **2.82% over a week** - only $\\sqrt{5} \\approx 2.24$ times the daily figure, not 5 times.",
+        "Sanity check via variance: daily variance $0.0126^2 = 0.000159$; five days: $5 \\times 0.000159 = 0.000794$; square root: $0.0282$ ✓ - variances add, deviations do not."
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "The desk reflex",
+      "md": "The $\\sigma\\sqrt{t}$ rule is exactly how VaR is scaled across horizons in textbook risk models. Its assumptions are Brownian's: independent, identically distributed increments and no drift over the horizon. Fat tails and volatility clustering (real markets) break it - but knowing precisely which Brownian property fails is what lets you fix it with better models instead of folklore."
+    },
+    {
+      "type": "h2",
+      "text": "Simulating Brownian motion"
+    },
+    {
+      "type": "p",
+      "md": "On a grid of spacing $\\Delta t$, the definition tells you exactly how to simulate: draw $Z \\sim N(0,1)$ independently at each step and set $\\Delta W = \\sqrt{\\Delta t}\\, Z$. Summing the increments gives a path that is *exact* in distribution at the grid times - because Gaussian increments are exactly what Brownian increments are, there is no discretisation error for $W$ itself (error appears later, when we use these increments inside nonlinear SDEs). This three-line construction is the kernel of every Monte Carlo pricing engine."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import numpy as np\n\nrng = np.random.default_rng(7)\nn, dt = 252, 1.0 / 252                 # 252 trading days\n\nw = np.sqrt(dt) * rng.standard_normal(n)   # exact increments sqrt(dt)*Z\npath = np.cumsum(w)                        # W at day 1, 2, ..., 252\n\nprint(path.shape)                          # (252,)\nprint(round(0.20 * float(np.sqrt(dt)), 4)) # 0.0126 - daily vol for 20% annual",
+      "caption": "Each rerun draws a different path; the statistical properties (variance $t$, normal increments) are exact by construction."
+    },
+    {
+      "type": "h2",
+      "text": "Where this leads"
+    },
+    {
+      "type": "p",
+      "md": "Everything downstream builds on $W_t$: adding a drift $\\mu t$ gives a model of log-prices; exponentiating it gives geometric Brownian motion, the Black-Scholes asset (next module); feeding $dW$ into PDEs produces the heat equation connection (the PDE module). The scaling limit in this lesson - walk divided by $\\sqrt{n}$, CLT applied - is also the honest answer to 'where does the normal distribution in finance come from?': from summing many small independent shocks, and it is only as trustworthy as that independence assumption."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "For standard Brownian motion (unit annual volatility), compute the standard deviation of $W_t$ at $t = 0.25$, $t = 1$ and $t = 4$ years. Then verify the variance bookkeeping: over one year split into 252 days of variance $\\Delta t = 1/252$ each, show the total variance is 1.",
+    "hints": [
+      "$W_t \\sim N(0, t)$: standard deviation is $\\sqrt{t}$.",
+      "Total variance = number of steps × variance per step."
+    ],
+    "solution": "Standard deviations: $\\sqrt{0.25} = 0.5$, $\\sqrt{1} = 1$, $\\sqrt{4} = 2$ - doubling the horizon does not double the uncertainty; four times the horizon does. Variance check: $252 \\times (1/252) = 1$ exactly, matching $\\text{Var}(W_1) = 1$. This additivity is precisely why deviations scale as $\\sqrt{t}$ and why risk does not grow linearly in time."
+  },
+  "independentExercise": {
+    "prompt": "A stock's log-price follows a Brownian motion with annual volatility $\\sigma = 0.30$ (30%) and zero drift. (a) Compute the standard deviation of the log-price change over 1 day, 5 days and 10 days, in percent. (b) After how many days does the standard deviation reach 6%? (c) A colleague estimates the 10-day standard deviation as $3 \\times 1.89\\% = 5.67\\%$ by linear scaling. What is wrong, and by how much is the estimate off?",
+    "hints": [
+      "(a) $\\sigma\\sqrt{t}$ with $t = 1/252, 5/252, 10/252$.",
+      "(b) Solve $0.30\\sqrt{t} = 0.06$ for $t$ in years, then convert to days.",
+      "(c) The rule is $\\sqrt{t}$, not $t$."
+    ],
+    "solution": "(a) Daily: $0.30 \\times 0.062994 = 0.0189$ → 1.89%. Five days: $0.30 \\times 0.140861 = 0.0423$ → 4.23%. Ten days: $0.30 \\times 0.199205 = 0.0598$ → 5.98%. (b) $0.30\\sqrt{t} = 0.06 \\Rightarrow \\sqrt{t} = 0.2 \\Rightarrow t = 0.04$ years $= 0.04 \\times 252 = 10.08$ days. (c) The correct multiplier over 10 days is $\\sqrt{10} \\approx 3.16$, not $3$ (or 10): variances add, so deviations scale with the square root. The linear estimate 5.67% understates the true 5.98% by 0.31 percentage points at 10 days - and the gap between linear and square-root scaling grows without bound as the horizon lengthens, which is why horizon conversions must always come from $\\sigma\\sqrt{t}$."
+  },
+  "commonMistakes": [
+    "Scaling volatility linearly with time ($10$ days = $10\\times$ daily risk) - variances add, so deviations scale with $\\sqrt{t}$.",
+    "Forgetting $W_t$ has *variance* $t$, not standard deviation $t$: $W_4$ has standard deviation 2, not 4.",
+    "Assuming the scaling limit needs steps of size $1/n$ - it must be $1/\\sqrt{n}$ to keep variance finite.",
+    "Treating simulated Brownian paths as smooth curves you can differentiate - Brownian paths are continuous but nowhere differentiable."
+  ],
+  "realWorldApplication": "Signal noise in sensors, particle diffusion (the original Brownian pollen-grain motion of 1827) and molecular movement in fluids are all modelled by Brownian motion - the same scaling argument from tiny independent shocks applies in each field.",
+  "quantFinanceApplication": "The $\\sigma\\sqrt{t}$ rule converts annual volatility into the daily VaR input used on every desk; Monte Carlo pricing engines simulate exactly the $\\sqrt{\\Delta t}\\, Z$ increments shown here; and Brownian motion is the noise source of every continuous-time pricing model in the stochastic-calculus module.",
+  "summary": [
+    "Scaling the random walk's steps by $1/\\sqrt{n}$ keeps variance constant and converges to Brownian motion; $\\sqrt{n}$ is the only scale that works.",
+    "Defining properties: $W_0 = 0$, independent increments, stationary increments $W_{t+s} - W_t \\sim N(0,s)$, continuous paths.",
+    "$W_t \\sim N(0, t)$: standard deviation $\\sqrt{t}$; variance additivity is the engine of all scaling rules.",
+    "Annual $\\sigma$ → daily $\\sigma\\sqrt{1/252}$: 20% annual becomes 1.26% daily and 2.82% over 5 days.",
+    "Simulation on a grid is exact: $\\Delta W = \\sqrt{\\Delta t}\\, Z$ with independent standard normals.",
+    "Paths are continuous but nowhere differentiable; quadratic variation $[W]_t = t$ prepares the ground for Itô calculus."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "For standard Brownian motion, the random variable $W_3$ is distributed as:",
+      "options": [
+        "$N(0, 3)$",
+        "$N(0, 9)$",
+        "$N(3, 1)$",
+        "$N(0, \\sqrt{3})$"
+      ],
+      "answerIndex": 0,
+      "explanation": "Stationary Gaussian increments give $W_t \\sim N(0, t)$: mean 0, **variance** 3 at $t = 3$ (standard deviation $\\sqrt{3}$, which is option 4's trap)."
+    },
+    {
+      "id": "q2",
+      "type": "numeric",
+      "prompt": "What is the standard deviation of $W_4$ for standard Brownian motion?",
+      "answer": 2,
+      "tolerance": 0.001,
+      "explanation": "$W_4 \\sim N(0, 4)$: variance 4, standard deviation $\\sqrt{4} = 2$."
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "Annual volatility is 20%. To 2 decimal places, what is the daily standard deviation in percent (using 252 trading days)?",
+      "answer": 1.26,
+      "tolerance": 0.02,
+      "explanation": "$0.20\\sqrt{1/252} = 0.20 \\times 0.062994 = 0.0126$ = 1.26% per day. The $\\sqrt{t}$ rule from variance additivity."
+    },
+    {
+      "id": "q4",
+      "type": "code-output",
+      "prompt": "What does this Python code print?",
+      "language": "python",
+      "code": "import math\nsigma = 0.30\nprint(round(100 * sigma * math.sqrt(1/252), 2))\nprint(round(100 * sigma * math.sqrt(10/252), 2))",
+      "answer": "1.89\n5.98",
+      "explanation": "Daily: $0.30 \\times 0.062994 = 1.8898\\% \\to 1.89$. Ten days: $0.30 \\times 0.199205 = 5.9762\\% \\to 5.98$. Note $5.98 \\ne 10 \\times 1.89$ - scaling is square-root, not linear."
+    },
+    {
+      "id": "q5",
+      "type": "ms",
+      "prompt": "Which statements are TRUE for standard Brownian motion?",
+      "options": [
+        "Increments over disjoint intervals are independent",
+        "$W_t \\sim N(0, t)$",
+        "Paths are differentiable everywhere",
+        "$\\text{Var}(W_{2t}) = 2\\,\\text{Var}(W_t)$"
+      ],
+      "answerIndices": [0, 1, 3],
+      "explanation": "Independent increments, Gaussian marginals and variance proportional to time are defining properties. Brownian paths are continuous but nowhere differentiable - so option 3 is false."
+    },
+    {
+      "id": "q6",
+      "type": "short",
+      "prompt": "Why must the random walk's step size be divided by $\\sqrt{n}$ (and not $n$, or not at all) to obtain a sensible limit as the number of steps $n$ in a fixed interval grows?",
+      "modelAnswer": "Variance of the sum of $n$ independent steps is $n$ times the per-step variance; dividing step size by sqrt(n) scales variance by 1/n, making the total variance $n \\times (1/n) = 1$, which stays finite and constant. Dividing by $n$ would collapse variance to 0; no scaling would blow it up to $n$.",
+      "keywords": ["variance", "sqrt", "add"],
+      "explanation": "The $\\sqrt{n}$ scale is the unique choice preserving the total variance - it is forced by variance additivity, which is also why volatility scales as $\\sqrt{t}$ in every application."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "formula",
+      "front": "Distribution of $W_t$",
+      "back": "$W_t \\sim N(0, t)$: mean 0, variance $t$, standard deviation $\\sqrt{t}$."
+    },
+    {
+      "type": "concept",
+      "front": "Four defining properties of Brownian motion",
+      "back": "$W_0 = 0$; independent increments; stationary increments $N(0, s)$ over any interval of length $s$; continuous (but nowhere differentiable) paths."
+    },
+    {
+      "type": "formula",
+      "front": "Volatility time scaling",
+      "back": "$\\sigma_{\\text{horizon}} = \\sigma_{\\text{annual}} \\sqrt{t}$; 20% annual → $0.20\\sqrt{1/252} = 1.26\\%$ daily."
+    },
+    {
+      "type": "code-output",
+      "front": "How do you simulate one Brownian increment of length $\\Delta t$?",
+      "back": "Draw $Z \\sim N(0,1)$ and use $\\Delta W = \\sqrt{\\Delta t}\\, Z$; cumulate the increments for a path (exact in distribution at grid times)."
+    }
+  ],
+  "references": [
+    {
+      "label": "Wikipedia — Brownian motion (Wiener process)",
+      "url": "https://en.wikipedia.org/wiki/Brownian_motion"
+    },
+    {
+      "label": "Wikipedia — Donsker's theorem (walk → Brownian scaling limit)",
+      "url": "https://en.wikipedia.org/wiki/Donsker%27s_theorem"
+    }
+  ],
+  "skills": ["stochastic-processes"]
+}

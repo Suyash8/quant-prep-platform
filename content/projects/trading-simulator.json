@@ -1,0 +1,183 @@
+{
+  "slug": "trading-simulator",
+  "order": 10,
+  "title": "End-to-End Trading Simulator (Capstone)",
+  "language": "python-cpp",
+  "difficulty": "capstone",
+  "prereqLessons": [
+    "bt-lookahead-costs",
+    "bt-strategy-evaluation",
+    "mic-order-books",
+    "mic-matching",
+    "risk-var",
+    "pf-performance-ratios",
+    "qm-validation",
+    "cpp-threads",
+    "py-cpp-interop",
+    "inst-futures-forwards"
+  ],
+  "context": "This is the capstone: assemble the track's components into one system that behaves like a small trading stack — historical data in, orders out, fills matched, accounts reconciled, risk enforced, results reported end to end. Firms build exactly this kind of simulator to onboard strategies safely: it is where a candidate's backtester meets a matching engine, and where a claimed Sharpe of 3 gets reconciled against a ledger that disagrees.\n\nThe grading emphasis is systems judgement: event ordering, the anti-look-ahead guard, reconciliation that actually reconciles, and a risk engine that can stop the world. Performance matters (the C++ matching core is an optional stretch), but a slower simulator that is provably correct beats a fast one that nobody can trust.",
+  "problem": "Build an end-to-end trading simulator driven by a config file and historical OHLCV data:\n\n- **Event loop**: a monotonic simulation clock processes `MarketDataEvent`, `OrderEvent`, `FillEvent` and timer events in timestamp order; the starter's `SimulationClock` raises `LookAheadError` on any out-of-order feed — wire it into every handler.\n- **Strategy engine**: at least two strategies (e.g. buy-and-hold and a moving-average crossover) consuming a data view capped at the current timestamp.\n- **Matching/execution**: marketable limit and market orders matched against a simulated book built from historical quotes, with volume caps per bar, partial fills and a slippage model; fill events emitted with costs.\n- **Portfolio accounting**: cash, positions, average cost, realised/unrealised PnL, commissions; every fill updates the ledger exactly once.\n- **Risk engine**: pre-trade checks (per-symbol exposure cap, gross leverage cap, historical VaR limit vs the current portfolio), a rejection log, and a kill switch that halts trading when drawdown breaches a threshold; kill-switch events must be observable in the report.\n- **Reconciliation**: an independent module recomputes portfolio state from the fill log alone and must match the live ledger to 1e-6 relative — a mismatch fails the run loudly. This is the core audit feature.\n- **Analytics report**: equity curve, per-symbol PnL, turnover, cost breakdown, VaR usage vs limit, risk rejections and kill-switch incidents; deterministic golden-file test over a fixed scenario.\n- **Optional C++ core**: the matching inner loop as a shared library callable via ctypes, benchmarked against the Python engine on at least 100k fills, with a parity test.",
+  "requirements": [
+    "Event ordering is total and verifiable: timestamps strictly non-decreasing; the clock guard raises on any stale or future-inconsistent event; a test feeds a deliberately mis-ordered event stream and asserts the raise.",
+    "Anti-look-ahead: strategy data views are capped at the current bar; the shipped test suite includes a cheating-strategy attempt that must be caught (same standard as the backtesting project).",
+    "Matching semantics: price-time priority within the simulated book, partial fills up to bar volume, documented fill-price rules (bid/ask/mid), slippage model parameters in config.",
+    "Accounting invariants asserted on every event: margin rules honoured, per-fill cash and quantity deltas consistent, and equity = cash + sum(position * mark); any violation aborts the run with a diagnostic.",
+    "Reconciliation module reads only the fill log and config, recomputes final cash/positions/PnL, and compares to the ledger within tolerance; the comparison output is part of the report.",
+    "Risk engine is pre-trade and synchronous: rejected orders never reach matching; rejection reasons logged; the kill switch trips on a drawdown threshold and its activation/recovery is logged and reported.",
+    "Deterministic scenario: a bundled config + synthetic data produce a byte-identical report on every run (golden-file test); the CLI runs the full pipeline from a clean checkout with one command.",
+    "If the C++ core is built: a parity test Python vs C++ on the same fill schedule (identical trades to 1e-9) and a benchmark table (fills/sec) with hardware noted. If not built, a short justified scope note in the README is required."
+  ],
+  "milestones": [
+    {
+      "title": "Event loop, clock and look-ahead guard",
+      "detail": "Typed events, priority ordering, clock guard wired into handlers, mis-order test.",
+      "estHours": 8
+    },
+    {
+      "title": "Strategy engine and accounting",
+      "detail": "Capped data views, two strategies, ledger with cash/positions/PnL, per-event invariant assertions.",
+      "estHours": 10
+    },
+    {
+      "title": "Matching and execution",
+      "detail": "Simulated book from historical quotes, volume-capped partial fills, slippage and commissions, fill events.",
+      "estHours": 10
+    },
+    {
+      "title": "Risk engine and kill switch",
+      "detail": "Pre-trade checks, rejection log, VaR limit vs portfolio, drawdown kill switch with recovery semantics.",
+      "estHours": 8
+    },
+    {
+      "title": "Reconciliation and analytics report",
+      "detail": "Independent recomputation from the fill log, tolerance comparison, report generation, golden-file test.",
+      "estHours": 8
+    },
+    {
+      "title": "C++ core option, benchmarks and docs",
+      "detail": "Matching core as shared lib + ctypes (optional), parity + benchmark, final README and architecture doc.",
+      "estHours": 8
+    }
+  ],
+  "designGuidance": [
+    {
+      "type": "h2",
+      "text": "Architecture: one bus, strict ordering"
+    },
+    {
+      "type": "code",
+      "lang": "text",
+      "code": "historical CSV ─► event bus (timestamp-ordered) ─► clock guard ─► handlers\n                                                    │\n                          ┌─────────────────────────┼───────────────────────┐\n                     strategy engine           matching engine          risk engine\n                     (capped views)            (book, fills, costs)     (pre-trade gates)\n                          └────────── ledger (cash/positions/PnL) ──────────┘\n                                                        │\n                                     reconciliation (fill-log replay) ──► report"
+    },
+    {
+      "type": "callout",
+      "variant": "warn",
+      "title": "Reconciliation is your bug detector",
+      "md": "Recompute everything from the fill log in a module that shares no code with the live engine. If the two disagree by even a cent, one of them is wrong — usually the live one. Teams that skip this ship silent PnL drift for years; teams that build it find three bugs in their first week."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "def handle_market_data(self, event: MarketDataEvent) -> None:\n    self.clock.advance_to(event.timestamp)      # raises LookAheadError on stale input\n    self.book.on_quote(event.symbol, event.bid, event.ask)\n    # strategy views built AFTER the guard can only see data <= event.timestamp",
+      "caption": "The guard runs before anything else touches the event"
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Risk check",
+        "Trigger",
+        "Action"
+      ],
+      "rows": [
+        [
+          "symbol exposure",
+          "|position * mark| > cap",
+          "reject order, log reason"
+        ],
+        [
+          "gross leverage",
+          "sum(|position * mark|) / equity > cap",
+          "reject order"
+        ],
+        [
+          "VaR limit",
+          "historical VaR_95 > limit",
+          "reject risk-increasing orders"
+        ],
+        [
+          "kill switch",
+          "drawdown from peak > threshold",
+          "halt trading, log incident, optional flatten"
+        ]
+      ]
+    },
+    {
+      "type": "h2",
+      "text": "What 'correct' means here"
+    },
+    {
+      "type": "list",
+      "ordered": false,
+      "items": [
+        "**Ledger exactness**: every fill touches the ledger exactly once — assert it with per-fill deltas rather than trusting cumulative checks.",
+        "**Order of operations**: risk check *before* matching; matching *before* accounting; guard *before* everything. Encode the sequence in one place (the dispatcher) so it cannot drift.",
+        "**Determinism**: no wall-clock time in simulation logic; seeds fixed in config; identical input produces an identical report (golden test).",
+        "**Fail loudly**: invariants abort the run with the event index in the message — a wrong number is worse than a crash."
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "The capstone story",
+      "md": "In interviews, this project is the narrative: 'I built a simulator where the look-ahead guard raised on a planted cheat, reconciliation caught a cost-model bug I had shipped, and the risk engine halted a runaway strategy.' That story — specific, verifiable, with numbers — is worth more than any line on a CV."
+    }
+  ],
+  "starterFiles": [
+    {
+      "path": "simulator/events.py",
+      "content": "\"\"\"Event types and the simulation clock for the capstone trading simulator.\"\"\"\n\nfrom __future__ import annotations\n\nfrom dataclasses import dataclass\nfrom enum import Enum, auto\n\n\nclass EventType(Enum):\n    MARKET_DATA = auto()\n    ORDER = auto()\n    FILL = auto()\n    TIMER = auto()\n\n\n@dataclass(frozen=True)\nclass MarketDataEvent:\n    timestamp: int      # simulation clock in nanoseconds; non-decreasing\n    symbol: str\n    bid: float\n    ask: float\n\n\n@dataclass(frozen=True)\nclass OrderEvent:\n    timestamp: int\n    symbol: str\n    side: str                    # \"buy\" | \"sell\"\n    quantity: int                # shares; positive\n    limit_price: float | None    # None => market order\n\n\n@dataclass(frozen=True)\nclass FillEvent:\n    timestamp: int\n    order_timestamp: int\n    symbol: str\n    side: str\n    quantity: int\n    price: float\n    commission: float\n\n\nclass LookAheadError(AssertionError):\n    \"\"\"Raised when the simulation is fed an event older than the clock.\"\"\"\n\n\nclass SimulationClock:\n    \"\"\"Monotonic high-water mark of processed event timestamps.\n\n    Every handler must call advance_to(event.timestamp) BEFORE acting on the\n    event; any attempt to act on stale data raises.\n    \"\"\"\n\n    def __init__(self) -> None:\n        self._now: int = -1\n\n    @property\n    def now(self) -> int:\n        return self._now\n\n    def advance_to(self, timestamp: int) -> None:\n        if timestamp < self._now:\n            raise LookAheadError(\n                f\"event timestamp {timestamp} precedes clock {self._now}\"\n            )\n        self._now = timestamp\n"
+    },
+    {
+      "path": "tests/test_clock.py",
+      "content": "\"\"\"Contract tests for the simulation clock (anti-look-ahead guard).\"\"\"\n\nimport os\nimport sys\n\nROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))\nsys.path.insert(0, ROOT)\n\nfrom simulator.events import LookAheadError, SimulationClock  # noqa: E402\n\n\ndef test_clock_advances_monotonically():\n    clock = SimulationClock()\n    assert clock.now == -1\n    clock.advance_to(100)\n    assert clock.now == 100\n    clock.advance_to(100)  # equal timestamps are allowed\n    assert clock.now == 100\n\n\ndef test_out_of_order_timestamps_raise():\n    clock = SimulationClock()\n    clock.advance_to(200)\n    try:\n        clock.advance_to(199)\n    except LookAheadError:\n        return\n    raise AssertionError(\"stale timestamp must raise LookAheadError\")\n\n\ndef main() -> int:\n    failed = 0\n    for test in (test_clock_advances_monotonically, test_out_of_order_timestamps_raise):\n        try:\n            test()\n            print(f\"PASS {test.__name__}\")\n        except AssertionError as exc:\n            failed += 1\n            print(f\"FAIL {test.__name__}: {exc}\")\n    return 1 if failed else 0\n\n\nif __name__ == \"__main__\":\n    sys.exit(main())\n"
+    }
+  ],
+  "evaluationCriteria": [
+    {
+      "criterion": "End-to-end correctness: event ordering, guard, matching, accounting invariants",
+      "weight": 25
+    },
+    {
+      "criterion": "Reconciliation design and demonstrated bug-finding power (tolerance comparison in report)",
+      "weight": 20
+    },
+    {
+      "criterion": "Risk engine: pre-trade gating, rejection logging, kill-switch semantics",
+      "weight": 15
+    },
+    {
+      "criterion": "Report quality and determinism (golden-file test)",
+      "weight": 15
+    },
+    {
+      "criterion": "Test suite breadth including planted look-ahead cheats and mis-ordered events",
+      "weight": 15
+    },
+    {
+      "criterion": "C++ core parity/benchmark or justified scope decision, plus documentation",
+      "weight": 10
+    }
+  ],
+  "documentationRequirements": [
+    "README.md: architecture diagram, one-command run, config reference for all tunables (costs, risk limits, seeds).",
+    "RECONCILIATION.md (or a section): method, tolerance, what a mismatch means, and one real discrepancy you found and fixed.",
+    "RISK.md: limit definitions, pre-trade vs post-trade checks, kill-switch activation/recovery semantics.",
+    "Determinism note: seeds, golden-file testing, and how to reproduce the benchmark (if the C++ core exists)."
+  ],
+  "extensionChallenges": [
+    "Add intraday margining: mark-to-market with margin calls that force liquidation orders through the same matching path.",
+    "Extend the risk engine with a stress-scenario module: shocked prices (+/- 3 sigma day) revalued through the portfolio with a limit on stressed loss.",
+    "Make the event loop parallel across independent symbols with a deterministic, order-preserving merge, keeping the reconciliation guarantees intact."
+  ]
+}

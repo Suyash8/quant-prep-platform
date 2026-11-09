@@ -1,0 +1,241 @@
+{
+  "id": "di-tick-storage",
+  "moduleId": "ph10-data-infrastructure",
+  "title": "Tick-Data Storage and Time-Series Databases",
+  "estMinutes": 26,
+  "difficulty": "advanced",
+  "prereqs": ["db-timeseries-columnar"],
+  "objectives": [
+    "Explain the three properties that make tick data special - extreme scale, append-only writes and time-ordered access - and why they break general-purpose row stores",
+    "Compute raw and compressed storage requirements for a tick capture pipeline",
+    "Describe columnar layout and per-field encodings (dictionary, delta, run-length) and why each fits a tick field",
+    "Choose and justify a partitioning scheme for a given query pattern, and quantify query-pruning savings"
+  ],
+  "motivation": "A desk captures every quote and trade from 40 symbols: at 5,000 messages per second sustained over a 6.5-hour session, that is 117 million events per day. Storing those events badly means a backtest that needs one afternoon of ticks scans terabytes of irrelevant data, and a capture layer that silently drops a second of ticks can poison a month of research. Storage design for tick data is therefore a correctness problem, not just a cost problem.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "What makes tick data special"
+    },
+    {
+      "type": "p",
+      "md": "Three properties dominate every tick-storage design. First, **scale**: feeds are enormous and write-heavy. Suppose a combined feed for 40 symbols averages 5,000 messages per second over a 6.5-hour session ($6.5 \\times 3600 = 23{,}400$ seconds). That is $5{,}000 \\times 23{,}400 = 117{,}000{,}000$ messages per day. At an average of 200 bytes per message, one day is $117{,}000{,}000 \\times 200 = 23.4$ GB raw, and a 250-day year is $23.4 \\times 250 = 5{,}850$ GB, roughly 5.9 TB per symbol set per year - before any replication."
+    },
+    {
+      "type": "p",
+      "md": "Second, tick data is **append-only**. Nobody updates yesterday's trade; corrections arrive as *new* messages flagged as corrections. The workload is insert and range-scan, almost never point-update, which is the opposite of an OLTP database's read-modify-write pattern. Third, it is **time-ordered**: within one symbol's stream, timestamps are monotonically non-decreasing, and nearly every useful query - \"all AAPL trades between 10:00 and 10:05\" - is a time-range scan."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Why a missing tick matters",
+      "md": "A capture system is not allowed to be 99% right. A one-second outage at 14:02 hides exactly the move a strategy traded on, so a backtest silently overstates Sharpe, and a live reconciliation against venue counts finds the gap days later when the money is already at risk. Storage must therefore support gap detection (sequence numbers, cadence checks) as a first-class feature, not an afterthought."
+    },
+    {
+      "type": "h2",
+      "text": "Columnar layouts and per-field encodings"
+    },
+    {
+      "type": "p",
+      "md": "A row store writes each record's fields interleaved: timestamp, symbol, price, size, venue, flags, then the next record. A **columnar** layout writes all timestamps together, then all symbols, then all prices, and so on. Columns of tick data are extraordinarily repetitive, and repetition compresses. Each field gets an encoding chosen for its pattern:"
+    },
+    {
+      "type": "table",
+      "headers": ["Field", "Pattern", "Encoding", "Typical footprint"],
+      "rows": [
+        ["symbol", "small set of values", "dictionary: 2-byte id", "~2 bytes per row"],
+        ["timestamp (µs)", "near-arithmetic progression", "delta-of-delta + run-length", "1-2 bytes per row"],
+        ["price", "2 decimals, quantised", "scaled integer, bit-packed", "2-4 bytes per row"],
+        ["size", "small positive ints", "variable-length int", "1-2 bytes per row"],
+        ["venue/flags", "few distinct values", "dictionary or bitmap", "under 1 byte per row"]
+      ]
+    },
+    {
+      "type": "p",
+      "md": "Timestamps deserve a closer look because they are the largest column. Quote timestamps often advance in near-regular steps. When consecutive deltas repeat, the *delta-of-delta* (the difference between consecutive deltas) is zero, and long zero runs collapse under run-length encoding to almost nothing."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "ts = [1_000_000, 1_000_250, 1_000_500, 1_000_750]  # microseconds\ndeltas = [b - a for a, b in zip(ts, ts[1:])]\ndod = [b - a for a, b in zip(deltas, deltas[1:])]\nprint(deltas)  # [250, 250, 250]\nprint(dod)     # [0, 0]  -> a long run of zeros compresses to almost nothing",
+      "caption": "Delta-of-delta encoding: irregular clocks still compress well because deltas move slowly."
+    },
+    {
+      "type": "p",
+      "md": "In practice a columnar tick store reaches 5-15x compression on market data (illustrative; the exact ratio depends on symbol mix and volatility). Our 23.4 GB/day becomes roughly $23.4 / 6 \\approx 3.9$ GB/day at 6:1, or 975 GB for the year. Columnar layouts also pay off at query time: a query over prices and timestamps never touches the venue or flags columns at all."
+    },
+    {
+      "type": "interactive",
+      "component": "MemoryLayout",
+      "params": {
+        "value": 42.17,
+        "type": "double"
+      },
+      "caption": "One tick price is a 64-bit double. Columnar storage lays thousands of these contiguously per column, which is exactly what makes vectorised scans and per-column compression effective."
+    },
+    {
+      "type": "h2",
+      "text": "Partitioning for query pruning"
+    },
+    {
+      "type": "p",
+      "md": "Compression shrinks bytes; **partitioning** shrinks what you read. Partition by trading day and the query \"replay 14 June\" reads one day's files, not the year. Partition by symbol hash and per-symbol workloads (live book rebuilding) touch only that symbol's slice. Time partitioning also makes retention cheap: expiring old data is dropping a partition - a metadata operation - rather than deleting rows, which rewrites append-only storage."
+    },
+    {
+      "type": "steps",
+      "title": "Worked example: what partition pruning saves",
+      "items": [
+        "Annual compressed footprint: $5{,}850 / 6 = 975$ GB across 250 daily partitions, so one day $= 975 / 250 = 3.9$ GB.",
+        "Without pruning, a one-day backtest scans 975 GB. At 1 GB/s sequential read that is 975 s, about 16 minutes.",
+        "With day-level pruning the scan is 3.9 GB, which is 3.9 s - a 250x reduction in I/O.",
+        "The algebra is general: pruning factor = number of partitions scanned before / scanned after. Reading 1 of 250 partitions gives 250x."
+      ]
+    },
+    {
+      "type": "p",
+      "md": "The classic design is a hybrid: day partitions for research and retention, with symbol-ordered (or symbol-keyed) files inside each partition so per-name reads stay sequential. Hot data (recent weeks) sits on NVMe; older partitions move to cheap object storage; compliance archives persist for years in immutable form."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Do not 'correct' history in place",
+      "md": "Because tick storage is append-only, a correction is a new event that references the original message, never an overwrite. Overwrites break replay, break audit, and hide the very discrepancies that reconciliation exists to find. If your storage lets you silently edit a tick, your data lineage is already broken."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "A desk captures an aggregated feed of 25 symbols at an average 2,400 messages per second over a 6.5-hour session. Each message averages 160 bytes. (a) Compute the raw daily volume in GB. (b) The columnar store achieves 8:1 compression - compute the compressed daily volume. (c) Compute raw and compressed annual volumes (250 trading days), in GB.",
+    "hints": [
+      "First convert the session to seconds: $6.5 \\times 3600$.",
+      "Messages per day = rate $\\times$ seconds; bytes = messages $\\times$ bytes-per-message.",
+      "1 GB = $10^9$ bytes."
+    ],
+    "solution": "Session length $= 6.5 \\times 3600 = 23{,}400$ s. (a) Messages/day $= 2{,}400 \\times 23{,}400 = 56{,}160{,}000$; raw volume $= 56{,}160{,}000 \\times 160 = 8{,}985{,}600{,}000$ bytes $= 8.9856$ GB $\\approx 8.99$ GB/day. (b) Compressed: $8.9856 / 8 = 1.1232$ GB/day. (c) Annual raw $= 8.9856 \\times 250 = 2{,}246.4$ GB $\\approx 2.25$ TB; annual compressed $= 1.1232 \\times 250 = 280.8$ GB $\\approx 0.28$ TB."
+  },
+  "independentExercise": {
+    "prompt": "Your store holds one year of data at 23.4 GB/day raw and 6:1 compression, split into 250 daily partitions. Disk throughput is 2 GB/s. (a) What is the compressed size of a 5-day study? (b) How long does reading it take with day-level partition pruning? (c) How long would it take if the store had no partitions and the query scanned the whole compressed year? (d) What is the speed-up factor from pruning?",
+    "hints": [
+      "Compress first, then divide by throughput.",
+      "A year is 250 partitions; a 5-day query prunes to 5 of them."
+    ],
+    "solution": "(a) Raw 5 days $= 23.4 \\times 5 = 117$ GB; compressed $= 117 / 6 = 19.5$ GB. (b) $19.5 / 2 = 9.75$ s. (c) Full year compressed $= 23.4 \\times 250 / 6 = 975$ GB, so $975 / 2 = 487.5$ s $\\approx 8.1$ minutes. (d) $487.5 / 9.75 = \\textbf{50}\\times$ - exactly the pruning ratio $250 / 5$."
+  },
+  "commonMistakes": [
+    "Treating tick storage as a normal CRUD database: updates-in-place break replay and audit; corrections must be new appended events.",
+    "Partitioning by symbol first for a research workload: backtests scan date ranges, so time partitioning prunes far more; pick partitions from the dominant query pattern.",
+    "Forgetting the session boundary in day partitions: 6.5 hours of a US session plus pre/post markets spans dates and timezones; a naive midnight-to-midnight split splits sessions badly.",
+    "Comparing GB and GiB casually: 23.4 GB (decimal) is about 21.8 GiB (binary) - at feed scale, a 7% sizing error is hundreds of GB.",
+    "Assuming columnar is always better: retrieving one full record is slower in a columnar store; row or hybrid layouts suit point-lookup workloads."
+  ],
+  "realWorldApplication": "Every serious market-data platform - kdb+, ClickHouse, TimescaleDB, Arctic/Parquet lakes - is an append-only, time-partitioned, column-compressed tick store, sized with exactly the arithmetic in this lesson.",
+  "quantFinanceApplication": "Backtesting and research replay are bounded by storage I/O: a pruned partition scan can turn a 16-minute query into a 4-second one, which changes how many research questions get asked per day. Capture gaps found by reconciliation are data-quality incidents with direct PnL consequences.",
+  "summary": [
+    "Tick data is append-only, time-ordered and enormous: 5,000 msg/s over 23,400 s is 117M messages/day, and sizing must be computed, not guessed.",
+    "Columnar layouts plus per-field encodings (dictionary, delta-of-delta, run-length) compress market data 5-15x because each column is repetitive.",
+    "Partitioning is the query-time win: scanning 1 of 250 daily partitions is a 250x I/O reduction, and retention becomes a cheap metadata drop.",
+    "A tick capture that misses even a second of data silently corrupts research and live decisions - storage design is a correctness problem."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "Why do columnar layouts compress tick data so much better than row layouts?",
+      "options": [
+        "Each column contains highly repetitive, quantised values, so per-column encodings (dictionary, delta, run-length) find long patterns",
+        "Columnar stores use faster disks, which increases compression ratios",
+        "Rows are deleted frequently, freeing space for compression",
+        "Columnar layouts store fewer fields per record"
+      ],
+      "answerIndex": 0,
+      "explanation": "Compression exploits repetition within a column: symbols repeat (dictionary), timestamps advance near-regularly (delta-of-delta), prices are quantised. Interleaved row storage destroys those runs. Disk speed and field count are irrelevant to compressibility."
+    },
+    {
+      "id": "q2",
+      "type": "numeric",
+      "prompt": "A feed averages 5,000 messages per second over a 6.5-hour session. How many million messages is that per day? (Give the number in millions, e.g. 12 for 12 million.)",
+      "answer": 117,
+      "tolerance": 0.1,
+      "explanation": "Session $= 6.5 \\times 3600 = 23{,}400$ s. $5{,}000 \\times 23{,}400 = 117{,}000{,}000$ messages $= 117$ million."
+    },
+    {
+      "id": "q3",
+      "type": "code-output",
+      "prompt": "What does this Python code print?",
+      "language": "python",
+      "code": "ts = [1000000, 1000250, 1000750, 1001000]\ndeltas = [ts[i] - ts[i-1] for i in range(1, 4)]\ndod = [deltas[i] - deltas[i-1] for i in range(1, 3)]\nprint(sum(deltas), max(dod))",
+      "answer": "1000 250",
+      "explanation": "Deltas are $250, 500, 250$ (sum 1000); delta-of-delta is $500-250 = 250$ and $250-500 = -250$, so the max is 250. Output: `1000 250`."
+    },
+    {
+      "id": "q4",
+      "type": "ms",
+      "prompt": "Which statements are true of tick data workloads?",
+      "options": [
+        "Writes are append-only; corrections arrive as new messages",
+        "Timestamps within one symbol's stream are monotonically non-decreasing",
+        "Per-column encodings can shrink a timestamp column to 1-2 bytes per row",
+        "Point updates in place are the dominant operation",
+        "Random single-record lookups are the primary access pattern"
+      ],
+      "answerIndices": [0, 1, 2],
+      "explanation": "Tick stores are write-heavy append logs with time-range scans; updates-in-place and point lookups are OLTP patterns, not tick patterns. Corrections are appended as new flagged messages."
+    },
+    {
+      "id": "q5",
+      "type": "short",
+      "prompt": "In one sentence, why does partitioning by trading day make research queries dramatically faster even though total bytes stored are unchanged?",
+      "modelAnswer": "The query planner prunes: it reads only the partitions inside the requested date range, so I/O drops in proportion to the partitions skipped, without touching the other data at all.",
+      "keywords": ["prune", "scan", "range", "read"],
+      "explanation": "Partition pruning reduces *bytes read*, not bytes stored - the scan cost scales with the fraction of partitions touched (5 of 250 = 50x less I/O)."
+    },
+    {
+      "id": "q6",
+      "type": "mcq",
+      "prompt": "You must expire tick data older than two years. What is the right mechanism on an append-only store partitioned by day?",
+      "options": [
+        "Drop the old daily partitions - a cheap metadata operation",
+        "Run DELETE FROM ticks WHERE date < cutoff on each table",
+        "Overwrite old rows with nulls to free space",
+        "Re-encode the whole dataset with stronger compression"
+      ],
+      "answerIndex": 0,
+      "explanation": "Dropping whole partitions is metadata-level and instant; row-level DELETE on append-only storage rewrites data, is slow, and conflicts with the immutable audit posture of a tick archive."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "definition",
+      "front": "What are the three defining properties of tick data?",
+      "back": "Extreme scale (millions of events/day), append-only (no updates; corrections are new events), and time-ordered (monotonic timestamps per stream; queries are time-range scans)."
+    },
+    {
+      "type": "formula",
+      "front": "Daily raw tick volume",
+      "back": "$\\text{rate (msg/s)} \\times \\text{session seconds} \\times \\text{bytes/msg}$. E.g. $5{,}000 \\times 23{,}400 \\times 200 = 23.4$ GB/day."
+    },
+    {
+      "type": "concept",
+      "front": "Delta-of-delta timestamp encoding",
+      "back": "Store the difference between consecutive deltas. When ticks arrive in near-regular steps the deltas repeat and the delta-of-delta is 0, so long zero runs compress to almost nothing."
+    },
+    {
+      "type": "concept",
+      "front": "Partition pruning",
+      "back": "Partition by trading day (and key by symbol within) so queries read only the date range they need; pruning factor = partitions scanned before / after. Also makes retention a metadata drop, not a DELETE."
+    }
+  ],
+  "references": [
+    {
+      "label": "TimescaleDB - time-series database concepts",
+      "url": "https://docs.timescale.com/"
+    },
+    {
+      "label": "ClickHouse - column-oriented storage docs",
+      "url": "https://clickhouse.com/docs/en/about-us/distinctive-features"
+    },
+    {
+      "label": "kx (kdb+) - database and time-series documentation",
+      "url": "https://code.kx.com/q/"
+    }
+  ],
+  "skills": ["data-infrastructure", "distributed-systems"]
+}

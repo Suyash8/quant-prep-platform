@@ -1,0 +1,164 @@
+{
+  "slug": "market-data-analysis",
+  "order": 4,
+  "title": "Market Data Analysis Pipeline",
+  "language": "python-cpp",
+  "difficulty": "core",
+  "prereqLessons": [
+    "spy-pandas",
+    "stat-descriptive-sampling",
+    "ts-stationarity",
+    "py-files-errors",
+    "fin-time-value",
+    "py-profiling",
+    "py-cpp-interop",
+    "cpp-compilation-model"
+  ],
+  "context": "A buy-side research team receives daily OHLCV files from three data vendors. Every vendor has different quirks: missing days, duplicated rows, prices that violate their own high/low bounds, zero-volume ghosts. Before any return or volatility number can be trusted in a note to PMs, the data must be validated, cleaned and documented — 'garbage in, garbage out' is the most expensive bug class in quant research.\n\nThis project builds that pipeline. The Python prototype defines the correctness contract; an optional C++ fast path exists because the same team sometimes needs to validate intraday feeds where Python parsing is simply too slow. Getting the two implementations to agree on the numbers is the real exercise.",
+  "problem": "Build a market-data analysis pipeline with a Python reference implementation and an optional C++ fast path:\n\n- **Load and validate** daily OHLCV CSVs (columns: `date,open,high,low,close,volume`): schema check, type coercion, duplicate-date detection, and a data-quality report per file (missing rows by gap length, bad bars with the reason, duplicates).\n- **Clean** according to a documented policy: drop or forward-fill missing days; drop bars failing `low <= open, close <= high`, non-positive prices, or negative volume — every dropped row must be logged, never silently skipped.\n- **Analyse**: log returns $r_t = \\ln(P_t / P_{t-1})$ from close prices, rolling statistics (mean, median, stddev) with a configurable window, realised volatility per window and annualised with the $\\sqrt{252}$ convention.\n- **Report**: a per-symbol summary (CSV) and a human-readable markdown report with the quality findings and headline stats.\n- **Optional C++ fast path**: a CLI binary that parses a CSV and emits returns + realised volatility; its output must match the Python implementation on the test fixtures, with a parsing-throughput comparison (MB/s) in the report.",
+  "requirements": [
+    "Loader accepts one CSV per symbol, validates the schema strictly (header names and column order documented), and produces a machine-readable quality report (rows: date, issue, detail) alongside the cleaned data.",
+    "Cleaning policy is configurable (`drop` or `ffill` for gaps; hard rules for bad bars) and every mutation is logged; the cleaned output plus the log are the only artefacts downstream code may consume.",
+    "Log returns computed from close-to-close with positive-price enforcement (non-positive prices are a quality issue, never a silent NaN); rolling stats support window sizes >= 2 with correct partial-window behaviour at the start of the series.",
+    "Realised volatility: sigma of log returns over a rolling window and annualised via sigma * sqrt(252); the 252-day and log-return conventions are stated in the report.",
+    "All numeric outputs deterministic; unit tests use tiny hand-computable fixtures (e.g. a 5-bar file where expected returns and vol are derived in the test itself).",
+    "Python implementation uses the standard library plus (optionally) pandas; the C++ path (if built) uses no third-party libraries and reproduces the Python numeric outputs to 1e-12 on fixtures.",
+    "Benchmark: CSV parse + return computation throughput for both implementations (Python and, if built, C++) reported as MB/s and rows/sec on a generated file of at least 1M rows."
+  ],
+  "milestones": [
+    {
+      "title": "Loader, validation and quality report",
+      "detail": "Schema/type checks, duplicate and gap detection, bad-bar rules; quality-report artefact; fixture tests.",
+      "estHours": 7
+    },
+    {
+      "title": "Cleaning pipeline",
+      "detail": "Configurable drop/ffill policy with mutation logging; idempotence test (running the cleaner twice changes nothing).",
+      "estHours": 5
+    },
+    {
+      "title": "Returns, rolling stats and volatility",
+      "detail": "Log returns, rolling mean/median/std, annualised realised vol; hand-computed fixture tests; markdown report generation.",
+      "estHours": 7
+    },
+    {
+      "title": "C++ fast path and parity",
+      "detail": "CSV parser + returns/vol in C++17, matching outputs on fixtures (to 1e-12), build documented; the parity harness is required either way.",
+      "estHours": 8
+    },
+    {
+      "title": "Benchmarks and final report",
+      "detail": "1M-row generated benchmark for both implementations, MB/s and rows/sec table, README and report templates.",
+      "estHours": 4
+    }
+  ],
+  "designGuidance": [
+    {
+      "type": "h2",
+      "text": "Make data quality a first-class artefact"
+    },
+    {
+      "type": "p",
+      "md": "Resist the urge to clean silently. The deliverable is not just a cleaned frame but a *quality report* that lets a PM ask 'what did you drop and why?'. Without it, a later disagreement about a PnL number cannot be debugged. Treat the report as an API: stable column names, one row per issue."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Why log returns",
+      "md": "Log returns aggregate over time: $\\ln(P_T/P_0) = \\sum_t r_t$, which simple returns do not do. They are also symmetric-ish and approximately normal for daily horizons, which is why realised-volatility formulas work on them. Use them consistently and state the convention in every report."
+    },
+    {
+      "type": "callout",
+      "variant": "warn",
+      "title": "Annualisation mistakes are endemic",
+      "md": "Volatility scales with $\\sqrt{T}$, mean returns with $T$. Annualised vol = daily sigma * $\\sqrt{252}$; annualised mean = daily mean * 252. Multiplying the mean by $\\sqrt{252}$ (or the vol by 252) is a classic, silently-wrong bug that shows up in Sharpe ratios."
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Issue",
+        "Detection rule",
+        "Default policy"
+      ],
+      "rows": [
+        [
+          "duplicate date",
+          "same date appears twice after sorting",
+          "keep first, log both"
+        ],
+        [
+          "gap (missing day)",
+          "business-day diff > 1",
+          "ffill close, flag; open/high/low/volume policy documented"
+        ],
+        [
+          "bad bar",
+          "low > high, close outside [low, high], price <= 0, volume < 0",
+          "drop row, log reason"
+        ],
+        [
+          "zero volume",
+          "volume == 0 with non-zero range",
+          "keep, flag as suspicious"
+        ]
+      ]
+    },
+    {
+      "type": "h2",
+      "text": "Drawing the Python/C++ boundary"
+    },
+    {
+      "type": "list",
+      "ordered": false,
+      "items": [
+        "Move to C++ only what is hot and stable: byte-level CSV parsing and the returns/vol inner loops.",
+        "Keep policy logic (which rows to drop, how to fill gaps) in Python — it changes with vendor quirks and benefits from fast iteration.",
+        "Parity is tested on fixed fixtures, not eyeballed: diff the two outputs numerically as part of the test run.",
+        "If pandas is used, vectorise rather than loop; profile with cProfile before claiming a fast path is needed at all."
+      ]
+    }
+  ],
+  "starterFiles": [
+    {
+      "path": "marketdata/ohlcv.py",
+      "content": "\"\"\"OHLCV parsing and bar-level validation primitives (stdlib only).\"\"\"\n\nfrom dataclasses import dataclass\n\n\n@dataclass(frozen=True)\nclass Bar:\n    date: str      # ISO-8601 date; kept as string to avoid timezone surprises\n    open: float\n    high: float\n    low: float\n    close: float\n    volume: int\n\n\ndef parse_bar(line: str):\n    \"\"\"Parse one CSV line: date,open,high,low,close,volume.\n\n    Returns None for blank lines; raises ValueError on malformed rows.\n    \"\"\"\n    parts = line.strip().split(\",\")\n    if parts == [\"\"]:\n        return None\n    if len(parts) != 6:\n        raise ValueError(f\"expected 6 fields, got {len(parts)}: {line!r}\")\n    date, o, h, l, c, v = parts\n    return Bar(date=date, open=float(o), high=float(h), low=float(l),\n               close=float(c), volume=int(v))\n\n\ndef validate_bar(bar: Bar):\n    \"\"\"Return a list of human-readable issues; empty list means clean.\"\"\"\n    issues = []\n    if not bar.low <= bar.high:\n        issues.append(\"low > high\")\n    if not bar.low <= bar.close <= bar.high:\n        issues.append(\"close outside [low, high]\")\n    if not bar.low <= bar.open <= bar.high:\n        issues.append(\"open outside [low, high]\")\n    if bar.volume < 0:\n        issues.append(\"negative volume\")\n    return issues\n"
+    },
+    {
+      "path": "tests/test_ohlcv.py",
+      "content": "\"\"\"Fixture tests for OHLCV parsing/validation primitives.\"\"\"\n\nimport os\nimport sys\n\nROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))\nsys.path.insert(0, ROOT)\n\nfrom marketdata.ohlcv import parse_bar, validate_bar  # noqa: E402\n\n\ndef test_parse_clean_bar():\n    bar = parse_bar(\"2024-01-02,10.0,10.5,9.8,10.2,1200\")\n    assert bar is not None\n    assert bar.date == \"2024-01-02\"\n    assert bar.close == 10.2\n    assert bar.volume == 1200\n    assert validate_bar(bar) == []\n\n\ndef test_blank_line_returns_none():\n    assert parse_bar(\"\") is None\n    assert parse_bar(\"   \") is None\n\n\ndef test_close_outside_range_flagged():\n    bar = parse_bar(\"2024-01-03,10.0,10.5,9.8,11.0,1200\")\n    assert validate_bar(bar) == [\"close outside [low, high]\"]\n\n\ndef test_negative_volume_flagged():\n    bar = parse_bar(\"2024-01-03,10.0,10.5,9.8,10.2,-5\")\n    assert \"negative volume\" in validate_bar(bar)\n\n\ndef test_wrong_field_count_raises():\n    try:\n        parse_bar(\"2024-01-02,10.0,10.5,9.8\")\n    except ValueError:\n        return\n    raise AssertionError(\"malformed row must raise ValueError\")\n\n\ndef main() -> int:\n    failed = 0\n    for test in (\n        test_parse_clean_bar,\n        test_blank_line_returns_none,\n        test_close_outside_range_flagged,\n        test_negative_volume_flagged,\n        test_wrong_field_count_raises,\n    ):\n        try:\n            test()\n            print(f\"PASS {test.__name__}\")\n        except AssertionError as exc:\n            failed += 1\n            print(f\"FAIL {test.__name__}: {exc}\")\n    return 1 if failed else 0\n\n\nif __name__ == \"__main__\":\n    sys.exit(main())\n"
+    }
+  ],
+  "evaluationCriteria": [
+    {
+      "criterion": "Validation and cleaning correctness: all rule classes caught, nothing dropped silently",
+      "weight": 25
+    },
+    {
+      "criterion": "Numeric correctness of returns, rolling stats and annualised volatility on hand-computed fixtures",
+      "weight": 25
+    },
+    {
+      "criterion": "Quality-report and markdown report usefulness and determinism",
+      "weight": 15
+    },
+    {
+      "criterion": "Test quality: fixtures, idempotence, edge cases (empty file, single row)",
+      "weight": 20
+    },
+    {
+      "criterion": "C++ fast path parity and honest throughput benchmarking (or justified Python-only scope)",
+      "weight": 15
+    }
+  ],
+  "documentationRequirements": [
+    "README.md: pipeline usage end-to-end, input schema contract, cleaning policy knobs and defaults.",
+    "The data-quality report format documented (columns, issue codes) so downstream tools can consume it.",
+    "Conventions section: log returns, 252-day year, volume units; every annualised number footnoted with its convention.",
+    "Benchmark note: generated-file size, machine, MB/s per implementation."
+  ],
+  "extensionChallenges": [
+    "Add overnight-gap handling: compute close-to-open and open-to-close return splits and report their relative volatility contribution.",
+    "Extend the C++ path to stream files larger than RAM (chunked reading with carry-over state across chunk boundaries).",
+    "Add a calendar-aware gap detector using a real exchange holiday list (as a data file) instead of pure weekday arithmetic."
+  ]
+}

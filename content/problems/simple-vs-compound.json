@@ -1,0 +1,147 @@
+{
+  "slug": "simple-vs-compound",
+  "title": "Simple vs Compound Interest Gap",
+  "difficulty": "easy",
+  "category": "mathematics",
+  "tags": [
+    "interest",
+    "floating-point",
+    "determinism"
+  ],
+  "statement": [
+    {
+      "type": "p",
+      "md": "A deposit of principal $P$ (whole dollars) earns an annual rate of $r$ percent. Under **simple** interest the account earns $P \\cdot r/100$ each year on the original principal; under **compound** interest the rate applies to the running balance. After $t$ years the balances are"
+    },
+    {
+      "type": "math",
+      "tex": "S_{\\text{simple}} = P \\cdot \\frac{r\\,t}{100} \\qquad\\qquad S_{\\text{comp}} = P \\left(1 + \\frac{r}{100}\\right)^{t}"
+    },
+    {
+      "type": "p",
+      "md": "Print $|S_{\\text{comp}} - S_{\\text{simple}}|$ rounded to two decimals. By Bernoulli's inequality $(1+x)^t \\ge 1 + tx$ for $x \\ge 0$, the compound balance is never behind — but the gap is a difference of two large, close numbers, so it must be computed carefully."
+    },
+    {
+      "type": "callout",
+      "variant": "warn",
+      "title": "Deterministic floating point",
+      "md": "Compute the compound balance by **repeated multiplication**: start from `comp = P` and multiply by `(1 + r/100)` exactly `t` times, in a loop. Do not use `pow` or a logarithm identity — library exponentiation can round differently between languages, and this problem's expected output assumes the loop. The reference Python and C++ solutions use the identical operation order."
+    },
+    {
+      "type": "p",
+      "md": "The rate $r$ carries exactly two decimals (for example `5.25`); pass it through your language's decimal-to-double parser as-is."
+    }
+  ],
+  "inputFormat": "One line: $P$ (integer dollars), $r$ (a decimal with exactly two digits), $t$ (integer years), separated by spaces.",
+  "outputFormat": "One line: the absolute gap $|S_{\\text{comp}} - S_{\\text{simple}}|$ with exactly two decimals.",
+  "constraints": [
+    "1 <= P <= 10^6 (integer)",
+    "0.01 <= r <= 15.00, written with exactly two decimal digits",
+    "1 <= t <= 30",
+    "The exact answer is never within 10^-4 of a .xx5 rounding tie, so any correct computation agrees on the printed cent"
+  ],
+  "examples": [
+    {
+      "input": "1000 5.00 10\n",
+      "output": "1128.89\n",
+      "explanation": "Compound 1000 x 1.05^10 = 1628.8946... vs simple 1000 x 5 x 10 / 100 = 500.00; the gap is 1128.89."
+    },
+    {
+      "input": "5000 10.00 3\n",
+      "output": "5155.00\n",
+      "explanation": "Compound 5000 x 1.10^3 = 6655.00 vs simple 5000 x 10 x 3 / 100 = 1500.00; the gap is 5155.00."
+    }
+  ],
+  "hints": [
+    "Simple interest is one multiplication; compound interest is the loop comp = P; repeat t times: comp *= (1 + r/100).",
+    "Take the absolute difference at the end — compound should be larger, but floating point rewards a defensive abs().",
+    "Match the reference operation order exactly: factor = 1.0 + r/100.0 computed once, then multiplied t times."
+  ],
+  "editorial": [
+    {
+      "type": "h2",
+      "text": "Approach"
+    },
+    {
+      "type": "p",
+      "md": "Both balances follow from the definitions. Simple interest adds the same coupon $P \\cdot r/100$ for each of $t$ years; compound interest multiplies the balance by the growth factor $(1 + r/100)$ each year:"
+    },
+    {
+      "type": "math",
+      "tex": "S_{\\text{comp}} - S_{\\text{simple}} = P\\left[\\left(1 + \\tfrac{r}{100}\\right)^{t} - 1 - \\tfrac{rt}{100}\\right] \\;\\ge\\; 0"
+    },
+    {
+      "type": "p",
+      "md": "The gap is exactly the *interest on interest*. For the implementation, determinism matters more than cleverness: build the factor `1.0 + r/100.0` once, then multiply it into a running product $t$ times. IEEE-754 arithmetic is deterministic for a fixed operation order, so Python and C++ produce bit-identical doubles, and both correctly-rounded 2-decimal conversions print the same string."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Do not pow()",
+      "md": "`pow(1 + r/100, t)` may use a different internal algorithm (exp/log or repeated squaring) than the loop and can land one ulp away — enough to flip the printed cent when the true value sits near a rounding boundary. The problem guarantees test values are far from ties, so the loop's result is robust."
+    },
+    {
+      "type": "p",
+      "md": "**Complexity.** $O(t)$ time, $O(1)$ memory."
+    }
+  ],
+  "solutions": {
+    "python": "import sys\n\ndef main():\n    data = sys.stdin.buffer.read().decode().split()\n    P = float(data[0])\n    r = float(data[1])\n    t = int(data[2])\n    factor = 1.0 + r / 100.0\n    compound = P\n    for _ in range(t):          # repeated multiplication, exactly t times\n        compound = compound * factor\n    simple = P * (r / 100.0) * t\n    diff = compound - simple\n    if diff < 0:\n        diff = -diff\n    print(f\"{diff:.2f}\")\n\nmain()\n",
+    "cpp": "#include <cstdio>\n\nint main() {\n    double P, r;\n    long long t;\n    if (scanf(\"%lf %lf %lld\", &P, &r, &t) != 3) return 0;\n    double factor = 1.0 + r / 100.0;\n    double compound = P;\n    for (long long i = 0; i < t; i++) compound = compound * factor; // repeated multiplication\n    double simple = P * (r / 100.0) * (double)t;\n    double diff = compound - simple;\n    if (diff < 0) diff = -diff;\n    printf(\"%.2f\\n\", diff);\n    return 0;\n}\n"
+  },
+  "tests": [
+    {
+      "input": "1000 5.00 10\n",
+      "expected": "1128.89\n",
+      "hidden": false
+    },
+    {
+      "input": "5000 10.00 3\n",
+      "expected": "5155.00\n",
+      "hidden": false
+    },
+    {
+      "input": "1 1.00 1\n",
+      "expected": "1.00\n",
+      "hidden": true
+    },
+    {
+      "input": "100 0.01 1\n",
+      "expected": "100.00\n",
+      "hidden": true
+    },
+    {
+      "input": "2500 3.75 7\n",
+      "expected": "2578.62\n",
+      "hidden": true
+    },
+    {
+      "input": "1000000 15.00 30\n",
+      "expected": "61711771.96\n",
+      "hidden": true
+    },
+    {
+      "input": "999999 12.34 25\n",
+      "expected": "15253344.51\n",
+      "hidden": true
+    },
+    {
+      "input": "12345 7.89 12\n",
+      "expected": "19020.74\n",
+      "hidden": true
+    },
+    {
+      "input": "100000 8.50 20\n",
+      "expected": "341204.61\n",
+      "hidden": true
+    },
+    {
+      "input": "1 15.00 30\n",
+      "expected": "61.71\n",
+      "hidden": true
+    }
+  ],
+  "timeLimitMs": 4000,
+  "memoryLimitMb": 256,
+  "estMinutes": 20
+}

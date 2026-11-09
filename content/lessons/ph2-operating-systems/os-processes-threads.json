@@ -1,0 +1,250 @@
+{
+  "id": "os-processes-threads",
+  "moduleId": "ph2-operating-systems",
+  "title": "Processes, Threads and Scheduling",
+  "estMinutes": 26,
+  "difficulty": "core",
+  "prereqs": ["linux-permissions-processes"],
+  "objectives": [
+    "Explain what a process and a thread are, and exactly what each shares or owns",
+    "Describe the stages of a context switch and quantify its direct and indirect costs",
+    "Predict worst-case scheduling delay for a given thread count, core count and time slice",
+    "Relate scheduling jitter and preemption to tail latency in trading systems"
+  ],
+  "motivation": "Your strategy process just got preempted mid-tick and the fill arrived 400 microseconds late. No amount of algorithmic cleverness fixes that: the operating system, not your code, decided who ran on the CPU. Understanding processes, threads and the scheduler is the difference between a backtest that says 10 microseconds and production that says 60.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Two abstractions: processes and threads"
+    },
+    {
+      "type": "p",
+      "md": "A **process** is a program in execution: the kernel gives it a private virtual address space, its own file-descriptor table, credentials and a process ID (PID). A **thread** is the unit the scheduler actually runs. Every process starts with one thread; adding threads via pthread_create or std::thread gives each new thread its own stack, register set and thread-local storage, while everything else - heap, globals, open files, signal dispositions - stays shared. That split explains both the appeal and the danger of threads: sharing memory makes communication nearly free, and makes corruption easy."
+    },
+    {
+      "type": "interactive",
+      "component": "MemoryLayout",
+      "params": {
+        "title": "Process address space (x86-64 Linux)",
+        "regions": [
+          { "name": "text (code)", "address": "0x00400000", "size": "a few MiB", "note": "read-only, shared via the page cache" },
+          { "name": "data + heap", "address": "just above text, grows up", "size": "brk/malloc territory", "note": "order-book objects live here" },
+          { "name": "mmap region", "address": "~0x7f0000000000", "size": "file mappings + large mallocs", "note": "libraries and big allocations land here" },
+          { "name": "stack", "address": "~0x7ffd..., grows down", "size": "8 MiB reserve per thread", "note": "each thread gets its own" }
+        ]
+      },
+      "caption": "Click through the regions: all threads of one process see this same map - only their stacks and thread-local storage differ."
+    },
+    {
+      "type": "p",
+      "md": "The layout above is the map every address in your process resolves against. Threads of the same process see exactly this map - same text, same heap - differing only in stack and TLS. A second *process* (created by fork) gets a private copy of the mapping; pages are not physically copied until one side writes (copy-on-write), so fork is cheap to issue but expensive the moment either side starts writing heavily."
+    },
+    {
+      "type": "table",
+      "headers": ["Resource", "Per thread or shared?"],
+      "rows": [
+        ["Heap and global variables", "shared - one address space"],
+        ["Open file descriptors", "shared (per-process table)"],
+        ["Stack and registers", "per thread"],
+        ["Thread-local storage (TLS)", "per thread"],
+        ["Signal handlers", "shared, process-wide"]
+      ]
+    },
+    {
+      "type": "h2",
+      "text": "Context switches: what they cost and why"
+    },
+    {
+      "type": "p",
+      "md": "A **context switch** is the kernel suspending one task and resuming another: save the old task's registers into its control block, load the next task's, switch the memory-map if the new task is a different process (invalidating TLB entries for the old address space), and jump back to user mode. The direct cost is a microsecond or two. The indirect cost - cold L1/L2 cache and TLB lines, because the new task touches different memory - is often several times worse. Two threads of one process switch cheaper: no address-space change, no TLB flush."
+    },
+    {
+      "type": "steps",
+      "title": "Worked example: preemption vs a latency budget",
+      "items": [
+        "Hot-path budget: 20 microseconds from market-data event to order. One involuntary preemption happens on average once every 2,000 events; each costs an effective 6 microseconds (direct switch plus cache refill).",
+        "Average cost per event: $6\\,\\mu s / 2{,}000 = 3\\,\\text{ns}$ - invisible in the mean.",
+        "But the unlucky event pays the full 6 microseconds: $6 / 20 = 30\\%$ of the entire budget, gone.",
+        "Desks therefore optimise the *tail*: pin hot threads to isolated cores, raise priorities, or busy-spin so the scheduler never interrupts at all."
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Tail latency is a scheduling problem",
+      "md": "A backtest measures your strategy; the scheduler decides whether production matches it. A 12 ms scheduling delay on a \\$5M order is 12 ms of unapproved risk. CPU pinning (sched_setaffinity), core isolation and real-time scheduling exist so that the 99.9th percentile - not the average - stays inside budget. A desk that only measures the mean will ship a system that works beautifully except when it matters."
+    },
+    {
+      "type": "h2",
+      "text": "Scheduling: who runs next"
+    },
+    {
+      "type": "p",
+      "md": "The kernel keeps runnable tasks on a runqueue. On Linux the Completely Fair Scheduler (CFS) picks the runnable task with the least *virtual runtime*; nice values weight the choice, and the real-time classes (SCHED_FIFO, SCHED_RR) preempt everything else. Each task gets a **time slice**; when the slice expires, or the task blocks on I/O or a lock, the scheduler runs someone else. Blocked tasks cost nothing; *runnable but waiting* tasks are where latency comes from."
+    },
+    {
+      "type": "steps",
+      "title": "Worked example: worst-case delay under round-robin",
+      "items": [
+        "Setup: 16 runnable threads, 4 cores, slice = 3 ms.",
+        "One full round requires $16 \\times 3 = 48$ ms of CPU time.",
+        "Spread over 4 cores: $48 / 4 = 12$ ms of wall-clock time per round.",
+        "So any thread can be forced to wait up to about **12 ms** between turns - at trading scale an eternity: light crosses the Atlantic in roughly 30 ms."
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "c",
+      "code": "#include <stdio.h>\n#include <stdlib.h>\n#include <unistd.h>\n#include <sys/wait.h>\n\nint main(void) {\n    printf(\"before fork: one process\\n\");\n    fflush(stdout);                // avoid duplicated buffered output in child\n\n    pid_t pid = fork();            // returns twice: 0 in child, child PID in parent\n    if (pid == 0) {                // child branch\n        printf(\"child  sees pid=%d\\n\", getpid());\n        exit(0);\n    }\n    waitpid(pid, NULL, 0);         // parent: reap child so it cannot zombify\n    printf(\"parent sees child pid=%d\\n\", pid);\n    return 0;\n}",
+      "caption": "fork() in C: one call, two returns. Build with: cc fork_demo.c && ./a.out"
+    },
+    {
+      "type": "h2",
+      "text": "Threads in practice"
+    },
+    {
+      "type": "p",
+      "md": "Threads bring their own arithmetic. Linux reserves 8 MiB of *virtual* address space per thread stack by default - usually almost untouched, so resident memory stays small, but 10,000 threads still commit 80 GiB of address space plus kernel-side bookkeeping per thread. Oversubscription (runnable threads far above the core count) turns every slice expiry into a switch; the fix is thread pools sized to the workload, spinning instead of sleeping on the hottest paths, and affinity so a thread's cache stays warm."
+    },
+    {
+      "type": "list",
+      "ordered": false,
+      "items": [
+        "Involuntary preemption at slice expiry - mitigate with affinity, isolation and RT priorities.",
+        "Voluntary blocking on I/O or a contended lock - mitigate by reducing sharing or wait time.",
+        "Interrupt handling landing on your core (NIC, timer) - steer IRQs elsewhere."
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "c",
+      "code": "#include <pthread.h>\n#include <stdio.h>\n\nstatic __thread int slot_id;       // thread-local: private per thread\n\nstatic void *worker(void *arg) {\n    slot_id = *(int *)arg;\n    printf(\"worker sees slot %d\\n\", slot_id);\n    return NULL;\n}\n\nint main(void) {\n    pthread_t t[2];\n    int ids[2] = {1, 2};\n    for (int i = 0; i < 2; i++)\n        pthread_create(&t[i], NULL, worker, &ids[i]);\n    for (int i = 0; i < 2; i++)\n        pthread_join(t[i], NULL);\n    return 0;\n}",
+      "caption": "Build with -pthread. slot_id is private to each thread even though both share the process heap - the distinction this whole lesson hangs on."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "A hot-path handler has a budget of 20 microseconds per event. Preemptions strike on average once every 2,000 events and each costs an effective 6 microseconds. (a) Compute the *average* added latency per event in nanoseconds. (b) Compute the added latency on the preemption event as a percentage of the budget. (c) Say which of (a) or (b) justifies CPU pinning, and why.",
+    "hints": [
+      "Average = per-event cost divided by the event interval.",
+      "6 microseconds out of a 20 microsecond budget is what fraction?"
+    ],
+    "solution": "(a) $6\\,\\mu s / 2{,}000 = 0.003\\,\\mu s = 3$ ns per event - undetectable in the mean. (b) $6 / 20 = 30\\%$ of the budget consumed by one unlucky event. (c) Only (b) matters for trading: pinning trades a little throughput for a collapsed tail, which is exactly what a latency budget cares about."
+  },
+  "independentExercise": {
+    "prompt": "A service runs on 6 cores with 42 runnable threads under round-robin, slice 5 ms. (a) Compute the worst-case scheduling delay in ms. (b) The team cuts to 12 threads by moving background work to another machine; recompute. (c) Name one further mitigation and its trade-off.",
+    "hints": [
+      "Delay = (threads x slice) / cores.",
+      "42 x 5 = 210 ms of CPU work per round."
+    ],
+    "solution": "(a) $42 \\times 5 / 6 = 35$ ms. (b) $12 \\times 5 / 6 = 10$ ms. (c) Pin the remaining threads (better cache locality, less scheduling flexibility), or spin instead of sleeping on isolated cores (burns CPU for latency)."
+  },
+  "commonMistakes": [
+    "Equating threads with speed: beyond the core count, extra runnable threads mostly buy context switches, not parallelism.",
+    "Reading a thread's 8 MiB stack reservation as real memory use - it is virtual; RSS is what counts.",
+    "Assuming fork() copies the whole address space up front - pages are shared copy-on-write until someone writes.",
+    "Counting only the register-save cost of a context switch and ignoring the cache/TLB refill that usually dominates."
+  ],
+  "realWorldApplication": "Every container orchestrator, database and network server lives under this scheduler; sizing thread pools and interpreting runqueue statistics are exactly this lesson's arithmetic.",
+  "quantFinanceApplication": "Feed handlers and order gateways are built around these numbers: preemption cost vs tick budget, worst-case round-robin delay, and core pinning to keep the 99.9th percentile fill latency inside the firm's risk limits.",
+  "summary": [
+    "Processes own private address spaces; threads own stacks, registers and TLS, and share everything else in the address space.",
+    "A context switch has a direct cost (~1-2 microseconds) and an often larger indirect cost from cold caches and TLB entries.",
+    "Worst-case round-robin delay = (runnable threads x slice) / cores: 16 threads on 4 cores with 3 ms slices means up to 12 ms of waiting.",
+    "Trading systems manage the tail, not the mean: pinning, core isolation and spinning exist to remove scheduler-induced jitter."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "Two threads of the same process are running. Which resource does each thread own privately?",
+      "options": [
+        "The heap",
+        "Its stack and registers",
+        "Global variables",
+        "The process's open file table"
+      ],
+      "answerIndex": 1,
+      "explanation": "Threads share the address space (heap, globals) and the file-descriptor table; the kernel gives each thread its own stack, register context and thread-local storage."
+    },
+    {
+      "id": "q2",
+      "type": "numeric",
+      "prompt": "16 runnable threads share 4 cores under round-robin with a 3 ms slice. What is the approximate worst-case delay, in ms, before a ready thread runs again?",
+      "answer": 12,
+      "unit": "ms",
+      "explanation": "One round is 16 x 3 = 48 ms of CPU time; over 4 cores that is 48/4 = 12 ms of wall-clock time, so a thread may wait up to about 12 ms between turns."
+    },
+    {
+      "id": "q3",
+      "type": "mcq",
+      "prompt": "Why is a switch between two threads of the *same* process cheaper than a switch between two different processes?",
+      "options": [
+        "No registers need saving",
+        "The page tables do not change, so the TLB is not flushed",
+        "The scheduler is bypassed entirely",
+        "Threads can never block"
+      ],
+      "answerIndex": 1,
+      "explanation": "Threads share one address space, so the memory-map switch (and its TLB invalidation) disappears. Registers still get saved and restored, and threads still block."
+    },
+    {
+      "id": "q4",
+      "type": "code-output",
+      "prompt": "list.append is atomic under the GIL in CPython. What does this script print?",
+      "language": "python",
+      "code": "import threading\n\ndata = []\n\ndef append_three():\n    for x in [1, 2, 3]:\n        data.append(x)\n\nthreads = [threading.Thread(target=append_three) for _ in range(2)]\nfor t in threads:\n    t.start()\nfor t in threads:\n    t.join()\n\nprint(len(data))",
+      "answer": "6",
+      "explanation": "Each of the two threads appends exactly 3 elements and append is atomic, so every append lands: 2 x 3 = 6. Replace append with data = data + [x] and the interleaving races appear."
+    },
+    {
+      "id": "q5",
+      "type": "ms",
+      "prompt": "Which actions genuinely reduce scheduling-induced tail latency for a hot trading thread?",
+      "options": [
+        "Pin the thread to a CPU isolated from the general scheduler",
+        "Raise the number of runnable threads above the core count",
+        "Set the hot thread's nice value to +19 (lowest priority)",
+        "Busy-spin on an isolated core instead of sleeping between events",
+        "Steer NIC interrupts onto a different core than the hot thread"
+      ],
+      "answerIndices": [0, 3, 4],
+      "explanation": "+19 demotes the thread behind every other task, and oversubscription multiplies switches. Pinning, spinning on isolated cores and moving IRQs away all keep the hot path uninterrupted."
+    },
+    {
+      "id": "q6",
+      "type": "short",
+      "prompt": "In one or two sentences: what is preemption, and when does the kernel perform it?",
+      "modelAnswer": "Preemption is the kernel forcibly suspending a running task - typically when its time slice expires or a higher-priority task becomes runnable - saving its state so it can resume later.",
+      "keywords": ["kernel", "time slice", "priority", "suspend"],
+      "explanation": "Preemption is involuntary scheduling: the task did not block or exit, the kernel took the CPU back, usually on a timer interrupt or a wake-up of a higher-priority task."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "definition",
+      "front": "Process vs thread?",
+      "back": "A process owns a private virtual address space, FD table and PID; threads are the schedulable units inside it, each with a private stack/registers/TLS but sharing heap, globals and open files."
+    },
+    {
+      "type": "formula",
+      "front": "Worst-case round-robin wait",
+      "back": "$t_{\\text{wait}} \\approx \\dfrac{N_{\\text{runnable}} \\times \\text{slice}}{N_{\\text{cores}}}$ - e.g. 16 threads x 3 ms slice / 4 cores = 12 ms."
+    },
+    {
+      "type": "concept",
+      "front": "Direct vs indirect context-switch cost",
+      "back": "Direct: register save/restore + mode switch (~1-2 microseconds). Indirect: cold caches/TLB afterwards, often several times worse - the part that hurts tail latency."
+    },
+    {
+      "type": "concept",
+      "front": "Why do desks pin threads and isolate cores?",
+      "back": "To keep p99.9 latency stable: no involuntary preemption, warm caches, no IRQ interference. The mean barely changes but the tail collapses."
+    }
+  ],
+  "references": [
+    { "label": "man7 - sched(7): Linux scheduling policies", "url": "https://man7.org/linux/man-pages/man7/sched.7.html" },
+    { "label": "man7 - pthreads(7): POSIX threads", "url": "https://man7.org/linux/man-pages/man7/pthreads.7.html" },
+    { "label": "man7 - fork(2)", "url": "https://man7.org/linux/man-pages/man2/fork.2.html" }
+  ],
+  "skills": ["operating-systems"]
+}

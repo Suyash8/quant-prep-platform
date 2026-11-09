@@ -1,0 +1,150 @@
+{
+  "id": "arch-cache-hierarchy",
+  "moduleId": "ph2-computer-architecture",
+  "title": "The Cache Hierarchy and Memory Latency",
+  "estMinutes": 27,
+  "difficulty": "core",
+  "prereqs": ["arch-instruction-sets"],
+  "objectives": [
+    "Recite the approximate latency magnitudes of the memory hierarchy (L1 ~1 ns, L2 ~4 ns, L3 ~15 ns, DRAM ~100 ns) and reason with them as orders of magnitude",
+    "Explain cache lines and why sequential access amortizes miss costs",
+    "Estimate cache-line fills for row-major versus column-major iteration and convert the difference into runtime",
+    "Apply cache-line thinking to data-layout choices such as arrays versus linked structures and hot/cold field separation"
+  ],
+  "motivation": "Your backtest loop just went from 2 minutes to 16 after a refactor that swapped which loop is outermost. Nothing algorithmic changed - the CPU is waiting on DRAM. This lesson gives you the latency numbers and the cache-line mental model needed to predict such effects before running the code, and to fix data layout deliberately instead of buying hardware.",
+  "blocks": [
+    { "type": "h2", "text": "The memory hierarchy, with numbers" },
+    { "type": "p", "md": "A core can add two numbers in a fraction of a nanosecond, but fetching their values from main memory costs around a hundred nanoseconds. To bridge that gap every modern CPU interposes caches: small, fast memories that hold recently and frequently used data. The levels differ by orders of magnitude in both size and latency, so the numbers below are magnitudes to reason with, not constants to trust blindly - they vary by microarchitecture and generation." },
+    { "type": "table", "headers": ["Level", "Approximate latency", "Typical size on modern servers"], "rows": [
+      ["Registers", "sub-ns (part of the cycle)", "dozens of 64-bit slots per core"],
+      ["L1 cache (per core)", "~1 ns (~4 cycles at 4 GHz)", "32-48 KiB per core"],
+      ["L2 cache (per core)", "~4 ns (~14 cycles)", "0.25-2 MiB per core"],
+      ["L3 cache (shared)", "~15 ns (~40-50 cycles)", "8-64 MiB shared per socket"],
+      ["DRAM (main memory)", "~100 ns (~300+ cycles)", "tens of GiB per node"]
+    ] },
+    { "type": "p", "md": "Read that table as a story about ratios: L2 is roughly four times L1, L3 roughly four times L2, and DRAM roughly seven times L3. At 4 GHz a cache miss to DRAM wastes $\\approx 400$ cycles of a core that could otherwise retire four instructions each. A loop that misses on most accesses is *memory-bound*: its speed is set by the memory system, not by how fast the core multiplies. Most optimization work in trading systems is the craft of keeping the working set high in this hierarchy." },
+    { "type": "h2", "text": "Cache lines: the unit the memory system actually moves" },
+    { "type": "p", "md": "Caches never move single bytes. They move **cache lines** - 64 contiguous bytes on x86-64, which is exactly 8 doubles or 16 ints. When your code reads one `double`, the hardware delivers its 7 neighbours too, and sequential access collects on that for free: a scan over an array pays one $\\approx 100$ ns miss per 8 elements, about 12 ns per element, while the arithmetic itself costs far less. The hardware **prefetcher** strengthens the effect: after a few consecutive line touches it starts fetching ahead of the program counter's data needs. Sequential access is not merely slightly faster - it is a different regime." },
+    { "type": "interactive", "component": "MemoryLayout", "params": { "totalBytes": 64, "bytesPerRow": 8 }, "caption": "One 64-byte cache line as 8 doubles. Touch any byte and the hardware hands you all 64 - use them or waste them." },
+    { "type": "steps", "title": "Worked example: row-major vs column-major on a price matrix", "items": [
+      "Prices live in an $8192 \\times 1024$ matrix of doubles (C++ stores it row-major): $8192 \\times 1024 = 8{,}388{,}608$ elements, 64 MiB. One line holds 8 doubles, so the matrix occupies $8{,}388{,}608 / 8 = 1{,}048{,}576$ cache lines.",
+      "Row-major scan (inner loop over columns): every line is used 8 times while resident - $1{,}048{,}576$ line fills. At $\\approx 100$ ns of DRAM time per fill that is $\\approx 0.105$ s of memory time.",
+      "Column-major scan (inner loop over rows): elements of one column sit $1024 \\times 8 = 8192$ bytes apart, so each access pulls a fresh line and uses 1 of its 8 doubles: $8{,}388{,}608$ fills $\\approx 0.84$ s.",
+      "Identical arithmetic, identical complexity - an $8\\times$ difference in memory time, purely from access order. (Huge powers of two can make column strides even worse via cache-set conflicts and TLB misses, so 8x is a floor, not a ceiling.)"
+    ] },
+    { "type": "h2", "text": "Cache-line thinking in practice" },
+    { "type": "list", "ordered": false, "items": [
+      "Prefer contiguous arrays (`std::vector`, flat matrices) over node-based containers for scan-heavy code: each miss buys 8 doubles instead of one pointer chase to an arbitrary address.",
+      "Group hot fields together in a struct. A struct that mixes hot and cold fields drags cold bytes through the cache hierarchy on every access.",
+      "Keep the inner loop over the contiguous dimension - in C++ row-major storage that is the last index.",
+      "Locality has two flavours: *spatial* (neighbouring addresses, what lines provide) and *temporal* (reusing the same address soon, what cache capacity retains). Design loops to exploit both."
+    ] },
+    { "type": "callout", "variant": "quant", "title": "The 8x loop rewrite", "md": "Iterating a price grid or covariance matrix row-by-row versus column-by-column is exactly the worked example above. A factor-model update that ran several times slower after a 'harmless' loop reordering is a true-to-life story; the fix is to keep the stride-1 dimension innermost, not to procure faster machines. Layout decisions are quant-visible: slower backtests, missed ticks, stale hedges." }
+  ],
+  "guidedExercise": {
+    "prompt": "You scan a `std::vector<double>` of 16,777,216 prices (128 MiB, well beyond any cache) and sum them. (a) How many distinct cache lines does the vector occupy? (b) Estimate the DRAM-time lower bound of the scan at ~100 ns per line fill. (c) A colleague changes the loop to read only every 8th element (`for (i = 0; i < n; i += 8)`) while keeping the vector intact - roughly how long does the new scan take, and why is per-element throughput 8x worse?",
+    "hints": [
+      "Divide the element count by the doubles per line.",
+      "A strided read still touches every line the vector owns - it just uses less of each one."
+    ],
+    "solution": "(a) $16{,}777{,}216 / 8 = 2{,}097{,}152$ lines. (b) $2{,}097{,}152 \\times 100\\ \\text{ns} \\approx 0.21$ s - the sequential sum is memory-bound and cannot beat this floor. (c) The stride-8 loop touches the same $2{,}097{,}152$ distinct lines, so the miss cost stays $\\approx 0.21$ s, but it consumes only 1 of the 8 delivered doubles per line: one-eighth the useful work for the same memory time - per-element throughput drops $8\\times$."
+  },
+  "independentExercise": {
+    "prompt": "A risk system holds a $4096 \\times 4096$ matrix of doubles (32 MiB) in C++ row-major order and needs the sum of every column, computed afresh on each pass. (a) If the current code loops column-by-column (outer over columns, inner over rows), estimate the number of DRAM line fills and the time at ~100 ns each. (b) Rewrite the loop nesting to fix it and estimate the new fill count and time. (c) State the speedup factor.",
+    "hints": [
+      "Count line fills as accesses that land on a line with no other useful use in the pass.",
+      "Accumulating into a small `col_sums[4096]` array lets you walk rows contiguously instead."
+    ],
+    "solution": "(a) The matrix has $4096 \\times 4096 = 16{,}777{,}216 = 2^{24}$ elements. Column-by-column, each access strides $4096 \\times 8 = 32{,}768$ bytes to a fresh line and uses 1 of 8 doubles: $2^{24}$ fills $\\times 100\\ \\text{ns} \\approx 1.68$ s. (b) Iterate row-major, adding `m[r][c]` into `col_sums[c]`: the inner loop is stride-1, so lines are used 8 times: $2^{24}/8 = 2^{21} = 2{,}097{,}152$ fills $\\approx 0.21$ s. (c) $1.68 / 0.21 = 8\\times$ faster - same result, same arithmetic, different loop order."
+  },
+  "commonMistakes": [
+    "Treating latency numbers as exact constants - they vary across microarchitectures; the orders of magnitude (1 / 4 / 15 / 100 ns) are what carry the reasoning.",
+    "Overestimating misses for sequential scans by forgetting that one 64-byte line serves 8 doubles.",
+    "Assuming `std::vector` is automatically fast - randomly indexing a huge vector still misses on nearly every access.",
+    "Mixing hot and cold fields in one struct so every hot access drags cold bytes through the hierarchy."
+  ],
+  "realWorldApplication": "Database engines, scientific computing frameworks and game engines are all organized around cache-line thinking: column stores, structure-of-arrays layouts and tile-based matrix kernels exist to keep memory traffic sequential.",
+  "quantFinanceApplication": "A pricing kernel that iterates its price matrix in the contiguous dimension finishes its per-tick update in ~0.1 s where the transposed version needs ~0.8 s on the same hardware - the difference between an update that fits in the tick interval and one that does not.",
+  "summary": [
+    "Memory latencies span orders of magnitude: L1 ~1 ns, L2 ~4 ns, L3 ~15 ns, DRAM ~100 ns - reason in ratios, not decimals.",
+    "Data moves in 64-byte cache lines: one touch serves 8 doubles, so sequential access amortizes misses and the prefetcher hides them further.",
+    "Estimated memory time = (distinct lines touched, with little reuse) × ~100 ns; the row-major/column-major matrix example turns this into an 8x prediction.",
+    "Cache-line thinking drives layout: contiguous arrays over pointer chasing, hot fields together, stride-1 innermost."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "Which sequence is the right order of magnitude for access latency?",
+      "options": [
+        "L1 ~1 ns, L3 ~15 ns, DRAM ~100 ns",
+        "L1 ~10 ns, L3 ~1 ns, DRAM ~100 ns",
+        "L1 ~1 ns, L3 ~100 ns, DRAM ~15 ns",
+        "L1 ~100 ns, L3 ~15 ns, DRAM ~1 ns"
+      ],
+      "answerIndex": 0,
+      "explanation": "Each level down is several times slower: L1 ~1 ns, L3 ~15 ns, DRAM ~100 ns. L2 sits between L1 and L3 at ~4 ns."
+    },
+    {
+      "id": "q2",
+      "type": "numeric",
+      "prompt": "How many 8-byte doubles fit in one 64-byte cache line?",
+      "answer": 8,
+      "explanation": "$64 / 8 = 8$ doubles - which is why a sequential scan pays one miss per 8 elements."
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "A column-major scan touches 8,388,608 cache lines, each costing ~100 ns of DRAM time. What is the total memory time in seconds?",
+      "answer": 0.84,
+      "tolerance": 0.05,
+      "explanation": "$8{,}388{,}608 \\times 100\\ \\text{ns} = 838{,}860{,}800\\ \\text{ns} \\approx 0.84$ s."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "Why is sequential array iteration so much cheaper per element than a large-stride traversal?",
+      "options": [
+        "Each 64-byte line serves 8 consecutive doubles, and the prefetcher anticipates the stream",
+        "Sequential code executes fewer instructions in total",
+        "The L3 cache physically grows while the loop runs",
+        "Caches compress sequential data to fit more of it"
+      ],
+      "answerIndex": 0,
+      "explanation": "Spatial locality amortizes each miss across 8 elements, and the prefetcher starts fetching future lines once it detects the stream. Instruction counts and cache sizes are unchanged."
+    },
+    {
+      "id": "q5",
+      "type": "ms",
+      "prompt": "Which changes improve cache locality for scan-heavy numeric code?",
+      "options": [
+        "Making the inner loop iterate the contiguous (row-major last) dimension",
+        "Storing frequently used fields together, away from rarely used ones",
+        "Replacing a flat array with a linked list of individually allocated nodes",
+        "Shuffling element order randomly before each pass"
+      ],
+      "answerIndices": [0, 1],
+      "explanation": "Both (a) and (b) concentrate useful data on each fetched line. A linked list scatters nodes across memory (pointer chasing); shuffling destroys both spatial and temporal locality."
+    },
+    {
+      "id": "q6",
+      "type": "short",
+      "prompt": "Which hardware structure caches virtual-to-physical address translations, and can also be thrashed by huge strides?",
+      "modelAnswer": "The translation lookaside buffer (TLB) caches virtual-to-physical page translations; large strides can evict entries and add translation stalls.",
+      "keywords": ["TLB", "translation"],
+      "explanation": "The TLB sits between the core and memory. Strides of multiple pages miss it repeatedly, adding latency on top of cache misses - one more reason access patterns matter."
+    }
+  ],
+  "flashcards": [
+    { "type": "definition", "front": "What is a cache line?", "back": "The unit of transfer between memory and caches: 64 contiguous bytes on x86-64 = 8 doubles or 16 ints. Touch one byte, receive all 64." },
+    { "type": "formula", "front": "Back-of-envelope memory time for a traversal", "back": "(distinct lines touched with little reuse) × ~100 ns per DRAM fill; sequential scans divide element count by 8 first." },
+    { "type": "concept", "front": "Approximate hierarchy latencies", "back": "L1 ~1 ns, L2 ~4 ns, L3 ~15 ns, DRAM ~100 ns; a DRAM miss is ~300-400 wasted cycles at 4 GHz." },
+    { "type": "concept", "front": "Temporal vs spatial locality", "back": "Spatial = using neighbouring addresses (lines/prefetching help); temporal = reusing the same address soon (cache capacity helps). Good loops exploit both." }
+  ],
+  "references": [
+    { "label": "Ulrich Drepper - What Every Programmer Should Know About Memory", "url": "https://lwn.net/Articles/250967/" },
+    { "label": "Agner Fog - Microarchitecture and cache details", "url": "https://www.agner.org/optimize/" },
+    { "label": "cppreference - std::vector (contiguous storage guarantee)", "url": "https://en.cppreference.com/w/cpp/container/vector" }
+  ],
+  "skills": ["computer-architecture", "cpp-performance"]
+}

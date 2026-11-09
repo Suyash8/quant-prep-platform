@@ -1,0 +1,217 @@
+{
+  "id": "opt-lp-qp",
+  "moduleId": "ph1-optimization",
+  "title": "Linear and Quadratic Programming",
+  "estMinutes": 28,
+  "difficulty": "advanced",
+  "prereqs": ["opt-gradient-methods"],
+  "objectives": [
+    "Recognize and set up linear and quadratic programs in standard form, including converting between common constraint styles",
+    "Solve a two-variable LP by enumerating the vertices of its feasible polygon and explain why a vertex must be optimal",
+    "Formulate mean-variance portfolio selection as a quadratic program and solve a two-asset case by hand",
+    "Explain why LPs and convex QPs are efficiently solvable while integer and nonconvex variants are not"
+  ],
+  "motivation": "Descents from the previous lesson handle unconstrained smooth objectives, but real decision problems carry constraints: budget exactly 1, no short positions, cap position sizes, hit a target return. Linear and quadratic programming are the two constraint-handling workhorses of quantitative finance - every nightly portfolio re-optimization, most execution schedulers and many risk aggregators are LPs or QPs. This lesson builds the standard forms, the vertex intuition that makes LPs solvable, and the mean-variance QP you will meet again in production contexts.",
+  "blocks": [
+    { "type": "h2", "text": "Standard forms" },
+    {
+      "type": "p",
+      "md": "A **linear program (LP)** optimizes a linear objective subject to linear constraints. One convenient standard form is: minimize $c^\\top x$ subject to $Ax = b$ and $x \\ge 0$. The other common styles convert into it mechanically: an inequality $a^\\top x \\le b$ gains a **slack** variable $s \\ge 0$ so that $a^\\top x + s = b$; a free variable splits into positive and negative parts; a maximization becomes a minimization of the negated objective."
+    },
+    { "type": "math", "tex": "\\min_x \\; c^\\top x \\quad \\text{s.t.} \\quad Ax = b, \\;\\; x \\ge 0", "caption": "LP in standard equality form." },
+    {
+      "type": "p",
+      "md": "A **quadratic program (QP)** adds a quadratic term to the objective while keeping all constraints linear:"
+    },
+    { "type": "math", "tex": "\\min_x \\; \\tfrac{1}{2}x^\\top Qx + c^\\top x \\quad \\text{s.t.} \\quad Ax \\le b", "caption": "QP standard form. The problem is convex exactly when $Q$ is positive semidefinite." },
+    {
+      "type": "p",
+      "md": "The convexity lesson decides tractability: if $Q$ is positive semidefinite, the objective is convex and the linear constraints keep the feasible set convex, so any local optimum is global. If $Q$ has negative directions, or if variables are forced to be integral, efficient guarantees vanish."
+    },
+    { "type": "h2", "text": "Feasible regions and vertices" },
+    {
+      "type": "p",
+      "md": "Linear constraints carve out a **polytope**: a flat-sided region in $x$-space. The key geometric fact about LPs: the objective's level sets $\\{x : c^\\top x = v\\}$ are parallel hyperplanes. Sliding such a plane in the improving direction either leaves the polytope (you stop at a face) or slides forever (unbounded). Either way, if a finite optimum exists, one occurs at a **vertex** - a corner where constraints intersect. That single fact justifies the simplex algorithm: hop from vertex to vertex along improving edges, and terminate because there are finitely many vertices."
+    },
+    {
+      "type": "steps",
+      "title": "Worked example: a two-variable LP",
+      "items": [
+        "Maximize $3x + 2y$ subject to $x + y \\le 4$, $x + 3y \\le 6$, and $x, y \\ge 0$.",
+        "Vertices come from intersecting the constraint lines: $(0, 0)$; $(4, 0)$ where $x + y = 4$ meets $y = 0$; $(0, 2)$ where $x + 3y = 6$ meets $x = 0$; and the intersection of the two slanted lines.",
+        "Intersection: subtract $x + y = 4$ from $x + 3y = 6$ to get $2y = 2$, so $y = 1$ and $x = 3$: vertex $(3, 1)$. Check it satisfies both: $3 + 1 = 4$ ok, $3 + 3 = 6$ ok.",
+        "Objective at each vertex: $3(0)+2(0) = 0$; $3(4)+2(0) = 12$; $3(3)+2(1) = 11$; $3(0)+2(2) = 4$.",
+        "Maximum is $12$ at $(4, 0)$ - an all-x corner. Note the naive 'use both variables' instinct would pick $(3,1)$ at $11$; the vertex enumeration catches the better corner."
+      ]
+    },
+    {
+      "type": "interactive",
+      "component": "EfficientFrontier",
+      "params": {
+        "sigmaA": 20,
+        "sigmaB": 10,
+        "rho": 0.2
+      },
+      "caption": "Sweeping the weight between a 20%-vol and a 10%-vol asset (correlation 0.2) traces the risk curve of the two-asset QP worked out below - a convex arc whose minimum matches the hand-computed weights."
+    },
+    { "type": "h2", "text": "Mean-variance portfolio selection as a QP" },
+    {
+      "type": "p",
+      "md": "The Markowitz problem is the canonical finance QP: choose weights $w$ to minimize portfolio variance $w^\\top \\Sigma w$ subject to linear requirements - hit a target expected return, stay fully invested, respect position limits:"
+    },
+    { "type": "math", "tex": "\\min_w \\; w^\\top \\Sigma w \\quad \\text{s.t.} \\quad \\mu^\\top w \\ge r_{\\text{target}}, \\;\\; \\mathbf{1}^\\top w = 1, \\;\\; w \\ge 0", "caption": "Quadratic objective (variance), linear constraints - a convex QP since $\\Sigma$ is positive semidefinite." },
+    {
+      "type": "steps",
+      "title": "Worked example: two assets under a return constraint",
+      "items": [
+        "Assets: expected returns $\\mu_1 = 12\\%$, $\\mu_2 = 4\\%$; variances $\\sigma_1^2 = 0.04$, $\\sigma_2^2 = 0.01$; correlation $\\rho = 0.2$, so covariance $\\sigma_{12} = 0.2 \\times 0.2 \\times 0.1 = 0.004$.",
+        "Return constraint with target $10\\%$: $0.12w + 0.04(1 - w) = 0.10$, so $0.08w = 0.06$ and $w = 0.75$ - the constraint alone pins the weights.",
+        "Variance at $w = 0.75$: $\\sigma_p^2 = 0.04(0.75)^2 + 0.01(0.25)^2 + 2(0.004)(0.75)(0.25) = 0.0225 + 0.000625 + 0.0015 = 0.024625$.",
+        "Portfolio vol: $\\sigma_p = \\sqrt{0.024625} \\approx 15.7\\%$ - below asset 1's $20\\%$ and above asset 2's $10\\%$, as the high return requirement forces substantial weight on the risky asset.",
+        "Without the return constraint the minimum-variance weight would be $w^* = \\tfrac{2\\sigma_2^2 - 2\\sigma_{12}}{2(\\sigma_1^2 + \\sigma_2^2 - 2\\sigma_{12})} = \\tfrac{0.02 - 0.008}{2(0.04 + 0.01 - 0.008)} = \\tfrac{0.012}{0.084} \\approx 0.143$ - the constraint is what moves you away from the free optimum, and tightening it raises variance: that trade-off curve is the efficient frontier."
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Where LPs and QPs run in production",
+      "md": "Portfolio construction: the mean-variance QP above, plus long-only and turnover constraints. Execution: scheduling child orders to minimize expected market impact is an LP/QP over time buckets. Risk: CVaR minimization with scenario data reformulates exactly as an LP - a famous result of Rockafellar and Uryasev. Funding and netting desks solve LPs to allocate collateral. The unifying pattern: convex objective, linear constraints, solver returns a certified optimum every night. Change the constraint to 'at most 30 line items' or 'integer lots' and the same business problem becomes a mixed-integer program with no such guarantee."
+    },
+    {
+      "type": "callout",
+      "variant": "info",
+      "title": "Reading a solver's output",
+      "md": "For an LP the solver also reports dual values on the constraints - the marginal change in the optimal objective per unit relaxation of each constraint. Those shadow prices, formalized in the next lesson's duality, are why risk managers ask 'what does the binding constraint cost us?' rather than treating limits as free."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Solve the LP: maximize $2x + 5y$ subject to $x + y \\le 3$, $2x + y \\le 4$, $x, y \\ge 0$. Find all vertices, evaluate the objective at each, and state the optimum. Then check which constraint(s) are **binding** (hold with equality) at the optimum.",
+    "hints": [
+      "Intersect each pair of boundary lines, keeping only intersections that satisfy every constraint.",
+      "The candidate vertices: $(0,0)$, $(3,0)$ from $x+y=3$ with $y=0$, $(2,0)$ from $2x+y=4$ with $y=0$ - keep feasible ones - and $(0, 3)$ from $x+y=3$ with $x=0$, plus the intersection of the two slanted lines."
+    ],
+    "solution": "Vertices: $(0,0)$ with value $0$; $(0,3)$ with value $15$; $(2,0)$ with value $4$ (note $(3,0)$ violates $2x + y \\le 4$, so it is not a vertex); intersection of $x + y = 3$ and $2x + y = 4$: subtract to get $x = 1$, $y = 2$ - feasible, value $2 + 10 = 12$. Maximum is $\\textbf{15}$ at $(0, 3)$, where $x + y = 3$ is binding and $2x + y = 2 < 4$ is slack."
+  },
+  "independentExercise": {
+    "prompt": "A (hypothetical) desk runs the two-asset mean-variance QP with $\\sigma_1^2 = 0.09$, $\\sigma_2^2 = 0.04$, $\\rho = 0.1$ (so $\\sigma_{12} = 0.1 \\times 0.3 \\times 0.2 = 0.006$), expected returns $\\mu_1 = 8\\%$, $\\mu_2 = 2\\%$, and a return target of $5\\%$, with $\\mathbf{1}^\\top w = 1$. (a) Find the weights from the return constraint. (b) Compute $\\sigma_p^2$ and $\\sigma_p$. (c) Recompute the free minimum-variance weight (no return constraint) and compare. (d) State which property from the convexity lesson guarantees the answer is global.",
+    "hints": [
+      "Part (a): $0.08w + 0.02(1-w) = 0.05$.",
+      "Part (c): minimize $\\sigma_1^2 w^2 + \\sigma_2^2(1-w)^2 + 2\\sigma_{12} w(1-w)$ by setting the derivative to zero."
+    ],
+    "solution": "(a) $0.08w + 0.02 - 0.02w = 0.05 \\Rightarrow 0.06w = 0.03 \\Rightarrow w = 0.5$. (b) $\\sigma_p^2 = 0.09(0.25) + 0.04(0.25) + 2(0.006)(0.25) = 0.0225 + 0.01 + 0.003 = 0.0355$, so $\\sigma_p \\approx 18.9\\%$. (c) Expand: $\\sigma_p^2(w) = 0.09w^2 + 0.04(1-w)^2 + 0.012w(1-w) = (0.09 + 0.04 - 0.012)w^2 + (-0.08 + 0.012)w + 0.04 = 0.118w^2 - 0.068w + 0.04$. Setting the derivative $0.236w - 0.068$ to zero: $w^* = 0.068/0.236 \\approx 0.288$, with $\\sigma_p^2 = 0.04 - \\tfrac{0.068^2}{4 \\times 0.118} = 0.04 - 0.0098 = 0.0302$, so $\\sigma_p \\approx 17.4\\%$ - cheaper risk, but the implied return is $0.08 \\times 0.288 + 0.02 \\times 0.712 \\approx 3.7\\%$, missing the target; the constraint is binding for a reason. (d) Convexity: the objective is a convex quadratic (curvature $2 \\times 0.118 = 0.236 > 0$) on a convex feasible set, so any local minimum - including this one - is global."
+  },
+  "commonMistakes": [
+    "Listing all line intersections as vertices - infeasible intersections must be discarded (like $(3,0)$ in the guided exercise).",
+    "Forgetting the axes: the constraints $x \\ge 0$, $y \\ge 0$ contribute boundary edges and vertices too.",
+    "Assuming the optimum of an LP must use all variables positively - the vertex that wins often sets some variable to zero.",
+    "Writing $\\tfrac{1}{2}x^\\top Q x$ versus $x^\\top Q x$ inconsistently and doubling the Hessian - pick the $\\tfrac{1}{2}$ convention so $\\nabla^2 f = Q$.",
+    "Adding an integer requirement to an LP/QP and still expecting polynomial-time guarantees - integrality breaks convexity of the feasible set."
+  ],
+  "realWorldApplication": "Airline crew scheduling, blending in refineries, diet problems and logistics routing are classic LPs; least-squares fitting with constraints, support-vector machines and control systems use QPs - the same two formats optimized billions of times daily.",
+  "quantFinanceApplication": "The mean-variance QP is the backbone of portfolio construction: long-only equity portfolios, turnover-constrained rebalances and factor-neutral mandates all cast as $\\min w^\\top \\Sigma w$ with linear side constraints, solved nightly by commercial QP solvers.",
+  "summary": [
+    "LP: linear objective, linear constraints ($\\min c^\\top x$ s.t. $Ax = b$, $x \\ge 0$); QP adds a quadratic term $\\tfrac12 x^\\top Q x$ - convex iff $Q$ is positive semidefinite.",
+    "LP feasible sets are polytopes, and a finite LP optimum always occurs at a vertex - the geometric fact behind the simplex algorithm.",
+    "Two-variable LPs are solved by enumerating feasible vertices; the worked example's maximum of $12$ sat at $(4,0)$, not at the interior-looking corner $(3,1)$.",
+    "Mean-variance portfolio selection $\\min w^\\top \\Sigma w$ s.t. return target, budget and long-only constraints is the canonical convex QP; the return constraint pinned the worked example to $w = 0.75$ with $\\sigma_p \\approx 15.7\\%$.",
+    "Without the return constraint the free minimum-variance weight was $w^* \\approx 0.143$; the frontier is the trade-off curve between the two.",
+    "Convex objective + linear constraints = certified global optimum every time; integer or nonconvex twist = no guarantee."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "For an LP with a bounded, nonempty feasible region, where is the optimum guaranteed to occur?",
+      "options": [
+        "At the centroid of the feasible region",
+        "At a vertex of the feasible polytope (or along an entire face whose endpoints are vertices)",
+        "Wherever the objective gradient vanishes",
+        "At the point closest to the origin"
+      ],
+      "answerIndex": 1,
+      "explanation": "The objective's level sets are parallel hyperplanes; sliding one in the improving direction last touches the region at a boundary extreme point. Interior points can never beat their neighbours in both improving directions - unless the objective is constant along a face, in which case its vertices still attain the value."
+    },
+    {
+      "id": "q2",
+      "type": "numeric",
+      "prompt": "In the worked LP (maximize $3x + 2y$, $x + y \\le 4$, $x + 3y \\le 6$, $x, y \\ge 0$), what is the optimal objective value?",
+      "answer": 12,
+      "explanation": "Vertex values are $0, 12, 11, 4$ at $(0,0), (4,0), (3,1), (0,2)$; the maximum is $12$ at $(4,0)$."
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "In the two-asset mean-variance example ($\\mu_1 = 12\\%$, $\\mu_2 = 4\\%$, return target $10\\%$), what weight goes on asset 1?",
+      "answer": 0.75,
+      "explanation": "$0.12w + 0.04(1-w) = 0.10$ gives $0.08w = 0.06$, so $w = 0.75$. The return constraint alone fixes the split."
+    },
+    {
+      "id": "q4",
+      "type": "numeric",
+      "prompt": "Continuing that example ($\\sigma_1^2 = 0.04$, $\\sigma_2^2 = 0.01$, $\\rho = 0.2$), what is the portfolio variance $\\sigma_p^2$ at the solution?",
+      "answer": 0.024625,
+      "tolerance": 0.0001,
+      "explanation": "$\\sigma_p^2 = 0.04(0.5625) + 0.01(0.0625) + 2(0.004)(0.1875) = 0.0225 + 0.000625 + 0.0015 = 0.024625$, i.e. $\\sigma_p \\approx 15.7\\%$."
+    },
+    {
+      "id": "q5",
+      "type": "code-output",
+      "prompt": "This script evaluates the worked LP's objective at its four vertices. What does it print?",
+      "language": "python",
+      "code": "verts = [(0, 0), (4, 0), (3, 1), (0, 2)]\nvals = [3 * a + 2 * b for a, b in verts]\nprint(max(vals), verts[vals.index(max(vals))])",
+      "answer": "12 (4, 0)",
+      "explanation": "The values are $[0, 12, 11, 4]$; the maximum $12$ is attained at the vertex $(4, 0)$ - confirming the vertex enumeration by hand."
+    },
+    {
+      "id": "q6",
+      "type": "mcq",
+      "prompt": "What makes a quadratic program **convex**?",
+      "options": [
+        "All constraint coefficients being positive",
+        "The quadratic matrix $Q$ being positive semidefinite (with linear constraints)",
+        "Having a diagonal $Q$",
+        "The number of variables exceeding the number of constraints"
+      ],
+      "answerIndex": 1,
+      "explanation": "Convexity of the objective requires $Q \\succeq 0$; linear constraints automatically define a convex feasible set. A diagonal $Q$ is sufficient but not necessary, and the other two statements are irrelevant."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "definition",
+      "front": "Standard forms of LP and QP",
+      "back": "LP: $\\min c^\\top x$ s.t. $Ax = b$, $x \\ge 0$ (inequalities gain slack variables). QP: $\\min \\tfrac12 x^\\top Q x + c^\\top x$ s.t. $Ax \\le b$."
+    },
+    {
+      "type": "concept",
+      "front": "Why does an LP optimum occur at a vertex?",
+      "back": "Level sets of a linear objective are parallel hyperplanes; the last hyperplane touching a polytope touches it at an extreme point (or a whole face whose vertices attain the same value)."
+    },
+    {
+      "type": "formula",
+      "front": "Mean-variance QP",
+      "back": "$\\min_w w^\\top \\Sigma w$ s.t. $\\mu^\\top w \\ge r_{\\text{target}}$, $\\mathbf{1}^\\top w = 1$, $w \\ge 0$ - convex because $\\Sigma \\succeq 0$."
+    },
+    {
+      "type": "formula",
+      "front": "Two-asset variance",
+      "back": "$\\sigma_p^2(w) = \\sigma_1^2 w^2 + \\sigma_2^2 (1-w)^2 + 2\\sigma_{12} w(1-w)$ with $\\sigma_{12} = \\rho\\sigma_1\\sigma_2$; the free minimum sits at $w^* = \\tfrac{\\sigma_2^2 - \\sigma_{12}}{\\sigma_1^2 + \\sigma_2^2 - 2\\sigma_{12}}$."
+    },
+    {
+      "type": "error-identification",
+      "front": "A colleague solves the guided LP and reports the optimum at $(3, 0)$ because it lies on two boundary lines. What is wrong?",
+      "back": "$(3, 0)$ violates $2x + y \\le 4$: intersections must also satisfy every constraint to be vertices. The true optimum is $(0, 3)$ with value 15."
+    }
+  ],
+  "references": [
+    {
+      "label": "Boyd & Vandenberghe - Convex Optimization, chapters 1, 4 (LP/QP examples)",
+      "url": "https://web.stanford.edu/~boyd/cvxbook/"
+    },
+    {
+      "label": "Vanderbei - Linear Programming: Foundations and Extensions (free PDF)",
+      "url": "https://vanderbei.princeton.edu/LPbook/"
+    }
+  ],
+  "skills": ["optimization", "portfolio"]
+}

@@ -1,0 +1,223 @@
+{
+  "id": "cf-binary-hex",
+  "moduleId": "ph2-computer-fundamentals",
+  "title": "Binary, Hexadecimal and Number Representation",
+  "estMinutes": 25,
+  "difficulty": "foundation",
+  "prereqs": ["cf-hardware-software"],
+  "objectives": [
+    "Explain why digital hardware uses binary rather than decimal encoding",
+    "Convert between binary, decimal and hexadecimal by hand for values up to 16 bits",
+    "Use hex as shorthand for binary and read byte-oriented artefacts such as memory dumps and protocol fields",
+    "Compute the representable range of an n-bit unsigned integer and relate field width to price-range decisions"
+  ],
+  "motivation": "An exchange sends a price update as two raw bytes: 0x04 D2. Is that 4.82, 482, or 12.34? Without binary and hexadecimal you cannot read a protocol specification, a debugger's memory window or a packet capture - and misreading a single byte in a feed handler corrupts every downstream price. Binary is the machine's alphabet; hexadecimal is the human shorthand for it.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Why hardware counts in twos"
+    },
+    {
+      "type": "p",
+      "md": "A transistor is a switch with two reliable states: conducting or not, high voltage or low. Building hardware that reliably distinguishes **two** voltage levels is cheap and noise-tolerant; distinguishing ten levels (for decimal) would make every circuit fragile. So everything a computer stores - prices, PnL, the text of this lesson - is encoded in **binary**: base-2 positional notation where each **bit** is 0 or 1 and each position carries a weight that doubles as you move left."
+    },
+    {
+      "type": "math",
+      "tex": "b_{n-1}2^{n-1} + \\dots + b_1 2^1 + b_0 2^0",
+      "caption": "The value of an n-bit pattern: weights are 1, 2, 4, 8, ... from right to left."
+    },
+    {
+      "type": "p",
+      "md": "With $n$ bits there are exactly $2^n$ distinct patterns, so an unsigned $n$-bit integer represents $0$ through $2^n - 1$. Eight bits give 256 values (0-255); sixteen bits give 65,536 values (0-65,535). Counting in binary is the same skill as counting in decimal, just with the carrying threshold at 2 instead of 10."
+    },
+    {
+      "type": "interactive",
+      "component": "NumberLine",
+      "params": {
+        "min": 0,
+        "max": 255,
+        "markers": [1, 2, 4, 8, 16, 32, 64, 128, 255]
+      },
+      "caption": "Powers of two on the number line: each doubling is one more bit. An 8-bit unsigned integer covers exactly 0 to 255."
+    },
+    {
+      "type": "steps",
+      "title": "Worked example: binary to decimal",
+      "items": [
+        "Read 10110110 from the right, assigning weights 1, 2, 4, 8, 16, 32, 64, 128.",
+        "The set bits (the 1s) sit at weights 128, 32, 16, 4 and 2.",
+        "Sum them: 128 + 32 + 16 + 4 + 2 = **182**."
+      ]
+    },
+    {
+      "type": "p",
+      "md": "Going the other way, repeatedly divide by 2 and collect remainders. For 200: 200/2 = 100 remainder 0, 100/2 = 50 r 0, 50/2 = 25 r 0, 25/2 = 12 r 1, 12/2 = 6 r 0, 6/2 = 3 r 0, 3/2 = 1 r 1, 1/2 = 0 r 1. Reading the remainders bottom-up gives 11001000. Check: 128 + 64 + 8 = 200."
+    },
+    {
+      "type": "h2",
+      "text": "Hexadecimal: binary's shorthand"
+    },
+    {
+      "type": "p",
+      "md": "Binary is precise but unreadable: a 32-bit value written out is a wall of digits. **Hexadecimal** (base 16) compresses it: one hex digit encodes exactly four bits (**a nibble**), using digits 0-9 and letters A-F for the values 10-15. Since a byte is 8 bits, every byte is exactly two hex digits - which is why memory dumps, packet captures and protocol specifications all speak hex."
+    },
+    {
+      "type": "table",
+      "headers": ["Hex digit", "Binary", "Decimal"],
+      "rows": [
+        ["0", "0000", "0"],
+        ["3", "0011", "3"],
+        ["9", "1001", "9"],
+        ["A", "1010", "10"],
+        ["C", "1100", "12"],
+        ["F", "1111", "15"]
+      ]
+    },
+    {
+      "type": "steps",
+      "title": "Worked example: decode 0x04D2",
+      "items": [
+        "Split into nibbles: 0x04D2 = 0000 0100 1101 0010 - no base-16 arithmetic needed.",
+        "As hex place values: 4 x 256 + D x 16 + 2, where D = 13.",
+        "4 x 256 = 1024; 13 x 16 = 208; plus 2 gives **1234**.",
+        "If the feed defines prices in ticks of one cent, the price is 1234 x 0.01 = \\$12.34."
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Prices live in ticks",
+      "md": "Exchanges send prices as integer tick counts, not text. A 16-bit tick counter overflows at 65,535 - if a feed parser stored cents in a 16-bit unsigned field, the first price above \\$655.35 would wrap to garbage (picture an illiquid instrument quoted at \\$700). Choosing integer widths is a price-range decision, which is why ranges like these matter before the next lesson's signed arithmetic."
+    },
+    {
+      "type": "code",
+      "lang": "bash",
+      "code": "python3 -c 'print(0b10110110)'     # 182\npython3 -c 'print(hex(182))'       # 0xb6\npython3 -c 'print(0x04d2)'         # 1234\nprintf 'AB' | xxd                  # 00000000: 4142  AB",
+      "caption": "Verify conversions from the shell; xxd shows that 'A' is byte 0x41 and 'B' is 0x42."
+    },
+    {
+      "type": "h2",
+      "text": "Powers of two you should know cold"
+    },
+    {
+      "type": "p",
+      "md": "Binary computing is built on a handful of anchors: $2^8 = 256$, $2^{10} = 1024$ (the 'kilo' of memory sizes), $2^{16} = 65{,}536$, $2^{20} \\approx 1$ million, $2^{30} \\approx 1$ billion, and $2^{32} = 4{,}294{,}967{,}296$ - the size of a 32-bit address space, about 4 GiB. Note that computing's K/M/G for memory are powers of two while disk marketing uses powers of ten; the mismatch is why a '500 GB' disk looks smaller once formatted. From here on, statements like 'signed 32-bit tops out at $2^{31} - 1$' should feel natural."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Decode 0xC8 to binary and decimal, then interpret it as a price in cents. Show the nibble split, the decimal sum and the final price.",
+    "hints": [
+      "C is 12: binary 1100. The digit 8 is binary 1000.",
+      "Two hex digits, each contributing exactly four bits."
+    ],
+    "solution": "0xC8 = 1100 1000. Weights of the set bits: 128 + 64 + 8 = 200, so the value is 200 cents = \\$2.00. The nibble split (1100 | 1000) takes you from hex to binary with no division at all."
+  },
+  "independentExercise": {
+    "prompt": "A venue quotes prices in ticks of 0.001 stored as an unsigned 32-bit integer. (1) What is the largest representable price? (2) Encode a price of \\$250.75 as a tick count in decimal, hex and binary.",
+    "hints": [
+      "The largest 32-bit value is 2^32 - 1 = 4,294,967,295.",
+      "\\$250.75 contains 250,750 ticks of 0.001."
+    ],
+    "solution": "(1) 4,294,967,295 ticks x 0.001 = \\$4,294,967.295 - ample headroom for this venue. (2) 250.75 / 0.001 = 250,750 ticks. Hex: 250,750 = 0x3D37E, since 3 x 65,536 + 13 x 4,096 + 3 x 256 + 7 x 16 + 14 = 250,750. Binary in nibbles: 0011 1101 0011 0111 1110."
+  },
+  "commonMistakes": [
+    "Reading binary from the left with growing weights - weights grow right to left; the rightmost bit is 1.",
+    "Treating hex letters as symbols rather than values: A=10 through F=15.",
+    "Assuming a 16-bit field can hold any price - 65,535 ticks is 655.35 dollars at one-cent ticks.",
+    "Conflating 2^10 = 1024 with 10^3 = 1000 when converting memory sizes."
+  ],
+  "realWorldApplication": "Every binary protocol, file format and memory dump is read through this lens: packet captures show hex bytes, debuggers show hex addresses, and correlation IDs are often hex - fluency here is table stakes for systems work.",
+  "quantFinanceApplication": "Market-data feeds encode prices as integer ticks; a feed handler converts 0x04D2-style fields to dollars and cents millions of times a day, and overflow of a too-narrow tick field is a real, observed class of production bug.",
+  "summary": [
+    "Hardware uses binary because two voltage states are cheap and noise-tolerant; an n-bit pattern has 2^n values spanning 0 to 2^n - 1.",
+    "Conversion is mechanical: weights double right-to-left (binary to decimal); repeated division by 2 collects remainders (decimal to binary).",
+    "Hexadecimal packs four bits per digit, so one byte is two hex digits - the standard shorthand for dumps, addresses and protocols.",
+    "Integer width is a business constraint: a 16-bit cent counter caps prices at 65,535 ticks, and overflow silently corrupts data."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "numeric",
+      "prompt": "What is 0b11001000 in decimal?",
+      "answer": 200,
+      "explanation": "Set-bit weights: 128 + 64 + 8 = 200."
+    },
+    {
+      "id": "q2",
+      "type": "numeric",
+      "prompt": "What is 0x2A in decimal?",
+      "answer": 42,
+      "explanation": "2 x 16 + 10 = 42; the digit A contributes ten."
+    },
+    {
+      "id": "q3",
+      "type": "mcq",
+      "prompt": "Why do programmers write binary values in hex rather than decimal?",
+      "options": [
+        "Two hex digits describe one byte exactly, and each digit maps to four bits",
+        "The CPU computes hex numbers faster",
+        "Decimal cannot represent values above 255",
+        "Hardware stores numbers in hex internally"
+      ],
+      "answerIndex": 0,
+      "explanation": "Hex is a human-readable notation aligned with the underlying bits; the hardware stores plain bits regardless of how we write them."
+    },
+    {
+      "id": "q4",
+      "type": "numeric",
+      "prompt": "What is the largest value an unsigned 16-bit integer can hold?",
+      "answer": 65535,
+      "explanation": "2^16 - 1 = 65,535. This is why a 16-bit cent field caps prices at 655.35 dollars."
+    },
+    {
+      "id": "q5",
+      "type": "code-output",
+      "prompt": "What does this Python code print?",
+      "language": "python",
+      "code": "print(0b1011 + 0b1)\nprint(hex(0b10000))",
+      "answer": "12\n0x10",
+      "explanation": "0b1011 is 11, plus 1 is 12. 0b10000 is 16, and hex(16) returns the string '0x10'."
+    },
+    {
+      "id": "q6",
+      "type": "short",
+      "prompt": "Why do venues transmit prices as integer tick counts instead of decimal text?",
+      "modelAnswer": "Fixed-width integer fields have predictable message size, parse with no text decoding, and are exact at a chosen tick size - at the cost of a finite range set by the field width.",
+      "keywords": ["fixed", "parse", "exact", "tick"],
+      "explanation": "Speed, exactness and compact binary wire formats are the drivers; the trade-off is limited range, which the lesson's overflow example shows."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "formula",
+      "front": "Range of an unsigned n-bit integer",
+      "back": "0 to 2^n - 1, with 2^n distinct values: 8 bits -> 0-255, 16 bits -> 0-65,535."
+    },
+    {
+      "type": "definition",
+      "front": "What is a nibble?",
+      "back": "Four bits - exactly one hexadecimal digit, 0x0 through 0xF."
+    },
+    {
+      "type": "concept",
+      "front": "Hex digit to binary, quickly",
+      "back": "Expand each hex digit into 4 bits: 0x04D2 -> 0000 0100 1101 0010. No arithmetic needed."
+    },
+    {
+      "type": "code-output",
+      "front": "In Python, what is hex(200)?",
+      "back": "'0xc8' - because 200 = 12 x 16 + 8, which is C8 in hex."
+    }
+  ],
+  "references": [
+    {
+      "label": "Wikipedia - Binary number",
+      "url": "https://en.wikipedia.org/wiki/Binary_number"
+    },
+    {
+      "label": "Wikipedia - Hexadecimal",
+      "url": "https://en.wikipedia.org/wiki/Hexadecimal"
+    }
+  ],
+  "skills": ["computer-fundamentals"]
+}

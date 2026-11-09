@@ -1,0 +1,213 @@
+{
+  "id": "cpp-lock-free",
+  "moduleId": "ph4-cpp-l7",
+  "title": "Lock-Free Programming and Its Correctness Arguments",
+  "estMinutes": 30,
+  "difficulty": "advanced",
+  "prereqs": ["cpp-atomics"],
+  "objectives": [
+    "Classify algorithms by progress guarantees (blocking, lock-free, wait-free) and explain why the distinctions matter operationally",
+    "Implement a CAS-loop push (Treiber stack), identify its linearisation point, and argue it is lock-free",
+    "Reproduce the ABA problem as a concrete trace and evaluate the standard mitigations (tagged pointers, hazard pointers, epochs)",
+    "Write a correctness argument - invariants plus linearisation points - for a small lock-free structure, and explain why arguments, not recipes, are the deliverable"
+  ],
+  "motivation": "A mutex is correct by inspection; lock-free code is correct only by argument. On a market-data path, a thread holding a lock that gets preempted stalls every quote queued behind it, and the tail latency of a blocking structure is unbounded - which is why hot paths pay the complexity bill for lock-free structures, and why interviews on these desks ask you to *defend* a structure rather than recite one. This lesson builds the CAS loop, the ABA trap, and the habit of writing down why your code is safe under every interleaving.",
+  "blocks": [
+    { "type": "h2", "text": "Progress guarantees: the honest vocabulary" },
+    { "type": "p", "md": "The word \"lock-free\" is used loosely; the standard vocabulary is about **progress**. **Blocking** (mutex-based) code can be halted indefinitely by a thread that stops while holding a lock. **Lock-free** guarantees that *some* thread makes progress in a finite number of its own steps - individually, a thread can starve retrying a CAS loop forever. **Wait-free** guarantees that *every* thread finishes its operation in a bounded number of steps - strictly stronger, and usually slower because of the bounds' bookkeeping. These are worst-case properties: what happens when a thread is preempted mid-operation, not what the average benchmark says." },
+    {
+      "type": "table",
+      "headers": ["Guarantee", "Property", "Example"],
+      "rows": [
+        ["Blocking", "A stalled lock-holder can halt everyone", "std::mutex-protected queue"],
+        ["Lock-free", "Some thread always completes an operation in finitely many steps", "CAS-loop stack push (this lesson)"],
+        ["Wait-free", "Every thread completes in a bounded number of steps", "atomic fetch_add counter; snapshot arrays"]
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Lock-free is not wait-free is not faster",
+      "md": "A CAS retry loop that keeps losing the race is still lock-free (others are progressing) while one thread starves. And \"lock-free\" says nothing about speed: under heavy contention a locked queue can beat a lock-free one because of cache traffic. The reason hot trading paths go lock-free is the **worst case**: no operation can ever be stuck behind a preempted thread holding a lock. That is a tail-latency argument, and it must be measured, not assumed."
+    },
+    { "type": "h2", "text": "CAS and the Treiber stack" },
+    { "type": "p", "md": "The workhorse is compare-and-swap: `compare_exchange_strong(expected, desired)` stores `desired` only if the object still holds `expected`, and on failure loads the observed value into `expected` so a loop can retry. The idiom: load the state, compute the new state **locally**, then CAS; if the world changed underneath you, redo the whole read-compute-CAS cycle. Applied to a stack head pointer, this is the **Treiber stack** - the \"hello world\" of lock-free structures." },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <atomic>\n#include <iostream>\n#include <utility>\n\ntemplate <class T>\nclass LockFreeStack {\n    struct Node { T value; Node* next; };\n    std::atomic<Node*> head_{nullptr};\npublic:\n    void push(T v) {\n        Node* n = new Node{std::move(v), nullptr};\n        Node* old = head_.load(std::memory_order_relaxed);  // initial guess only\n        do {\n            n->next = old;\n        } while (!head_.compare_exchange_weak(old, n,\n                     std::memory_order_release,      // on success: publish\n                     std::memory_order_relaxed));    // on failure: retry\n    }\n    // pop() deliberately omitted - see the ABA and reclamation discussion below.\n};\n\nint main() {\n    LockFreeStack<int> s;\n    s.push(1);\n    s.push(2);\n    std::cout << \"pushed two nodes\\n\";\n    return 0;\n}",
+      "caption": "The push linearises at the single successful CAS: at that instant the stack grows, atomically. On CAS failure the observed head is reloaded into `old`, so the next iteration relinks correctly."
+    },
+    { "type": "p", "md": "Why is this **lock-free**? Consider any thread stuck in the loop: each failed CAS means the head pointer changed - which only happens because another thread's CAS succeeded. So an infinitely-retrying thread implies others are completing pushes; some thread always makes progress. That is the lock-free property stated as a two-line argument. The **linearisation point** is the successful CAS: before it, the push has not happened; after it, it has - and every reader agrees. Linearisability (each operation appears to take effect atomically at one instant between its call and its return) is the correctness target because it composes: linearisable operations used together still behave atomically." },
+    { "type": "h2", "text": "ABA: the classic betrayal" },
+    { "type": "p", "md": "CAS compares values, not histories. If the head pointer leaves a value and later returns to it - even via completely different nodes - a stalled thread's CAS cannot tell the difference. This is the **ABA problem**, and it bites exactly when memory is freed and reallocated, which in C++ is immediately after every `delete`." },
+    {
+      "type": "steps",
+      "title": "A concrete ABA trace (addresses illustrative)",
+      "items": [
+        "T1 reads head = 0xA (node holding value 7), builds node 0xC with next = 0xA, then is preempted.",
+        "T2 pops 0xA (head becomes 0xB) and **frees** node 0xA.",
+        "T2 pops 0xB, then pushes a new node - the allocator reuses the freed memory, so the new node is again at **0xA**; head = 0xA, but it is a different node with different contents.",
+        "T1 resumes: its CAS compares head against 0xA - matches - and stores 0xC. It just linked its node to a node whose contents and successor are not what T1 saw.",
+        "Result: the chain silently skips or corrupts nodes. The CAS succeeded and the structure is wrong - no assertion fires."
+      ]
+    },
+    { "type": "p", "md": "The standard mitigations attack the \"same value, different object\" confusion. **Tagged pointers / version counters**: pack the pointer with a monotonically increasing count and CAS on the pair - the count moved, so T1's CAS fails. On x86-64 this needs a double-width CAS (`cmpxchg16b`) or a separate counter word. **Hazard pointers**: a thread publishes the pointer it is about to use; reclaimers defer freeing any pointer so published. **Epoch-based reclamation / RCU**: memory is freed only when no thread can still be in an old epoch. C++20's `std::atomic<std::shared_ptr<T>>` moves reclamation into the library (labelled C++20; on C++17 the free functions `std::atomic_load`/`atomic_store` on `shared_ptr` exist but are typically implemented with an internal lock - honest, if disappointing). Note that garbage-collected languages remove the *reclamation* hazard but not the ABA hazard on counter-based protocols." },
+    { "type": "h2", "text": "Why correctness arguments beat recipes" },
+    { "type": "p", "md": "A locked critical section is correct because the mutex enforces the invariant for you. Lock-free code has no such enforcement: there are unboundedly many interleavings, you cannot test them all, and the failure mode is silent corruption weeks later. The deliverable is therefore an **argument**: (1) state the structure's invariants (\"head is null or points to a well-formed node chain\"); (2) show the initial state satisfies them; (3) for each operation, show each possible CAS outcome - success, and every failure-retry - preserves them; (4) name the linearisation point. That is an induction over operations, and it is what a reviewer at a trading firm actually reads. Tools help but do not replace it: thread sanitizers find races, model checkers (e.g. Relacy) explore interleavings - but neither proves your reclamation protocol." },
+    {
+      "type": "interactive",
+      "component": "ComplexityCompare",
+      "params": {
+        "series": [
+          { "name": "blocking queue: worst case with a preempted holder (illustrative, us)", "points": [[1, 1], [4, 2], [16, 80], [64, 900]] },
+          { "name": "lock-free queue: no holder to preempt (illustrative, us)", "points": [[1, 1], [4, 2], [16, 9], [64, 40]] }
+        ]
+      },
+      "caption": "Illustrative shapes, not measurements: the blocking curve's tail is set by preemption of a lock holder - unbounded in principle - while the lock-free tail grows only with contention. On a market-data path, that tail is the product."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Where lock-free earns its keep",
+      "md": "Feed handlers, order-book updates and ring-buffer handoffs between hot threads are the canonical cases: operations are short, threads are pinned, and a blocked reader is a missed quote. Everywhere else, a mutex plus a good invariant statement is faster to write, easier to review and rarely slower. Choosing lock-free because it sounds senior is how ABA bugs ship."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Take the Treiber stack push above and write the correctness argument in four numbered parts: (1) the invariant you are maintaining, (2) why the initial state satisfies it, (3) what happens on each CAS outcome (success and failure) and why the invariant survives, (4) the linearisation point. Then state precisely why the initial `head_.load(std::memory_order_relaxed)` is allowed to be relaxed while the CAS success must be release.",
+    "hints": [
+      "The invariant is about what head_ points to and what the chain behind it looks like.",
+      "On failure, compare_exchange reloads the observed head into `old` - the loop then recomputes n->next from fresh state.",
+      "The relaxed load only seeds a guess; the release on the successful CAS is what publishes the node's contents to future readers that acquire-load head_."
+    ],
+    "solution": "**(1) Invariant:** `head_` is either null or points to a node whose `value` is fully constructed and whose `next` chain consists of nodes that were inserted via push (a well-formed chain; pop would add \"no node appears twice\"). **(2) Initial state:** `head_` is null - well-formed. **(3) CAS outcomes:** *Success:* `n` was fully initialised (value moved in, `next = old`) before the CAS, and the CAS is a release-store, so those initialisations happen-before any later acquire-read of `head_` that observes `n` - the chain is well-formed and `head_` now points at it. *Failure:* `old` is overwritten with the currently observed head; the body re-executes `n->next = old` from fresh state, so `n` never links to stale state, and `head_` is unchanged by a failed CAS - the invariant survives trivially. The failed CAS also proves another thread progressed, which is the lock-free property. **(4) Linearisation point:** the single successful CAS - before it, `head_` did not include `n`; after it, every thread that reads `head_` sees the stack including `n`. \n**Why the relaxed seed-load is fine:** its result is only a *guess* that the CAS validates atomically; if it was stale, the CAS fails and the loop corrects itself. The ordering requirement lives on the successful CAS (release) because that is the edge which makes `n`'s contents visible to poppers/other pushers that acquire-load `head_` and observe it. The argument, not the syntax, decides which orderings are load-bearing."
+  },
+  "independentExercise": {
+    "prompt": "Defend the structure against ABA with a version tag. Redefine the stack's head as a pair `{Node* ptr; unsigned version;}` updated under one CAS (on x86-64 use a double-width CAS or a packed 128-bit value). (1) For the lesson's five-step ABA trace, give the version numbers T1 and T2 see at each step (version starts at 0 and increments on every successful CAS) and show exactly where T1's CAS now fails. (2) State what the failing CAS writes into T1's `expected`. (3) Name one remaining hazard that version tagging does NOT solve.",
+    "hints": [
+      "Every successful CAS bumps the version by one, regardless of which thread wins.",
+      "T1's expected pair is {0xA, v} from before it stalled; compare that pair, not just the pointer.",
+      "Tagging stops the compare from lying - it does not stop the allocator from freeing memory someone is still reading."
+    ],
+    "solution": "**(1) The trace with versions:** push initial nodes so the state before T1 stalls is head = {0xA, version 5} (say two earlier pushes plus three CAS steps occurred; the absolute numbers do not matter, only monotonicity). T1 reads expected = {0xA, 5} and stalls. T2 pops 0xA: successful CAS, head = {0xB, 6}, node 0xA freed. T2 pops 0xB and pushes the reused node 0xA: two successful CASes, head = {0xA, 7}, then 8 - say the final state is head = {0xA, 8}. T1 resumes and attempts CAS(expected = {0xA, 5} -> {0xC, 9}): the pointer matches but the version does not (8 != 5), so the CAS **fails** - the compare no longer lies about history. T1 reloads the fresh pair and retries safely. **(2)** On failure, compare_exchange writes the observed value into T1's `expected` - T1's expected becomes {0xA, 8}, ready for the retry. **(3)** Version tagging does not solve **memory reclamation**: node 0xA was freed while T1 might still read `n->next`/rebuild its node - tagging makes the CAS fail, but between the load and the CAS, T1 can still dereference freed memory. You still need hazard pointers, epochs/RCU, or deferred reclamation. (This is also why the pop() was omitted from the lesson's code: reclamation is the hard half of lock-free stacks.)"
+  },
+  "commonMistakes": [
+    "Calling a CAS retry loop wait-free: it is lock-free - individual threads can starve, only *some* thread is guaranteed progress.",
+    "Comparing only the pointer in a CAS on a structure where nodes are freed and reallocated - the ABA hole in one line.",
+    "Assuming a successful CAS proves the world did not change in between: CAS compares values, not histories; only versioning or hazard protocols add history.",
+    "Building lock-free structures without a written invariant + linearisation-point argument - testing cannot enumerate interleavings, so unargued lock-free code is unreviewed code.",
+    "Measuring the average and shipping: lock-free is chosen for worst-case (preemption-safe) behaviour; benchmark the tail and the pinned-thread case.",
+    "Using std::atomic<std::shared_ptr> on a C++17 baseline via the atomic_* free functions and expecting lock-freedom - it is usually internally locked."
+  ],
+  "realWorldApplication": "Lock-free queues and ring buffers (the basis of LMAX Disruptor-style designs), reference counting, and per-CPU stat counters are all CAS protocols; every one ships with a correctness argument because interleavings cannot be tested exhaustively.",
+  "quantFinanceApplication": "On the market-data path the choice is about worst-case latency: a preempted lock-holder stalls quote dispatch with no bound, while a lock-free handoff degrades only with contention. The ABA trace is not academic - reclamation bugs in feed-path stacks and queues are precisely the 'corrupt book once a week' class of incident.",
+  "summary": [
+    "Progress guarantees are worst-case claims: blocking can stall indefinitely, lock-free guarantees *some* thread progresses, wait-free guarantees *every* thread finishes in bounded steps.",
+    "The CAS-loop idiom is load-compute-CAS-retry; the Treiber stack push linearises at its single successful CAS and is lock-free because every failed CAS proves another thread progressed.",
+    "Linearisability - each operation takes effect atomically at one instant - is the correctness target, because it composes and makes reasoning possible.",
+    "ABA exploits that CAS compares values, not histories: free-then-reuse memory makes a stale pointer match again. Mitigate with version tags, hazard pointers, or epoch/RCU reclamation - tagging does not solve reclamation.",
+    "The deliverable in lock-free code is the argument: invariants, initial state, per-outcome preservation, linearisation points. Recipes without arguments are how silent corruption ships.",
+    "Lock-free is a tail-latency decision for market-data paths - justified by preemption safety, not by average throughput."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "A push implemented as a compare_exchange retry loop has which progress guarantee?",
+      "options": ["Wait-free", "Lock-free (but a thread can starve)", "Blocking", "Obstruction-free only"],
+      "answerIndex": 1,
+      "explanation": "Every failed CAS proves the head changed, i.e. another thread succeeded - so SOME thread always progresses (lock-free), but a single unlucky thread can retry indefinitely (not wait-free)."
+    },
+    {
+      "id": "q2",
+      "type": "code-output",
+      "prompt": "What does this single-threaded program print?",
+      "language": "cpp",
+      "code": "#include <atomic>\n#include <iostream>\n\nint main() {\n    std::atomic<int> v{5};\n    int e1 = 5;\n    bool a = v.compare_exchange_strong(e1, 7);\n    int e2 = 7;\n    bool b = v.compare_exchange_strong(e2, 9);\n    int e3 = 5;\n    bool c = v.compare_exchange_strong(e3, 11);\n    std::cout << a << ' ' << b << ' ' << c << ' ' << v.load() << '\\n';\n    return 0;\n}",
+      "answer": "1 1 0 9",
+      "explanation": "First CAS: expected 5 matches, v becomes 7, returns true. Second: expected 7 matches, v becomes 9, true. Third: expected 5 does NOT match the current 9, returns false, and v stays 9. Output: `1 1 0 9`."
+    },
+    {
+      "id": "q3",
+      "type": "mcq",
+      "prompt": "Which observation is the heart of the ABA problem?",
+      "options": [
+        "CAS can spuriously fail even when the value matches",
+        "CAS compares values, not histories - a pointer can return to an old value via different, reallocated nodes",
+        "Acquire loads can read stale cache lines forever",
+        "Relaxed RMWs are not indivisible"
+      ],
+      "answerIndex": 1,
+      "explanation": "ABA is exactly the value-vs-history confusion: head went A -> B -> A (with A freed and reallocated), so the stalled thread's compare matches and its CAS succeeds against a structure it never saw."
+    },
+    {
+      "id": "q4",
+      "type": "ms",
+      "prompt": "Which statements about lock-free structures are true?",
+      "options": [
+        "A linearisable operation appears to take effect atomically at one instant between call and return",
+        "Lock-free guarantees all threads finish in a bounded number of steps",
+        "compare_exchange_weak may fail spuriously, which is why it belongs inside a retry loop",
+        "On failure, compare_exchange writes the observed value into the expected argument"
+      ],
+      "answerIndices": [0, 2, 3],
+      "explanation": "Option 2 is the wait-free property - lock-free only guarantees that some thread progresses. The others are standard definitions: linearisability, weak-CAS spurious failure, and expected being updated on failure."
+    },
+    {
+      "id": "q5",
+      "type": "short",
+      "prompt": "Why do market-data hot paths prefer lock-free structures over mutexes? Name the mechanism, not just 'speed'.",
+      "modelAnswer": "The worst case of blocking code is unbounded: a thread preempted while holding a lock stalls every waiter behind it, adding unbounded tail latency to the tick path. Lock-free operations cannot be stuck behind a lock holder - progress continues under preemption - so the tail is governed by contention, not by scheduler misfortune.",
+      "keywords": ["preempt", "tail", "unbounded"],
+      "explanation": "The argument is worst-case: preemption of a lock-holder is the enemy of a tick deadline. Lock-free trades worst-case blocking for retry loops whose progress does not depend on any single thread being runnable."
+    },
+    {
+      "id": "q6",
+      "type": "mcq",
+      "prompt": "Adding a version counter to a stack's head (CAS on {pointer, version}) fixes which problem, and leaves which one unsolved?",
+      "options": [
+        "Fixes ABA; memory reclamation (use-after-free during a stalled retry) still needs hazard pointers or epochs",
+        "Fixes reclamation; ABA remains unsolved",
+        "Fixes both ABA and reclamation completely",
+        "Fixes neither - only garbage collection helps"
+      ],
+      "answerIndex": 0,
+      "explanation": "The version makes the compare sensitive to history, so the stalled thread's CAS fails (ABA fixed). But between load and CAS the thread may still dereference freed memory - that needs hazard pointers, epoch/RCU reclamation or deferred freeing."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "definition",
+      "front": "Lock-free vs wait-free",
+      "back": "Lock-free: some thread completes an operation in finitely many of its steps (individual threads may starve). Wait-free: every thread completes in a bounded number of steps. Both are worst-case, not average-case, properties."
+    },
+    {
+      "type": "definition",
+      "front": "Linearisability",
+      "back": "Each concurrent operation appears to take effect atomically at a single instant (its linearisation point) between its invocation and response. The correctness target for lock-free structures because it composes."
+    },
+    {
+      "type": "concept",
+      "front": "The ABA problem in one sentence",
+      "back": "CAS compares values, not histories: a pointer can leave a value and return to it via freed-and-reallocated nodes, so a stalled thread's CAS succeeds against a structure it never observed. Fixes: version tags, hazard pointers, epoch/RCU reclamation."
+    },
+    {
+      "type": "code-output",
+      "front": "atomic<int> v{5}; CAS(5->7) ok; CAS(7->9) ok; CAS(5->11) - results and final v?",
+      "back": "true, true, false; final v = 9. The failing CAS also writes the observed value (9) into expected."
+    },
+    {
+      "type": "concept",
+      "front": "What is the deliverable of a lock-free implementation, per this lesson?",
+      "back": "A correctness argument: the structure's invariants, initial state satisfies them, every CAS outcome preserves them, and a named linearisation point per operation - an induction over operations, reviewable by humans and model checkers alike."
+    }
+  ],
+  "references": [
+    { "label": "cppreference - std::atomic compare_exchange", "url": "https://en.cppreference.com/w/cpp/atomic/atomic/compare_exchange" },
+    { "label": "Wikipedia - ABA problem", "url": "https://en.wikipedia.org/wiki/ABA_problem" },
+    { "label": "Dmitriy Vyukov - Relacy race verifier", "url": "https://www.1024cores.net/home/lock-free-algorithms/race-verifier" },
+    { "label": "Maged Michael - Hazard pointers (IBM research paper)", "url": "https://www.research.ibm.com/people/m/michael/ieeetpdc-2004.pdf" },
+    { "label": "cppreference - std::atomic<std::shared_ptr> (C++20)", "url": "https://en.cppreference.com/w/cpp/atomic/atomic_shared_ptr" }
+  ],
+  "skills": ["concurrency", "low-latency"]
+}

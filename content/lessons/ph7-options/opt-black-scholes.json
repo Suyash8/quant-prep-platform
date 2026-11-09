@@ -1,0 +1,256 @@
+{
+  "id": "opt-black-scholes",
+  "moduleId": "ph7-options",
+  "title": "The Black-Scholes Model",
+  "estMinutes": 30,
+  "difficulty": "core",
+  "prereqs": [
+    "opt-binomial"
+  ],
+  "objectives": [
+    "State the Black-Scholes assumptions and write down the pricing formula with d1 and d2",
+    "Interpret N(d1) as the call delta and N(d2) as the risk-neutral exercise probability",
+    "Compute a full option price by hand with every intermediate value carried explicitly",
+    "Verify the computed call and put against put-call parity"
+  ],
+  "motivation": "Every options screen in the world prints Black-Scholes numbers, more than fifty years after the paper. The model prices a European option as a discounted risk-neutral expectation under geometric Brownian motion, and the lognormal integral collapses into two normal CDF evaluations. We will compute one price completely by hand - every intermediate value shown to four decimals - so the formula stops being a black box, and then read N(d1) and N(d2) for what they really mean to a hedger.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "The setup and the formula"
+    },
+    {
+      "type": "p",
+      "md": "Black-Scholes assumes the stock follows geometric Brownian motion with constant volatility $\\sigma$, the risk-free rate $r$ is constant, there are no dividends or transaction costs, and trading is continuous. Under the risk-neutral measure - exactly the logic built node by node in the binomial lesson - the call's value is the discounted expected payoff $e^{-rT}\\,E[\\max(S_T - K, 0)]$. Because $S_T$ is lognormal, that expectation has a closed form, and the entire machinery of stochastic calculus condenses into five inputs and one formula."
+    },
+    {
+      "type": "math",
+      "tex": "C = S_0\\,N(d_1) - K e^{-rT}\\,N(d_2), \\qquad d_1 = \\frac{\\ln(S_0/K) + (r + \\sigma^2/2)\\,T}{\\sigma\\sqrt{T}}, \\qquad d_2 = d_1 - \\sigma\\sqrt{T}",
+      "caption": "$N(\\cdot)$ is the standard normal CDF. The put follows by parity: $P = Ke^{-rT}N(-d_2) - S_0 N(-d_1)$."
+    },
+    {
+      "type": "p",
+      "md": "Read the formula as a two-term ledger. $K e^{-rT} N(d_2)$ is the present value of the strike times the **risk-neutral probability of exercise** - $N(d_2)$ genuinely is $P^Q(S_T > K)$, because $d_2$ measures how many standard deviations the log-strike sits below the log-forward. $S_0 N(d_1)$ weights the stock by $N(d_1)$, which is the call's **delta**: the hedge ratio telling you how many shares replicate the option. The mysterious $\\sigma^2/2$ inside $d_1$ is the lognormal convexity correction - it reflects that $E[S_T] = S_0 e^{rT}$ under $Q$, and the *log* of a lognormal has a $-\\sigma^2/2$ drag. $d_1$ and $d_2$ are not two probabilities of the same kind: one is a hedge ratio, one is an exercise probability."
+    },
+    {
+      "type": "h2",
+      "text": "One price, computed completely"
+    },
+    {
+      "type": "steps",
+      "title": "S = 100, K = 100, r = 5% (continuous), sigma = 20%, T = 1 year",
+      "items": [
+        "$\\ln(S_0/K) = \\ln(1) = 0$ - the option starts exactly at the money.",
+        "$d_1 = (0 + (0.05 + 0.20^2/2) \\times 1)/(0.20 \\times \\sqrt{1}) = (0.05 + 0.02)/0.20 = 0.35$.",
+        "$d_2 = d_1 - \\sigma\\sqrt{T} = 0.35 - 0.20 = 0.15$.",
+        "Normal CDF values (4 dp): $N(0.35) = 0.6368$, $N(0.15) = 0.5596$, and by symmetry $N(-0.15) = 0.4404$, $N(-0.35) = 0.3632$.",
+        "Discount factor: $e^{-0.05} = 0.9512$.",
+        "Call: $C = 100 \\times 0.6368 - 100 \\times 0.9512 \\times 0.5596 = 63.68 - 53.23 = \\$.",
+        "Put: $P = 100 \\times 0.9512 \\times 0.4404 - 100 \\times 0.3632 = 41.89 - 36.32 = \\$.",
+        "Parity check: $C - P = 10.45 - 5.57 = 4.88$ and $S - Ke^{-rT} = 100 - 95.12 = 4.88$. Consistent - and at full machine precision the prices are 10.4506 and 5.5735."
+      ]
+    },
+    {
+      "type": "interactive",
+      "component": "BlackScholesLab",
+      "params": {
+        "spot": 100,
+        "strike": 100,
+        "rate": 0.05,
+        "vol": 0.2,
+        "maturity": 1,
+        "type": "call"
+      },
+      "caption": "Reproduce the hand-computed 10.45, then push volatility from 20% to 30% and watch how much more the convexity of the payoff is suddenly worth."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Four inputs are observable; one is not",
+      "md": "$S_0$, $K$, $T$ come from the contract, $r$ from the curve - but $\\sigma$ is a guess. Turn the logic around: given a market price, solve for the volatility that reproduces it. That inversion is **implied volatility**, the subject of a later lesson, and it is the single most quoted number in derivatives markets."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Where hand computations go wrong",
+      "md": "$N(d_1)$ is not the probability of exercise - that is $N(d_2)$ (for a European call, no dividends). Time must be in years with a consistent day count; volatility in the same annualized units. And if the stock pays dividends, subtract their present value from $S_0$ before applying the formula rather than pretending the input is clean."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "from math import log, sqrt, exp\nfrom statistics import NormalDist\n\nN = NormalDist().cdf\n\ndef bs_call(S, K, r, sigma, T):\n    d1 = (log(S / K) + (r + sigma * sigma / 2) * T) / (sigma * sqrt(T))\n    d2 = d1 - sigma * sqrt(T)\n    return S * N(d1) - K * exp(-r * T) * N(d2), d1, d2\n\nprice, d1, d2 = bs_call(100, 100, 0.05, 0.20, 1.0)\nprint(round(d1, 4))     # 0.35\nprint(round(d2, 4))     # 0.15\nprint(round(price, 4))  # 10.4506",
+      "caption": "Twenty lines from the statistics standard library reproduce the benchmark price to four decimals."
+    },
+    {
+      "type": "p",
+      "md": "The Black-Scholes formula is usually presented as an inscription to be admired. It is more useful as a *machine with four dials* — spot, strike, rate, volatility, time — where you can trace exactly which dial moves which output and why. The derivation belongs to a later lesson; here you learn to compute it, sanity-check it, and read the hedging information it carries, because that is what a desk actually uses it for."
+    },
+    {
+      "type": "steps",
+      "title": "Full computation: 1-year ATM call, S=K=100, r=5%, σ=20%",
+      "items": [
+        "$d_1 = \\frac{\\ln(S/K) + (r + \\sigma^2/2)T}{\\sigma\\sqrt{T}} = \\frac{0 + (0.05 + 0.02)\\cdot1}{0.20} = 0.350$",
+        "$d_2 = d_1 - \\sigma\\sqrt{T} = 0.350 - 0.200 = 0.150$. The gap between $d_1$ and $d_2$ is pure volatility-time — it is how much the distribution smears before expiry.",
+        "Normal CDF values: $N(d_1) = N(0.350) = 0.6368$ and $N(d_2) = N(0.150) = 0.5596$.",
+        "Call price: $C = S\\,N(d_1) - Ke^{-rT}N(d_2) = 100(0.6368) - 100(0.9512)(0.5596) = 63.68 - 53.23 = \\$10.45.",
+        "Same-parameters put: $P = \\$5.57. Put-call parity check: $C - P = 4.88$ and $S - Ke^{-rT} = 100 - 95.12 = 4.88$. Two completely different formulas agree to the cent — that is not luck, it is arbitrage enforcing internal consistency."
+      ]
+    },
+    {
+      "type": "p",
+      "md": "The two $N(\\cdot)$ terms are not decoration. $N(d_1)$ is the **delta**: to hedge one short call you hold 0.637 shares, and that number *changes* as spot moves (that drift in delta is gamma — the hedging cost the formula anticipates). $N(d_2)$ is the risk-neutral probability of finishing in the money. When someone says \"the market prices a 56% chance of expiring ITM\", this is the sentence behind it."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Sanity checks you should run on any BSM number",
+      "md": "Bounds: a European call must trade between $S - Ke^{-rT}$ and $S$ — ours does ($4.88 \\le 10.45 \\le 100$). Monotonicity: raise σ and the call price must rise (volatility is the only dial that helps both calls and puts). ATM approximation: $C \\approx 0.4 S\\sigma\\sqrt{T} = 0.4(100)(0.20)(1) = 8$ — within 25% of our exact 10.45, which is close enough to catch order-of-magnitude errors instantly."
+    },
+    {
+      "type": "p",
+      "md": "What the model *doesn't* claim is the part people misremember. It does not say prices are lognormal — it says **if** diffusion holds and hedging is continuous and costless, then this price is the replication cost. The formula is exact under its assumptions; the assumptions are the approximation. Every smile, skew and term structure you will meet later is the market's way of telling you where those assumptions leak."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Reprice the same call ($S = 100$, $K = 100$, $r = 5\\%$, $T = 1$) with volatility raised to $\\sigma = 30\\%$. Compute $d_1$, $d_2$, the required $N$ values (given below) and the price.",
+    "hints": [
+      "$\\sigma^2/2 = 0.045$, so the numerator is $0.05 + 0.045$.",
+      "Given: $N(0.3167) = 0.6243$ and $N(0.0167) = 0.5067$; use $e^{-0.05} = 0.9512$."
+    ],
+    "solution": "$d_1 = (0.05 + 0.045)/(0.30 \\times 1) = 0.095/0.30 = 0.3167$; $d_2 = 0.3167 - 0.30 = 0.0167$. $C = 100 \\times 0.6243 - 100 \\times 0.9512 \\times 0.5067 = 62.43 - 48.20 = \\$. The extra 10 volatility points added about \\$3.78 of value - pure convexity, bought with time."
+  },
+  "independentExercise": {
+    "prompt": "Price a European put with $S = 90$, $K = 100$, $r = 5\\%$ (continuous), $\\sigma = 25\\%$, $T = 1$. Intermediate values: $\\ln(0.9) = -0.10536$; $N(0.0964) = 0.5384$; $N(0.3464) = 0.6355$; $e^{-0.05} = 0.9512$. Use $P = Ke^{-rT}N(-d_2) - S\\,N(-d_1)$.",
+    "hints": [
+      "$d_1 = (\\ln(S/K) + (r + \\sigma^2/2)T)/(\\sigma\\sqrt{T})$ with $r + \\sigma^2/2 = 0.08125$.",
+      "$N(-d_1) = N(0.0964)$ and $N(-d_2) = N(0.3464)$ by symmetry."
+    ],
+    "solution": "$d_1 = (-0.10536 + 0.08125)/0.25 = -0.02411/0.25 = -0.0964$; $d_2 = -0.0964 - 0.25 = -0.3464$. $P = 100 \\times 0.9512 \\times 0.6355 - 90 \\times 0.5384 = 60.45 - 48.46 = \\$. The put is deep enough in the money that most of its value is intrinsic ($100 - 90 = 10$), with 1.99 of time value."
+  },
+  "commonMistakes": [
+    "Interpreting $N(d_1)$ as the probability of exercise - it is the delta; $N(d_2)$ is the exercise probability.",
+    "Mixing units: days for $T$ with annualized $\\sigma$, or discrete compounding inside a continuous formula.",
+    "Dropping the $\\sigma^2/2$ term from $d_1$ - at-the-money options are then mispriced by real money.",
+    "Forgetting that BS prices European options only: American features need trees or numerics."
+  ],
+  "realWorldApplication": "Exchange-listed options are quoted in implied volatilities that are converted to prices with Black-Scholes (or close variants); even where models have moved on, BS remains the market's shared language for expressing and comparing option prices.",
+  "quantFinanceApplication": "The derivation - risk-neutral expectation of a lognormal payoff - is the template for every closed-form model since: the same integration under a different $S_T$ distribution prices options under jumps, stochastic volatility and local vol.",
+  "summary": [
+    "BS assumptions: GBM with constant $\\sigma$ and $r$, no dividends, no frictions, European exercise.",
+    "$C = S_0 N(d_1) - Ke^{-rT} N(d_2)$ with $d_1 = [\\ln(S/K) + (r + \\sigma^2/2)T]/(\\sigma\\sqrt{T})$, $d_2 = d_1 - \\sigma\\sqrt{T}$.",
+    "$N(d_2)$ is the risk-neutral exercise probability; $N(d_1)$ is the call delta (hedge ratio); the $\\sigma^2/2$ in $d_1$ is lognormal convexity.",
+    "Worked price: $d_1 = 0.35$, $d_2 = 0.15$, $N = 0.6368/0.5596$, $C = 10.45$ (exact 10.4506), $P = 5.57$, parity-consistent.",
+    "Volatility is the only unobservable input - invert the model and you get implied volatility."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "numeric",
+      "prompt": "Compute $d_1$ for $S = 105$, $K = 100$, $r = 4\\%$, $\\sigma = 25\\%$, $T = 0.25$. Take $\\ln(1.05) = 0.0488$. (Three decimals.)",
+      "answer": 0.533,
+      "tolerance": 0.005,
+      "explanation": "$d_1 = (0.0488 + (0.04 + 0.03125) \\times 0.25)/(0.25 \\times 0.5) = (0.0488 + 0.017813)/0.125 = 0.533$."
+    },
+    {
+      "id": "q2",
+      "type": "numeric",
+      "prompt": "Using $K e^{-rT} = 95.12$, $N(-d_2) = 0.4404$, $N(-d_1) = 0.3632$ and $S = 100$: what is the European put price? (Two decimals.)",
+      "answer": 5.57,
+      "tolerance": 0.05,
+      "unit": "\\$",
+      "explanation": "$P = 95.12 \\times 0.4404 - 100 \\times 0.3632 = 41.89 - 36.32 = 5.57$ - the put companion of the lesson's call."
+    },
+    {
+      "id": "q3",
+      "type": "mcq",
+      "prompt": "In Black-Scholes, $N(d_2)$ for a European call (no dividends) represents:",
+      "options": [
+        "The risk-neutral probability that the option finishes in the money",
+        "The option's delta",
+        "The stock's real-world probability of rising",
+        "The option's gamma"
+      ],
+      "answerIndex": 0,
+      "explanation": "$N(d_2) = P^Q(S_T > K)$, the probability-weighted discount factor on the strike. The delta is $N(d_1)$ - a related but distinct quantity."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "As volatility approaches zero, a European call's Black-Scholes price approaches:",
+      "options": [
+        "$\\max(S_0 - Ke^{-rT}, 0)$ - the deterministic payoff discounted",
+        "Zero always",
+        "$S_0 - K$ unconditionally",
+        "The option premium times two"
+      ],
+      "answerIndex": 0,
+      "explanation": "With no randomness the stock grows deterministically to $S_0 e^{rT}$; the call is worth the discounted positive part of the forward minus strike. Uncertainty, not the direction of the stock, is what the time value prices."
+    },
+    {
+      "id": "q5",
+      "type": "ms",
+      "prompt": "Which inputs does the Black-Scholes formula require?",
+      "options": [
+        "Current stock price",
+        "Expected return of the stock",
+        "Volatility",
+        "Risk-free rate"
+      ],
+      "answerIndices": [
+        0,
+        2,
+        3
+      ],
+      "explanation": "$S_0$, $\\sigma$, $r$ (plus contract-defined $K$, $T$). The expected return famously does not appear: hedging removes the drift's influence on value."
+    },
+    {
+      "id": "q6",
+      "type": "short",
+      "prompt": "Explain in one or two sentences why the stock's expected return does not appear anywhere in the Black-Scholes formula.",
+      "modelAnswer": "Continuous delta-hedging replicates the option's payoffs with stock and bonds, so its value is pinned by arbitrage alone; expectations only enter through the risk-neutral measure where all assets earn r, replacing the real-world drift.",
+      "keywords": [
+        "risk-neutral",
+        "hedge",
+        "replication",
+        "drift"
+      ],
+      "explanation": "The same logic as the binomial tree, taken to continuous time: replication kills the dependence on real-world probabilities, leaving only $r$, $\\sigma$ and the contract terms."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "formula",
+      "front": "Black-Scholes call price and d1",
+      "back": "$C = S_0 N(d_1) - Ke^{-rT} N(d_2)$; $d_1 = [\\ln(S/K) + (r + \\sigma^2/2)T]/(\\sigma\\sqrt{T})$; $d_2 = d_1 - \\sigma\\sqrt{T}$."
+    },
+    {
+      "type": "definition",
+      "front": "N(d2) vs N(d1)",
+      "back": "$N(d_2)$ = risk-neutral probability of exercise (European call, no dividends); $N(d_1)$ = call delta / hedge ratio."
+    },
+    {
+      "type": "formula",
+      "front": "BS put by parity",
+      "back": "$P = Ke^{-rT} N(-d_2) - S_0 N(-d_1)$; always check $C - P = S - Ke^{-rT}$."
+    },
+    {
+      "type": "concept",
+      "front": "Why sigma^2/2 in d1",
+      "back": "Lognormal convexity: $E[S_T] = S_0 e^{rT}$ under Q, so the log-forward is shifted down by $\\sigma^2/2 T$; d1 measures distance to the strike in standard deviations of the log."
+    }
+  ],
+  "references": [
+    {
+      "label": "Black & Scholes (1973) - The Pricing of Options and Corporate Liabilities",
+      "url": "https://www.jstor.org/stable/1831029"
+    },
+    {
+      "label": "Wikipedia - Black-Scholes model",
+      "url": "https://en.wikipedia.org/wiki/Black%E2%80%93Scholes_model"
+    }
+  ],
+  "skills": [
+    "options",
+    "pricing"
+  ]
+}

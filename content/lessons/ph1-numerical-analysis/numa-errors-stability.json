@@ -1,0 +1,273 @@
+{
+  "id": "numa-errors-stability",
+  "moduleId": "ph1-numerical-analysis",
+  "title": "Rounding Error, Cancellation and Numerical Stability",
+  "estMinutes": 28,
+  "difficulty": "advanced",
+  "prereqs": [
+    "numa-floating-point"
+  ],
+  "objectives": [
+    "Distinguish absolute from relative error and estimate rounding error in ulps",
+    "Recognize catastrophic cancellation and rewrite expressions into algebraically equivalent, numerically stable forms",
+    "Explain why summation order matters and when even reordering cannot help",
+    "Use the condition number to predict how much a covariance matrix amplifies input noise"
+  ],
+  "motivation": "Two formulas that are algebraically identical can disagree by 100% in floating point. A risk report once computed the variance of a delta-hedged book as exactly zero because the code evaluated $1 - \\cos(x)$ for a tiny $x$ - the formula was right and the algorithm was wrong. This lesson teaches the discipline that separates working numerical code from silently broken numerical code: measure error in the right units, spot cancellation before it happens, and know when the problem itself, not your solver, is the enemy.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Absolute and relative error: pick the right ruler"
+    },
+    {
+      "type": "p",
+      "md": "The **absolute error** of an approximation $\\hat{x}$ is $|\\hat{x} - x|$; the **relative error** divides by $|x|$. Only relative error is comparable across scales: being off by \\$1 on a \\$10 position (10%) is not the same as being off by \\$1 on a \\$10bn fund (0.00000001%). In double precision, one ulp of rounding contributes a relative error of about $2^{-53} \\approx 1.1 \\times 10^{-16}$, so \"correct to a few ulps\" and \"correct to 15 significant digits\" are the same statement."
+    },
+    {
+      "type": "h2",
+      "text": "Catastrophic cancellation"
+    },
+    {
+      "type": "p",
+      "md": "Subtracting nearly equal numbers is the single most damaging operation in floating point. The leading digits cancel, and what survives is the rounding noise that was always there in the low-order bits. Nothing new is computed - only garbage is exposed."
+    },
+    {
+      "type": "steps",
+      "title": "Worked micro-example: subtracting rounded values",
+      "items": [
+        "True values: $x = 123.4567$, $y = 123.4441$, each stored to 6 significant digits: $\\hat{x} = 123.456$, $\\hat{y} = 123.444$.",
+        "Each stored value has relative error at most $\\approx 4 \\times 10^{-6}$ - about as good as it sounds.",
+        "Computed difference: $\\hat{x} - \\hat{y} = 0.012$. True difference: $x - y = 0.0126$.",
+        "Relative error of the difference: $0.0006 / 0.0126 \\approx 4.8\\%$ - amplified from $4 \\times 10^{-6}$ by the factor $|x|/|x-y| \\approx 9800$.",
+        "Moral: the inputs lost 0.0004% each; the subtraction lost 5%. Amplification factor is roughly $|x| / |x - y|$."
+      ]
+    },
+    {
+      "type": "steps",
+      "title": "Worked example: a variance that vanished",
+      "items": [
+        "Compute $\\dfrac{1 - \\cos x}{x^2}$ at $x = 10^{-8}$. The true answer tends to $\\tfrac12$ as $x \\to 0$, since $1 - \\cos x \\approx x^2/2 = 5 \\times 10^{-17}$.",
+        "But $5 \\times 10^{-17}$ is smaller than half the spacing of doubles near 1 (which is $2^{-53} \\approx 1.11 \\times 10^{-16}$), so `cos(1e-8)` rounds to exactly $1.0$.",
+        "Naive result: $(1.0 - 1.0)/10^{-16} = 0$ - a 100% relative error, not a small one.",
+        "Stable rewrite: $1 - \\cos x = 2\\sin^2(x/2)$, so the answer is $2\\sin^2(5 \\times 10^{-9})/10^{-16} \\approx 0.5$ with full precision - no subtraction of near-equals anywhere."
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "The cancellation test",
+      "md": "Before you code $f(x) - g(x)$, ask: is $|f - g|$ much smaller than $|f|$? If yes, hunt for an equivalent form that avoids the subtraction: $1 - \\cos x = 2\\sin^2(x/2)$, $\\sqrt{a+b} - \\sqrt{a} = b/(\\sqrt{a+b} + \\sqrt{a})$, $e^x - 1 = \\text{expm1}(x)$."
+    },
+    {
+      "type": "h2",
+      "text": "Repairing the quadratic formula"
+    },
+    {
+      "type": "p",
+      "md": "The classic victim is the quadratic formula's \"minus\" branch. Solve $x^2 - 10^4 x + 1 = 0$. The discriminant is $10^8 - 4 = 99{,}999{,}996$, and since $(10^4 - 2 \\times 10^{-4})^2 = 10^8 - 4 + 4 \\times 10^{-8}$, we get $\\sqrt{99{,}999{,}996} \\approx 9999.9998 - 2 \\times 10^{-12} = 9999.999799999998$. The small root is"
+    },
+    {
+      "type": "math",
+      "tex": "x_{\\text{small}} = \\frac{b - \\sqrt{b^2 - 4c}}{2} \\approx \\frac{10^4 - 9999.9998}{2} = 1.00000001 \\times 10^{-4}",
+      "caption": "Naive branch: subtracting two ~10^4 numbers to get ~2x10^-4 - a cancellation factor of 10^4 / (2x10^-4) = 5x10^7."
+    },
+    {
+      "type": "p",
+      "md": "With a cancellation factor of $5 \\times 10^7$, roughly 7 or 8 of the 16 available digits are destroyed: the naive small root is accurate to only about 8 digits (relative error near $10^{-8}$), even though $\\sqrt{\\,\\cdot\\,}$ itself was computed to full precision. The stable alternative uses Vieta's product of roots $= 1$, avoiding the subtraction entirely:"
+    },
+    {
+      "type": "math",
+      "tex": "x_{\\text{small}} = \\frac{2c}{b + \\sqrt{b^2 - 4c}} = \\frac{2}{19999.9998} \\approx 1.00000001 \\times 10^{-4}",
+      "caption": "Same algebra, no cancellation: all ~16 digits survive. The big root uses the ordinary formula; the small one uses this."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import math\nb = 1.0e4\ns = math.sqrt(b * b - 4.0)\nnaive = (b - s) / 2.0\nstable = 2.0 / (b + s)\nprint(abs(naive - stable) / stable)   # a few parts in 10^9: eight digits lost",
+      "caption": "The mismatch between the two \"identical\" formulas exposes the cancellation directly."
+    },
+    {
+      "type": "h2",
+      "text": "Summation: order matters, until it cannot help"
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "s = 0.0\nfor x in [1e16, 1.0, -1e16]:\n    s += x\nprint(s)                              # 0.0 - but the true sum is 1.0",
+      "caption": "The spacing of doubles near 10^16 is 2, so 1e16 + 1 rounds back to 1e16 and the unit is absorbed."
+    },
+    {
+      "type": "p",
+      "md": "For long sums of similar-magnitude values, accuracy improves by summing small-to-large, or by **compensated (Kahan) summation**, which keeps a running residual of what each addition dropped and feeds it back - recovering most lost digits. But no ordering rescues the example above: the single $1.0$ is absorbed below ulp at the very first addition, and its bits are gone before any reorder or compensation could see them. The fix is structural - track deviations from a running mean, or keep the large and small contributions in separate accumulators."
+    },
+    {
+      "type": "h2",
+      "text": "Condition number: the problem's own error multiplier"
+    },
+    {
+      "type": "p",
+      "md": "Even a perfectly stable algorithm cannot beat a badly conditioned *problem*. The condition number of an invertible matrix is $\\kappa(A) = \\lVert A \\rVert \\lVert A^{-1} \\rVert$; for a symmetric positive-definite matrix (like a covariance matrix), $\\kappa = \\lambda_{\\max}/\\lambda_{\\min}$. It bounds error amplification: the relative error of the solution is at most roughly $\\kappa$ times the relative error of the input. A condition number near $10^k$ costs about $k$ of your 16 digits."
+    },
+    {
+      "type": "steps",
+      "title": "Worked: a nearly-singular correlation matrix",
+      "items": [
+        "Take $C = \\begin{pmatrix} 1 & 0.999 \\\\ 0.999 & 1 \\end{pmatrix}$ - two assets that are 99.9% correlated.",
+        "Eigenvalues of a $2 \\times 2$ correlation matrix with correlation $\\rho$ are $1 + \\rho$ and $1 - \\rho$: here $1.999$ and $0.001$.",
+        "Condition number $\\kappa = 1.999 / 0.001 = 1999 \\approx 10^{3.3}$ - expect to lose about 3 of 16 digits.",
+        "As $\\rho \\to 1$, $\\kappa \\to \\infty$: the minimum-variance weights involve $C^{-1}$ and explode into enormous long-short positions. The problem is becoming ill-posed, not just ill-conditioned."
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import numpy as np\nC = np.array([[1.0, 0.999], [0.999, 1.0]])\nprint(np.linalg.cond(C))               # about 1999\nb = np.array([0.02, 0.01])\nw = np.linalg.solve(C, b)\nprint(w)                               # about [ 5.01 -4.99 ]: a 500% long, 500% short portfolio",
+      "caption": "A mild input ask yields wild output: solving $Cw = b$ with rho = 0.999 gives weights of +/- 500%."
+    },
+    {
+      "type": "interactive",
+      "component": "FloatErrorLab",
+      "params": {}
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Covariance matrices in practice",
+      "md": "Sample covariance matrices from short return histories are routinely near-singular (highly correlated assets, more assets than observations). Standard remedies: **shrinkage** toward a structured estimator (Ledoit-Wolf), **ridge regularization** $\\Sigma + \\varepsilon I$ which lifts $\\lambda_{\\min}$ toward $\\varepsilon$, factor models, or simply dropping redundant assets. Always check $\\kappa(\\Sigma)$ before trusting optimizer output."
+    },
+    {
+      "type": "p",
+      "md": "One more distinction closes the loop. The **forward error** is $|\\hat{x} - x|$, the distance from the true answer. The **backward error** is how much you would have to perturb the *input* so that $\\hat{x}$ is exactly right: $|f(\\hat{x})|$ for a root problem. A backward-stable algorithm computes the exact answer to a slightly wrong question - usually the best one can hope for. Whether small backward error buys small forward error depends entirely on the condition number."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Two portfolio weights are stored to 6 significant digits: true $a = 123.4567$ stored as $123.456$, true $b = 123.4441$ stored as $123.444$. Compute $a - b$ both ways and find the relative error of the computed difference.",
+    "hints": [
+      "Subtract the stored values, then subtract the true values.",
+      "Relative error = |computed - true| / |true|."
+    ],
+    "solution": "Computed: $123.456 - 123.444 = 0.012$. True: $123.4567 - 123.4441 = 0.0126$. Absolute error $= 0.0006$; relative error $= 0.0006/0.0126 \\approx 4.8\\%$. Each input was good to $\\sim 4 \\times 10^{-6}$ relative; cancellation amplified the damage by a factor of about $123.45/0.0126 \\approx 9800$."
+  },
+  "independentExercise": {
+    "prompt": "(a) Evaluate $(1 - \\cos x)/x^2$ at $x = 10^{-8}$ the naive way and via $2\\sin^2(x/2)/x^2$. (b) Find the threshold $x^*$ below which the naive evaluation collapses to zero, given that $1 - \\cos x \\approx x^2/2$ and that the smallest gap between doubles just below 1 is $2^{-53} \\approx 1.11 \\times 10^{-16}$.",
+    "hints": [
+      "Naive collapses when $1 - \\cos x$ falls below half the local spacing of doubles near 1.",
+      "Set $x^2/2 = 1.11 \\times 10^{-16}$ and solve for $x$."
+    ],
+    "solution": "(a) Naive: $\\cos(10^{-8})$ rounds to $1.0$ (since $5 \\times 10^{-17} < 1.11 \\times 10^{-16}$), so the result is exactly $0$ - 100% error. Stable: $2\\sin^2(5 \\times 10^{-9})/10^{-16} \\approx 2(5 \\times 10^{-9})^2/10^{-16} = 0.5$, the correct limit. (b) Collapse when $x^2/2 < 2^{-53}$: $x^* = \\sqrt{2.22 \\times 10^{-16}} \\approx 1.5 \\times 10^{-8}$. Below that, the naive code reports an exact zero variance."
+  },
+  "commonMistakes": [
+    "Reporting absolute error when relative error is what matters (and vice versa).",
+    "Coding $1 - \\cos x$, $\\sqrt{x+h} - \\sqrt{x}$ or $e^x - 1$ naively at small arguments.",
+    "Believing reordering or Kahan summation can recover values absorbed below ulp - only restructuring the computation can.",
+    "Reading a huge condition number as a solver bug; it is a property of the problem, fixed by regularizing the problem.",
+    "Solving $\\Sigma w = b$ for a near-singular covariance and shipping the resulting extreme weights."
+  ],
+  "realWorldApplication": "GPS trilateration, statistical software and graphics engines all guard against cancellation; linear-algebra libraries expose condition estimators (LAPACK's rcond) precisely so callers can detect ill-posed problems before trusting results.",
+  "quantFinanceApplication": "Portfolio covariance matrices from short histories are often near-singular; condition numbers and shrinkage/ridge regularization decide whether minimum-variance weights are stable or absurd, and gamma computations with too-small bumps are a classic cancellation bug in production Greeks.",
+  "summary": [
+    "Relative error is the right ruler; one ulp of rounding is about $2^{-53}$ relative error in binary64.",
+    "Subtracting nearly equal numbers amplifies relative error by roughly $|x|/|x-y|$; rewrite to avoid the subtraction.",
+    "Sum small-to-large or use compensated summation; absorbed-below-ulp information is unrecoverable by ordering alone.",
+    "$\\kappa(A) = \\lambda_{\\max}/\\lambda_{\\min}$ for SPD matrices: $\\kappa \\approx 10^k$ costs about $k$ digits, and correlated-asset covariances routinely hit $\\kappa \\approx 10^3$ or worse."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "Subtracting two nearly equal floating-point numbers primarily destroys:",
+      "options": [
+        "the exponent range",
+        "relative accuracy, because leading digits cancel and rounding noise dominates",
+        "nothing, if the numbers were stored exactly",
+        "the sign of the result"
+      ],
+      "answerIndex": 1,
+      "explanation": "Cancellation strips away the leading significant digits, leaving the low-order rounding noise - the relative error of the difference is amplified by roughly |x|/|x-y|."
+    },
+    {
+      "id": "q2",
+      "type": "numeric",
+      "prompt": "For the 2x2 correlation matrix with off-diagonal 0.999, what is the condition number $\\lambda_{max}/\\lambda_{min}$ (to the nearest integer)?",
+      "answer": 1999,
+      "explanation": "Eigenvalues are $1 + 0.999 = 1.999$ and $1 - 0.999 = 0.001$, so $\\kappa = 1.999/0.001 = 1999$."
+    },
+    {
+      "id": "q3",
+      "type": "code-output",
+      "prompt": "What exactly does this Python code print?",
+      "language": "python",
+      "code": "s = 0.0\nfor x in [1e16, 1.0, -1e16]:\n    s += x\nprint(s)",
+      "answer": "0.0",
+      "explanation": "The spacing of doubles near 1e16 is 2, so 1e16 + 1 rounds back to 1e16 (ties to even): the 1.0 is absorbed at the first addition and the final cancellation gives exactly 0.0. Reordering cannot recover bits that were never stored."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "Which rewrite computes $(1 - \\cos x)/x^2$ stably for tiny $x$?",
+      "options": [
+        "$2\\sin^2(x/2)/x^2$",
+        "$(1 - \\cos x)/(x \\cdot x)$ with x kept in float32",
+        "$(1 - \\cos x) \\cdot x^{-2}$ evaluated at higher precision but same formula",
+        "$\\cos(x)/x^2 - 1/x^2$"
+      ],
+      "answerIndex": 0,
+      "explanation": "The identity $1 - \\cos x = 2\\sin^2(x/2)$ removes the subtraction of near-equal quantities. Option 3 keeps the same fatal subtraction; option 4 makes it worse; option 2 only worsens precision."
+    },
+    {
+      "id": "q5",
+      "type": "numeric",
+      "prompt": "A problem has condition number $10^{12}$ and your data carries 16 significant digits. About how many digits of the answer can you trust?",
+      "answer": 4,
+      "explanation": "A condition number near $10^k$ costs about $k$ digits: $16 - 12 = 4$."
+    },
+    {
+      "id": "q6",
+      "type": "short",
+      "prompt": "In one sentence, what does it mean for an algorithm to be backward stable?",
+      "modelAnswer": "It returns the exact solution to a slightly perturbed version of the input problem - the backward error is small, even if forward error depends on conditioning.",
+      "keywords": [
+        "perturbed",
+        "input",
+        "exact",
+        "backward"
+      ],
+      "explanation": "Backward stability replaces 'how far from the true answer' with 'the answer to a nearby problem' - the strongest guarantee generally achievable in floating point."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "formula",
+      "front": "Relative error after subtracting nearly equal numbers",
+      "back": "Amplified by roughly $|x|/|x-y|$: inputs each good to $\\epsilon$ yield a difference good to $\\approx \\epsilon |x|/|x-y|$."
+    },
+    {
+      "type": "concept",
+      "front": "Stable form of 1 - cos(x)",
+      "back": "$2\\sin^2(x/2)$ - avoids subtracting a quantity from 1 that rounds away entirely for $|x| \\lesssim 1.5 \\times 10^{-8}$."
+    },
+    {
+      "type": "definition",
+      "front": "Condition number of an SPD matrix",
+      "back": "$\\kappa = \\lambda_{\\max}/\\lambda_{\\min}$; bounds relative error amplification; $\\kappa \\approx 10^k$ costs about $k$ of your ~16 digits."
+    },
+    {
+      "type": "code-output",
+      "front": "What is 1e16 + 1 == 1e16 in Python?",
+      "back": "True - the ulp at 1e16 is 2, so adding 1 rounds back to 1e16 (ties-to-even)."
+    }
+  ],
+  "references": [
+    {
+      "label": "Goldberg - What Every Computer Scientist Should Know About Floating-Point Arithmetic",
+      "url": "https://docs.oracle.com/cd/E19957-01/806-3568/ncg_goldberg.html"
+    },
+    {
+      "label": "Wikipedia - Numerical stability",
+      "url": "https://en.wikipedia.org/wiki/Numerical_stability"
+    }
+  ],
+  "skills": [
+    "numerical-analysis"
+  ]
+}

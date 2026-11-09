@@ -1,0 +1,176 @@
+{
+  "slug": "concurrent-market-data",
+  "order": 9,
+  "title": "Concurrent Market Data Pipeline",
+  "language": "cpp",
+  "difficulty": "advanced",
+  "prereqLessons": [
+    "cpp-threads",
+    "cpp-mutexes",
+    "cpp-atomics",
+    "cpp-lock-free",
+    "os-synchronisation",
+    "cpp-chrono-fs-ranges",
+    "qalg-streaming",
+    "cpp-benchmarking-profiling",
+    "net-latency"
+  ],
+  "context": "Market-data handlers are the canonical high-performance concurrency workload: many producers streaming ticks, a bounded hand-off, and consumers aggregating per-symbol statistics in real time. Get the design wrong and you get either a bottleneck (one global lock) or a race (two consumers double-counting a tick). Both failure modes are common in production and in interviews, where 'build a concurrent pipeline and measure it' is a standard senior-level exercise.\n\nThe progression in this project is deliberate: build the correct mutex+condvar version first, prove its numbers, then replace the queue with a lock-free implementation and measure the difference. The engineering lesson — correct before fast, and measure claims — is the deliverable as much as the code.",
+  "problem": "Build a concurrent tick-processing pipeline in C++17:\n\n- **Producers**: P threads simulate ticks (geometric-Brownian-motion prices per symbol from a fixed seed) and push into a bounded queue.\n- **Queue**: two implementations behind one interface — (a) mutex + condition-variable bounded queue (starter provided), (b) a lock-free bounded ring using atomics — switchable by config.\n- **Consumers**: C threads pop ticks and aggregate per-symbol statistics: count, mean, population stddev (Welford), min, max. Aggregation must be race-free (shard symbols across consumers, or merge per-consumer partials at the end — your choice, documented).\n- **Correctness**: for a fixed seed and workload, the concurrent run's per-symbol stats must exactly match a single-threaded reference; total consumed ticks == total produced (no lost or duplicated ticks); the suite runs cleanly under ThreadSanitizer.\n- **Shutdown**: close semantics drain the queue; all consumers exit; all threads join; no deadlock under stress.\n- **Measurements**: end-to-end throughput (ticks/sec) and queue latency percentiles (p50/p95/p99/max in ns, measured enqueue-to-dequeue) across a small matrix of (P, C, capacity) — results table in the docs, with commentary on where the bottleneck moves.",
+  "requirements": [
+    "One queue interface with both implementations; the mutex+condvar starter is provided and must pass the correctness suite before the lock-free variant is attempted.",
+    "The lock-free variant uses C++11 atomics with explicit memory-order reasoning documented (release/acquire pairs and why); false-sharing guards (cache-line padding) on hot per-thread counters are required and their effect measured.",
+    "No lost or duplicated ticks under any (P, C, capacity) tested; the count invariant is asserted in every run, including abrupt producer completion.",
+    "Per-symbol aggregation matches the serial reference exactly on fixed seeds for both queue implementations.",
+    "Graceful shutdown: producers finish, queue closed, consumers drain and exit, all threads joined within a timeout; stress test with unbalanced producer speeds.",
+    "Latency percentiles computed from per-tick enqueue/dequeue timestamps collected in a preallocated results buffer (no allocation in the measurement path); the percentile code itself is unit-tested on a known sample.",
+    "Benchmark matrix (e.g. P in {1, 2, 4}, C in {1, 2, 4}, capacity in {1024, 16384}) reported for both queue implementations with a written comparison; the fastest configuration's bottleneck identified by profiling or reasoning."
+  ],
+  "milestones": [
+    {
+      "title": "Tick model and serial reference",
+      "detail": "Tick struct, GBM simulator with fixed seed, serial aggregation as ground truth, equality-test scaffold.",
+      "estHours": 5
+    },
+    {
+      "title": "Mutex+condvar pipeline",
+      "detail": "Starter queue wired into the P/C pipeline, sharding or partials merge, shutdown semantics, TSan-clean run.",
+      "estHours": 7
+    },
+    {
+      "title": "Lock-free queue",
+      "detail": "Atomic ring with documented memory ordering, false-sharing padding, same correctness suite green.",
+      "estHours": 9
+    },
+    {
+      "title": "Measurement harness",
+      "detail": "Latency timestamping, preallocated buffers, percentile implementation + tests, throughput matrix runs.",
+      "estHours": 7
+    },
+    {
+      "title": "Analysis and docs",
+      "detail": "Results tables, mutex vs lock-free comparison, bottleneck commentary, README with design rationale.",
+      "estHours": 6
+    }
+  ],
+  "designGuidance": [
+    {
+      "type": "h2",
+      "text": "Pipeline topology"
+    },
+    {
+      "type": "code",
+      "lang": "text",
+      "code": "  P producers ──► [ bounded queue ] ──► C consumers ──► per-symbol aggregates\n  (GBM simulators)   (mutex or lock-free)   (shard by symbol hash,\n                                             or merge partials at end)"
+    },
+    {
+      "type": "p",
+      "md": "Two aggregation designs are acceptable. **Sharding**: consumer k owns symbols where hash(symbol) mod C == k — no shared aggregation state at all, at the cost of load imbalance when symbols are hot. **Partials**: every consumer aggregates everything it sees; at shutdown the C partial Welford accumulators merge in O(C * symbols). Welford state merges exactly (n, mean and M2 combine analytically) — do the derivation in a comment."
+    },
+    {
+      "type": "callout",
+      "variant": "warn",
+      "title": "False sharing eats your throughput",
+      "md": "If two threads write to counters that share a 64-byte cache line, the line ping-pongs and your 'lock-free' queue measures slower than the mutex one. Pad hot per-thread counters (`alignas(64)`) and measure before/after — the delta is the whole lesson."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "// Condition variables must re-check a predicate in a loop: wakeups can be\n// spurious, and another thread may steal the item between notify and wake.\nvoid push(T value) {\n    std::unique_lock<std::mutex> lk(m_);\n    not_full_.wait(lk, [&] { return closed_ || size_ < buf_.size(); });\n    if (closed_) return;               // documented drop-on-close semantics\n    buf_[(head_ + size_) % buf_.size()] = std::move(value);\n    ++size_;\n    not_empty_.notify_one();\n}",
+      "caption": "The predicate-loop pattern, from the starter"
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Design",
+        "Throughput behaviour",
+        "Risk"
+      ],
+      "rows": [
+        [
+          "single global mutex",
+          "degrades as P*C grows; contention serialises",
+          "none — trivially correct"
+        ],
+        [
+          "mutex + condvar, batched ops",
+          "better under bursts",
+          "subtle drain/close bugs"
+        ],
+        [
+          "lock-free SPSC ring",
+          "scales per producer-consumer pair",
+          "memory-ordering bugs; needs TSan + reasoning"
+        ],
+        [
+          "lock-free MPSC",
+          "best raw throughput",
+          "hard; ABA and lost-wakeup hazards"
+        ]
+      ]
+    },
+    {
+      "type": "h2",
+      "text": "Measuring latency honestly"
+    },
+    {
+      "type": "steps",
+      "title": "Queue latency measurement protocol",
+      "items": [
+        "Producer stamps each tick with steady_clock::now() at enqueue (timestamps live in the Tick struct — no side allocations).",
+        "Consumer stamps dequeue and appends (dequeue - enqueue) into a preallocated vector or fixed ring sized to the workload.",
+        "After drain, sort the deltas once and read off p50/p95/p99/max; report the mean too.",
+        "Separate latency runs from throughput runs — computing percentiles in the hot loop changes the very latency you measure (batching effects), so never do both in one pass."
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "info",
+      "title": "TSan is part of the spec",
+      "md": "A concurrency project that has not run under ThreadSanitizer (`-fsanitize=thread`) is unverified. Make the TSan run a script, record it in the README, and treat any reported race — even one you 'know' is benign — as a defect to explain or fix."
+    }
+  ],
+  "starterFiles": [
+    {
+      "path": "include/md/bounded_queue.hpp",
+      "content": "#pragma once\n// Fixed-capacity MPMC queue guarded by a mutex and two condition variables.\n// Correct-first baseline for the concurrent market-data project; the project\n// later replaces this with a lock-free ring and measures the difference.\n//\n// Semantics:\n//   - push() blocks while full; after close() it drops the value (no-op).\n//   - pop() blocks while empty; returns false once closed AND drained.\n//   - close() must be called (once) before destroying the queue while any\n//     thread might still be waiting.\n\n#include <condition_variable>\n#include <cstddef>\n#include <mutex>\n#include <stdexcept>\n#include <utility>\n#include <vector>\n\nnamespace md {\n\ntemplate <typename T>\nclass BoundedQueue {\npublic:\n    explicit BoundedQueue(std::size_t capacity) : buf_(capacity) {\n        if (capacity == 0) throw std::invalid_argument(\"capacity must be > 0\");\n    }\n\n    void push(T value) {\n        std::unique_lock<std::mutex> lk(m_);\n        not_full_.wait(lk, [&] { return closed_ || size_ < buf_.size(); });\n        if (closed_) return;\n        buf_[(head_ + size_) % buf_.size()] = std::move(value);\n        ++size_;\n        not_empty_.notify_one();\n    }\n\n    // Returns false once the queue is closed and drained.\n    bool pop(T& out) {\n        std::unique_lock<std::mutex> lk(m_);\n        not_empty_.wait(lk, [&] { return size_ > 0 || closed_; });\n        if (size_ == 0) return false;   // closed and drained\n        out = std::move(buf_[head_]);\n        head_ = (head_ + 1) % buf_.size();\n        --size_;\n        not_full_.notify_one();\n        return true;\n    }\n\n    void close() {\n        {\n            std::lock_guard<std::mutex> lk(m_);\n            closed_ = true;\n        }\n        not_empty_.notify_all();\n        not_full_.notify_all();\n    }\n\nprivate:\n    std::mutex m_;\n    std::condition_variable not_empty_;\n    std::condition_variable not_full_;\n    std::vector<T> buf_;\n    std::size_t head_ = 0;\n    std::size_t size_ = 0;\n    bool closed_ = false;\n};\n\n}  // namespace md\n"
+    },
+    {
+      "path": "include/md/tick.hpp",
+      "content": "#pragma once\n#include <cstdint>\n\nnamespace md {\n\nstruct Tick {\n    std::int64_t timestampNs;    // enqueue timestamp for latency measurement\n    std::uint32_t symbolId;\n    double price;\n    double quantity;\n};\n\n}  // namespace md\n"
+    }
+  ],
+  "evaluationCriteria": [
+    {
+      "criterion": "Concurrency correctness: count invariants, exact match vs serial reference, TSan-clean",
+      "weight": 30
+    },
+    {
+      "criterion": "Lock-free implementation: sound memory ordering, false-sharing handling, documented reasoning",
+      "weight": 20
+    },
+    {
+      "criterion": "Measurement quality: latency percentile protocol, throughput matrix, honest comparison",
+      "weight": 20
+    },
+    {
+      "criterion": "Shutdown semantics and stress robustness (unbalanced producers, drain, joins)",
+      "weight": 15
+    },
+    {
+      "criterion": "Aggregation design rationale and documentation",
+      "weight": 15
+    }
+  ],
+  "documentationRequirements": [
+    "README.md: topology diagram, queue implementations and the switch, build/run including the TSan script.",
+    "Memory-ordering section: every atomic operation in the lock-free queue annotated with its ordering and why it suffices.",
+    "RESULTS.md: throughput/latency tables over the (P, C, capacity) matrix for both queues, plus interpretation.",
+    "Shutdown-semantics spec: the close/drain/join contract that tests rely on."
+  ],
+  "extensionChallenges": [
+    "Implement an MPSC lock-free queue (Vyukov-style) and compare against your SPSC design under asymmetric producer loads.",
+    "Add adaptive batching: consumers pop up to k ticks at once; measure the throughput/latency trade-off curve.",
+    "Pin threads to cores (pthread_setaffinity_np) and quantify the jitter reduction in p99 latency."
+  ]
+}

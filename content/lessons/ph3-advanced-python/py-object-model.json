@@ -1,0 +1,279 @@
+{
+  "id": "py-object-model",
+  "moduleId": "ph3-advanced-python",
+  "title": "The Python Object Model and Mutability",
+  "estMinutes": 26,
+  "difficulty": "advanced",
+  "prereqs": [
+    "py-iterators-generators-decorators"
+  ],
+  "objectives": [
+    "Describe what a CPython object is (type pointer, reference count, value) and predict sys.getsizeof results for common types",
+    "Explain assignment as name binding and predict aliasing behaviour when objects are mutated through a second name",
+    "Classify built-in types as mutable/immutable and hashable/unhashable, and choose the right one for dict keys and set members",
+    "Avoid the classic bugs: mutable default arguments, shared nested state after shallow copies, and tuple-wrapping-a-list surprises",
+    "Choose between copy.copy and copy.deepcopy given a nested data structure"
+  ],
+  "motivation": "A risk engine passes a positions list into three helper functions, and by lunchtime the positions list has entries nobody added. Bugs like that are not about finance - they are about the Python object model: names, references, and mutable objects. Understanding what an object actually is, what assignment really does, and when data is shared versus copied separates code that is correct by construction from code that fails on Friday after close.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Everything is an object: type, refcount, value"
+    },
+    {
+      "type": "p",
+      "md": "In CPython, every piece of data - integers, floats, strings, functions, classes, even modules - is a **PyObject**: a struct carrying a reference count, a pointer to its type object, and the value payload. The type determines behaviour: the `+` operator means integer addition for ints and concatenation for strings, because the operator dispatches on the *object's* type, never on the variable. Memory overhead is real: on 64-bit CPython 3.12, `sys.getsizeof(1)` is **28** bytes and `sys.getsizeof(1.5)` is **24** bytes - an 8-byte C double wrapped in 16 bytes of header machinery. A list does not store the objects themselves, only pointers to them."
+    },
+    {
+      "type": "interactive",
+      "component": "MemoryLayout",
+      "params": {
+        "value": 3.14,
+        "type": "double"
+      },
+      "caption": "A Python float wraps a raw C double in a PyObject header: 8 bytes of value plus 16 bytes of refcount and type pointer. That wrapping is why a list of a million floats costs far more than a NumPy array (next module)."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import sys\n\nprint(sys.getsizeof(1), sys.getsizeof(1.5))   # 28 24\nn = 250\nprint(type(n).__name__, n.bit_length())       # int 8",
+      "caption": "Inspect the box: every value carries its type and overhead with it."
+    },
+    {
+      "type": "h2",
+      "text": "Names are references, not boxes"
+    },
+    {
+      "type": "p",
+      "md": "Assignment in Python never copies data. `b = a` makes the *name* `b` point at the same object `a` points at: `id(a) == id(b)` and `a is b`. If the object is **mutable**, mutating it through one name is immediately visible through every other name. This is *aliasing*, and it is the mechanism behind most 'spooky action at a distance' bugs in analytics code."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "positions = [42.17, 43.05]\nwatch = positions           # alias, NOT a copy\nwatch.append(41.90)\nprint(positions)            # the 'other' list changed too\nprint(positions is watch)   # True - one object, two names",
+      "caption": "Two names, one list object."
+    },
+    {
+      "type": "p",
+      "md": "**Immutable** objects (int, float, str, tuple) cannot be mutated, so 'changing' them means something different: `x = x + 1` reads the old object, computes a *new* one, and re-points the name. That is why ints feel copy-safe and lists feel dangerous - with immutable objects the worst an alias can do is see the same value, never a mutated one."
+    },
+    {
+      "type": "h2",
+      "text": "Mutable vs immutable: the rules that bite"
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Type",
+        "Mutable",
+        "Hashable"
+      ],
+      "rows": [
+        [
+          "int / float / str",
+          "no",
+          "yes"
+        ],
+        [
+          "tuple",
+          "no",
+          "only if every element is hashable"
+        ],
+        [
+          "list",
+          "yes",
+          "no"
+        ],
+        [
+          "dict",
+          "yes",
+          "no"
+        ],
+        [
+          "set",
+          "yes",
+          "no"
+        ],
+        [
+          "frozenset",
+          "no",
+          "yes"
+        ]
+      ]
+    },
+    {
+      "type": "p",
+      "md": "Hashability matters practically: dict keys and set members must be hashable, so a list is illegal as a dict key but a tuple of floats is fine. Tuples hide one famous trap: they are immutable, but a tuple *containing a list* lets the inner list mutate, because you are mutating the list object the tuple points to, not the tuple."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "t = (1, [2, 3])\nt[1].append(4)      # allowed: mutates the inner list, not the tuple\nprint(t)            # (1, [2, 3, 4])",
+      "caption": "Immutability of a container is one level deep."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Mutable default arguments",
+      "md": "`def add_fill(order_id, fills=[])` - the default list is created **once**, when the function is defined, not at each call. Every call that uses the default appends to the *same* list, so state leaks across calls. The fix is the None sentinel: `def add_fill(order_id, fills=None):` then `if fills is None: fills = []` inside the body. This is the single most-asked interview question on mutability."
+    },
+    {
+      "type": "h2",
+      "text": "Copying: shallow, deep, and the defaults"
+    },
+    {
+      "type": "p",
+      "md": "`copy.copy(a)` builds a new *outer* container whose elements are still aliases - a **shallow** copy. `copy.deepcopy(a)` recurses and duplicates nested objects too. The idiomatic one-liners `list(a)`, `a[:]`, `dict(d)` are all shallow. For a flat list of numbers shallow is enough; for nested book structures - a dict of lists of fills - you need deepcopy, or inner mutations will still leak into the 'copy'."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import copy\n\nbook = {\"AAPL\": [100, 120], \"MSFT\": [80]}\nsnapshot = copy.copy(book)      # shallow\nsnapshot[\"AAPL\"].append(150)    # shares the inner list with book\nprint(book[\"AAPL\"])             # [100, 120, 150] - original mutated",
+      "caption": "A shallow copy of a nested structure is only one level safe."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Why desks care",
+      "md": "PnL pipelines pass dictionaries of positions through many functions. A helper that does `summary = dict(book)` and then appends to `summary[\"fills\"]` has just corrupted the live book - a shallow copy. Either deepcopy at the boundary or, better, make helpers return new data instead of mutating their arguments."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Predict the output *before* running, then explain each value in one sentence:\n\n```python\na = {\"px\": 42.17}\nb = a\nb[\"px\"] = 41.90\nc = dict(a)\nc[\"px\"] = 40.00\nprint(a[\"px\"], b[\"px\"], c[\"px\"])\n```",
+    "hints": [
+      "`b = a` binds a second name to the same dict object.",
+      "`dict(a)` builds a new outer dict - but that is only one level of copying."
+    ],
+    "solution": "`b = a` aliases: setting `b[\"px\"]` mutates the single shared dict, so `a` sees it too. `c = dict(a)` is a shallow copy - a new outer dict whose value pointers were taken from `a` *at copy time* (after the mutation, so 41.90), and reassigning `c[\"px\"]` rebinds only the copy's key. Output: `41.9 41.9 40.0`."
+  },
+  "independentExercise": {
+    "prompt": "A junior wrote `def add_fill(order_id, fills=[])` and called it three times: `add_fill(101)`, `add_fill(102)`, `add_fill(103)`.\n\n(a) What does the default `fills` contain after the three calls, and why?\n(b) Rewrite the function so each call starts from an empty list unless a list is passed in.\n(c) The desk also snapshots the nested book `{\"legs\": [fills_a, fills_b]}` before an audit. Which copy function do you use, and what goes wrong with the shallow alternative?",
+    "hints": [
+      "Default argument expressions are evaluated once, at function definition time.",
+      "The None sentinel pattern: check for None inside the body.",
+      "Ask what a shallow copy shares: the inner lists."
+    ],
+    "solution": "(a) All three ids accumulate in one shared list: `[101, 102, 103]` - the default was created once at definition and every call appended to the same object.\n\n(b)\n```python\ndef add_fill(order_id, fills=None):\n    if fills is None:\n        fills = []\n    fills.append(order_id)\n    return fills\n```\n\n(c) Use `copy.deepcopy(book)`. A shallow copy (`copy.copy` or `dict(book)`) creates a new outer dict but aliases the inner leg lists, so fills appended after the snapshot would still appear in the 'frozen' audit copy - defeating its purpose."
+  },
+  "commonMistakes": [
+    "Using `is` to compare values: small-int and interned-string caching can make it work locally, then fail for larger values - use `==` for value, `is` only for identity (e.g. `x is None`).",
+    "Believing `b = a` or `a[:]` protects nested data: both are shallow; inner objects stay shared.",
+    "Mutable default arguments silently sharing state across calls.",
+    "Using a list as a dict key or set member - lists are unhashable; use a tuple (of hashables).",
+    "Forgetting that tuple immutability is one level deep: `t[1].append(x)` mutates the list inside the tuple."
+  ],
+  "realWorldApplication": "Every service that passes configuration dicts, caches results, or shares queues between threads lives or dies by aliasing discipline. Reference counting (the reason for the GIL) is also an object-model consequence.",
+  "quantFinanceApplication": "Position books, fill logs and curve objects are mutable nested structures shared across functions and threads. Deep-copying a book before a what-if scenario, and never mutating inputs passed to a pricer, are standard desk conventions born from exactly the aliasing bugs this lesson teaches.",
+  "summary": [
+    "Every Python value is a PyObject: refcount + type pointer + payload; `sys.getsizeof` on 64-bit CPython 3.12 gives 28 for a small int and 24 for a float.",
+    "Assignment binds names to objects; `b = a` copies the reference, not the data - mutation through any alias is visible through all.",
+    "Immutable types (int, float, str, tuple) cannot be mutated, only rebound; mutable ones (list, dict, set) can be changed in place and must not be dict keys.",
+    "`copy.copy` is one level deep; `copy.deepcopy` duplicates nested objects. Mutable default arguments are evaluated once at definition - use a None sentinel."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "code-output",
+      "prompt": "What does this print?",
+      "language": "python",
+      "code": "positions = [42.17, 43.05]\nwatch = positions\nwatch.append(41.90)\nprint(positions)\nprint(positions is watch)",
+      "answer": "[42.17, 43.05, 41.9]\nTrue",
+      "explanation": "`watch = positions` copies the reference, so appending through one name is visible through the other; `is` confirms they are the same object."
+    },
+    {
+      "id": "q2",
+      "type": "code-output",
+      "prompt": "What does this print?",
+      "language": "python",
+      "code": "a = [1, 2]\nb = [1, 2]\nprint(a == b, a is b)",
+      "answer": "True False",
+      "explanation": "`==` compares values (equal lists), `is` compares identity (two distinct list objects)."
+    },
+    {
+      "id": "q3",
+      "type": "mcq",
+      "prompt": "Which of these can safely be used as a dict key?",
+      "options": [
+        "a list of tickers",
+        "a dict of parameters",
+        "a tuple of floats",
+        "a set of ids"
+      ],
+      "answerIndex": 2,
+      "explanation": "Dict keys must be hashable. A tuple of floats is immutable and hashable; lists, dicts and sets are mutable and therefore unhashable."
+    },
+    {
+      "id": "q4",
+      "type": "code-output",
+      "prompt": "What does this print?",
+      "language": "python",
+      "code": "t = (1, [2, 3])\nt[1].append(4)\nprint(t)",
+      "answer": "(1, [2, 3, 4])",
+      "explanation": "The tuple's slots are immutable, but slot 1 holds a *mutable list*; appending mutates that list object, which the tuple then reflects."
+    },
+    {
+      "id": "q5",
+      "type": "numeric",
+      "prompt": "On 64-bit CPython 3.12, what does `sys.getsizeof(1.5)` return (in bytes)?",
+      "answer": 24,
+      "explanation": "A Python float is an 8-byte C double plus a 16-byte PyObject header (refcount + type pointer): 8 + 16 = 24 bytes."
+    },
+    {
+      "id": "q6",
+      "type": "mcq",
+      "prompt": "Why is `def add_fill(order_id, fills=[])` dangerous?",
+      "options": [
+        "The empty list is re-created at every call, wasting memory",
+        "The default list is created once at definition and shared across all calls using the default",
+        "Python forbids mutable defaults at import time",
+        "It raises a TypeError when called twice"
+      ],
+      "answerIndex": 1,
+      "explanation": "Default expressions are evaluated once, at `def` time. All default-using calls mutate one shared list - the classic mutable-default bug. Use `fills=None` and create the list inside."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "definition",
+      "front": "`is` vs `==` in Python",
+      "back": "`is` compares identity (same object, same `id()`); `==` compares value via `__eq__`. Use `is` for None/singletons, `==` for values."
+    },
+    {
+      "type": "formula",
+      "front": "Size of a Python float on 64-bit CPython",
+      "back": "24 bytes: 8-byte C double payload + 16-byte PyObject header (reference count + type pointer). A small int is 28 bytes."
+    },
+    {
+      "type": "concept",
+      "front": "Shallow vs deep copy",
+      "back": "copy.copy duplicates only the outer container (inner objects stay aliased); copy.deepcopy recursively duplicates nested objects. list(a), a[:], dict(d) are all shallow."
+    },
+    {
+      "type": "error-identification",
+      "front": "Spot the bug: def log_fill(fill, fills=[]): fills.append(fill); return fills",
+      "back": "Mutable default argument: one list created at definition time is shared across all calls. Fix with fills=None + create inside the body."
+    },
+    {
+      "type": "code-output",
+      "front": "t = (1, [2, 3]); t[1].append(4); print(t) - what happens?",
+      "back": "Prints (1, [2, 3, 4]). Tuple slots are immutable but the slot holds a mutable list, which can be mutated in place."
+    }
+  ],
+  "references": [
+    {
+      "label": "Python docs - Data model",
+      "url": "https://docs.python.org/3/reference/datamodel.html"
+    },
+    {
+      "label": "Python docs - copy module",
+      "url": "https://docs.python.org/3/library/copy.html"
+    },
+    {
+      "label": "Python FAQ - mutable default arguments",
+      "url": "https://docs.python.org/3/faq/programming.html#why-do-changes-to-a-list-dict-or-set-yield-a-different-result-than-expected"
+    }
+  ],
+  "skills": [
+    "python"
+  ]
+}

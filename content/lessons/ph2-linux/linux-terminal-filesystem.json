@@ -1,0 +1,291 @@
+{
+  "id": "linux-terminal-filesystem",
+  "moduleId": "ph2-linux",
+  "title": "The Terminal and the Filesystem Hierarchy",
+  "estMinutes": 24,
+  "difficulty": "foundation",
+  "prereqs": [
+    "cf-hardware-software"
+  ],
+  "objectives": [
+    "Explain what the shell is and how it relates to the kernel",
+    "Navigate the filesystem using absolute and relative paths, ., .. and ~",
+    "Locate the standard roles of /etc, /var, /home, /opt, /tmp and /proc in the Filesystem Hierarchy Standard",
+    "Inspect files and directories with ls, cat, head, tail, wc and glob patterns"
+  ],
+  "motivation": "First day on the desk: 'fill logs are in /var/log/quant, config in /etc/quant, the engine runs from /opt/quant - go find out why fills stopped.' There is no GUI on a production server and no search engine for your own filesystem. Everything on Linux hangs off one root directory, and the terminal is the only reliable way to walk it - so we learn the tree and the handful of commands that move through it.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "The shell: a conversation with the kernel"
+    },
+    {
+      "type": "p",
+      "md": "A **terminal** is a window into a **shell** - a program (usually bash) that reads a line, parses it into a command plus arguments, asks the kernel to run it, and prints the result, then repeats. That read-evaluate-print loop is why the shell feels like a conversation. The shell is also a full language (loops, variables, exit codes - the next lessons), and because servers are administered over SSH with no desktop, terminal fluency is not optional for a quant developer."
+    },
+    {
+      "type": "code",
+      "lang": "bash",
+      "code": "$ whoami\nquant\n$ pwd\n/home/quant\n$ echo $SHELL\n/bin/bash",
+      "caption": "whoami: which user am I; pwd: print working directory; SHELL: which shell is running."
+    },
+    {
+      "type": "h2",
+      "text": "One tree from one root"
+    },
+    {
+      "type": "p",
+      "md": "Linux has no drive letters. There is exactly one hierarchy beginning at **/** (the root), and other disks or network shares are **mounted** onto directories within it, blending invisibly into the tree. Paths come in two flavours: **absolute** paths start at / and work from anywhere; **relative** paths start where you are, using **.** for here, **..** for the parent, and **~** for your home directory."
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Directory",
+        "What lives there"
+      ],
+      "rows": [
+        [
+          "/bin, /usr/bin",
+          "Executable programs the system provides (ls, grep, python3)"
+        ],
+        [
+          "/etc",
+          "System and service configuration, as plain text files"
+        ],
+        [
+          "/home",
+          "User home directories, e.g. /home/quant"
+        ],
+        [
+          "/opt",
+          "Optional third-party software, often one directory per product"
+        ],
+        [
+          "/proc",
+          "Kernel and process information exposed as virtual files"
+        ],
+        [
+          "/tmp",
+          "Scratch space; typically wiped on reboot - never store state here"
+        ],
+        [
+          "/var",
+          "Variable data: logs under /var/log, queues, spools"
+        ]
+      ]
+    },
+    {
+      "type": "p",
+      "md": "Learn the roles, not an exhaustive map. When the lead says 'config lives in /etc/quant', you know exactly what kind of thing to expect: text files you can read and diff. When a log floods the disk, you look in /var/log first. These conventions (the Filesystem Hierarchy Standard) are why any Linux box feels familiar within minutes."
+    },
+    {
+      "type": "code",
+      "lang": "bash",
+      "code": "$ cd /opt/quant && ls\nengine  feed  tools\n$ cd feed\n$ pwd\n/opt/quant/feed\n$ ls -F\nconfig.yaml  fills.csv  run.sh*\n$ head -n 3 fills.csv\ntime,symbol,side,qty,price\n09:30:01.123,AAPL,BUY,100,187.42\n09:30:01.456,MSFT,SELL,50,415.10",
+      "caption": "A trading repo as the shell sees it; ls -F marks executables with a star."
+    },
+    {
+      "type": "p",
+      "md": "A small inspection toolkit covers most questions: **ls -l** for details, **cat** for whole small files, **head -n 3** and **tail -n 5** for first and last lines (tail -f follows a growing log - the monitoring lesson uses it constantly), **wc -l** to count lines, and **file** to ask what kind of thing a path actually is. **Globs** let the shell expand patterns before a command runs: *.csv becomes every CSV in the current directory."
+    },
+    {
+      "type": "code",
+      "lang": "bash",
+      "code": "$ wc -l fills.csv\n4 fills.csv\n$ tail -n 1 fills.csv\n09:30:02.001,AAPL,BUY,200,187.44\n$ ls *.csv\nfills.csv  positions.csv",
+      "caption": "wc counts lines (header plus three fills); globs expand before ls even runs."
+    },
+    {
+      "type": "interactive",
+      "component": "TerminalSteps",
+      "params": {
+        "steps": [
+          {
+            "cmd": "pwd",
+            "out": [
+              "/home/quant"
+            ],
+            "note": "Print working directory — where am I?"
+          },
+          {
+            "cmd": "ls -l /var/log/syslog",
+            "out": [
+              "-rw-r----- 1 syslog adm 482K Nov  9 06:25 /var/log/syslog"
+            ],
+            "note": "A file: type, permissions, owner, group, size, mtime, name."
+          },
+          {
+            "cmd": "cd /var/log && ls | head -3",
+            "out": [
+              "alternatives.log",
+              "apt",
+              "boot.log"
+            ]
+          },
+          {
+            "cmd": "man hier",
+            "out": [
+              "NAME",
+              "       hier - description of the filesystem hierarchy",
+              "..."
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Paths you will live in",
+      "md": "Production conventions repeat across desks: services under /opt/name, config under /etc/name, logs under /var/log/name, scratch in /tmp (with the reboot caveat). Knowing the convention, you can navigate an unfamiliar trading server on day one - and you will know that a 100 GB log hiding in /var/log is what pages someone at 3am."
+    },
+    {
+      "type": "h2",
+      "text": "/proc: the filesystem that isn't"
+    },
+    {
+      "type": "p",
+      "md": "One directory breaks the rules beautifully: **/proc** is not files on a disk but a window the kernel renders on the fly. /proc/self is the current process; /proc/self/status holds its memory and signal state; /proc/cpuinfo describes the CPUs. Reading a file there triggers the kernel to generate fresh content - the first hint that on Linux 'everything is a file' is an interface design, a theme the OS lessons develop."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "You are in /opt/quant/feed. (1) Give one relative and one absolute path that reach /opt/quant/tools. (2) Write a single command showing the last 5 lines of /var/log/quant/fills.log. (3) What does cd .. do from /opt/quant/feed?",
+    "hints": [
+      "Relative paths climb with ..; absolute paths start at /.",
+      "tail prints the end of a file; -n 5 sets the count."
+    ],
+    "solution": "(1) Relative: ../tools; absolute: /opt/quant/tools. (2) tail -n 5 /var/log/quant/fills.log. (3) It moves to the parent directory /opt/quant, since .. always means 'one level up'."
+  },
+  "independentExercise": {
+    "prompt": "Your ~/data directory holds trades_2026-01.csv through trades_2026-12.csv plus notes.txt. (1) Write a glob that matches only the January-to-March files. (2) Write one command that counts the lines of those three files at once and reports a total. (3) Why is putting your results in /tmp a bad idea?",
+    "hints": [
+      "Character ranges work in globs: [1-3].",
+      "wc accepts multiple files and prints a total line."
+    ],
+    "solution": "(1) ls ~/data/trades_2026-0[1-3].csv. (2) wc -l ~/data/trades_2026-0[1-3].csv - prints each file's count plus a total. (3) /tmp is world-writable scratch that many systems clear on reboot and that other users can read; results (and anything sensitive) belong under your home or the project directory with proper permissions."
+  },
+  "commonMistakes": [
+    "Unquoted paths with spaces: cd My Reports fails; quote it: cd 'My Reports'.",
+    "Storing state in /tmp and losing it at reboot, or letting other users read it.",
+    "Confusing ~ (your home directory) with / (the root of the whole system).",
+    "Typing absolute paths everywhere when relative paths (../tools) make scripts portable between checkouts."
+  ],
+  "realWorldApplication": "Server administration, Docker images, CI runners and HPC clusters all assume FHS fluency; 'check /var/log' is the universal first move of incident response on Linux.",
+  "quantFinanceApplication": "Trading infrastructure follows the same conventions - engines in /opt, config in /etc, logs in /var/log - and feed outages are diagnosed by walking exactly these paths under time pressure.",
+  "summary": [
+    "The shell is a read-evaluate-print loop in front of the kernel; the terminal is the universal interface to Linux servers.",
+    "Everything hangs under one root /; other devices are mounted into the tree; absolute paths start at /, relative paths use . and ..",
+    "The FHS gives predictable roles: /etc config, /var/log logs, /opt add-on software, /tmp scratch, /proc a live kernel window.",
+    "head, tail, cat, wc and globs answer most inspection questions in one line each."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "Which directory holds system configuration files?",
+      "options": [
+        "/etc",
+        "/bin",
+        "/home",
+        "/tmp"
+      ],
+      "answerIndex": 0,
+      "explanation": "/etc is the FHS home for configuration; /bin holds executables, /home user data, /tmp scratch."
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "Starting in /opt/quant/feed, where does `cd ../tools` land?",
+      "options": [
+        "/opt/quant/tools",
+        "/opt/tools",
+        "/opt/quant/feed/tools",
+        "/tools"
+      ],
+      "answerIndex": 0,
+      "explanation": ".. climbs to /opt/quant, then tools descends into /opt/quant/tools."
+    },
+    {
+      "id": "q3",
+      "type": "code-output",
+      "prompt": "What does this pipeline print?",
+      "language": "bash",
+      "code": "printf 'a,b\\n1,2\\n3,4\\n' | wc -l",
+      "answer": "2",
+      "explanation": "printf emits two newline characters, so the stream has two lines and wc -l counts 2."
+    },
+    {
+      "id": "q4",
+      "type": "short",
+      "prompt": "Why do servers run headless with shell access rather than desktops?",
+      "modelAnswer": "GUIs consume memory and CPU, cannot be used comfortably over remote links, and cannot be automated; the shell works over SSH, scripts well, and needs no display.",
+      "keywords": [
+        "ssh",
+        "automat",
+        "resources",
+        "script"
+      ],
+      "explanation": "Headless servers save resources and enable automation - both essential at scale."
+    },
+    {
+      "id": "q5",
+      "type": "ms",
+      "prompt": "Which of these are absolute paths?",
+      "options": [
+        "/etc/hosts",
+        "quant/feed",
+        "~/notes.txt",
+        "/var/log",
+        "../data"
+      ],
+      "answerIndices": [
+        0,
+        3
+      ],
+      "explanation": "Absolute paths begin with /, describing location from the root regardless of the current directory. ~/notes.txt is home-relative and ../data is current-directory-relative."
+    },
+    {
+      "id": "q6",
+      "type": "code-output",
+      "prompt": "What does this command sequence print?",
+      "language": "bash",
+      "code": "cd /var && cd log && cd .. && pwd",
+      "answer": "/var",
+      "explanation": "cd log moves into /var/log, then cd .. returns to the parent /var, which pwd prints."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "definition",
+      "front": "What is the shell?",
+      "back": "A program (e.g. bash) that reads a command line, parses it, asks the kernel to execute it and prints results - also a full scripting language."
+    },
+    {
+      "type": "concept",
+      "front": "Absolute vs relative path",
+      "back": "Absolute starts at / and works from anywhere; relative starts at the current directory using . and ..; ~ means your home."
+    },
+    {
+      "type": "definition",
+      "front": "What is /proc?",
+      "back": "A virtual filesystem the kernel generates on demand, exposing process and hardware state as readable files."
+    },
+    {
+      "type": "code-output",
+      "front": "From /opt/quant/feed, what does cd ../tools do?",
+      "back": "Moves to /opt/quant/tools - .. climbs one level, then descends into the sibling."
+    }
+  ],
+  "references": [
+    {
+      "label": "Wikipedia - Filesystem Hierarchy Standard",
+      "url": "https://en.wikipedia.org/wiki/Filesystem_Hierarchy_Standard"
+    },
+    {
+      "label": "The Linux man-pages project",
+      "url": "https://www.kernel.org/doc/man-pages/"
+    }
+  ],
+  "skills": [
+    "linux"
+  ]
+}

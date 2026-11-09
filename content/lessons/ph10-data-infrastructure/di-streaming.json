@@ -1,0 +1,246 @@
+{
+  "id": "di-streaming",
+  "moduleId": "ph10-data-infrastructure",
+  "title": "Streaming Systems and Distributed Computation",
+  "estMinutes": 27,
+  "difficulty": "advanced",
+  "prereqs": ["di-normalisation-etl"],
+  "objectives": [
+    "Explain topics, partitions, offsets and consumer groups, and why ordering is guaranteed only within a partition",
+    "Contrast at-most-once, at-least-once and exactly-once delivery and choose the right guarantee for a pipeline stage",
+    "Compute consumer lag and size a consumer group under backpressure",
+    "Design idempotent, replayable processing: dedupe by event id and rebuild downstream state from the log"
+  ],
+  "motivation": "A normalisation pipeline is not one program - it is many services handing events to each other faster than any single machine can process them, with parts that crash mid-handshake and get restarted. The questions that decide correctness are: did this fill get processed once, twice, or never? If the consumer falls behind the feed, what happens at 5,000 messages per second? Getting delivery semantics wrong turns into wrong positions and wrong PnL, not just slow dashboards.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "The log: topics, partitions and offsets"
+    },
+    {
+      "type": "p",
+      "md": "A Kafka-style system is an **append-only log**, the same abstraction as the tick archive from storage lessons, now used as a message bus. Producers append records to a **topic**; each topic is split into **partitions**; every record in a partition gets a sequential **offset**. Consumers in a **consumer group** divide the partitions among themselves and record their committed offset per partition - that offset *is* the consumer's progress marker, and after a crash it resumes from there."
+    },
+    {
+      "type": "p",
+      "md": "The crucial constraint: **ordering is guaranteed only within a partition, never across partitions**. If AAPL's events land on partitions 0 and 3 concurrently, the consumer may see a trade before the quote that generated it. So partition by symbol hash: every AAPL message goes to the same partition, in feed order, and book building for one symbol is always sequenced correctly."
+    },
+    {
+      "type": "table",
+      "headers": ["Partition key", "Behaviour", "Use case"],
+      "rows": [
+        ["symbol hash", "per-symbol order preserved; load spread by symbol count", "book building, per-name strategies"],
+        ["none (round-robin)", "best balance, no ordering at all", "stateless metrics, logging"],
+        ["date/batch", "groups by time, few large partitions", "end-of-day batch, archival"]
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "The ordering trap",
+      "md": "\"It worked in the test\" usually means the test had one partition. The moment a feed is spread across partitions, code that assumes \"the message before this one was the previous quote\" breaks - and breaks only under real load, on the busiest symbol, during the fastest market."
+    },
+    {
+      "type": "h2",
+      "text": "Delivery semantics: once, at least once, exactly once"
+    },
+    {
+      "type": "p",
+      "md": "When a consumer crashes is everything. If it commits its offset *before* processing, a crash loses the unprocessed message: **at-most-once** - drops are possible. If it commits *after* processing, a crash between processing and commit means the restarted consumer reprocesses from the old offset: **at-least-once** - repeats are possible. **Exactly-once** is achievable only by making processing effectively idempotent (dedupe on a unique event id) or by transactional produce-and-commit in one atomic step - and even then the guarantee stops at the system boundary."
+    },
+    {
+      "type": "steps",
+      "title": "Worked example: one fill, processed twice",
+      "items": [
+        "Venue message F#88213: buy 300 shares at \\$101.50, notional $300 \\times 101.50 = 30{,}450$.",
+        "The consumer processes it, crashes before committing, restarts, and processes it again.",
+        "Reported position: +600 shares instead of +300; reported traded notional: 60,900 instead of 30,450 - a 100% inflation from one duplicate.",
+        "Fix: dedupe. Every venue message carries venue + sequence number; the consumer keeps a keyed 'seen' table (or makes the write itself keyed, so a repeat is an overwrite, not an addition). At-least-once delivery plus idempotent processing *is* effectively-once."
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Which errors can you afford?",
+      "md": "A dropped fill understates risk and misstates positions until reconciliation; a duplicated fill inflates them just as badly. Markets choose at-least-once plus dedupe because data loss is unrecoverable from downstream state, while duplicates are detectable and cheap to remove via the venue's sequence numbers."
+    },
+    {
+      "type": "h2",
+      "text": "Backpressure and consumer lag"
+    },
+    {
+      "type": "p",
+      "md": "**Consumer lag** is the gap between the log's latest offset and a consumer's committed offset - measured in messages, it is exactly how far behind the pipeline is. If production exceeds consumption capacity, lag grows without bound and latency (message age when processed) grows with it. The levers: add consumers (up to one per partition - more consumers than partitions just idle), batch work to amortise per-message cost, and apply **backpressure** with bounded queues so a slow stage slows its input instead of consuming unbounded memory."
+    },
+    {
+      "type": "steps",
+      "title": "Worked example: sizing a consumer group",
+      "items": [
+        "Feed produces 8,000 messages/s at the peak; one consumer handles 1,400 messages/s.",
+        "Consumers needed: $\\lceil 8000 / 1400 \\rceil = \\lceil 5.71 \\rceil = 6$.",
+        "If only 5 run: deficit $= 8000 - 5 \\times 1400 = 1{,}000$ messages/s of lag growth.",
+        "After 10 minutes (600 s): lag $= 1{,}000 \\times 600 = 600{,}000$ messages - roughly 75 seconds of feed - and it never recovers while the deficit persists."
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "produced = 8000\nconsumers = 5\nper_consumer = 1400\nlag_per_sec = produced - consumers * per_consumer\nprint(lag_per_sec)        # 1000\nprint(lag_per_sec * 600)  # 600000 after 10 minutes",
+      "caption": "Lag arithmetic is linear: deficit per second times seconds, plus whatever lag you started with."
+    },
+    {
+      "type": "interactive",
+      "component": "MarkovChainSim",
+      "params": {
+        "states": ["ingest", "normalise", "enrich", "publish"],
+        "transitions": {
+          "ingest": { "normalise": 1.0 },
+          "normalise": { "enrich": 0.95, "ingest": 0.05 },
+          "enrich": { "publish": 0.95, "normalise": 0.05 },
+          "publish": { "publish": 1.0 }
+        },
+        "steps": 14
+      },
+      "caption": "An event walks the pipeline as a state machine. The backward arrows are at-least-once redelivery after a crash - the event revisits a stage, and dedupe turns the revisit into a no-op."
+    },
+    {
+      "type": "h2",
+      "text": "Recovery: the log is the truth"
+    },
+    {
+      "type": "p",
+      "md": "Because the log is append-only and retained (say 7 days $= 604{,}800$ s), downstream state is always rebuildable: reset the consumer's offset and replay. Replay is not instant, though - reprocessing at twice real-time speed catches up on the 7-day log in $604{,}800 / 2 = 302{,}400$ s, which is 3.5 days. That is why replay is usually scoped (one partition, one symbol, one date range) and why checkpoints and idempotent writes matter: a replayed event must not double-apply. Recovery, dedupe and delivery semantics are one design, not three."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "A normalisation pipeline must handle 12,000 messages/s. Each consumer processes 2,500 messages/s. The topic has 8 partitions. (a) What is the minimum consumer count to keep up? (b) If only 4 consumers run, what is the lag growth per second, and what is total lag after 3 minutes? (c) What is the maximum number of *useful* consumers for this topic, and why?",
+    "hints": [
+      "Divide the rate; round up - a fractional consumer is no consumer.",
+      "Lag growth = production rate - total consumption rate.",
+      "A consumer with no partition assigned does nothing."
+    ],
+    "solution": "(a) $12{,}000 / 2{,}500 = 4.8 \\Rightarrow \\textbf{5}$ consumers. (b) Deficit $= 12{,}000 - 4 \\times 2{,}500 = 2{,}000$ messages/s; after $180$ s, lag $= 2{,}000 \\times 180 = \\textbf{360{,}000}$ messages. (c) $\\textbf{8}$ - one per partition; a 9th consumer gets no partitions and adds nothing. (Note 5 consumers on 8 partitions is fine - they distribute unevenly but all partitions are covered.)"
+  },
+  "independentExercise": {
+    "prompt": "End-of-day reconciliation: the venue reports 2,148,000 trades for the session; your downstream store holds 2,149,314. Assume the excess are duplicates from at-least-once redelivery. Average trade size is 250 shares at \\$42.10. (a) How many duplicate messages were processed? (b) By how many shares is volume overstated? (c) By how many dollars is traded notional overstated?",
+    "hints": [
+      "Duplicates = downstream count - venue count.",
+      "Each duplicate double-counts its full shares and notional."
+    ],
+    "solution": "(a) $2{,}149{,}314 - 2{,}148{,}000 = \\textbf{1{,}314}$ duplicates. (b) $1{,}314 \\times 250 = \\textbf{328{,}500}$ shares. (c) Per trade $250 \\times 42.10 = 10{,}525$, so $1{,}314 \\times 10{,}525 = \\textbf{13{,}829{,}850}$ of phantom notional - roughly \\$13.8M created by committing offsets after processing without dedupe."
+  },
+  "commonMistakes": [
+    "Assuming ordering across partitions: only per-partition order exists, so key by symbol or the book builder will process events out of sequence.",
+    "Committing offsets before processing 'to be safe' - that converts crashes into silent data loss (at-most-once), the worst failure mode for fills.",
+    "Treating exactly-once as magic: it is at-least-once plus idempotence (dedupe keys, transactional commits), and it stops at your system's boundary.",
+    "Adding more consumers than partitions and wondering why lag does not fall - extra consumers have nothing to consume.",
+    "Ignoring lag until it explodes: lag is a leading indicator, and the recovery time from a 600,000-message backlog is measured in minutes of feed replay, not seconds."
+  ],
+  "realWorldApplication": "Every market-data pipeline runs on this machinery: Kafka or equivalents carry feed events to normalisers, feature builders and strategy processes, with consumer lag dashboards on the ops wall and sequence-number dedupe in every consumer.",
+  "quantFinanceApplication": "Delivery semantics are money: one duplicated fill inflated reported notional by \\$30,450 in the worked example, and a session-wide dedupe failure overstated notional by \\$13.8M. Position correctness depends on at-least-once delivery plus idempotent processing.",
+  "summary": [
+    "A Kafka-style log is append-only and partitioned; offsets are consumer progress markers, and ordering exists only within a partition - so partition by symbol to keep per-name sequences.",
+    "Commit-before-process loses data (at-most-once); commit-after-process repeats it (at-least-once); effectively-once = at-least-once + idempotent dedupe keyed on venue sequence numbers.",
+    "Consumer lag grows linearly at the deficit rate: 8,000 produced vs 5 consumers at 1,400 each means 1,000 msg/s of growing backlog, and consumers beyond the partition count are useless.",
+    "The append-only log makes state rebuildable by replay - but replay at 2x real-time still takes 3.5 days for a 7-day log, so scope replays and keep writes idempotent."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "Where does a Kafka-style system guarantee message ordering?",
+      "options": [
+        "Across the whole topic",
+        "Only within a single partition",
+        "Within a consumer group",
+        "Everywhere, as long as consumers are single-threaded"
+      ],
+      "answerIndex": 1,
+      "explanation": "Ordering is per partition only. Consumers see interleaved events across partitions regardless of threading - which is why streams that need sequence must be keyed so related events share a partition."
+    },
+    {
+      "id": "q2",
+      "type": "numeric",
+      "prompt": "The feed produces 12,000 messages/s and each consumer handles 2,500 messages/s. What is the minimum number of consumers needed to keep up?",
+      "answer": 5,
+      "tolerance": 0.1,
+      "explanation": "$12{,}000 / 2{,}500 = 4.8$, and a fractional consumer is no consumer, so round up to 5. Four consumers would leave a 2,000 msg/s deficit."
+    },
+    {
+      "id": "q3",
+      "type": "code-output",
+      "prompt": "What does this Python code print?",
+      "language": "python",
+      "code": "produced = 8000\nconsumers = 5\nper_consumer = 1400\nlag_per_sec = produced - consumers * per_consumer\nprint(lag_per_sec)\nprint(lag_per_sec * 600)",
+      "answer": "1000\n600000",
+      "explanation": "$8000 - 5 \\times 1400 = 1000$ messages/s of lag growth; after 600 s the backlog is $600{,}000$ messages. Output lines: `1000` then `600000`."
+    },
+    {
+      "id": "q4",
+      "type": "ms",
+      "prompt": "Which design choices together give effectively-once processing?",
+      "options": [
+        "A unique event id per venue message and a dedupe check before applying effects",
+        "Committing the consumer offset after processing completes",
+        "Making downstream writes idempotent (keyed upsert, not blind append)",
+        "Committing the offset before processing starts",
+        "Processing everything on one global lock"
+      ],
+      "answerIndices": [0, 1, 2],
+      "explanation": "Effectively-once = at-least-once redelivery + idempotence: unique keys so repeats overwrite rather than add, and offsets committed only after work completes. Committing first creates loss; a global lock adds serialization without fixing duplicates."
+    },
+    {
+      "id": "q5",
+      "type": "numeric",
+      "prompt": "A log retains 7 days of events. Replay runs at 2x real-time speed. How many days does a full catch-up take? (Give the number of days.)",
+      "answer": 3.5,
+      "tolerance": 0.01,
+      "explanation": "7 days of log at 2x speed takes $7 / 2 = 3.5$ days. This is why replays are scoped to specific partitions or date ranges."
+    },
+    {
+      "id": "q6",
+      "type": "short",
+      "prompt": "Why should market-data events be partitioned by symbol hash rather than round-robin?",
+      "modelAnswer": "Symbol keying keeps every event for one symbol on the same partition in feed order, so per-symbol consumers (book builders) see a correctly sequenced stream; round-robin destroys that ordering.",
+      "keywords": ["ordering", "partition", "symbol", "sequence"],
+      "explanation": "Ordering is per-partition only. Keying by symbol buys exactly the sequencing that stateful consumers need, at the cost of uneven load if one symbol dominates."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "definition",
+      "front": "What is a consumer offset?",
+      "back": "The position of a consumer in a partition's log - its committed progress marker. On restart the consumer resumes from the committed offset; whether it commits before or after processing defines the delivery guarantee."
+    },
+    {
+      "type": "concept",
+      "front": "At-least-once + idempotence",
+      "back": "Commit offsets after processing, accept that crashes cause redelivery, and make processing idempotent (dedupe on venue + sequence). Duplicates are detectable and removable; loss is not."
+    },
+    {
+      "type": "formula",
+      "front": "Consumer lag growth",
+      "back": "$\\text{lag/s} = \\text{produced/s} - (\\text{consumers} \\times \\text{per-consumer rate})$. Backlog after $t$ seconds $=$ initial lag $+\\ \\text{lag/s} \\times t$."
+    },
+    {
+      "type": "concept",
+      "front": "Consumer group scaling limit",
+      "back": "Consumers are only useful up to the partition count: beyond one consumer per partition, extras idle with nothing assigned."
+    }
+  ],
+  "references": [
+    {
+      "label": "Apache Kafka - documentation (design and delivery semantics)",
+      "url": "https://kafka.apache.org/documentation/"
+    },
+    {
+      "label": "Kleppmann, Designing Data-Intensive Applications (ch. 11: stream processing)",
+      "url": "https://dataintensive.net/"
+    },
+    {
+      "label": "Confluent - consumer groups and offset management",
+      "url": "https://docs.confluent.io/platform/current/clients/consumer.html"
+    }
+  ],
+  "skills": ["data-infrastructure", "distributed-systems"]
+}

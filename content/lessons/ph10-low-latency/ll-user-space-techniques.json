@@ -1,0 +1,212 @@
+{
+  "id": "ll-user-space-techniques",
+  "moduleId": "ph10-low-latency",
+  "title": "Busy Polling, CPU Affinity and Allocation Control",
+  "estMinutes": 28,
+  "difficulty": "specialist",
+  "prereqs": ["ll-latency-budgets"],
+  "objectives": [
+    "Contrast blocking I/O and busy polling for wake-up latency and CPU cost",
+    "Pin hot threads to isolated cores and explain what migrations cost",
+    "Design a steady-state hot path with zero allocations and zero syscalls",
+    "Recap SPSC ring-buffer mechanics: masking, wrap and single-writer indices"
+  ],
+  "motivation": "A blocking read() hands your thread to the kernel and asks politely to be woken later - a context switch, a cold cache, microseconds of pure jitter, thousands of times per second. The low-latency alternative is almost primitive: never sleep, never allocate, never migrate. This lesson turns that slogan into three concrete techniques.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Blocking I/O: the wake-up tax"
+    },
+    {
+      "type": "p",
+      "md": "With blocking I/O the thread sleeps until data arrives; the kernel then wakes it - a **context switch** plus cache refills, µs-scale end to end (approximate), with scheduling delay you cannot predict. That unpredictability - **jitter** - is what breaks a $10\\,\\mu s$ budget. **Busy polling** inverts the trade: a thread spins reading a user-space ring buffer that the NIC or a feeder thread fills. Response drops to nanoseconds; the price is a core burning at 100% whether or not messages arrive. Hence the pairing: busy-wait threads **only** on cores reserved for them."
+    },
+    {
+      "type": "interactive",
+      "component": "MemoryLayout",
+      "params": {
+        "totalBytes": 4096,
+        "bytesPerRow": 64
+      },
+      "caption": "One pre-allocated ring: 64 slots x 64 bytes = 4,096 bytes, touched once at startup. In steady state the hot path allocates nothing - the same memory is reused forever."
+    },
+    {
+      "type": "h2",
+      "text": "Pin it, isolate it, leave it alone"
+    },
+    {
+      "type": "p",
+      "md": "The OS moves threads between cores for load balancing; each migration lands the thread in a cold cache (L2/L3 refills cost tens of ns to µs, approximate) and adds scheduler delay. Three fixes, in order: **affinity** - pin the thread to one core; **isolation** - boot-time settings (`isolcpus`-style) keep the scheduler and housekeeping off that core; **priority** - real-time scheduling (`chrt`) so nothing preempts it. Hyperthread siblings of hot cores are left idle so the physical core's resources stay undivided."
+    },
+    {
+      "type": "code",
+      "lang": "bash",
+      "code": "taskset -c 2,3 chrt -f 80 ./strategy   # pin to cores 2-3, SCHED_FIFO priority 80\n# cores 2,3 are also isolated at boot: no other task will run there",
+      "caption": "Two commands, one effect: this thread will not migrate and will not queue behind housekeeping. Exact flags vary by distribution; the principle does not."
+    },
+    {
+      "type": "h2",
+      "text": "Allocation control: the hot path touches no allocator"
+    },
+    {
+      "type": "p",
+      "md": "Every `new`, `malloc` or growing container is a surprise: heap bookkeeping, occasional page faults, cache misses - spikes with no upper bound you control. The fix is boring: **pre-allocate everything** at startup (message pools, order objects, ring buffers) and in the hot path only *reuse*. `std::vector::push_back` is amortised $O(1)$ but reallocates on growth: crossing capacity with 1,000,000 elements at 32 bytes means a 32 MB copy in the middle of your trading day. `reserve()` up front, or use fixed pools. The steady-state target: **zero syscalls, zero allocations, zero page faults**."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <cstdio>\n#include <cstddef>\n\nstruct Tick { double bid; double ask; };   // 16 bytes\n\ntemplate <std::size_t N>                   // N must be a power of two\nclass Ring {\n    static_assert((N & (N - 1)) == 0, \"N must be a power of two\");\n    Tick slots[N]{};\n    std::size_t head = 0;   // written only by the producer\n    std::size_t tail = 0;   // written only by the consumer\npublic:\n    bool push(const Tick& t) {\n        if (head - tail == N) return false;       // full\n        slots[head & (N - 1)] = t;                // wrap via mask\n        ++head;\n        return true;\n    }\n    bool pop(Tick& out) {\n        if (tail == head) return false;           // empty\n        out = slots[tail & (N - 1)];\n        ++tail;\n        return true;\n    }\n};\n\nint main() {\n    Ring<1024> ring;                              // allocated once, never grows\n    for (int i = 0; i < 1000; ++i)\n        ring.push({i, i + 0.5});\n    Tick t;\n    ring.pop(t);\n    std::printf(\"%.1f\\n\", t.bid);                 // 0.0\n    return 0;\n}",
+      "caption": "Prints 0.0 after 1,000 pushes and one pop. The ring's memory exists before trading starts; the wrap is a mask; and with one producer and one consumer writing only their own index, no lock is needed."
+    },
+    {
+      "type": "h2",
+      "text": "Lock-free queues, sixty-second recap"
+    },
+    {
+      "type": "p",
+      "md": "From the concurrency module: an SPSC (single-producer, single-consumer) ring needs no locks when each index has exactly one writer - the producer owns `head`, the consumer owns `tail`, and each merely *reads* the other's index. It is **wait-free** for both parties. The classic killer is **false sharing**: `head` and `tail` landing on the same 64-byte cache line makes the two cores bounce it back and forth; pad each index to its own line. Multi-producer rings need CAS tricks and much harder correctness arguments - prefer SPSC topologies with one feeder per core."
+    },
+    {
+      "type": "callout",
+      "variant": "warn",
+      "title": "The bill for spinning",
+      "md": "A busy-poll core is 100% busy by definition: hot, power-hungry, useless for anything else. That is the deal - latency traded for CPU. Desks pay it deliberately (dedicated machines, isolated cores) and keep blocking, interrupt-driven designs for everything off the hot path."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "A ring buffer has 8,192 slots of 64 bytes. (a) Total size in bytes and in KiB? (b) After exactly 1,000,000 pushes (and 999,999 pops), what index does the producer's head wrap to? (c) Name the two single-writer variables that make SPSC lock-free.",
+    "hints": [
+      "Slots x slot size; wrap via modulo (or mask) of the total push count.",
+      "8,192 = 2^13.",
+      "The producer and the consumer each own exactly one index."
+    ],
+    "solution": "(a) $8{,}192 \\times 64 = 524{,}288$ bytes $= 512$ KiB. (b) $1{,}000{,}000 \\bmod 8{,}192 = 576$, since $8{,}192 \\times 122 = 999{,}424$ and $1{,}000{,}000 - 999{,}424 = 576$. (c) `head` (written only by the producer) and `tail` (written only by the consumer)."
+  },
+  "independentExercise": {
+    "prompt": "A strategy must carry 1,000,000 ticks per day through objects of 32 bytes. (a) Why is a plain std::vector<Tick> with default growth a hot-path hazard even though push_back is amortised O(1)? (b) What capacity should you reserve before trading, and how many bytes does that allocation cost? (c) Give a three-part deployment plan (cores, scheduling, polling mode) for the strategy thread.",
+    "hints": [
+      "Doubling growth reallocations copy the whole vector at unpredictable times.",
+      "Worst case: every tick of the day is live at once.",
+      "Recall: affinity, isolation, busy-wait."
+    ],
+    "solution": "(a) Growth reallocates and copies the entire vector at unpredictable times - e.g. crossing capacity at $1{,}000{,}000 \\times 32 = 32$ MB - landing spikes inside the trading session. (b) `reserve(1,000,000)` before trading: $1{,}000{,}000 \\times 32 = 32{,}000{,}000$ bytes = 32 MB, allocated once. (c) Pin the strategy thread to an isolated core (`taskset` / boot-time isolation), give it real-time priority (`chrt -f`), and run it as a busy-wait loop over a pre-allocated SPSC ring - no blocking syscalls, no allocation in the loop."
+  },
+  "commonMistakes": [
+    "Busy-waiting on a core that also runs other work - you burn the CPU and keep the jitter.",
+    "Leaving head and tail on one cache line: false sharing turns a lock-free queue into cache-line ping-pong.",
+    "Reserving capacity 'later' - reserve before the trading session, not during it.",
+    "Pinning threads but leaving interrupts and housekeeping on the same core."
+  ],
+  "realWorldApplication": "Every serious trading core runs pinned, isolated, busy-polling threads over pre-allocated rings; the same pattern shows up in game engines and telemetry pipelines where jitter, not average speed, is the enemy.",
+  "quantFinanceApplication": "Quote latencies with µs-scale jitter make market-maker inventory models unpredictable; the steady-state techniques here are how desks turn 'usually fast' into 'always fast, with a known tail'.",
+  "summary": [
+    "Blocking wake-ups cost context switches and cold caches (µs-scale, approximate); busy polling answers in nanoseconds at the price of a dedicated core.",
+    "Affinity + isolation + real-time priority: no migrations, no housekeeping, undivided caches.",
+    "Steady-state hot path: zero syscalls, zero allocations, zero page faults - everything pre-allocated and reused.",
+    "SPSC rings are wait-free with single-writer indices; pad hot indices to their own cache lines to avoid false sharing."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "What is the main hidden cost of a blocking read() in the hot path?",
+      "options": [
+        "A context switch plus cold-cache refill on wake-up (µs-scale, approximate)",
+        "The return value of the read() call",
+        "DNS resolution of the exchange host",
+        "TLS handshake renegotiation"
+      ],
+      "answerIndex": 0,
+      "explanation": "Sleeping means being woken: context switch, scheduler delay and cold caches - the jitter that blows tails, not just means."
+    },
+    {
+      "id": "q2",
+      "type": "numeric",
+      "prompt": "A ring buffer has 16,384 slots of 64 bytes. Total size in bytes?",
+      "answer": 1048576,
+      "tolerance": 1,
+      "unit": "bytes",
+      "explanation": "$2^{14} \\times 2^6 = 2^{20} = 1{,}048{,}576$ bytes = 1 MiB - allocated once, at startup."
+    },
+    {
+      "id": "q3",
+      "type": "ms",
+      "prompt": "Which are part of hot-path allocation discipline?",
+      "options": [
+        "Pre-allocate pools and rings at startup",
+        "Reserve container capacity before trading",
+        "Pad hot indices to their own cache lines",
+        "Call malloc per message to keep the heap warm"
+      ],
+      "answerIndices": [0, 1, 2],
+      "explanation": "The hot path should only reuse pre-allocated memory; per-message malloc is precisely the unbounded spike discipline forbids."
+    },
+    {
+      "id": "q4",
+      "type": "code-output",
+      "prompt": "What does this ring-index arithmetic print?",
+      "language": "python",
+      "code": "SLOTS = 1024\nhead = 0\nfor _ in range(100000):\n    head = (head + 1) % SLOTS\nprint(head)",
+      "answer": "672",
+      "explanation": "$100{,}000 \\bmod 1{,}024 = 672$, since $1{,}024 \\times 97 = 99{,}328$ and $100{,}000 - 99{,}328 = 672$. Power-of-two rings make this a mask."
+    },
+    {
+      "id": "q5",
+      "type": "short",
+      "prompt": "Why pin a hot thread to an isolated core?",
+      "modelAnswer": "Pinning stops scheduler migrations that would evict the thread's caches and add jitter; isolation keeps other tasks and kernel housekeeping off the core, so the hot thread's cache contents and timing stay undisturbed.",
+      "keywords": ["migration", "cache", "jitter"],
+      "explanation": "Migration and housekeeping are two more sources of unpredictable delay; both disappear on a dedicated, isolated core."
+    },
+    {
+      "id": "q6",
+      "type": "mcq",
+      "prompt": "When is an SPSC ring lock-free in practice?",
+      "options": [
+        "When each index has exactly one writer - wait-free for one producer and one consumer",
+        "Only with a mutex per slot",
+        "Only if every operation uses sequentially-consistent atomics",
+        "Only when head and tail share a cache line"
+      ],
+      "answerIndex": 0,
+      "explanation": "Single-writer indices make each party wait-free; sharing the cache line is actually the bug (false sharing), not a requirement."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "Busy poll vs blocking",
+      "back": "Poll: ns-scale response, burns a core. Blocking: kernel wake-up, context switch + cache refill (µs-scale, approximate). Hot path polls; everything else may block."
+    },
+    {
+      "type": "definition",
+      "front": "False sharing",
+      "back": "Two variables on one cache line, written by different cores: the line ping-pongs between their caches. Fix: pad/align each hot variable to its own 64-byte line."
+    },
+    {
+      "type": "formula",
+      "front": "Ring wrap",
+      "back": "index = count mod slots; for power-of-two slots, index = count & (slots - 1)."
+    },
+    {
+      "type": "concept",
+      "front": "Steady-state target",
+      "back": "Zero syscalls, zero allocations, zero page faults between startup and shutdown."
+    }
+  ],
+  "references": [
+    {
+      "label": "man7 - taskset(1)",
+      "url": "https://man7.org/linux/man-pages/man1/taskset.1.html"
+    },
+    {
+      "label": "man7 - pthread_setaffinity_np(3)",
+      "url": "https://man7.org/linux/man-pages/man3/pthread_setaffinity_np.3.html"
+    },
+    {
+      "label": "Wikipedia - False sharing",
+      "url": "https://en.wikipedia.org/wiki/False_sharing"
+    }
+  ],
+  "skills": ["low-latency"]
+}

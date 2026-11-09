@@ -1,0 +1,312 @@
+{
+  "id": "linux-monitoring-ssh",
+  "moduleId": "ph2-linux",
+  "title": "SSH, Package Managers and System Monitoring",
+  "estMinutes": 24,
+  "difficulty": "foundation",
+  "prereqs": [
+    "linux-pipes-scripting"
+  ],
+  "objectives": [
+    "Generate an SSH key pair, install the public key on a server, and configure a host alias in ~/.ssh/config",
+    "Explain why key authentication beats passwords for production access and which file permissions sshd demands",
+    "Use apt to update indexes, install, upgrade and remove packages, and articulate update-vs-upgrade",
+    "Triage a production box with uptime (load average), free -h, df -h, du -sh and top/htop in a fixed order"
+  ],
+  "motivation": "At 07:58 the feed handler on the production box is pegging one core, /var is 96% full because tick capture wrote all night, and the 9:00 open is in an hour. You will not fix that from your laptop: you ssh in, read load average, memory, disk and process tables in that order, and install the one missing tool with apt - all before the bell. This lesson is that morning, in slow motion, because on a real desk it happens with a countdown attached.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "SSH: keys, not passwords"
+    },
+    {
+      "type": "p",
+      "md": "**SSH** (secure shell) is how every production machine is reached - an encrypted remote terminal. Authentication is key-based: `ssh-keygen -t ed25519` creates a **pair** - a private key you never leave your machine (mode 600, the permissions lesson's rule) and a public key that anyone may hold. Copying the public key into a server account's `~/.ssh/authorized_keys` file (one key per line) lets the matching private key log in without a password; `ssh-copy-id user@host` does the copy and fixes the permissions in one step. The server keeps a challenge only the private key can answer, so the secret itself never crosses the wire - and unlike a password, a 256-bit key is not guessable, so disabling password authentication in sshd config removes the brute-force surface entirely."
+    },
+    {
+      "type": "code",
+      "lang": "bash",
+      "code": "$ ssh-keygen -t ed25519 -C \"quantdev@desk\"   # creates ~/.ssh/id_ed25519 (+ .pub)\n$ ssh-copy-id quant@prod-desk-01.internal     # installs the public key once\n$ ssh quant@prod-desk-01.internal             # passwordless from now on",
+      "caption": "Three commands turn password prompts into key exchanges."
+    },
+    {
+      "type": "p",
+      "md": "Typing `ssh quant@prod-desk-01.internal` all day gets old, so `~/.ssh/config` stores aliases - plus per-host identities when you carry different keys for different environments:"
+    },
+    {
+      "type": "code",
+      "lang": "bash",
+      "code": "# ~/.ssh/config\nHost prod\n    HostName prod-desk-01.internal\n    User quant\n    IdentityFile ~/.ssh/id_ed25519",
+      "caption": "Now `ssh prod` is the whole command - and one place to change when the host moves."
+    },
+    {
+      "type": "callout",
+      "variant": "warn",
+      "title": "Private keys are the crown jewels",
+      "md": "ssh refuses a private key that is readable by others (it wants 600), and rightly so: whoever holds the private key holds the account. Never commit keys to repositories, never paste them into tickets, and prefer a passphrase-protected key loaded into ssh-agent - that keeps the key encrypted at rest even though daily use is passwordless."
+    },
+    {
+      "type": "h2",
+      "text": "Package managers: installing tools safely"
+    },
+    {
+      "type": "p",
+      "md": "Production boxes are Debian/Ubuntu-flavoured more often than not, and `apt` is the toolchain: it installs software from signed repositories, resolving dependencies and applying security patches in a trackable way. The pair people mix up: **`apt update`** refreshes the local **index** (the catalogue of what versions exist) without changing anything installed, while **`apt upgrade`** actually installs newer versions of what you already have. You update first, then upgrade - upgrading on a stale index proposes yesterday's fixes."
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Command",
+        "What it does"
+      ],
+      "rows": [
+        [
+          "apt update",
+          "refresh package index from repositories (installs nothing)"
+        ],
+        [
+          "apt upgrade",
+          "install newer versions of installed packages"
+        ],
+        [
+          "apt install htop",
+          "install a package (and its dependencies)"
+        ],
+        [
+          "apt remove htop",
+          "uninstall, keeping config files"
+        ],
+        [
+          "apt search monitoring",
+          "search package names and descriptions"
+        ]
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "curl | sudo bash is a root shell you did not read",
+      "md": "A random install script piped straight into a root shell runs whatever the network returns **as root**, before any human has read it - one redirect hijack or compromised mirror away from full machine compromise. Prefer the distro repository; if a vendor script is truly unavoidable, download it, read it, check its source, then run it."
+    },
+    {
+      "type": "h2",
+      "text": "Monitoring: the five-command triage"
+    },
+    {
+      "type": "p",
+      "md": "When a box is unhappy, triage in a fixed order - the tools are cheap, the order prevents tunnel vision. **`uptime`** prints the **load average**: three numbers for the last 1, 5 and 15 minutes counting tasks that are runnable or waiting on disk I/O. Compare against **core count**, not a percentage: load 3.5 on 4 cores is ~88% saturated; load 6.0 on 4 cores means more demand than capacity - a queue is growing. **`free -h`** shows memory; read the **available** column, not free - Linux deliberately spends spare RAM on page cache, so a small 'free' with a large 'available' is healthy, not a leak. **`df -h`** lists filesystem usage; a full disk stops logs, databases and tick capture dead. **`du -sh dir/*`** walks one directory tree and sizes its children - the follow-up that names the culprit when df says full. **`top`/`htop`** then names the process: sort by CPU (P) or memory (M), read RES for real physical memory per process."
+    },
+    {
+      "type": "code",
+      "lang": "bash",
+      "code": "$ uptime\n 08:02:11 up 41 days,  1:37,  2 users,  load average: 3.50, 3.20, 3.05\n$ free -h\n               total   used   free   available\nMem:             8Gi   6.1Gi  210Mi        1.2Gi\nSwap:            2Gi      0B    2Gi\n$ df -h /var\nFilesystem      Size  Used Avail Use% Mounted on\n/dev/nvme0n1p2  200G  192G  8.0G  96% /var\n$ du -sh /var/log/* | sort -h | tail -3\n4.1G    /var/log/journal\n88G     /var/log/capture\n$ top -b -n 1 | head -12   # batch mode snapshot; P = sort by CPU, M = by memory",
+      "caption": "Illustrative numbers, but the shape is the real morning: load near capacity, memory fine, disk nearly full - and du names the 88G tick capture."
+    },
+    {
+      "type": "interactive",
+      "component": "TerminalSteps",
+      "params": {
+        "steps": [
+          {
+            "cmd": "top -bn1 | head -5",
+            "out": [
+              "top - 14:02:11 up 12 days,  3 users,  load average: 1.42, 1.09, 0.87",
+              "Tasks: 231 total,   2 running, 229 sleeping",
+              "%Cpu(s): 23.1 us,  4.2 sy,  0.0 ni, 71.9 id",
+              "MiB Mem :  32000.0 total,   8100.2 free,  4200.1 used"
+            ],
+            "note": "load average, run queue, CPU split, memory — the first four things to check."
+          },
+          {
+            "cmd": "df -h /data",
+            "out": [
+              "Filesystem      Size  Used Avail Use% Mounted on",
+              "/dev/nvme0n1p2  916G  612G  258G  71% /data"
+            ],
+            "note": "A full disk takes down more trading systems than any bug."
+          },
+          {
+            "cmd": "ss -tulpn | grep 3010",
+            "out": [
+              "tcp LISTEN 0 128 127.0.0.1:3010 0.0.0.0:* users:((\"code-runner\",pid=4123,fd=6))"
+            ]
+          },
+          {
+            "cmd": "journalctl -u runner -n 2 --no-pager",
+            "out": [
+              "Nov 09 06:24:58 host runner[4123]: job 8f3a completed ok in 37ms",
+              "Nov 09 06:25:01 host runner[4123]: job 91bc compile error (exit 1)"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "steps",
+      "title": "The 07:58 incident, step by step",
+      "items": [
+        "`uptime`: load 3.50/3.20/3.05 and stable - not runaway demand, and 4 cores are close to but not over capacity.",
+        "`free -h`: 1.2Gi available on 8Gi - memory is NOT the problem; do not chase it.",
+        "`df -h`: /var at 96% - this will stop logging and the capture writer within hours. The priority.",
+        "`du -sh /var/log/* | sort -h | tail`: 88G in /var/log/capture - tick capture never rotated.",
+        "Act: rotate or compress old capture files (or move them to object storage), confirm with df again, then file why rotation failed - and only then look at the 100% feed-handler core in top."
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Why quants live in these tools",
+      "md": "Everything a desk computes flows through boxes you only reach via ssh: feed handlers, research servers, backtest clusters. 'My backtest is slow' and 'the capture disk filled overnight' are the same job: ssh in, load-average, memory, disk, process - in that order, every time, until it is reflex. The person who reads the signals in the right order fixes the right thing first."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "You ssh into a research server (8 cores) and run `df -h`: `/var` shows 97% used. (1) Why is a nearly-full filesystem an operational emergency beyond 'disk is big' - name two services that break. (2) Which command ranks the space consumers inside /var, and which flags sort its output smallest-to-largest? (3) After finding an 85G directory of compressed capture archives nobody needs on the box, what are your next two actions before declaring the incident closed?",
+    "hints": [
+      "Databases and log writers are the classic casualties of a full disk.",
+      "du -sh gives sizes; sort -h understands K/M/G suffixes.",
+      "Closing an incident means verifying the fix AND preventing recurrence."
+    ],
+    "solution": "(1) Log writers can no longer append (services crash or silently drop logs) and databases (or the tick-capture writer) cannot allocate new pages - both can take the box's whole stack down with them. (2) `du -sh /var/*` (or the suspected subdirectory), piped to `sort -h`, which parses human sizes (K, M, G) in numeric order; `tail` then shows the largest few. (3) First, actually free the space - move or delete the archives, then re-run `df -h` to confirm usage dropped. Second, prevent recurrence: find out why rotation/cleanup failed and add a scheduled check (the scripting lesson's exit-code pattern) so the next fill pages someone before 97%."
+  },
+  "independentExercise": {
+    "prompt": "One production box (4 cores, 8 GiB RAM) shows: `uptime` load average 3.50, 3.20, 3.05; `free -h` reports 6.1 Gi used but 1.2 Gi available; `df -h` shows /var at 96%. (1) Interpret each number against its capacity and classify CPU, memory and disk pressure as saturated / fine / urgent. (2) Which resource gets your attention first, and which command names its cause? (3) A colleague glances at `free -h`, sees only 210 Mi 'free' and proposes a memory upgrade - write the two-sentence rebuttal.",
+    "hints": [
+      "Load average is a queue length against core count, not a percentage.",
+      "available (which includes reclaimable page cache) is the memory figure that matters.",
+      "96% full will become 100% on its own."
+    ],
+    "solution": "(1) CPU: 3.5 on 4 cores is ~88% utilisation - busy but not saturated, and the stable 15-minute figure says it is not a spike. Memory: fine - 1.2 Gi available with zero swap used means no memory pressure despite small 'free'. Disk: URGENT - 96% leaves a few GB before writes fail. (2) Disk first: `du -sh /var/log/* | sort -h | tail` to name the space consumer (in the lesson's scenario, an 88G unrotated capture directory), free or move it, then confirm with df. (3) 'Free' excludes page cache Linux holds precisely so it can be reclaimed instantly; the available column already includes it and shows 1.2 Gi healthy headroom with zero swap. The box has a disk problem, not a memory problem - an upgrade would spend money on the one resource that is fine."
+  },
+  "commonMistakes": [
+    "Reading 'free' in free -h as the health metric: page cache shrinks it by design; 'available' is the number to check.",
+    "Comparing load average to 100 instead of to the core count - load 4.0 on 32 cores is idle, on 4 cores it is full.",
+    "Mixing up apt update (refresh index) and apt upgrade (install newer versions), then wondering why the upgrade found nothing.",
+    "Loose permissions on ~/.ssh/id_ed25519 (anything above 600) - sshd refuses the key or, worse, the key leaks."
+  ],
+  "realWorldApplication": "Every cloud instance, CI runner and database host is administered over ssh and watched with these same commands; apt/yum/apk package discipline is what keeps dependencies patched and reproducible across fleets.",
+  "quantFinanceApplication": "Trading infrastructure is remote by definition: the desk's boxes sit behind restricted networks reachable only via keyed ssh, and the pre-open check is exactly uptime/free/df/du/top - catching a full capture disk or a pegged feed-handler core before the market opens is a saved trading day.",
+  "summary": [
+    "SSH keys are pairs: private key stays local at mode 600, public key goes to the server's authorized_keys; ssh-copy-id installs it, ~/.ssh/config aliases hosts.",
+    "Key auth beats passwords because the secret never crosses the wire and cannot be brute-forced; disable password auth on production.",
+    "apt update refreshes the package index; apt upgrade installs newer versions - update before upgrading; avoid piping unknown scripts into a root shell.",
+    "Triage in order: uptime load vs core count, free's available column, df for filesystems, du to name the space eater, top/htop to name the process."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "Which file on the SERVER lists the public keys allowed to log in to your account there?",
+      "options": [
+        "~/.ssh/authorized_keys",
+        "~/.ssh/known_hosts",
+        "~/.ssh/id_ed25519.pub",
+        "~/.ssh/config"
+      ],
+      "answerIndex": 0,
+      "explanation": "authorized_keys holds accepted public keys. known_hosts stores server fingerprints the client trusts, id_ed25519.pub is YOUR public half, and config stores client-side aliases."
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "A teammate runs `apt upgrade` on a freshly built box and gets nothing new to install. What did they skip?",
+      "options": [
+        "`apt update`, which refreshes the package index so upgrade can see the latest versions",
+        "`apt install`, which must run at least once per package",
+        "`apt search`, which ranks packages",
+        "Nothing - upgrade always needs no preparation"
+      ],
+      "answerIndex": 0,
+      "explanation": "upgrade acts on the local index; without a prior apt update the index may be stale, so upgrade proposes old (or no) changes. Update refreshes metadata only; upgrade changes the system."
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "A box has 4 cores and shows a 1-minute load average of 6.0. On average, how many times oversubscribed is the CPU capacity? (demand ÷ cores)",
+      "answer": 1.5,
+      "tolerance": 0.01,
+      "explanation": "Load 6.0 demand on 4 cores means 6/4 = 1.5 tasks waiting per core on average - the queue is growing, unlike 3.5 on 4 cores (~88% utilised, still absorbing work)."
+    },
+    {
+      "id": "q4",
+      "type": "code-output",
+      "prompt": "What does this command sequence print?",
+      "language": "bash",
+      "code": "echo \"key=42\" | cut -d= -f2\nprintf \"1\\n2\\n3\\n\" | wc -l",
+      "answer": "42\n3",
+      "explanation": "cut with delimiter '=' prints field 2 of 'key=42', i.e. 42; wc -l counts the three newline-terminated lines piped in."
+    },
+    {
+      "id": "q5",
+      "type": "ms",
+      "prompt": "Which observations point to DISK pressure (rather than memory or CPU pressure)?",
+      "options": [
+        "df -h reports /var at 96% used",
+        "du -sh finds one directory holding 300G of archives",
+        "free -h shows 210 Mi free but 1.2 Gi available",
+        "uptime shows load 2.0 on 8 cores"
+      ],
+      "answerIndices": [
+        0,
+        2
+      ],
+      "explanation": "A 96% filesystem and a single oversized directory are disk-pressure signals. The free/available pair shows HEALTHY memory (available is what counts, page cache included), and load 2.0 on 8 cores is comfortably idle."
+    },
+    {
+      "id": "q6",
+      "type": "short",
+      "prompt": "Why do production teams prefer ed25519 key authentication over password authentication for SSH access?",
+      "modelAnswer": "The private key never leaves the client machine, so no secret crosses the network to steal; a 256-bit key cannot be brute-forced the way passwords can, and servers can disable password auth entirely to eliminate guessing attacks - with ssh-agent a passphrase-protected key stays encrypted at rest while daily logins stay frictionless.",
+      "keywords": [
+        "brute",
+        "network",
+        "password",
+        "disable"
+      ],
+      "explanation": "The two pillars are: no reusable secret on the wire, and no password oracle left listening; the passphrase/agent combination adds encryption at rest without adding daily friction."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "definition",
+      "front": "authorized_keys vs known_hosts",
+      "back": "authorized_keys (server side): public keys allowed to log in as you. known_hosts (client side): fingerprints of servers you have trusted - alerts when a host key changes."
+    },
+    {
+      "type": "concept",
+      "front": "apt update vs apt upgrade",
+      "back": "update refreshes the package INDEX (no installs); upgrade installs newer versions of installed packages. Update first, then upgrade."
+    },
+    {
+      "type": "concept",
+      "front": "Reading load average",
+      "back": "Three numbers = 1/5/15-minute demand (runnable + uninterruptible tasks). Compare to CORE COUNT: load 3.5 on 4 cores ~88% busy; 6.0 on 4 cores = 1.5x oversubscribed."
+    },
+    {
+      "type": "concept",
+      "front": "free -h: which column matters?",
+      "back": "available - it includes reclaimable page cache. Low 'free' with healthy 'available' and zero swap is normal Linux behaviour, not a memory leak."
+    },
+    {
+      "type": "definition",
+      "front": "The five-command triage order",
+      "back": "uptime (load vs cores) -> free -h (available memory) -> df -h (filesystems) -> du -sh (name the space eater) -> top/htop (name the process)."
+    }
+  ],
+  "references": [
+    {
+      "label": "OpenSSH manual - ssh-keygen and ssh-copy-id",
+      "url": "https://man.openbsd.org/ssh-keygen"
+    },
+    {
+      "label": "man7.org - free(1) and procps",
+      "url": "https://man7.org/linux/man-pages/man1/free.1.html"
+    },
+    {
+      "label": "Debian apt - command-line reference",
+      "url": "https://manpages.debian.org/apt.8"
+    }
+  ],
+  "skills": [
+    "linux"
+  ]
+}

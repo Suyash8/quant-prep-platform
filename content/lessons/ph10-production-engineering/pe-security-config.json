@@ -1,0 +1,295 @@
+{
+  "id": "pe-security-config",
+  "moduleId": "ph10-production-engineering",
+  "title": "Security, Configuration and Versioning",
+  "estMinutes": 25,
+  "difficulty": "advanced",
+  "prereqs": [
+    "pe-reliability"
+  ],
+  "objectives": [
+    "Apply least privilege to service identities and reason about blast radius of a credential",
+    "Manage secrets through vaulting, rotation and runtime injection - and respond correctly to a leak",
+    "Version configuration so the question 'which limits were live when?' always has an answer",
+    "Specify what a complete, immutable audit trail must contain, and why clock synchronisation bounds its usefulness"
+  ],
+  "motivation": "An order-gateway credential committed to a git repository is a direct line to the market for anyone with repo access, and a risk limit changed by hand on a Tuesday leaves no trace of what was live when the loss happened. Security, configuration and audit trails are not compliance paperwork - they are the mechanism that keeps a live trading system attributable: every action provably attached to an identity, a time, and a config version.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Least privilege and blast radius"
+    },
+    {
+      "type": "p",
+      "md": "Every process runs as an identity with exactly the permissions it needs - no more. **Least privilege** is not paranoia; it is blast-radius engineering: when a service is compromised (and 'when' is the professional assumption), the damage is capped at what that identity could do anyway. The tick-ingest service writes new files to the tick store but holds no delete permission - which conveniently matches the append-only storage discipline from earlier lessons: the pipeline physically *cannot* rewrite history, so neither a bug nor an attacker can."
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Service identity",
+        "May",
+        "Never"
+      ],
+      "rows": [
+        [
+          "tick-ingest",
+          "append to tick store; read symbol map",
+          "delete or overwrite any data; touch order entry"
+        ],
+        [
+          "strategy",
+          "submit orders within live limits; read market data",
+          "change its own limits; access raw vendor feeds"
+        ],
+        [
+          "ops/deploy",
+          "deploy builds; read metrics and logs",
+          "place orders; read customer data"
+        ]
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "The shared admin credential",
+      "md": "The anti-pattern is one 'svc-admin' account with everything, used by every service 'for now'. It makes every incident a full-system incident: leak the ingest service's token and the attacker can delete the archive, change risk limits, and place orders. Scope each identity; the audit trail then also becomes *attributable* - actions map to a single service."
+    },
+    {
+      "type": "h2",
+      "text": "Secrets management: out of code, rotated, injected"
+    },
+    {
+      "type": "p",
+      "md": "Rules with no exceptions: secrets (venue API keys, database credentials, signing keys) never live in source code or config files - git history is forever, and a deleted file is still in every clone and fork. Secrets sit in a vault or secret manager; services receive them at runtime via injection; access to the vault is itself logged. Tokens are **short-lived** where possible and **rotated** on a schedule, so a leaked credential has a bounded lifetime."
+    },
+    {
+      "type": "p",
+      "md": "The response to a discovered leak defines maturity: rotate immediately (the old credential must be invalidated - a key rotated out is dead within minutes), assess what the leaked key could do during its exposure window (blast radius, from the permission table above), and treat the secret as compromised forever - rewriting git history does not help because clones already exist."
+    },
+    {
+      "type": "callout",
+      "variant": "warn",
+      "title": "What a leaked order-gateway key is worth",
+      "md": "An attacker holding an order-entry credential does not need to breach anything else: submitting 50 orders of 1,000 shares at \\$97.50 moves 50,000 shares - about \\$4,875,000 of notional - as *you*, with your good connectivity. This is why order-entry credentials get the tightest scoping, the shortest lifetime and the loudest audit trail."
+    },
+    {
+      "type": "h2",
+      "text": "Configuration: versioned like code, immutable like builds"
+    },
+    {
+      "type": "p",
+      "md": "Configuration - risk limits, throttles, symbol-map settings, feature flags - is code's twin and deserves git's discipline: every change reviewed, every deployment tagged with the config hash it ran under. Rolling back a bad config is then `git revert` plus redeploy, using the same canary discipline as code deploys. The 12-factor rule *config in the environment, not the code* is the mechanism: one build, many configs, none hand-edited on a host."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "def validate(cfg):\n    assert cfg[\"max_order_notional\"] > 0\n    assert cfg[\"kill_switch\"] in (\"armed\", \"released\")\n    return True\n\nprint(validate({\"max_order_notional\": 250000, \"kill_switch\": \"armed\"}))\n# True",
+      "caption": "Config validation runs at deploy time: a config that fails its invariants is rejected before any process reads it."
+    },
+    {
+      "type": "p",
+      "md": "The payoff question is forensic: 'which limits were live when the loss happened?' has a three-way join - deploy records (which build), git history (which config hash each build ran), audit trail (which actions happened) - and the answer is a fact, not a recollection."
+    },
+    {
+      "type": "h2",
+      "text": "Audit trails: who, what, when, where, outcome"
+    },
+    {
+      "type": "p",
+      "md": "An audit trail records every consequential action - order submitted, limit changed, secret accessed, config deployed - with the fields that make it evidence:"
+    },
+    {
+      "type": "list",
+      "ordered": false,
+      "items": [
+        "**Who** - the authenticated identity (service or human), not 'the system'",
+        "**What** - the action and its full payload (order details, old and new limit values)",
+        "**When** - a precise timestamp with timezone and clock-sync provenance",
+        "**Where** - host, process, session id",
+        "**Outcome** - accepted / rejected / failed, with the reason for rejections"
+      ]
+    },
+    {
+      "type": "p",
+      "md": "The trail must be **append-only** (written once, never edited - WORM storage or hash-chained entries for tamper evidence) and **retained for years**; regulators expect this of trading records, and MiFID II's RTS 25 clock-synchronisation rules require firms doing high-frequency algorithmic trading to keep timestamps accurate to around 100 microseconds against UTC. The 100 µs figure is not bureaucratic decoration - it is exactly the tolerance within which event *ordering* is reconstructable."
+    },
+    {
+      "type": "steps",
+      "title": "Worked example: clock skew rewrites history",
+      "items": [
+        "Host A's clock runs 300 µs fast; Host B's runs 200 µs slow (both vs the synced master).",
+        "Raw stamps: B records its event at 10:00:00.000900; A records its event at 10:00:00.001000. Raw order says: B first, A second.",
+        "Corrected: A's true time $= .001000 - 0.000300 = 10{,}00{:}00.000700$; B's true time $= .000900 + 0.000200 = 10{,}00{:}00.001100$.",
+        "True order is the opposite: A (at .000700) acted before B (at .001100). Without sync metadata the trail records a false sequence - and attribution of 'who acted first' (e.g. for self-trade prevention) flips."
+      ]
+    },
+    {
+      "type": "interactive",
+      "component": "HashTableVisual",
+      "params": {
+        "capacity": 8,
+        "keys": [
+          501,
+          502,
+          507,
+          9001,
+          12007
+        ],
+        "query": 9001
+      },
+      "caption": "Permission checks are per-request lookups: role -> allowed actions resolved in O(1). Least privilege means the tick-ingest table simply has no 'delete' entry - the capability cannot even be expressed, so it cannot be abused."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Host A's clock runs 150 µs fast; Host B's runs 250 µs slow, relative to the synced master. A stamps its event 09:30:00.002000; B stamps its event 09:30:00.001700. (a) Compute both corrected timestamps (in microseconds after 09:30:00). (b) What is the true order of the events, and what did the raw stamps imply? (c) If the regulation-style tolerance is 100 µs, does each host comply?",
+    "hints": [
+      "A fast clock stamps times that are too large: subtract the skew. A slow clock stamps times that are too small: add it.",
+      "Compare corrected times to get true order; compare skews to the tolerance."
+    ],
+    "solution": "(a) A: $2{,}000 - 150 = 1{,}850$ µs; B: $1{,}700 + 250 = 1{,}950$ µs. (b) True order: **A first** (.001850), then B (.001950) - while the raw stamps claimed B (.001700) before A (.002000). (c) Neither complies: A's skew 150 µs $> 100$ and B's 250 µs $> 100$. Both hosts need re-synchronisation before their trails can be trusted for ordering."
+  },
+  "independentExercise": {
+    "prompt": "Three hosts write an audit trail: A runs 400 µs fast, B runs 100 µs slow, C is perfectly synced. Stamps: A at 10:05:00.005000, B at 10:05:00.005100, C at 10:05:00.005200. (a) Compute the corrected timestamps in µs and give the true order (state ties explicitly). (b) Separately: a leaked order-entry credential is used to submit 50 orders of 1,000 shares at \\$97.50. Compute the shares moved and the notional. (c) What single design decision caps the damage in (b)?",
+    "hints": [
+      "Correct each stamp by its skew, then sort.",
+      "B and C may land on the same corrected time - think about what a tie means for ordering.",
+      "Damage capping is about permissions, not detection."
+    ],
+    "solution": "(a) A: $5{,}000 - 400 = 4{,}600$ µs; B: $5{,}100 + 100 = 5{,}200$ µs; C: $5{,}200$ µs. True order: **A first** (4,600); then **B and C tie** at 5,200 - their true order is indeterminate without finer resolution (a tie inside tolerance). (b) Shares: $50 \\times 1{,}000 = 50{,}000$; notional: $50{,}000 \\times 97.50 = \\textbf{$4{,}875{,}000}$. (c) **Least privilege / scoping**: the compromised identity's permissions cap the blast radius - an order-only credential cannot also delete data or change limits, and short token lifetime bounds the window."
+  },
+  "commonMistakes": [
+    "Sharing one admin credential across services 'temporarily': every leak becomes a full-system compromise and the audit trail can no longer attribute actions to a service.",
+    "Rotating git history instead of the credential after a leak: clones and forks retain the secret - rotation and invalidation are the only effective response.",
+    "Hand-editing config on a live host: the change bypasses review, has no version, and rollback becomes guesswork.",
+    "Recording audit events with only wall-clock time and no sync provenance: microseconds of skew reorder events and flip attribution, as the skew example shows.",
+    "Treating audit logs as ordinary editable logs: if entries can be modified, the trail is not evidence; append-only (WORM or hash-chained) storage is the requirement."
+  ],
+  "realWorldApplication": "Trading firms operate vault-backed secret injection, git-versioned config with deploy tags, and WORM audit archives; MiFID II RTS 25 requires HFT firms to keep event timestamps accurate to ~100 µs against UTC.",
+  "quantFinanceApplication": "The forensic question after any trading incident - 'which risk limits were live, and in what order did events actually occur?' - is answerable only if config hashes, deploy records and skew-corrected audit timestamps were captured at the time.",
+  "summary": [
+    "Least privilege caps blast radius: each service identity gets exactly its needed permissions (tick-ingest appends but cannot delete), so one leaked token is one scoped incident.",
+    "Secrets never live in code or config files; they are vaulted, short-lived and rotated - and a leak means rotate-and-assess, never history-rewrite.",
+    "Configuration is versioned and reviewed like code, tagged into deploys, and rolled back by revert; 'which limits were live' is then a join across git, deploys and audit records.",
+    "A complete audit trail records who, what, when (with clock-sync provenance), where and outcome, in append-only storage retained for years - clock skew of 300 µs was enough to invert event order in the worked example."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "The tick-ingest service is configured with append-only write access and no delete permission on the tick store. What principle is this, and what does it buy?",
+      "options": [
+        "Defence in depth - it adds a second firewall layer",
+        "Least privilege - it caps the blast radius: neither a bug nor an attacker can rewrite history",
+        "Encryption at rest - data cannot be read without the key",
+        "Failover redundancy - a second service can take over writes"
+      ],
+      "answerIndex": 1,
+      "explanation": "Least privilege scopes each identity to its minimum needs. Removing delete capability caps damage from compromise or bugs, and conveniently enforces the append-only discipline that replay and audit rely on."
+    },
+    {
+      "id": "q2",
+      "type": "ms",
+      "prompt": "Which fields must an audit-trail entry contain to be usable as evidence?",
+      "options": [
+        "The authenticated identity of the actor",
+        "The action and its full payload (including old and new values for changes)",
+        "A precise timestamp with timezone and clock-sync provenance",
+        "The outcome: accepted, rejected or failed, with rejection reasons",
+        "The operator's guess at the root cause"
+      ],
+      "answerIndices": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "explanation": "Who, what, when, where and outcome make an entry evidence; a root-cause *guess* is opinion and belongs in the incident review, not the immutable trail."
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "Host A's clock runs 400 µs fast. It stamps an event at 10:05:00.005000 (i.e. 5,000 µs after 10:05:00). What is the true time of the event in µs after 10:05:00?",
+      "answer": 4600,
+      "tolerance": 0,
+      "explanation": "A fast clock stamps too-late times: subtract the skew: $5{,}000 - 400 = 4{,}600$ µs. Raw order can therefore disagree with true order."
+    },
+    {
+      "id": "q4",
+      "type": "code-output",
+      "prompt": "What does this Python code print?",
+      "language": "python",
+      "code": "def validate(cfg):\n    assert cfg[\"max_order_notional\"] > 0\n    assert cfg[\"kill_switch\"] in (\"armed\", \"released\")\n    return True\n\nprint(validate({\"max_order_notional\": 250000, \"kill_switch\": \"armed\"}))",
+      "answer": "True",
+      "explanation": "Both invariants hold (250000 > 0; \"armed\" is allowed), so validate returns True, which is printed. A config failing either check would raise AssertionError instead."
+    },
+    {
+      "id": "q5",
+      "type": "short",
+      "prompt": "A venue API key is discovered committed to a git repository two weeks ago. Why is rewriting git history not the response, and what is?",
+      "modelAnswer": "History rewrites do not help because clones, forks and CI caches already hold the secret. The response is to rotate immediately - invalidate the leaked credential - assess what it could do during the exposure window, and verify rotation in the audit trail.",
+      "keywords": [
+        "rotate",
+        "invalidate",
+        "clone",
+        "exposure"
+      ],
+      "explanation": "The secret must be assumed compromised forever once pushed; only making the credential itself dead (rotation/invalidation) removes the risk."
+    },
+    {
+      "id": "q6",
+      "type": "mcq",
+      "prompt": "After a trading loss, risk asks: 'which order-size limit was actually live at 14:02?' What makes this answerable?",
+      "options": [
+        "Config changes were git-versioned and each deploy recorded the config hash it ran",
+        "The limit value is stored in the process's memory, so it is implicitly correct",
+        "Someone remembers changing limits that morning",
+        "The audit trail logs the limit value inside every order event"
+      ],
+      "answerIndex": 0,
+      "explanation": "Versioned config + deploy records give the config hash live at 14:02, joined with the audit trail. Memory contents vanish on restart, recollection is not evidence, and per-order payloads only show the limit if config provenance was recorded with them."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "definition",
+      "front": "What is least privilege?",
+      "back": "Each identity (service or human) holds exactly the permissions it needs and nothing more - so a compromise's blast radius is capped by the identity's scope."
+    },
+    {
+      "type": "concept",
+      "front": "Response to a leaked secret",
+      "back": "Rotate immediately and invalidate the old credential (clones retain the leaked value regardless of history rewrites), then assess what the exposed key could do during its window, using the permission table."
+    },
+    {
+      "type": "definition",
+      "front": "What must an audit trail contain?",
+      "back": "Who (authenticated identity), what (action + full payload, old/new values), when (precise, timezone-aware, clock-synced timestamp), where (host/session), outcome (accepted/rejected/failed) - in append-only storage, retained for years."
+    },
+    {
+      "type": "concept",
+      "front": "Why clock sync matters for audit ordering",
+      "back": "Skew rewrites sequence: a host 300 µs fast and one 200 µs slow produced raw order B-then-A but true order A-then-B. Regulatory tolerances (MiFID II RTS 25: ~100 µs for HFT) exist to keep ordering reconstructable."
+    }
+  ],
+  "references": [
+    {
+      "label": "OWASP - Secrets Management Cheat Sheet",
+      "url": "https://cheatsheetseries.owasp.org/cheatsheets/Secrets_Management_Cheat_Sheet.html"
+    },
+    {
+      "label": "The Twelve-Factor App - Config",
+      "url": "https://12factor.net/config"
+    },
+    {
+      "label": "NIST glossary - least privilege",
+      "url": "https://csrc.nist.gov/glossary/term/least_privilege"
+    },
+    {
+      "label": "ESMA - MiFID II RTS 25 clock synchronisation (overview)",
+      "url": "https://www.esma.europa.eu/"
+    }
+  ],
+  "skills": [
+    "production-engineering"
+  ]
+}

@@ -1,0 +1,228 @@
+{
+  "id": "stat-descriptive-sampling",
+  "moduleId": "ph8-statistics",
+  "title": "Descriptive Statistics, Sampling and Estimators",
+  "estMinutes": 26,
+  "difficulty": "core",
+  "prereqs": ["prob-expectation-variance"],
+  "objectives": [
+    "Compute the mean, median, variance and standard deviation of a dataset using the correct population or sample formula",
+    "Explain what a sampling distribution is and compute the standard error of a sample mean",
+    "Distinguish biased from unbiased estimators and justify the $n-1$ in sample variance",
+    "Choose an appropriate summary statistic for a skewed or outlier-prone financial dataset"
+  ],
+  "motivation": "A risk report lands on your desk: five daily PnL numbers, one line of summary. Which single number is the fair centre, which spread measure is honest about risk, and how much would a second week of data change your answer? Descriptive statistics answers the first two questions; sampling theory answers the third - and both underpin every estimator, test and model in the rest of this phase.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "From a data dump to a description"
+    },
+    {
+      "type": "p",
+      "md": "Start with something concrete: a hypothetical strategy produced these five daily returns, in percent: $2, -1, 4, -2, 2$. Before any model, we want a compact, honest description. The two questions worth asking are *where is the centre* and *how wide is the spread* - and, crucially, whether the answer depends on which formula we reach for."
+    },
+    {
+      "type": "steps",
+      "title": "Centre and spread, computed",
+      "items": [
+        "Mean: $\\bar{x} = \\tfrac{2 + (-1) + 4 + (-2) + 2}{5} = \\tfrac{5}{5} = 1.0$ percent per day.",
+        "Deviations from the mean: $1, -2, 3, -3, 1$. They always sum to $0$ - a useful self-check.",
+        "Squared deviations: $1, 4, 9, 9, 1$, so $\\sum (x_i - \\bar{x})^2 = 24$.",
+        "Sample variance (divide by $n-1 = 4$): $s^2 = 24/4 = 6.0$, so $s = \\sqrt{6} \\approx 2.449$.",
+        "Population formula (divide by $n = 5$): $\\sigma^2 = 24/5 = 4.8$, so $\\sigma \\approx 2.191$.",
+        "Median: sort to $\\{-2, -1, 2, 2, 4\\}$ and take the middle: $2.0$ - higher than the mean, because the $-2$ drags the mean down."
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "warn",
+      "title": "Two variances, one dataset",
+      "md": "Both $6.0$ and $4.8$ are legitimate answers - they answer different questions. The sample formula estimates the *process* variance; the population formula describes *this exact list*. Software defaults differ: NumPy's `.std()` divides by $n$, so pass `ddof=1` when you want the sample estimate."
+    },
+    {
+      "type": "h2",
+      "text": "Sampling: the estimate is a random variable"
+    },
+    {
+      "type": "p",
+      "md": "The five returns above are a **sample** from a generating process we never observe directly. A different week would give a different mean. Treat each statistic as a random variable with its own distribution - the **sampling distribution**. For the sample mean of independent draws with variance $\\sigma^2$, theory pins it down: the mean has expectation $\\mu$ (unbiased) and standard deviation $\\sigma/\\sqrt{n}$, the **standard error**."
+    },
+    {
+      "type": "math",
+      "tex": "\\mathrm{SE}(\\bar{x}) = \\frac{\\sigma}{\\sqrt{n}} \\approx \\frac{s}{\\sqrt{n}}",
+      "caption": "Standard error of the sample mean; estimate $\\sigma$ by $s$ in practice"
+    },
+    {
+      "type": "p",
+      "md": "For our data: $\\mathrm{SE} = 2.449/\\sqrt{5} \\approx 1.10$ percent. That number answers the report-reader's quiet question: *how much would the headline change on a re-run?* Roughly, a fresh sample mean typically lands within about one standard error of $1.0$. The $\\sqrt{n}$ is the entire economics of more data - halving the error needs four times the sample."
+    },
+    {
+      "type": "interactive",
+      "component": "DistributionViewer",
+      "params": {
+        "distribution": "normal",
+        "mean": 1,
+        "sd": 1.1,
+        "label": "sampling distribution of the mean, n=5"
+      },
+      "caption": "The sampling distribution of the mean for our five-day sample: centred at $\\bar{x}=1.0$ with standard error $\\approx 1.10$."
+    },
+    {
+      "type": "h2",
+      "text": "Bias, and why the $n-1$ is there"
+    },
+    {
+      "type": "p",
+      "md": "An estimator is **unbiased** if its average over repeated samples equals the target: $\\mathbb{E}[\\bar{x}] = \\mu$ always holds, but the population-formula variance systematically undershoots. The reason is degrees of freedom: deviations are forced to sum to zero, so only $n-1$ of them move freely, and each one is shrunk toward its own sample mean. Dividing by $n-1$ restores $\\mathbb{E}[s^2] = \\sigma^2$ exactly. When $n$ is large the correction is negligible; when $n$ is small - daily PnL history, a short backtest - it matters."
+    },
+    {
+      "type": "list",
+      "ordered": false,
+      "items": [
+        "**Unbiased**: on average across samples, hits the target ($\\bar{x}$ and $s^2$ do).",
+        "**Consistent**: converges to the truth as $n \\to \\infty$ - sampling error vanishes like $1/\\sqrt{n}$.",
+        "**Efficient**: lower variance than competing estimators - less scatter run to run.",
+        "**Robust**: barely moved by a few wild observations. The mean is *not* robust; the median is."
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import numpy as np\nx = np.array([2.0, -1.0, 4.0, -2.0, 2.0])\nprint(x.mean(), np.median(x))        # 1.0 2.0\nprint(x.var(ddof=1), x.var())        # 6.0 4.8\nprint(x.std(ddof=1) / np.sqrt(len(x)))  # 1.0954 - standard error of the mean",
+      "caption": "Verify the hand arithmetic, and notice which ddof you are using."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Desk intuition",
+      "md": "One outlier day can shift a monthly mean return visibly but barely moves the median - that is why drawdown conversations quote medians and percentiles, while means power Sharpe-ratio style summaries. Know which estimator your dashboard uses before you argue with it."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "A week of a different strategy gives returns (in percent) $3, 7, 4, 10, 6$. Compute the mean, the sample variance and standard deviation (using $n-1$), the median, and the estimated standard error of the mean. Show each step.",
+    "hints": [
+      "Sum the five values first; the mean is the sum divided by 5.",
+      "Squaring deviations: keep signs until after squaring.",
+      "The standard error divides the sample standard deviation by $\\sqrt{5}$."
+    ],
+    "solution": "Mean $= (3+7+4+10+6)/5 = 30/5 = 6.0$. Deviations: $-3, 1, -2, 4, 0$; squares: $9, 1, 4, 16, 0$, sum $= 30$. Sample variance $= 30/4 = 7.5$, so $s = \\sqrt{7.5} \\approx 2.739$. Median of $\\{3,4,6,7,10\\}$ is $6.0$. Standard error $= 2.739/\\sqrt{5} \\approx 2.739/2.236 \\approx 1.22$ percent."
+  },
+  "independentExercise": {
+    "prompt": "Six daily returns: $-1.2, 0.8, 2.0, -0.6, 1.0, 1.6$ (percent). Compute the mean, sample variance and sample standard deviation, then the estimated standard error of the mean. Finally, state which summary would change more if the $-1.2$ were a data-entry error that should have been $-0.2$: the mean or the median.",
+    "hints": [
+      "The sum is $3.6$; divide by $n=6$.",
+      "Squares of deviations: $3.24, 0.04, 1.96, 1.44, 0.16, 1.00$.",
+      "Sort the corrected set and re-check both centre statistics."
+    ],
+    "solution": "Mean $= 3.6/6 = 0.6$. Deviations: $-1.8, 0.2, 1.4, -1.2, 0.4, 1.0$; squares sum $= 7.84$. Sample variance $= 7.84/5 = 1.568$, so $s \\approx 1.252$. Standard error $= 1.252/\\sqrt{6} \\approx 1.252/2.449 \\approx 0.511$ percent. The mean moves from $0.6$ to $0.8$ when the error is corrected, while the median stays at $0.9$ (sorted: $-0.6, -0.2, 0.8, 1.0, 1.6, 2.0$ gives $(0.8+1.0)/2$) - the **mean** is the sensitive one."
+  },
+  "commonMistakes": [
+    "Dividing by $n$ when you want the sample estimate - NumPy's default `.var()` does exactly this; set `ddof=1`.",
+    "Quoting the standard deviation as if it were the standard error: the SE is $s/\\sqrt{n}$, smaller by a factor of $\\sqrt{n}$.",
+    "Reporting the mean for heavily skewed PnL without also reporting a robust statistic like the median.",
+    "Forgetting that deviations from the sample mean must sum to zero - a non-zero sum signals an arithmetic slip."
+  ],
+  "realWorldApplication": "Every dashboard metric - average fill time, mean slippage, typical latency - is a point estimate with a standard error attached, and reporting one without the other invites false confidence in noisy operational data.",
+  "quantFinanceApplication": "A short track record (say 25 days) makes the $n-1$ correction and the $\\sqrt{n}$ shrinkage of the standard error materially matter when quoting a strategy's average daily PnL and its uncertainty.",
+  "summary": [
+    "Mean, median, variance and standard deviation describe centre and spread; use the $n-1$ (sample) formula when estimating from data.",
+    "A statistic computed from a sample is itself random: the sample mean has standard error $s/\\sqrt{n}$.",
+    "Good estimators are unbiased, consistent, efficient and - where outliers lurk - robust; the mean is not robust, the median is.",
+    "The $n-1$ in sample variance restores unbiasedness because deviations carry only $n-1$ degrees of freedom."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "Which quantity is an unbiased estimator of the population variance $\\sigma^2$ when computed from a sample of size $n$?",
+      "options": [
+        "$\\tfrac{1}{n}\\sum (x_i - \\bar{x})^2$",
+        "$\\tfrac{1}{n-1}\\sum (x_i - \\bar{x})^2$",
+        "$\\tfrac{1}{n+1}\\sum (x_i - \\bar{x})^2$",
+        "$\\bar{x}$ itself"
+      ],
+      "answerIndex": 1,
+      "explanation": "Dividing by $n-1$ corrects for the one degree of freedom used by $\\bar{x}$, making $\\mathbb{E}[s^2] = \\sigma^2$ exactly. The $1/n$ version is the (biased) MLE, and $\\bar{x}$ estimates the mean, not the variance."
+    },
+    {
+      "id": "q2",
+      "type": "numeric",
+      "prompt": "For the returns $2, -1, 4, -2, 2$ (percent), what is the sample mean?",
+      "answer": 1,
+      "tolerance": 0.01,
+      "unit": "percent",
+      "explanation": "$(2 - 1 + 4 - 2 + 2)/5 = 5/5 = 1.0$."
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "For the same dataset, what is the sample variance (divide by $n-1$)?",
+      "answer": 6,
+      "tolerance": 0.1,
+      "explanation": "Squared deviations $1+4+9+9+1 = 24$; $24/4 = 6.0$. The population version would be $24/5 = 4.8$."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "A population has $\\sigma = 4$. What is the standard error of the sample mean for samples of size $64$?",
+      "options": [
+        "$4$",
+        "$0.5$",
+        "$2$",
+        "$0.0625$"
+      ],
+      "answerIndex": 1,
+      "explanation": "$\\mathrm{SE} = \\sigma/\\sqrt{n} = 4/8 = 0.5$. The distractor $0.0625$ is $\\sigma/n^2$-style confusion; the SE shrinks with $\\sqrt{n}$, not $n$ or $n^2$."
+    },
+    {
+      "id": "q5",
+      "type": "short",
+      "prompt": "In one or two sentences, why does the sample variance divide by $n-1$ rather than $n$?",
+      "modelAnswer": "Because the sample mean consumes one degree of freedom, only $n-1$ deviations are free to vary; dividing by $n-1$ makes the estimator unbiased for the population variance.",
+      "keywords": ["degrees of freedom", "unbiased"],
+      "explanation": "The $n-1$ divisor compensates for deviations being measured from their own sample mean, which shrinks them toward zero on average."
+    },
+    {
+      "id": "q6",
+      "type": "code-output",
+      "prompt": "What does this Python code print?",
+      "language": "python",
+      "code": "import numpy as np\nx = np.array([2.0, -1.0, 4.0, -2.0, 2.0])\nprint(round(x.std(ddof=1), 2))\nprint(round(x.std(), 2))",
+      "answer": "2.45\n2.19",
+      "explanation": "With `ddof=1` the divisor is $n-1=4$: $\\sqrt{6} \\approx 2.449 \\to 2.45$. Default divisor $n=5$: $\\sqrt{4.8} \\approx 2.191 \\to 2.19$."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "formula",
+      "front": "Sample variance (unbiased)",
+      "back": "$s^2 = \\frac{1}{n-1}\\sum (x_i - \\bar{x})^2$; the population/MLE version divides by $n$ instead."
+    },
+    {
+      "type": "formula",
+      "front": "Standard error of the sample mean",
+      "back": "$\\mathrm{SE} = \\sigma/\\sqrt{n}$, estimated as $s/\\sqrt{n}$; shrinks with the square root of the sample size."
+    },
+    {
+      "type": "definition",
+      "front": "Unbiased estimator",
+      "back": "An estimator whose expectation over repeated samples equals the true parameter: $\\mathbb{E}[\\hat{\\theta}] = \\theta$."
+    },
+    {
+      "type": "concept",
+      "front": "Mean vs median under outliers",
+      "back": "The mean is dragged by extreme observations; the median is robust. Skewed PnL distributions should be quoted with both."
+    }
+  ],
+  "references": [
+    {
+      "label": "OpenStax Introductory Statistics - Sampling and Data",
+      "url": "https://openstax.org/details/books/introductory-statistics-2e"
+    },
+    {
+      "label": "NIST/SEMATECH e-Handbook - Measures of Central Tendency",
+      "url": "https://www.itl.nist.gov/div898/handbook/eda/section3/eda35.htm"
+    }
+  ],
+  "skills": ["statistics"]
+}

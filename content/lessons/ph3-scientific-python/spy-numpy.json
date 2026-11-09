@@ -1,0 +1,309 @@
+{
+  "id": "spy-numpy",
+  "moduleId": "ph3-scientific-python",
+  "title": "NumPy Arrays, Broadcasting and Vectorisation",
+  "estMinutes": 27,
+  "difficulty": "core",
+  "prereqs": [
+    "py-control-functions"
+  ],
+  "objectives": [
+    "Describe what an ndarray is (dtype, shape, contiguous memory) and quantify its memory advantage over lists of boxed floats",
+    "Compute simple returns, cumulative growth and max drawdown as whole-array operations without Python loops",
+    "Apply the broadcasting rules to predict output shapes and diagnose shape errors in portfolio arithmetic",
+    "Use axis semantics (axis=0/axis=1), boolean masks and preallocation correctly",
+    "Distinguish views from copies under basic slicing and fancy indexing"
+  ],
+  "motivation": "A desk needs daily returns, portfolio paths and a Monte Carlo pricer across 10 years and 500 assets - 1.25 million numbers per run. Python loops take minutes; NumPy does it in milliseconds because the same operations run as compiled C over contiguous typed memory. This lesson builds the array mental model and the broadcasting rules that every later lesson - covariance matrices, pandas frames, SciPy optimisers - silently depends on.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "The ndarray: typed, shaped, contiguous"
+    },
+    {
+      "type": "p",
+      "md": "A numpy `ndarray` is a single block of memory holding values of one **dtype** (typically `float64`, 8 bytes each), interpreted through a **shape** and strides. Contrast the Python list from the object-model lesson: a million floats cost ~8 MB of pointers plus ~24 MB of boxed float objects; a `float64` array is 8 MB flat. Because memory layout is uniform and predictable, operations become single C loops with no per-element type dispatch - that is the whole magic of vectorisation."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import numpy as np\n\nprices = np.array([101.5, 102.25, 100.75, 103.0])\nrets = prices[1:] / prices[:-1] - 1.0     # simple returns, whole-array\nprint(rets.round(4))                      # [ 0.0074 -0.0147  0.0223]\nprint(rets.dtype, prices.nbytes)          # float64 32",
+      "caption": "Elementwise arithmetic on arrays reads like maths and runs like C. prices[1:] / prices[:-1] is today divided by yesterday, elementwise."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Slices are views, fancy indexing copies",
+      "md": "`prices[1:]` is a **view**: it shares memory with the original, so mutating the slice mutates the source. `prices[[0, 2]]` (fancy indexing) or boolean masking returns a **copy**. Surprising in-place changes usually trace back to editing a view."
+    },
+    {
+      "type": "h2",
+      "text": "Vectorised thinking: masks, reductions, cumulation"
+    },
+    {
+      "type": "p",
+      "md": "Replace 'for each element' with expressions over whole arrays: comparisons produce boolean masks (`rets > 0.01`), reductions collapse an axis (`.sum()`, `.mean()`, `.std()` with an `axis=` argument), and cumulations build paths (`np.cumprod`, `np.maximum.accumulate`). The classic risk metric - max drawdown - is three vectorised lines:"
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import numpy as np\n\nequity = np.array([100.0, 120.0, 90.0, 110.0])\npeak = np.maximum.accumulate(equity)          # running high-water mark\nmax_dd = (equity / peak - 1.0).min()\nprint(max_dd)                                 # -0.25",
+      "caption": "The 90-point trough against the 120 peak: -0.25. No loop, no index bookkeeping."
+    },
+    {
+      "type": "interactive",
+      "component": "MonteCarloPi",
+      "params": {
+        "points": 3000
+      },
+      "caption": "A vectorised Monte Carlo: draw all points at once with np.random, count with a boolean sum - no Python loop anywhere. The identical pattern (simulate all paths at once, reduce) prices options later in this module."
+    },
+    {
+      "type": "h2",
+      "text": "Broadcasting: the shape algebra"
+    },
+    {
+      "type": "p",
+      "md": "Broadcasting lets arrays of different shapes combine. Align shapes at the **trailing** edge; each dimension is compatible if the sizes are equal or one of them is 1 (a missing leading dimension counts as 1); the result takes the elementwise maximum. NumPy implements this with stride tricks - no data is copied. Two arrays broadcast silently or raise `ValueError`; there is no third option, so shape errors are loud and diagnosable."
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Array A",
+        "Array B",
+        "Result shape"
+      ],
+      "rows": [
+        [
+          "(4, 1)",
+          "(1, 3)",
+          "(4, 3)"
+        ],
+        [
+          "(4, 3)",
+          "(3,)",
+          "(4, 3)"
+        ],
+        [
+          "(4, 3)",
+          "(4,)",
+          "error - trailing dims 3 vs 4"
+        ],
+        [
+          "(2, 3)",
+          "(2, 1)",
+          "(2, 3)"
+        ]
+      ]
+    },
+    {
+      "type": "p",
+      "md": "The finance workhorse: a weights vector of shape `(n,)` multiplies a returns matrix of shape `(T, n)` - every day's row is weighted by the same portfolio. `axis` semantics: `R.mean(axis=0)` averages *down* the rows (one number per asset), `axis=1` across each row (one number per day)."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import numpy as np\n\nR = np.array([[ 0.01,  0.02, -0.005],\n              [ 0.03, -0.01,  0.015],\n              [-0.02,  0.00,  0.01]])      # shape (3 days, 3 assets)\nw = np.array([0.5, 0.3, 0.2])              # shape (3,)\nport = (R * w).sum(axis=1)                 # broadcast then reduce per day\nprint(port.round(4))                       # [ 0.01   0.015 -0.008]\nprint((R @ w).round(4))                    # same thing as a dot product",
+      "caption": "Day 1: 0.5(0.01) + 0.3(0.02) + 0.2(-0.005) = 0.010. (R * w).sum(axis=1) and R @ w agree - the matmul form says what you mean."
+    },
+    {
+      "type": "p",
+      "md": "NumPy's whole value proposition is one sentence: **move the loop into C**. A Python `for` loop pays interpreter overhead on every iteration; a NumPy operation describes the whole array operation once and runs a compiled kernel over the data. The practical consequences — vectorise, avoid per-element Python, watch temporary allocations — all fall out of that one design fact."
+    },
+    {
+      "type": "steps",
+      "title": "Broadcasting, worked until it is obvious",
+      "items": [
+        "The `(3, 4)` array below is prices for 3 instruments over 4 days. Subtracting a `(4,)` row vector works: NumPy *stretches* the 1-D array across all 3 rows — that is broadcasting.",
+        "Rule, in full: compare shapes **right to left**; dimensions are compatible when equal, or when one of them is 1 (which stretches). `(3,4)` minus `(4,)` → align right: 4 vs 4 ✓, missing dimension treated as 1 → stretch.",
+        "The classic failure: `(3,4)` minus a `(3,)` *column* of per-instrument means. Right-align: 4 vs 3 ✗ — error. Fix by reshaping to `(3,1)`: right-align 4 vs 1 → stretch, 3 vs 3 ✓.",
+        "This one reshape (`means[:, None]` or `means.reshape(-1, 1)`) is the single most common NumPy move in quantitative code: centre a panel of returns by instrument."
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import numpy as np\n\nprices = np.array([\n    [100.0, 100.5, 101.2, 100.8],   # instrument A\n    [50.20, 50.30, 50.10, 50.25],   # instrument B\n    [200.0, 199.5, 200.4, 201.0],   # instrument C\n])\n\n# row-wise operations via broadcasting: (3,4) / (4,) -> OK\nday_ret = prices[1:] / prices[:-1] - 1.0\n\n# per-instrument mean, centred: needs the (3,1) reshape\nmeans = prices.mean(axis=1)                # shape (3,)\ncentred = prices - means[:, None]          # (3,4) - (3,1) -> (3,4)\n\nprint(day_ret.shape, centred.shape)        # (2,4) (3,4)\nprint(np.abs(day_ret).max())               # worst single-day move"
+    },
+    {
+      "type": "p",
+      "md": "Two habits worth forming early. **Think in shapes first**: before writing any NumPy expression, write down the shape of every operand — most bugs are shape bugs, and the fix is usually a `.T`, a `[:, None]` or an `axis=` argument. **Watch temporaries**: `a * b + c` allocates a temporary for `a * b`; in a tight loop over big arrays, `np.multiply(a, b, out=buf)` avoids the allocation and can matter in production paths."
+    },
+    {
+      "type": "callout",
+      "variant": "info",
+      "title": "dtypes are part of the contract",
+      "md": "A NumPy array is homogeneous: one dtype for everything. Integer division surprises (`np.array([1,2])/2` gives floats), integer overflow is silent in fixed-width ints, and mixing float32 and float64 upcasts silently. Quant work: default to float64 for research; choose float32 only when memory or bandwidth forces it — the numerical-stability lesson shows exactly what that costs."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Preallocate; never grow arrays in a loop",
+      "md": "`np.append` inside a loop copies the entire array on every call - quadratic total cost. If you must build incrementally, allocate `out = np.empty(n)` once and fill by index, or collect in a list and convert once at the end. Vectorised pipelines usually remove the loop entirely."
+    },
+    {
+      "type": "h2",
+      "text": "A vectorised day at the desk"
+    },
+    {
+      "type": "steps",
+      "title": "From prices to portfolio drawdown, no loops",
+      "items": [
+        "Prices $P$, shape $(T, n)$: simple returns $R = P[1:] / P[:-1] - 1$ - shape $(T-1, n)$, one division per cell.",
+        "Portfolio returns: $r_{port} = R \\cdot w$ - broadcast $(T-1, n) \\times (n,)$, reduce with `axis=1`.",
+        "Equity curve: $V_t = V_0 \\cdot \\text{cumprod}(1 + r_{port})$ - `np.cumprod(1 + port) * 100`.",
+        "Risk: `peak = np.maximum.accumulate(V)`, `max_dd = (V / peak - 1).min()` - three reductions, zero Python-level iteration."
+      ]
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Returns matrix $R$ has shape $(252, 4)$, dtype float64, for 252 days and 4 assets.\n\n(a) How many bytes of data does $R$ occupy?\n(b) What is the shape of `R * w` for weights `w = np.array([0.4, 0.3, 0.2, 0.1])` of shape `(4,)`?\n(c) Write the expression for the per-day portfolio return series, and the one for per-asset mean return.\n(d) `R[:, :1]` has shape $(252, 1)$ - what is the shape of `R[:, :1] * R`?",
+    "hints": [
+      "nbytes = number of elements x itemsize (float64 = 8).",
+      "Broadcasting aligns trailing dimensions: (252, 4) with (4,) is compatible.",
+      "A (252, 1) column broadcasts across all 4 columns."
+    ],
+    "solution": "(a) $252 \\times 4 \\times 8 = 8064$ bytes. (b) `(252, 4)` - the `(4,)` weights broadcast down every row. (c) Per-day portfolio returns: `(R * w).sum(axis=1)` or `R @ w`; per-asset means: `R.mean(axis=0)`. (d) `(252, 4)` - the single column multiplies each of the four columns elementwise, which is exactly how you scale a whole matrix by a per-row factor."
+  },
+  "independentExercise": {
+    "prompt": "With `rng = np.random.default_rng(42)`, simulate daily returns for 3 assets over 250 days: `R = rng.normal(0.0002, 0.01, size=(250, 3))`. Take weights `w = np.array([0.4, 0.35, 0.25])`. Compute (a) the per-day portfolio returns, (b) the equity curve starting at 100 via `np.cumprod`, (c) the max drawdown with the `maximum.accumulate` pattern. Then explain: why do two classmates running this exact code get identical numbers, and what would you change to explore alternative scenarios?",
+    "hints": [
+      "The seeded Generator produces the same stream on every run.",
+      "equity = 100 * np.cumprod(1 + port_returns)",
+      "peak = np.maximum.accumulate(equity); dd = (equity / peak - 1).min()"
+    ],
+    "solution": "```python\nimport numpy as np\nrng = np.random.default_rng(42)\nR = rng.normal(0.0002, 0.01, size=(250, 3))\nw = np.array([0.4, 0.35, 0.25])\nport = R @ w\nequity = 100 * np.cumprod(1 + port)\npeak = np.maximum.accumulate(equity)\nprint(round(float(equity[-1]), 2), round(float((equity / peak - 1).min()), 4))\n```\nIdentical results for everyone: `default_rng(42)` fixes the PCG64 stream, so every machine draws the same 'random' numbers - reproducibility by construction. To explore scenarios, change the seed (a new but still reproducible path), or the drift/volatility arguments to `normal` - the code itself never changes."
+  },
+  "commonMistakes": [
+    "Confusing shape (n,) with (n,1): a (n,) vector broadcasts along rows; a (n,1) column broadcasts down columns. reshape when in doubt.",
+    "Assuming `R * w` copies data - broadcasting is done with strides and is essentially free; but basic slicing returns views, so in-place edits can surprise.",
+    "Calling np.append inside a loop to grow an array - O(n) copy per call; preallocate with np.empty or np.zeros.",
+    "Forgetting the axis argument: R.sum() collapses everything instead of per-row/per-column reductions.",
+    "Mixing float32 and float64 arrays and being surprised by upcast results, or storing prices in float32 and losing precision."
+  ],
+  "realWorldApplication": "NumPy is the substrate under pandas, scikit-learn and SciPy. Image processing, signal pipelines, risk engines - all reduce to typed arrays, broadcasting and reductions once you look inside.",
+  "quantFinanceApplication": "Vectorised returns, portfolio paths and Monte Carlo draws are the daily bread of quant Python: R @ w for portfolio returns, cumprod for equity curves, maximum.accumulate for drawdowns - and the same broadcasting arithmetic powers factor exposure matrices and cross-sectional rankings.",
+  "summary": [
+    "An ndarray is one contiguous block of a single dtype plus shape/strides - 8 MB for a million float64 values versus ~32 MB for the equivalent boxed Python list.",
+    "Vectorisation = whole-array expressions: masks for conditions, reductions with axis for aggregates, cumprod/maximum.accumulate for paths.",
+    "Broadcasting aligns trailing dimensions; sizes must match or be 1. (T, n) * (n,) weights every row by the portfolio; (T, 1) scales rows by per-day factors.",
+    "Basic slicing gives views; fancy indexing and masks give copies. Preallocate instead of growing arrays with np.append.",
+    "Max drawdown in three vectorised lines: cummax peak, equity/peak - 1, .min()."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "code-output",
+      "prompt": "What does this print?",
+      "language": "python",
+      "code": "import numpy as np\na = np.ones((3, 4))\nb = np.arange(4)\nprint((a + b).shape)",
+      "answer": "(3, 4)",
+      "explanation": "b has shape (4,) which broadcasts across each of the 3 rows (trailing dims 4 vs 4 match, leading 3 counts as compatible), so the result keeps (3, 4)."
+    },
+    {
+      "id": "q2",
+      "type": "code-output",
+      "prompt": "What does this print?",
+      "language": "python",
+      "code": "import numpy as np\nr = np.array([0.1, -0.1, 0.05])\nprint(round(float(np.prod(1 + r) - 1), 4))",
+      "answer": "0.0395",
+      "explanation": "Cumulative growth: $1.1 \\times 0.9 \\times 1.05 = 1.0395$; minus 1 gives the total return 0.0395 (3.95%)."
+    },
+    {
+      "id": "q3",
+      "type": "mcq",
+      "prompt": "Which pair of shapes broadcasts without error?",
+      "options": [
+        "(4, 3) with (4,)",
+        "(4, 3) with (3,)",
+        "(4, 3) with (4, 4)",
+        "(3,) with (5,)"
+      ],
+      "answerIndex": 1,
+      "explanation": "(3,) aligns with the trailing dimension of (4, 3) and broadcasts across rows. (4,) against (4, 3) fails because the trailing sizes 3 and 4 differ and neither is 1."
+    },
+    {
+      "id": "q4",
+      "type": "numeric",
+      "prompt": "How many bytes of data does a (252, 4) float64 returns array occupy (excluding the array header)?",
+      "answer": 8064,
+      "explanation": "$252 \\times 4 = 1008$ elements $\\times\\, 8$ bytes per float64 $= 8064$ bytes."
+    },
+    {
+      "id": "q5",
+      "type": "short",
+      "prompt": "In one or two sentences: why is a vectorised numpy computation faster than the equivalent Python for-loop?",
+      "modelAnswer": "The loop runs once in compiled C over contiguous typed memory, while the Python loop executes interpreted bytecode per element, dispatching on the type of each boxed PyObject float and chasing pointers - so per-element overhead disappears in the vectorised version.",
+      "keywords": [
+        "C",
+        "bytecode",
+        "contiguous",
+        "typed",
+        "box",
+        "interpreted"
+      ],
+      "explanation": "Vectorisation removes per-element interpreter overhead: one C loop over homogeneous 8-byte doubles replaces millions of boxed, dispatched operations."
+    },
+    {
+      "id": "q6",
+      "type": "ms",
+      "prompt": "Which are valid numpy practice for performance and correctness? Select all that apply.",
+      "options": [
+        "Preallocate result arrays with np.empty/np.zeros instead of growing with np.append in a loop",
+        "Use boolean masks (R[R > 0]) to select and reduce on subsets",
+        "Rely on basic slicing views when you need an independent array to mutate",
+        "Know whether you want axis=0 (down rows) or axis=1 (across each row) before reducing"
+      ],
+      "answerIndices": [
+        0,
+        1,
+        3
+      ],
+      "explanation": "Views share memory with the source - mutating a slice mutates the original, so you need a copy (.copy()) for independent data. The other three are standard correct practice."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "definition",
+      "front": "Broadcasting rule",
+      "back": "Align shapes at the trailing edge; each dimension is compatible if equal or 1 (missing leading dims count as 1); result takes the elementwise maximum. Otherwise ValueError."
+    },
+    {
+      "type": "concept",
+      "front": "View vs copy in numpy",
+      "back": "Basic slicing (arr[1:], arr[:, :2]) returns a VIEW sharing memory; fancy indexing (arr[[0, 2]]) and boolean masks return COPIES. Mutating a view mutates the source."
+    },
+    {
+      "type": "formula",
+      "front": "Memory of an ndarray",
+      "back": "nbytes = number of elements x itemsize. A (252, 4) float64 array: 1008 x 8 = 8064 bytes. A million float64 values: 8 MB, versus ~32 MB as a boxed Python list."
+    },
+    {
+      "type": "code-output",
+      "front": "equity = np.array([100.0, 120.0, 90.0, 110.0]); (equity / np.maximum.accumulate(equity) - 1).min() = ?",
+      "back": "-0.25 - the trough of 90 measured against the running peak of 120."
+    },
+    {
+      "type": "concept",
+      "front": "axis semantics",
+      "back": "axis=0 collapses rows -> one value per column (per asset). axis=1 collapses columns -> one value per row (per day). R @ w with w shape (n,) gives the per-day portfolio series."
+    }
+  ],
+  "references": [
+    {
+      "label": "NumPy quickstart - the basics",
+      "url": "https://numpy.org/doc/stable/user/quickstart.html"
+    },
+    {
+      "label": "NumPy broadcasting documentation",
+      "url": "https://numpy.org/doc/stable/user/basics.broadcasting.html"
+    },
+    {
+      "label": "NumPy absolute beginner guide",
+      "url": "https://numpy.org/doc/stable/user/absolute_beginners.html"
+    }
+  ],
+  "skills": [
+    "scientific-python"
+  ]
+}

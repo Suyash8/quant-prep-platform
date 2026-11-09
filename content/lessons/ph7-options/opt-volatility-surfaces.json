@@ -1,0 +1,283 @@
+{
+  "id": "opt-volatility-surfaces",
+  "moduleId": "ph7-options",
+  "title": "Implied Volatility, Smiles and Volatility Surfaces",
+  "estMinutes": 27,
+  "difficulty": "core",
+  "prereqs": [
+    "opt-greeks"
+  ],
+  "objectives": [
+    "Define implied volatility as the model inversion of a market price and compute it approximately with vega",
+    "Read a volatility smile/skew and describe the canonical shapes for equities, FX and commodities",
+    "Explain how strike and maturity dimensions combine into a volatility surface and why it is used",
+    "Recognize what the smile implies about Black-Scholes assumptions and name the model families that respond (local vol, stochastic vol, jumps)"
+  ],
+  "motivation": "Ask five desks for the volatility of one stock and you will get a surface, not a number: implied vol depends on strike and maturity, and the pattern - the smile, the skew - carries real information about crash fears and hedging flow. Since volatility is the only Black-Scholes input the market does not quote, practitioners invert the model: given a price, solve for the sigma that reproduces it. This lesson builds that inversion, teaches you to read a smile, and explains why one flat number was never enough.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "From price to implied volatility"
+    },
+    {
+      "type": "p",
+      "md": "**Implied volatility** is the value of $\\sigma$ that makes Black-Scholes reproduce an observed market price. There is no closed form for the inverse, so engines iterate - Newton's method using vega, or bisection on a bracket. Vega is the conversion rate between price and vol: a price $\\Delta P$ away from the model implies a vol shift of roughly $\\Delta P / \\nu$, accurate while vega itself changes slowly. Always be clear about what implied vol *is*: a quote convention, a coordinate system for prices - not a forecast of realized volatility, though it embeds the market's risk-adjusted view of it."
+    },
+    {
+      "type": "steps",
+      "title": "The ATM call quoted at \\$12.00 (S = 100, K = 100, r = 5%, T = 1)",
+      "items": [
+        "At $\\sigma = 20\\%$ the model gives \\$10.45 - the market is \\$1.55 richer.",
+        "Vega from the Greeks lesson: $\\nu = 0.375$ per volatility point.",
+        "Implied vol $\\approx 20\\% + 1.55/0.375 = 20\\% + 4.13$ points $\\approx 24.1\\%$.",
+        "Exact inversion (repricing at 24.1%) confirms $\\approx 24.1\\%$ - the linear vega rule is nearly exact because vega moves slowly with $\\sigma$."
+      ]
+    },
+    {
+      "type": "h2",
+      "text": "Smiles, skews and surfaces"
+    },
+    {
+      "type": "p",
+      "md": "Now price many strikes with one expiry and plot each one's implied vol: the curve is the **smile**. Equity index options show a **skew** - implied vol rises as strike falls, so out-of-the-money puts trade at richer vols than ATM. The market's story: a leveraged economy has fat left tails, and structural demand for downside protection (portfolio insurance, hedges) bids up put vols. **FX** options smile symmetrically - both wings priced, because big moves hurt in either direction. **Commodities** often skew the other way, with call wings rich on supply-shock spikes. Along the second axis, implied vol varies with maturity too - event dates (earnings, elections) bump short-dated vols - and the full strike-by-maturity grid is the **volatility surface**, the object every exotic book is marked against."
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Strike",
+        "IV, T = 1y",
+        "IV, T = 3m"
+      ],
+      "rows": [
+        [
+          "80 (25% OTM put)",
+          "26.0%",
+          "28.0%"
+        ],
+        [
+          "90",
+          "23.0%",
+          "24.5%"
+        ],
+        [
+          "100 (ATM)",
+          "21.0%",
+          "22.0%"
+        ],
+        [
+          "110",
+          "20.5%",
+          "21.2%"
+        ],
+        [
+          "120",
+          "21.0%",
+          "21.8%"
+        ]
+      ]
+    },
+    {
+      "type": "p",
+      "md": "This hypothetical equity-style surface shows both signatures: the put-skew (down-strike vols rising steeply) and a term structure where short-dated vols sit above long-dated at every strike, because the market prices more uncertainty per unit time near the money near term. Desks interpolate such grids (carefully - vols are not linear in strike), extract the right slice for each contract, and track surface *changes* as their primary risk: a book's vega is bucketed by strike and maturity precisely because the surface moves shape, not just level."
+    },
+    {
+      "type": "interactive",
+      "component": "VolatilitySmile",
+      "params": {
+        "spot": 100,
+        "maturities": [
+          0.25,
+          1.0
+        ],
+        "strikes": [
+          80,
+          90,
+          100,
+          110,
+          120
+        ],
+        "vols": [
+          [
+            0.28,
+            0.245,
+            0.22,
+            0.212,
+            0.218
+          ],
+          [
+            0.26,
+            0.23,
+            0.21,
+            0.205,
+            0.21
+          ]
+        ]
+      },
+      "caption": "Two slices of the hypothetical surface. Slide across strikes to feel the put skew, and compare maturities to see the term structure tilt."
+    },
+    {
+      "type": "p",
+      "md": "What the smile really says is that one assumption of Black-Scholes is false: the stock is not lognormal with constant volatility. If it were, every strike would imply the same $\\sigma$. The model families that respond: **local volatility** (Dupire) makes $\\sigma$ a deterministic function of spot and time fitted to the whole surface; **stochastic volatility** (Heston) adds a second random driver for variance itself, generating smiles endogenously; **jump models** add discontinuities for crash risk. None is derived here - the point is to recognize the diagnosis (smile => misspecified diffusion) and the names of the treatments, which later pricing modules develop."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Parity pins the surface",
+      "md": "Put-call parity holds regardless of the smile: a call and put with the same strike and expiry share one implied volatility - the difference $C - P$ depends only on $S$, $K$, $r$. Desks run this check continuously; a strike where call and put imply different vols is a data error or an arbitrage, never a model feature."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "There is no single vol",
+      "md": "Quoting 'the volatility' of a stock without strike and maturity is meaningless. And beware naive interpolation: implied vol is roughly linear in *delta* or *log-moneyness*, not in raw strike, and vega varies across the grid - inverting with the wrong local vega misestimates vol by points, not bps."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "from math import log, sqrt, exp\nfrom statistics import NormalDist\n\nN = NormalDist().cdf\n\ndef bs_call(S, K, r, sigma, T):\n    d1 = (log(S / K) + (r + sigma * sigma / 2) * T) / (sigma * sqrt(T))\n    d2 = d1 - sigma * sqrt(T)\n    return S * N(d1) - K * exp(-r * T) * N(d2)\n\nS, K, r, T, target = 100, 100, 0.05, 1.0, 12.00\nlo, hi = 0.01, 2.0\nfor _ in range(50):                      # bisection: monotone in sigma\n    mid = (lo + hi) / 2\n    if bs_call(S, K, r, mid, T) < target:\n        lo = mid\n    else:\n        hi = mid\nprint(round((lo + hi) / 2, 4))           # 0.2411 -> ~24.1% implied vol",
+      "caption": "Implied vol by bisection: the BS price function is monotone in sigma, so fifty halvings nail the quote to four decimals."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "You know the model prices: \\$10.45 at $\\sigma = 20\\%$ and \\$14.23 at $\\sigma = 30\\%$ (same contract). A broker quotes \\$12.00. Interpolate linearly to estimate the implied volatility, and explain why the estimate is close to the exact inversion.",
+    "hints": [
+      "Fraction of the price range: $(12.00 - 10.45)/(14.23 - 10.45)$.",
+      "Vega changes slowly across this vol range, so price is nearly linear in vol."
+    ],
+    "solution": "Fraction $= 1.55/3.78 = 0.410$. Implied vol $\\approx 20\\% + 0.410 \\times 10$ points $= 24.10\\%$. The exact inversion gives $\\approx 24.1\\%$: the price-vol curve is close to a straight line locally because vega varies slowly, which is why the vega-based rule and linear interpolation both work so well for bracketed quotes."
+  },
+  "independentExercise": {
+    "prompt": "The put of the same strike ($S = 100$, $K = 100$, $r = 5\\%$, $T = 1$) is quoted at \\$7.20. The model put at $\\sigma = 20\\%$ is \\$5.57 and vega is 0.375 per vol point. Estimate the put's implied volatility. Then state what the same-strike call's implied vol must be, and why.",
+    "hints": [
+      "Price gap to vol: divide by vega.",
+      "Put-call parity ties the call and put at one strike to the same implied vol."
+    ],
+    "solution": "Gap $= 7.20 - 5.57 = 1.63$; implied vol $\\approx 20 + 1.63/0.375 = 24.35\\% \\approx 24.4\\%$. The call at the same strike and expiry must imply essentially the same vol (about 24.1% by the exact inversion of the \\$12.00 quote, the linear rule's small error aside): parity forces $C - P = S - Ke^{-rT}$ independent of $\\sigma$, so both legs invert to one number."
+  },
+  "commonMistakes": [
+    "Treating implied volatility as a forecast of realized volatility - it is a price quote in disguise, loaded with risk premium.",
+    "Inverting with ATM vega for a far OTM strike, where vega is much smaller and the vol estimate blows up.",
+    "Interpolating vols linearly in raw strike across a skewed surface.",
+    "Assuming one implied vol can price all strikes - the smile is the market saying otherwise."
+  ],
+  "realWorldApplication": "The VIX index is a model-free aggregate of S&P 500 implied vols across strikes; every exotic derivatives desk marks its book off a fitted volatility surface and manages vega bucket by bucket.",
+  "quantFinanceApplication": "Surface fitting, interpolation and arbitrage constraints (butterfly and calendar spreads) are a daily numerical task, and the fitted surface is the calibration target for local-vol and stochastic-vol models used in exotics pricing.",
+  "summary": [
+    "Implied vol = the $\\sigma$ reproducing a market price; invert via Newton/bisection or approximate with vega ($\\Delta\\sigma \\approx \\Delta P/\\nu$).",
+    "Worked quote: $12.00 ATM vs model \\$10.45 at 20% gives implied vol $\\approx 24.1\\%$.",
+    "Smile = IV by strike; equity skew prices downside fear; FX smiles both wings; the surface adds the maturity axis.",
+    "A smile proves constant-vol lognormal BS is misspecified; responses: local vol (Dupire), stochastic vol (Heston), jumps.",
+    "Parity forces same-strike calls and puts to share one implied vol - the surface's built-in consistency check."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "Implied volatility is best defined as:",
+      "options": [
+        "The sigma that makes Black-Scholes reproduce the observed market price",
+        "The historical standard deviation of log returns",
+        "The market's unbiased forecast of future realized vol",
+        "The volatility input the exchange publishes daily"
+      ],
+      "answerIndex": 0,
+      "explanation": "It is a model inversion of a price - a quote convention. It is neither historical vol (1) nor an unbiased forecast (2); it embeds risk premium and supply/demand."
+    },
+    {
+      "id": "q2",
+      "type": "numeric",
+      "prompt": "Model price \\$10.45, market price \\$12.00, vega 0.375 per vol point. Estimate the implied volatility in percent (e.g. 21.5).",
+      "answer": 24.1,
+      "tolerance": 0.3,
+      "unit": "%",
+      "explanation": "$(12.00 - 10.45)/0.375 = 4.13$ points above 20% = 24.13, confirmed by exact inversion at about 24.1%."
+    },
+    {
+      "id": "q3",
+      "type": "mcq",
+      "prompt": "The classic equity index volatility skew shows:",
+      "options": [
+        "Higher implied vols for low-strike (OTM put) options than for ATM",
+        "Higher implied vols for high-strike (OTM call) options than for ATM",
+        "Flat implied vols across all strikes",
+        "Implied vols independent of maturity"
+      ],
+      "answerIndex": 0,
+      "explanation": "Demand for downside protection plus fat left tails push OTM put vols above ATM - the signature put skew of equity index surfaces."
+    },
+    {
+      "id": "q4",
+      "type": "ms",
+      "prompt": "Which statements about the volatility surface are correct?",
+      "options": [
+        "A call and a put with the same strike and expiry must imply the same volatility",
+        "The existence of a smile implies Black-Scholes' constant-vol lognormal assumption is misspecified",
+        "Implied volatility is a direct, unbiased forecast of realized volatility",
+        "Exotic books are marked and vega-bucketed against a fitted surface"
+      ],
+      "answerIndices": [
+        0,
+        1,
+        3
+      ],
+      "explanation": "Parity pins the same-strike IV (0); the smile is the diagnosis of misspecification (1); surfaces drive marking and bucketed vega (3). Statement 2 confuses a price quote with a forecast."
+    },
+    {
+      "id": "q5",
+      "type": "numeric",
+      "prompt": "ATM model price \\$10.45 at 20% vol. A quote uses implied vol 22% with vega 0.375 per point. Estimate the quoted price.",
+      "answer": 11.2,
+      "tolerance": 0.05,
+      "unit": "\\$",
+      "explanation": "$10.45 + 2 \\times 0.375 = 11.20$ - vega converts vol points into price linearly to first order."
+    },
+    {
+      "id": "q6",
+      "type": "short",
+      "prompt": "Why do out-of-the-money equity index puts trade at higher implied volatilities than at-the-money options?",
+      "modelAnswer": "Markets price fatter left tails than the lognormal allows - crash risk and leveraged downside - and there is persistent hedging demand for downside protection, so OTM puts carry a volatility risk premium that shows up as skew.",
+      "keywords": [
+        "crash",
+        "skew",
+        "fat tail",
+        "protection"
+      ],
+      "explanation": "Higher OTM put IVs are the market's way of paying more than lognormal diffusion would for left-tail outcomes; supply of upside and demand for downside protection complete the story."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "definition",
+      "front": "Implied volatility",
+      "back": "The sigma input that makes Black-Scholes reproduce an observed option price - a quote convention, not a forecast."
+    },
+    {
+      "type": "formula",
+      "front": "Vega-based vol inversion",
+      "back": "$\\Delta\\sigma \\approx \\Delta P / \\nu$; accurate locally because vega changes slowly with sigma."
+    },
+    {
+      "type": "concept",
+      "front": "Smile vs skew",
+      "back": "Smile: U-shaped IV across strikes (FX). Skew: monotone tilt - equity indices price OTM puts rich (crash fear + hedging demand)."
+    },
+    {
+      "type": "concept",
+      "front": "Parity and the surface",
+      "back": "Same-strike, same-expiry call and put share one implied vol: $C - P = S - Ke^{-rT}$ independent of sigma."
+    }
+  ],
+  "references": [
+    {
+      "label": "CBOE - VIX White Paper (implied vol index methodology)",
+      "url": "https://www.cboe.com/us/indices/documents/vix-white.pdf"
+    },
+    {
+      "label": "Gatheral, The Volatility Surface (book overview / lecture notes)",
+      "url": "https://www.wiley.com/en-us/The+Volatility+Surface%3A+A+Practitioner%27s+Guide-p-9780471792513"
+    }
+  ],
+  "skills": [
+    "options"
+  ]
+}

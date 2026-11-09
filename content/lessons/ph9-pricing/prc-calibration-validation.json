@@ -1,0 +1,429 @@
+{
+  "id": "prc-calibration-validation",
+  "moduleId": "ph9-pricing",
+  "title": "Calibration, Implied Volatility and Model Validation",
+  "estMinutes": 28,
+  "difficulty": "specialist",
+  "prereqs": [
+    "opt-volatility-surfaces"
+  ],
+  "objectives": [
+    "Formulate implied volatility as an inverse problem and state the no-arbitrage band that guarantees a solution exists",
+    "Solve the inversion with Newton-Raphson using vega as the derivative, and verify quadratic convergence on a full iteration trace",
+    "Apply a bracketed bisection fallback and reject quotes that fall outside the no-arbitrage bounds",
+    "Calibrate a model to a multi-strike volatility surface and quantify fit with RMS error and vega-weighted sensitivities",
+    "Run a model validation checklist covering assumption review, numerical convergence, P&L attribution and stress behaviour"
+  ],
+  "motivation": "A broker sends your desk five option quotes. Black-Scholes is a forward machine - inputs in, price out - but the desk's day runs backwards: prices in, model parameters out. The volatility that makes the model reproduce each quote is the implied volatility, and the previous lesson built a surface out of exactly these numbers. Here we build the machinery underneath: a solver fast enough for intraday recalibration, a fallback that never diverges, and the validation checklist that decides whether anyone should trust the model at all.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Pricing forward, inverting backward"
+    },
+    {
+      "type": "p",
+      "md": "Black-Scholes is a *forward* problem: hand the model $S$, $K$, $r$, $T$ and a volatility $\\sigma$, and it returns a price. The market runs the other way: it hands you a traded price, and you need the model input that reproduces it. That inversion is the **implied volatility** - the unique $\\sigma$ solving $C_{\\mathrm{BS}}(\\sigma) = C_{\\mathrm{market}}$. There is no closed form for $\\sigma$, so this is a numerical root-finding problem - the same Newton-Raphson machinery from numerical analysis, pointed at a pricing function."
+    },
+    {
+      "type": "math",
+      "tex": "C_{\\mathrm{BS}}(\\sigma) = S\\,N(d_1) - K e^{-rT} N(d_2), \\quad d_{1,2} = \\frac{\\ln(S/K) + (r \\pm \\tfrac{1}{2}\\sigma^2)T}{\\sigma\\sqrt{T}}, \\quad \\text{vega} = \\frac{\\partial C_{\\mathrm{BS}}}{\\partial \\sigma} = S\\sqrt{T}\\,\\varphi(d_1)",
+      "caption": "The pricing map and its derivative. Newton's update: sigma_{n+1} = sigma_n - (C_BS(sigma_n) - C_market) / vega(sigma_n)."
+    },
+    {
+      "type": "p",
+      "md": "Two facts make the inversion well-posed. First, the call price is **strictly increasing** in $\\sigma$ because vega $> 0$ for every $\\sigma > 0$: more uncertainty, more option value, so the root is unique. Second, no-arbitrage traps the price in the band $S - Ke^{-rT} < C_{\\mathrm{BS}} < S$. For our benchmark ($S=100$, $K=100$, $r=5\\%$, $T=1$) the band is $(4.8771,\\ 100)$, since $Ke^{-rT} = 95.1229$. Any quote inside it has exactly one implied vol; any quote outside it has none, and no solver should even try - a crossed or stale quote is a data problem, not a numerical one."
+    },
+    {
+      "type": "interactive",
+      "component": "BlackScholesLab",
+      "params": {
+        "spot": 100,
+        "strike": 100,
+        "rate": 0.05,
+        "vol": 0.2,
+        "maturity": 1,
+        "type": "call"
+      },
+      "caption": "The benchmark call: at vol 20% the model prints $10.4506$, matching the market quote we invert below. Drag vol to 50% and watch the model price run to $21.79$ - that overshoot is the residual Newton must eliminate."
+    },
+    {
+      "type": "h2",
+      "text": "Newton-Raphson with vega, every step verified"
+    },
+    {
+      "type": "steps",
+      "title": "Full trace: invert the quote 10.4506, starting from sigma = 0.50",
+      "items": [
+        "**Iteration 0.** $\\sigma_0 = 0.500000$. Then $d_1 = \\tfrac{(0.05 + 0.125)\\times 1}{0.5 \\times 1} = 0.350000$ and $d_2 = 0.35 - 0.50 = -0.150000$. The model prices the option at $C_{\\mathrm{BS}} = 21.792604$, so the residual is $21.792604 - 10.4506 = +11.342004$. Vega $= 100 \\times \\varphi(0.35) = 100 \\times 0.375240 = 37.524035$. Update: $\\sigma_1 = 0.50 - \\tfrac{11.342004}{37.524035} = 0.50 - 0.302260 = 0.197740$.",
+        "**Iteration 1.** $\\sigma_1 = 0.197740$. Now $d_1 = 0.351727$, $d_2 = 0.153987$, price $= 10.365815$, residual $= -0.084785$, vega $= 37.501303$. Update: $\\sigma_2 = 0.197740 + \\tfrac{0.084785}{37.501303} = 0.197740 + 0.002261 = 0.200001$.",
+        "**Iteration 2.** $\\sigma_2 = 0.200001$: price $= 10.450626$, residual $= +0.000026$, vega $= 37.524046$. Update: $\\sigma_3 = 0.200001 - \\tfrac{0.000026}{37.524046} = 0.200001 - 0.0000007 = 0.200000$.",
+        "**Iteration 3.** $\\sigma_3 = 0.200000$: price $= 10.450600$, residual below print precision. Converged: $\\sigma^{*} \\approx 0.2000$, and the quote of 10.4506 is reproduced to four decimals."
+      ]
+    },
+    {
+      "type": "table",
+      "headers": [
+        "n",
+        "sigma_n",
+        "C_BS(sigma_n)",
+        "residual",
+        "vega",
+        "sigma_{n+1}"
+      ],
+      "rows": [
+        [
+          "0",
+          "0.500000",
+          "21.792604",
+          "+11.342004",
+          "37.5240",
+          "0.197740"
+        ],
+        [
+          "1",
+          "0.197740",
+          "10.365815",
+          "-0.084785",
+          "37.5013",
+          "0.200001"
+        ],
+        [
+          "2",
+          "0.200001",
+          "10.450626",
+          "+0.000026",
+          "37.5240",
+          "0.200000"
+        ],
+        [
+          "3",
+          "0.200000",
+          "10.450600",
+          "+0.000000",
+          "37.5240",
+          "0.200000 (converged)"
+        ]
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Quadratic convergence, visible",
+      "md": "Watch the error shrink: $\\sigma$ starts $0.300$ away from the root, then the miss is $0.002260$, then $0.000001$, then below print precision. Each Newton step roughly squares the error, which is why a healthy solve costs three or four pricing calls - and why a solve suddenly needing fifty is a symptom, not bad luck."
+    },
+    {
+      "type": "h2",
+      "text": "When Newton fails: the vega-death zone and bisection"
+    },
+    {
+      "type": "p",
+      "md": "Vega is not always healthy. Take $S=100$, $K=180$, $r=0.05$, $T=0.05$ (five weeks, eighty points out of the money) and a quote of 0.0100. At $\\sigma = 0.5$ the model price is $2.2 \\times 10^{-7}$ with vega $1.34 \\times 10^{-5}$, so the first Newton step is $0.5 - \\tfrac{2.2\\times10^{-7} - 0.0100}{1.34\\times10^{-5}} = 748.78$ - the iterate explodes into the flat, vega-free region and never returns. Short-dated far-from-the-money options are the classic **vega-death zone**: $\\sqrt{T}$ shrinks and $\\varphi(d_1)$ collapses, so the very sensitivity that drives Newton vanishes. The fix is not a cleverer starting point; it is a fallback that cannot fail."
+    },
+    {
+      "type": "p",
+      "md": "Bisection needs no derivative, only a sign change, and a bracket is easy to get: set $a$ just above zero and $b$ generously large (say $5.0$). Because the price climbs monotonically from $S - Ke^{-rT}$ to nearly $S$, **any** quote inside the no-arbitrage band satisfies $C_{\\mathrm{BS}}(a) < C_{\\mathrm{mkt}} < C_{\\mathrm{BS}}(b)$. For the benchmark quote, the bracket $[0.05, 1.0]$ already works - $C_{\\mathrm{BS}}(0.05) = 5.2833 < 10.4506 < 39.8402 = C_{\\mathrm{BS}}(1.0)$ - and each halving cuts the width exactly in half: after $n$ iterations the bracket width is $(b-a)/2^n$."
+    },
+    {
+      "type": "table",
+      "headers": [
+        "iter",
+        "midpoint",
+        "C_BS(midpoint)",
+        "action"
+      ],
+      "rows": [
+        [
+          "0",
+          "0.525000",
+          "22.729439",
+          "above quote, set hi = 0.525000"
+        ],
+        [
+          "1",
+          "0.287500",
+          "13.757031",
+          "above quote, set hi = 0.287500"
+        ],
+        [
+          "2",
+          "0.168750",
+          "9.283854",
+          "below quote, set lo = 0.168750"
+        ],
+        [
+          "3",
+          "0.228125",
+          "11.509243",
+          "above quote, set hi = 0.228125"
+        ],
+        [
+          "4",
+          "0.198438",
+          "10.391964",
+          "below quote, set lo = 0.198438"
+        ]
+      ]
+    },
+    {
+      "type": "p",
+      "md": "After 12 halvings the width is $0.95/2^{12} = 0.000232$ and the bracket is $[0.199829,\\ 0.200061]$ - slower than Newton, but guaranteed, which is exactly what you want when Newton misbehaves. Production solvers therefore run Newton while the iterate stays inside the bracket and vega stays healthy, and drop to bisection otherwise."
+    },
+    {
+      "type": "h2",
+      "text": "Calibrating to a five-strike surface"
+    },
+    {
+      "type": "p",
+      "md": "One solved strike is a point; the desk needs a surface, so the same inversion runs once per strike and expiry. To keep every number checkable, the quotes below are **hypothetical, generated with Black-Scholes itself** at the implied vols listed - a controlled experiment, not market data. Running the solver on each quote recovers them exactly: RMS pricing error $0.00$. Note the smile: wings at 23.5% and 22.8% vol, ATM at 20%. A flat 20% vol would misprice this surface with RMS vol error $\\sqrt{\\tfrac{0.035^2 + 0.015^2 + 0 + 0.01^2 + 0.028^2}{5}} = 0.0216$, i.e. **2.16 vol points** - that is the fitting job in one number."
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Strike",
+        "Hypothetical quote",
+        "Implied vol",
+        "Vega"
+      ],
+      "rows": [
+        [
+          "80",
+          "25.1378",
+          "0.235",
+          "17.5890"
+        ],
+        [
+          "90",
+          "17.1154",
+          "0.215",
+          "28.2669"
+        ],
+        [
+          "100",
+          "10.4506",
+          "0.200",
+          "37.5240"
+        ],
+        [
+          "110",
+          "6.4362",
+          "0.210",
+          "39.6503"
+        ],
+        [
+          "120",
+          "4.2269",
+          "0.228",
+          "35.7835"
+        ]
+      ],
+      "caption": "Single expiry T=1, S=100, r=5%. Vega peaks near the ATM strike and decays in both wings."
+    },
+    {
+      "type": "p",
+      "md": "Vega does double duty during calibration: it is both Newton's derivative and the surface's first-order sensitivity. Move the $K=110$ quote up by $0.20$ and the implied vol shifts by $\\Delta\\sigma \\approx 0.20 / 39.6503 = 0.0050$ - exact re-solve gives $0.215041$, the linear estimate $0.215044$. Low-vega wings move a lot in vol terms for tiny price noise, which is why desks calibrate with **vega-weighted least squares** rather than treating every strike equally."
+    },
+    {
+      "type": "h2",
+      "text": "The model validation checklist"
+    },
+    {
+      "type": "p",
+      "md": "A converged solver is the beginning of trust, not the end of it. Before a model may quote or hedge, a desk walks a fixed checklist:"
+    },
+    {
+      "type": "list",
+      "ordered": false,
+      "items": [
+        "**Assumption review.** Black-Scholes assumes lognormal dynamics, constant $r$ and $\\sigma$, no dividends, continuous hedging and frictionless trading. Name where each bends: a smile with skew means the market's implied distribution has fatter tails than lognormal, so constant-$\\sigma$ pricing is already a documented approximation.",
+        "**Numerical convergence.** Re-price with a tighter solver tolerance, finer time grids, more Monte Carlo paths: the answer must stabilise. Log solver iterations - the benchmark needed four; a jump to fifty on the same surface flags vega death or a bad quote.",
+        "**P&L attribution.** Revalue yesterday's book with today's inputs and explain the change. With delta $2{,}000$ shares and spot up $0.80$, delta P&L predicts $2{,}000 \\times 0.80 = 1{,}600$; if the desk booked $1{,}712$, the unprocessed $$ = \\$112 must be attributed to gamma, vega and theta. Persistent unexplained P&L means the model misdescribes the market, whatever its in-sample fit.",
+        "**Stress behaviour.** Push inputs to extremes: as $\\sigma \\to 0$ the price must floor at $S - Ke^{-rT} = 4.8771$, never NaN; deep OTM short-dated quotes must route through the bisection fallback; a ten-sigma spot move should degrade gracefully, not explode."
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "warn",
+      "title": "Calibrated is not validated",
+      "md": "A model that reprices its calibration set perfectly has passed a necessary but insufficient test - the solver reproduces the very inputs you fitted to. Validation lives out of sample: held-out strikes and expiries, weeks of P&L attribution, stress runs. If the smile shifts tomorrow and your calibrated surface does not follow, no number of in-sample decimal places will save you."
+    },
+    {
+      "type": "h2",
+      "text": "Reference solver"
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import math\n\ndef norm_cdf(x):\n    return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))\n\ndef norm_pdf(x):\n    return math.exp(-0.5 * x * x) / math.sqrt(2.0 * math.pi)\n\ndef bs_call(S, K, r, T, sigma):\n    d1 = (math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * math.sqrt(T))\n    d2 = d1 - sigma * math.sqrt(T)\n    price = S * norm_cdf(d1) - K * math.exp(-r * T) * norm_cdf(d2)\n    vega = S * math.sqrt(T) * norm_pdf(d1)          # dPrice/dSigma\n    return price, vega\n\ndef implied_vol(price, S, K, r, T, sigma0=0.5, tol=1e-10, max_iter=50):\n    lo, hi = 1e-9, 5.0\n    p_lo, p_hi = bs_call(S, K, r, T, lo)[0], bs_call(S, K, r, T, hi)[0]\n    if not (p_lo < price < p_hi):\n        raise ValueError(f\"quote {price:.4f} outside no-arbitrage band ({p_lo:.4f}, {p_hi:.4f})\")\n\n    sigma = sigma0\n    for it in range(max_iter):\n        p, vega = bs_call(S, K, r, T, sigma)\n        step = (p - price) / vega                    # Newton step\n        nxt = sigma - step\n        if not (lo < nxt < hi) or vega < 1e-8:       # safeguard: wild step or vega death\n            break                                     # fall through to bisection\n        print(f\"  newton  it={it}  sigma={sigma:.6f}  price={p:.6f}  resid={p-price:+.6f}  vega={vega:.4f}\")\n        sigma = nxt\n        if abs(p - price) < tol:\n            return sigma, it\n\n    print(\"  falling back to bisection\")\n    a, b = lo, hi\n    for it in range(200):\n        mid = 0.5 * (a + b)\n        if bs_call(S, K, r, T, mid)[0] > price:\n            b = mid\n        else:\n            a = mid\n        if b - a < 1e-12:\n            break\n    return 0.5 * (a + b), it\n\n# Demo 1: the benchmark case, Newton from 0.5\nvol, its = implied_vol(10.4506, 100.0, 100.0, 0.05, 1.0)\nprint(f\"demo 1: sigma* = {vol:.6f}  ({its} newton iterations)\")\n\n# Demo 2: vega death - deep OTM short-dated option, quote 0.0100\nvol2, _ = implied_vol(0.0100, 100.0, 180.0, 0.05, 0.05, sigma0=0.5)\nprint(f\"demo 2: sigma* = {vol2:.6f}\")",
+      "caption": "Verified output: Newton trace it=0..3 exactly as the table above, then \"demo 1: sigma* = 0.200000 (3 newton iterations)\"; demo 2 trips the safeguard (\"falling back to bisection\") and returns sigma* = 0.872877, which reprices the 0.0100 quote exactly."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "// implied_vol.cpp - C++17 reference: Newton-Raphson implied volatility\n// with a bracketed bisection fallback. Compile: g++ -std=c++17 -O2 implied_vol.cpp\n#include <cmath>\n#include <cstdio>\n#include <stdexcept>\n\nconstexpr double kPi = std::acos(-1.0);\n\ndouble normCdf(double x) { return 0.5 * std::erfc(-x / std::sqrt(2.0)); }\ndouble normPdf(double x) { return std::exp(-0.5 * x * x) / std::sqrt(2.0 * kPi); }\n\nstruct Quote { double price, vega; };\n\nQuote bsCall(double S, double K, double r, double T, double sigma) {\n    double d1 = (std::log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * std::sqrt(T));\n    double d2 = d1 - sigma * std::sqrt(T);\n    double price = S * normCdf(d1) - K * std::exp(-r * T) * normCdf(d2);\n    return {price, S * std::sqrt(T) * normPdf(d1)};\n}\n\ndouble impliedVol(double price, double S, double K, double r, double T,\n                  double sigma0 = 0.5, double tol = 1e-10, int maxIter = 50) {\n    const double lo = 1e-9, hi = 5.0;\n    double pLo = bsCall(S, K, r, T, lo).price, pHi = bsCall(S, K, r, T, hi).price;\n    if (price <= pLo || price >= pHi)\n        throw std::invalid_argument(\"quote outside no-arbitrage band (S - K e^-rT, S)\");\n\n    double sigma = sigma0;\n    for (int it = 0; it < maxIter; ++it) {\n        Quote q = bsCall(S, K, r, T, sigma);\n        double nxt = sigma - (q.price - price) / q.vega;      // Newton step\n        if (q.vega < 1e-8 || nxt <= lo || nxt >= hi) break;   // safeguard -> bisection\n        std::printf(\"  newton  it=%d  sigma=%.6f  price=%.6f  resid=%+.6f  vega=%.4f\\n\",\n                    it, sigma, q.price, q.price - price, q.vega);\n        sigma = nxt;\n        if (std::fabs(q.price - price) < tol) return sigma;\n    }\n    std::printf(\"  falling back to bisection\\n\");\n    double a = lo, b = hi;\n    for (int it = 0; it < 200; ++it) {\n        double mid = 0.5 * (a + b);\n        if (bsCall(S, K, r, T, mid).price > price) b = mid; else a = mid;\n        if (b - a < 1e-12) break;\n    }\n    return 0.5 * (a + b);\n}\n\nint main() {\n    double vol = impliedVol(10.4506, 100.0, 100.0, 0.05, 1.0);\n    std::printf(\"sigma* = %.6f\\n\", vol);\n    double vol2 = impliedVol(0.0100, 100.0, 180.0, 0.05, 0.05);\n    std::printf(\"deep OTM: sigma* = %.6f\\n\", vol2);\n}",
+      "caption": "Same algorithm in C++17 - identical trace, sigma* = 0.200000, deep-OTM demo recovers 0.872877 (compiled with g++ -std=c++17 -O2 and run to verify)."
+    },
+    {
+      "type": "ref",
+      "items": [
+        {
+          "label": "Wikipedia - Newton's method (convergence theory)",
+          "url": "https://en.wikipedia.org/wiki/Newton%27s_method"
+        },
+        {
+          "label": "cppreference - std::erf / std::erfc",
+          "url": "https://en.cppreference.com/w/cpp/numeric/math/erf"
+        },
+        {
+          "label": "Gatheral - The Volatility Surface: A Practitioner's Guide (Wiley)",
+          "url": "https://www.wiley.com/en-us/The+Volatility+Surface%3A+A+Practitioner%27s+Guide-p-9780471792512"
+        }
+      ]
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "The benchmark call ($S=100$, $K=100$, $r=0.05$, $T=1$) is quoted at 14.6813. At $\\sigma = 0.30$ the model prices it at 14.2313 with vega 37.9433. Compute the next Newton iterate, then check how close you landed to the exact implied volatility.",
+    "hints": [
+      "The residual is model minus quote; work out its sign before dividing by vega.",
+      "One Newton step: $\\sigma_1 = \\sigma_0 - (C_{\\mathrm{BS}} - C_{\\mathrm{mkt}})/\\text{vega}$."
+    ],
+    "solution": "Residual $= 14.2313 - 14.6813 = -0.4500$ (model below quote), so the correction is positive: $\\sigma_1 = 0.30 - \\tfrac{-0.45}{37.9433} = 0.30 + 0.011860 = 0.311860$. Solving to machine precision with bisection gives $\\sigma^{*} = 0.311861$ - a single Newton step already lands within $10^{-6}$ of the root."
+  },
+  "independentExercise": {
+    "prompt": "A 1-year $K=90$ call ($S=100$, $r=0.05$) is quoted at 17.20; the model at $\\sigma = 0.215$ prices it at 17.1154 with vega 28.2669. (a) Compute one Newton step. (b) The desk then revises the quote down by 0.20 to 17.00 - estimate the implied-vol move with vega alone, without re-solving.",
+    "hints": [
+      "Residual $= 17.1154 - 17.20 = -0.0846$; divide by vega for the correction.",
+      "Vega is $\\partial C / \\partial \\sigma$, so $\\Delta\\sigma \\approx \\Delta C_{\\mathrm{mkt}} / \\text{vega}$."
+    ],
+    "solution": "(a) $\\sigma_1 = 0.215 + \\tfrac{0.0846}{28.2669} = 0.215 + 0.002993 = 0.217993$; machine-precision solving gives $\\sigma^{*} = 0.217982$, so one step lands within $1.1 \\times 10^{-5}$. (b) $\\Delta\\sigma \\approx -0.20/28.2669 = -0.00708$ - about 0.71 vol points down, from roughly 0.2180 toward 0.2109 (the exact answer is 0.210896, so the linear estimate is excellent here because vega barely moves over the shift)."
+  },
+  "commonMistakes": [
+    "Iterating Newton on a quote outside the no-arbitrage band $(S - Ke^{-rT},\\ S)$ - there is no root, so the solver wanders forever. Reject the quote first, then solve.",
+    "Forgetting the $e^{-rT}$ discount on the strike, or pairing $d_1$'s cumulative normal with the wrong leg of the price formula.",
+    "Trusting Newton where vega is tiny (deep OTM, very short maturity) without a bracketed bisection fallback and an iterate clamp.",
+    "Calling a model validated because it reprices the strikes it was calibrated on - in-sample fit proves the solver, not the model.",
+    "Equal-weighting all strikes in calibration: low-vega wings carry huge vol uncertainty for tiny price noise and should be down-weighted."
+  ],
+  "realWorldApplication": "Every options desk, risk system and VAR engine turns traded prices into implied vols at the start of each day; a calibrated surface plus a documented validation checklist - assumptions, convergence, P&L attribution, stress - is exactly what model-risk policies require before a model may quote or hedge.",
+  "quantFinanceApplication": "The solver pattern shown here - Newton with vega, a clamp plus bisection safeguard, and a no-arbitrage band check - mirrors what production libraries such as QuantLib implement in their implied-volatility helpers: invert each quote, fit the surface, then reprice daily and attribute P&L.",
+  "summary": [
+    "Implied volatility is the inverse problem: find $\\sigma$ with $C_{\\mathrm{BS}}(\\sigma) = C_{\\mathrm{market}}$; vega $> 0$ guarantees monotonicity and the band $(S - Ke^{-rT},\\ S)$ guarantees existence.",
+    "Newton-Raphson with vega as the derivative converges quadratically: from 0.50, the benchmark quote solved to 0.200000 in three corrections, error $0.30 \\to 0.0023 \\to 10^{-6}$.",
+    "Bisection with a valid bracket never fails; the price runs monotonically from $S - Ke^{-rT}$ to $S$, so any in-band quote brackets with $a \\approx 0$, $b$ large, and the width after $n$ halvings is $(b-a)/2^n$.",
+    "Calibration repeats the inversion per strike/expiry and fits the surface; a flat 20% vol misses the illustrative five-strike smile by 2.16 vol points RMS, and vega weights the fit.",
+    "Validation is a checklist, not a repricing: assumptions, numerical convergence, P&L attribution (explain the unexplained \\$112) and stress behaviour (the 4.8771 floor, the vega-death fallback)."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "The implied volatility of a quoted option is:",
+      "options": [
+        "the $\\sigma$ that makes the Black-Scholes price equal the observed market price",
+        "the annualised standard deviation of the option's recent log returns",
+        "the model's unbiased forecast of future realised volatility",
+        "the risk-free rate adjusted for the option's leverage"
+      ],
+      "answerIndex": 0,
+      "explanation": "Implied vol is defined by inversion: solve $C_{\\mathrm{BS}}(\\sigma) = C_{\\mathrm{market}}$. It need not equal historical or future realised volatility - it is the market's current consensus priced through the model."
+    },
+    {
+      "id": "q2",
+      "type": "numeric",
+      "prompt": "For the benchmark call ($S=100$, $K=100$, $r=0.05$, $T=1$) a quote of 14.6813 is being inverted. At $\\sigma = 0.30$ the model price is 14.2313 and vega is 37.9433. What is the next Newton iterate $\\sigma_1$, to 5 decimal places?",
+      "answer": 0.31186,
+      "tolerance": 0.0001,
+      "explanation": "Residual $= 14.2313 - 14.6813 = -0.45$, so $\\sigma_1 = 0.30 - (-0.45)/37.9433 = 0.30 + 0.011860 = 0.31186$. The exact root is 0.311861."
+    },
+    {
+      "id": "q3",
+      "type": "ms",
+      "prompt": "Which situations make an implied-vol solve ill-posed or Newton unreliable?",
+      "options": [
+        "The quote sits below the lower bound $S - Ke^{-rT}$",
+        "Vega at the current iterate is near zero (deep OTM, very short maturity)",
+        "An ATM one-year quote whose vega is about 37",
+        "A quote of 10.4506 on the benchmark call"
+      ],
+      "answerIndices": [
+        0,
+        1
+      ],
+      "explanation": "Outside the no-arbitrage band no root exists, so the problem is ill-posed; near-zero vega makes Newton steps explode and requires the bisection fallback. A healthy ATM quote (large vega, in-band) is the easy case Newton is made for."
+    },
+    {
+      "id": "q4",
+      "type": "numeric",
+      "prompt": "Bisection is run on the bracket $[0.05, 1.0]$ for the benchmark quote. What is the bracket width after 12 halvings, to 6 decimal places?",
+      "answer": 0.000232,
+      "tolerance": 5e-06,
+      "explanation": "Width $= (1.0 - 0.05)/2^{12} = 0.95/4096 = 0.000232$. The final bracket is $[0.199829,\\ 0.200061]$ around the root 0.20."
+    },
+    {
+      "id": "q5",
+      "type": "code-output",
+      "prompt": "This solver inverts the benchmark quote 10.4506 with three Newton updates. What does it print?",
+      "language": "python",
+      "code": "import math\n\ndef ncdf(x):\n    return 0.5 * (1 + math.erf(x / math.sqrt(2)))\n\ndef npdf(x):\n    return math.exp(-0.5 * x * x) / math.sqrt(2 * math.pi)\n\nS, K, r, T, C = 100, 100, 0.05, 1.0, 10.4506\nsig = 0.5\nfor _ in range(3):\n    d1 = (math.log(S / K) + (r + 0.5 * sig * sig) * T) / (sig * math.sqrt(T))\n    price = S * ncdf(d1) - K * math.exp(-r * T) * ncdf(d1 - sig * math.sqrt(T))\n    vega = S * math.sqrt(T) * npdf(d1)\n    sig -= (price - C) / vega\nprint(round(sig, 4))",
+      "answer": "0.2",
+      "explanation": "The trace is the lesson's: 0.500000 -> 0.197740 -> 0.200001 -> 0.200000, and round(0.2000003..., 4) prints 0.2."
+    },
+    {
+      "id": "q6",
+      "type": "short",
+      "prompt": "A calibrated surface shows an implied-vol smile. In one or two sentences, why can no single constant $\\sigma$ reproduce it, and name the two standard modelling responses.",
+      "modelAnswer": "A smile means different strikes trade at different implied vols, but Black-Scholes prices every strike off the same constant lognormal sigma, so one value cannot fit the whole surface. The standard responses are local volatility (sigma as a deterministic function of S and t) and stochastic volatility (a second random factor driving variance).",
+      "keywords": [
+        "smile",
+        "constant",
+        "local",
+        "stochastic"
+      ],
+      "explanation": "One constant $\\sigma$ pins one flat price curve; the smile is the market's way of encoding non-lognormal tails. Local vol and stochastic vol are the two standard ways to let $\\sigma$ vary by strike/time."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "definition",
+      "front": "What is implied volatility?",
+      "back": "The sigma that makes the model price equal the market quote: the solution of C_BS(sigma) = C_market. No closed form; found by root-finding, unique when the quote is inside the no-arbitrage band."
+    },
+    {
+      "type": "formula",
+      "front": "Newton-Raphson update for implied volatility",
+      "back": "sigma_{n+1} = sigma_n - (C_BS(sigma_n) - C_mkt) / vega(sigma_n), with vega = S*sqrt(T)*phi(d1)."
+    },
+    {
+      "type": "concept",
+      "front": "Bracket rule for the bisection fallback",
+      "back": "Find a, b with C_BS(a) < quote < C_BS(b). The call price rises monotonically from S - K*e^(-rT) to nearly S, so a just above 0 and b large (e.g. 5) brackets any in-band quote."
+    },
+    {
+      "type": "concept",
+      "front": "Vega death",
+      "back": "Deep OTM or very short-dated options: vega can fall below 1e-5, so one Newton step explodes (e.g. sigma jumps to ~749). Clamp the iterate and switch to bracketed bisection."
+    },
+    {
+      "type": "formula",
+      "front": "Bisection width after n halvings",
+      "back": "(b - a)/2^n. From [0.05, 1.0], 12 iterations leave width 0.95/2^12 = 0.000232."
+    }
+  ],
+  "references": [
+    {
+      "label": "Wikipedia - Newton's method (quadratic convergence)",
+      "url": "https://en.wikipedia.org/wiki/Newton%27s_method"
+    },
+    {
+      "label": "Gatheral - The Volatility Surface: A Practitioner's Guide (Wiley)",
+      "url": "https://www.wiley.com/en-us/The+Volatility+Surface%3A+A+Practitioner%27s+Guide-p-9780471792512"
+    },
+    {
+      "label": "cppreference - std::erf / std::erfc",
+      "url": "https://en.cppreference.com/w/cpp/numeric/math/erf"
+    }
+  ],
+  "skills": [
+    "pricing",
+    "numerical-finance"
+  ]
+}

@@ -1,0 +1,226 @@
+{
+  "id": "la-linear-systems",
+  "moduleId": "ph1-linear-algebra",
+  "title": "Systems of Linear Equations and Gaussian Elimination",
+  "estMinutes": 28,
+  "difficulty": "core",
+  "prereqs": [
+    "la-matrices-operations"
+  ],
+  "objectives": [
+    "Rewrite a system of linear equations in the matrix form Ax = b and build the augmented matrix",
+    "Solve small systems by Gaussian elimination with back-substitution",
+    "Classify a system as uniquely solvable, underdetermined (infinitely many) or inconsistent",
+    "Use np.linalg.solve correctly and explain why numerical code avoids computing explicit inverses"
+  ],
+  "motivation": "Suppose a fund must hold \\$x of asset A and \\$y of asset B so that total capital is exactly \\$5,000 while meeting a delta-exposure target - two equations, two unknowns. Now scale up: hedging a book against 200 risk factors means solving a 200-variable linear system, and fitting a regression means solving one too. Ax = b is the most frequently solved problem in quantitative software, and Gaussian elimination is the algorithm inside every serious solver.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "From equations to Ax = b"
+    },
+    {
+      "type": "p",
+      "md": "A **linear system** is a list of equations, each demanding that a weighted sum of unknowns equal a target. Collect the coefficients into a matrix $A$, the unknowns into a vector $x$, and the targets into a vector $b$, and the whole system collapses into one matrix equation: $Ax = b$. From the previous lesson you know what this says: find the weights that build the target vector $b$ as a linear combination of the columns of $A$. That reframing - solving a system = assembling $b$ from $A$'s columns - is why solvability questions are really questions about span and independence."
+    },
+    {
+      "type": "math",
+      "tex": "\\begin{aligned} x + y + z &= 6 \\\\ x + 2y + 2z &= 9 \\\\ 2x + y + 3z &= 11 \\end{aligned} \\qquad\\Longleftrightarrow\\qquad \\begin{pmatrix} 1 & 1 & 1 \\\\ 1 & 2 & 2 \\\\ 2 & 1 & 3 \\end{pmatrix} \\begin{pmatrix} x \\\\ y \\\\ z \\end{pmatrix} = \\begin{pmatrix} 6 \\\\ 9 \\\\ 11 \\end{pmatrix}",
+      "caption": "Three equations, three unknowns - one matrix equation. Both descriptions carry identical information."
+    },
+    {
+      "type": "h2",
+      "text": "Gaussian elimination: systematically killing variables"
+    },
+    {
+      "type": "p",
+      "md": "The strategy is to combine equations so that variables disappear one at a time, leaving a triangular system that can be solved from the bottom up (**back-substitution**). Three legal moves - called **elementary row operations** - never change the solution set: swap two equations; multiply an equation by a nonzero constant; add a multiple of one equation to another. We work on the **augmented matrix** (coefficients with the $b$ column attached) so the targets travel with their equations."
+    },
+    {
+      "type": "steps",
+      "title": "Worked example: elimination on a 3-variable system",
+      "items": [
+        "System: $x + y + z = 6$; $x + 2y + 2z = 9$; $2x + y + 3z = 11$.",
+        "Kill $x$ from equation 2: R2 $\\leftarrow$ R2 - R1 gives $y + z = 3$.",
+        "Kill $x$ from equation 3: R3 $\\leftarrow$ R3 - 2R1 gives $-y + z = -1$.",
+        "Kill $y$ from the new R3: R3 $\\leftarrow$ R3 + R2 gives $2z = 2$, so $z = 1$.",
+        "Back-substitute: $y + 1 = 3$ gives $y = 2$; then $x + 2 + 1 = 6$ gives $x = 3$.",
+        "Check all three original equations: $3+2+1 = 6$ ✓; $3 + 4 + 2 = 9$ ✓; $6 + 2 + 3 = 11$ ✓. Solution: $(x, y, z) = (3, 2, 1)$."
+      ]
+    },
+    {
+      "type": "interactive",
+      "component": "FunctionPlotter",
+      "params": {
+        "expressions": [
+          "2 - x",
+          "2*x - 4"
+        ],
+        "xmin": -2,
+        "xmax": 6,
+        "ymin": -6,
+        "ymax": 6
+      },
+      "caption": "A 2-variable system as geometry: y = 2 - x and y = 2x - 4 cross at exactly one point, x = 2, y = 0. Each equation is a line; the solution is the intersection."
+    },
+    {
+      "type": "h2",
+      "text": "Three possible outcomes"
+    },
+    {
+      "type": "p",
+      "md": "Elimination ends in one of three situations, and reading them off the echelon form is a skill in itself. If every variable ends up with a pivot (a leading nonzero), the system has exactly one solution. If elimination produces a row like $0 = 5$ - a **contradiction** - no solution exists: the system is **inconsistent**. If a variable ends up with no pivot (a **free variable**), solutions form a whole family: the system is **singular but consistent**. The $2 \\times 2$ examples make it vivid: $x + y = 2$ with $2x + 2y = 4$ has infinitely many solutions (the second equation is just the first doubled, determinant zero), while $x + y = 2$ with $2x + 2y = 5$ has none - two parallel lines that never meet."
+    },
+    {
+      "type": "h2",
+      "text": "The numerical-analysis view"
+    },
+    {
+      "type": "p",
+      "md": "Elimination costs roughly $\\tfrac{2}{3}n^3$ floating-point operations for an $n \\times n$ system - fast for hundreds of unknowns, and industrial solvers exploit sparsity to go far bigger. Two practical issues matter. First, **pivoting**: dividing by a tiny pivot amplifies rounding error, so robust implementations swap rows to always divide by the largest available coefficient; `np.linalg.solve` does this automatically (it runs LU factorisation with partial pivoting). Second, **conditioning**: if $A$ is nearly singular, tiny errors in $b$ produce huge errors in $x$ - the classic symptom of highly correlated inputs. And one habit to unlearn immediately: never form $A^{-1}$ to solve $Ax = b$ by computing $A^{-1}b$. It is slower, less accurate, and unnecessary - the LU factorisation already encodes everything the inverse would."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Why this matters for finance",
+      "md": "Ordinary least squares solves the normal equations $X^\\top X \\beta = X^\\top y$ - a linear system whose matrix is symmetric and positive definite, so production code uses the specialised (and stabler) Cholesky factorisation. A near-singular $X^\\top X$ means your factors are nearly collinear, and the resulting betas swing wildly on tiny data changes: linear algebra diagnostics are risk diagnostics."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import numpy as np\nA = np.array([[2.0, 3.0], [1.0, -2.0]])\nb = np.array([13.0, -4.0])\nprint(np.linalg.solve(A, b))    # [2. 3.]\nprint(np.linalg.det(A))         # -7.0 - nonzero, so unique solution exists",
+      "caption": "The system 2x + 3y = 13, x - 2y = -4 solves to x = 2, y = 3. Check: 4 + 9 = 13 and 2 - 6 = -4."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Solve by elimination: $\\;2x + 3y = 13\\;$ and $\\;x - 2y = -4$. State each row operation you use, then verify the solution in both original equations.",
+    "hints": [
+      "Scale the second equation so its x-coefficient matches the first's, then subtract.",
+      "Once one variable is gone, solve the remaining 1-variable equation and back-substitute."
+    ],
+    "solution": "R2 $\\leftarrow$ 2R2: $2x - 4y = -8$. Subtract from R1: $(2x + 3y) - (2x - 4y) = 7y = 13 - (-8) = 21$, so $y = 3$. Back-substitute into $x - 2y = -4$: $x = -4 + 6 = 2$. Check: $2(2) + 3(3) = 13$ ✓ and $2 - 6 = -4$ ✓. Solution: $x = 2$, $y = 3$."
+  },
+  "independentExercise": {
+    "prompt": "A fund must buy $x$ shares of asset A at \\$50 and $y$ shares of asset B at $25 so that total capital spent is exactly \\$5,000 and a delta-exposure target $0.9x + 0.4y = 86$ is met. Solve the system for $x$ and $y$ by elimination and verify both equations.",
+    "hints": [
+      "Divide the first equation by 25 to simplify it first - row operations include scaling.",
+      "Substitute the simplified relation into the exposure equation."
+    ],
+    "solution": "Scale R1 by $\\tfrac{1}{25}$: $2x + y = 200$, so $y = 200 - 2x$. Substitute into R2: $0.9x + 0.4(200 - 2x) = 86 \\Rightarrow 0.9x + 80 - 0.8x = 86 \\Rightarrow 0.1x = 6 \\Rightarrow x = 60$. Then $y = 200 - 120 = 80$. Check: $50(60) + 25(80) = 3000 + 2000 = 5000$ ✓ and $0.9(60) + 0.4(80) = 54 + 32 = 86$ ✓. The fund holds **60 shares of A and 80 of B**."
+  },
+  "commonMistakes": [
+    "Multiplying an equation by zero (illegal - it destroys information) or forgetting to apply the same operation to the right-hand side.",
+    "Declaring a system 'inconsistent' when it merely has infinitely many solutions - a contradiction row (0 = nonzero) is the only inconsistency signal.",
+    "Computing A^{-1} and multiplying, instead of calling a solver - slower and numerically worse.",
+    "Solving a nearly singular system without checking conditioning, then blaming the data when results swing."
+  ],
+  "realWorldApplication": "Circuit simulators, structural engineering solvers, logistics planners and every statistical fitting routine reduce their core computation to one large sparse linear solve, typically using the same elimination idea with aggressive pivoting and parallelism.",
+  "quantFinanceApplication": "Fitting a multi-factor return model, bootstrapping a yield curve from bond prices, and rebalancing a portfolio to target exposures are all linear systems: coefficients from the data, targets from the mandate, solution from Gaussian elimination (via LU or Cholesky).",
+  "summary": [
+    "Write systems as $Ax = b$: solving means building $b$ as a linear combination of the columns of $A$.",
+    "Gaussian elimination uses row operations to reach a triangular form, then back-substitutes; cost is $\\sim \\tfrac{2}{3}n^3$.",
+    "Outcomes: pivots in every row give a unique solution; a contradiction row gives none; a free variable gives infinitely many.",
+    "Use np.linalg.solve (LU with pivoting), not explicit inverses; near-singular matrices make solutions hypersensitive to input errors."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "After elimination, a system's augmented matrix contains the row $[\\,0 \\ 0 \\mid 5\\,]$. What does this mean?",
+      "options": [
+        "The system has infinitely many solutions",
+        "The system is inconsistent - no solution exists",
+        "The solution is z = 5",
+        "The system has exactly one solution"
+      ],
+      "answerIndex": 1,
+      "explanation": "The row reads $0x + 0y = 5$, i.e. $0 = 5$, which is false for every choice of $x, y$. A contradiction row means no solution. (A free variable, not a contradiction, gives infinitely many.)"
+    },
+    {
+      "id": "q2",
+      "type": "numeric",
+      "prompt": "Solve $2x + 3y = 13$, $x - 2y = -4$. What is $x$?",
+      "answer": 2,
+      "explanation": "Doubling the second equation and subtracting gives $7y = 21$, so $y = 3$; then $x = -4 + 2 \\times 3 = 2$."
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "For the same system, what is $y$?",
+      "answer": 3,
+      "explanation": "$7y = 21$ after elimination, so $y = 3$. Verification: $2(2) + 3(3) = 13$ ✓."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "A square system has coefficient matrix with determinant exactly 0. Which conclusion is safe?",
+      "options": [
+        "There is no solution",
+        "There are infinitely many solutions",
+        "There is no *unique* solution - either zero solutions or infinitely many",
+        "The solution is x = 0"
+      ],
+      "answerIndex": 2,
+      "explanation": "A zero determinant means the columns are dependent, so $A$ cannot invert and uniqueness fails. Whether you get zero or infinitely many solutions depends on $b$: $x + y = 2$, $2x + 2y = 4$ has infinitely many; $x + y = 2$, $2x + 2y = 5$ has none."
+    },
+    {
+      "id": "q5",
+      "type": "code-output",
+      "prompt": "What does this Python code print?",
+      "language": "python",
+      "code": "import numpy as np\nA = np.array([[2.0, 3.0], [1.0, -2.0]])\nb = np.array([13.0, -4.0])\nprint(np.linalg.solve(A, b))",
+      "answer": "[2. 3.]",
+      "explanation": "np.linalg.solve returns the solution as a 1-D float array: x = 2, y = 3, printed as [2. 3.]."
+    },
+    {
+      "id": "q6",
+      "type": "short",
+      "prompt": "Why do numerical libraries solve Ax = b by factorisation (LU) rather than by computing the explicit inverse A^{-1}?",
+      "modelAnswer": "Factorisation is cheaper (roughly half the work, no need to solve for all columns of the inverse) and numerically more accurate, especially with pivoting; the inverse is never needed to get x.",
+      "keywords": [
+        "cheaper",
+        "accurate",
+        "stable",
+        "pivot",
+        "inverse"
+      ],
+      "explanation": "Solving via LU with pivoting costs less arithmetic and accumulates less rounding error than forming $A^{-1}$ and multiplying; accuracy of $x$ is what matters, not having the inverse."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "What does Ax = b mean geometrically?",
+      "back": "Find weights x that build the vector b as a linear combination of the columns of A."
+    },
+    {
+      "type": "definition",
+      "front": "The three elementary row operations",
+      "back": "Swap two equations; multiply an equation by a nonzero constant; add a multiple of one equation to another. None change the solution set."
+    },
+    {
+      "type": "concept",
+      "front": "How to read the outcome of elimination",
+      "back": "Full pivots: unique solution. Contradiction row (0 = nonzero): inconsistent. Free variable: infinitely many solutions."
+    },
+    {
+      "type": "concept",
+      "front": "Why np.linalg.solve instead of np.linalg.inv(A) @ b?",
+      "back": "LU factorisation with pivoting is faster and numerically more accurate; the explicit inverse adds cost and error with no benefit."
+    }
+  ],
+  "references": [
+    {
+      "label": "MIT OpenCourseWare - 18.06, Lecture 2: Elimination",
+      "url": "https://ocw.mit.edu/courses/18-06-linear-algebra-spring-2010/"
+    },
+    {
+      "label": "NumPy documentation - numpy.linalg.solve",
+      "url": "https://numpy.org/doc/stable/reference/generated/numpy.linalg.solve.html"
+    }
+  ],
+  "skills": [
+    "linear-algebra",
+    "numerical-analysis"
+  ]
+}

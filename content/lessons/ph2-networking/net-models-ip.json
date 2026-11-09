@@ -1,0 +1,134 @@
+{
+  "id": "net-models-ip",
+  "moduleId": "ph2-networking",
+  "title": "Network Models, IP Addressing and DNS",
+  "estMinutes": 25,
+  "difficulty": "core",
+  "prereqs": ["cf-hardware-software"],
+  "objectives": [
+    "Explain the layered network model and identify which layer is responsible for framing, routing, ports and application semantics",
+    "Read IPv4 addresses in dotted-decimal and CIDR notation, and compute address counts for a prefix",
+    "Recognize private address ranges and explain what NAT does",
+    "Trace a DNS lookup from stub resolver to authoritative server and explain TTL-based caching"
+  ],
+  "motivation": "Your firm's order gateway cannot reach the exchange's matching engine, and the incident channel says 'check DNS'. To debug that in under a minute you need the layering reflex - where can a failure live: cable, route, port, or name? - plus the ability to read an address like 10.20.30.0/26 and know exactly how many machines fit. This lesson builds that vocabulary; the following lessons put TCP, UDP and sockets on top of it.",
+  "blocks": [
+    { "type": "h2", "text": "Layers: a stack of small contracts" },
+    { "type": "p", "md": "Networks are built as **layers**, each one using the service below and providing a service above. Your market-data message descends the stack on the way out: the application hands it to the transport layer, which wraps it in a segment with port numbers; the internet layer wraps that in a packet with IP addresses; the link layer wraps that in a frame with hardware addresses and sends it over the wire. On arrival the wrappers are peeled off in reverse. The academic OSI model has seven layers, but practitioners work with four: link, internet (IP), transport (TCP/UDP) and application. Layering is why a disk upgrade does not change your TCP code and a new NIC driver does not change your DNS parser - each layer only sees its neighbours' contracts." },
+    { "type": "table", "headers": ["Layer", "Examples", "Responsibility"], "rows": [
+      ["Application", "HTTP, DNS, FIX, ITCH market data", "Message semantics for the program"],
+      ["Transport", "TCP, UDP", "Process-to-process delivery via ports; reliability (TCP only)"],
+      ["Internet", "IPv4, IPv6, ICMP", "Addressing and routing packets between networks"],
+      ["Link", "Ethernet, ARP, fiber/PHY", "Deliver frames between directly connected machines"]
+    ] },
+    { "type": "p", "md": "Every wrapper costs bytes. A UDP market-data datagram carries at least 20 bytes of IPv4 header plus 8 bytes of UDP header; TCP segments carry 20 bytes plus connection state. At packet rates of hundreds of thousands per second, header overhead is a real bandwidth line item - one reason efficiency-minded protocols batch many updates into one datagram." },
+    { "type": "h2", "text": "IP addressing and CIDR" },
+    { "type": "p", "md": "An **IPv4 address** is 32 bits, written as four decimal bytes: 10.20.30.1. Networks are written in **CIDR** notation `address/prefix`, where the prefix fixes how many leading bits are the network part; the remaining **host bits** belong to individual machines. A `/24` has $32 - 24 = 8$ host bits, hence $2^8 = 256$ addresses. Two are reserved - the all-zero address names the network itself and the all-ones address is the broadcast - so a /24 offers 254 usable hosts. This arithmetic is pure powers of two, and you will do it in meetings, not in compilers." },
+    { "type": "steps", "title": "Worked example: a /26 block", "items": [
+      "The block `10.20.30.64/26`: host bits $= 32 - 26 = 6$, so $2^6 = 64$ addresses total.",
+      "The 64 addresses run from 10.20.30.64 to 10.20.30.127 (the block starts at a multiple of 64 in the last octet).",
+      "Reserved: 10.20.30.64 (network) and 10.20.30.127 (broadcast).",
+      "Usable hosts: $64 - 2 = 62$ - enough for a cage of gateways plus spares, not enough for a whole firm."
+    ] },
+    { "type": "p", "md": "**Private ranges** - 10.0.0.0/8, 172.16.0.0/12 and 192.168.0.0/16 - are not routable on the public internet. Datacenters fill subnets with them, and **NAT** (network address translation) rewrites private source addresses into shared public ones at the edge. Colocated trading infrastructure lives almost entirely in private space, with public reachability only where the outside world genuinely needs it." },
+    { "type": "interactive", "component": "MemoryLayout", "params": { "totalBytes": 4, "bytesPerRow": 4 }, "caption": "An IPv4 address is just 4 bytes: each 0-255, written dotted-decimal. 10.20.30.1 is the byte sequence 0x0A 0x14 0x1E 0x01." },
+    { "type": "h2", "text": "DNS: names to addresses" },
+    { "type": "p", "md": "Humans use names; IP uses addresses; **DNS** maps between them. Your program asks a **stub resolver** (the OS), which forwards to a **recursive resolver**; if the answer is not cached, the resolver walks the hierarchy - root servers point to `.com` servers, which point to the domain's **authoritative** servers, which hold the records. Record types matter: `A` maps a name to an IPv4 address, `AAAA` to IPv6, `CNAME` is an alias to another name. Every record carries a **TTL** (time to live) in seconds telling resolvers how long to cache it. Caching makes lookups fast but means changes propagate slowly - a TTL of 3600 can leave resolvers serving a stale address for an hour." },
+    { "type": "callout", "variant": "quant", "title": "DNS in a trading stack", "md": "Look up exchange endpoints once at startup and cache them in-process; resolving per message adds hundreds of microseconds and a failure mode that hijacks your tick loop. Production desks also pin critical peers to literal IPs in configuration, so a DNS outage cannot disconnect a venue - with runbooks to re-resolve on failover." }
+  ],
+  "guidedExercise": {
+    "prompt": "Your firm is assigned 192.168.4.0/22. (a) How many host bits are there? (b) How many total addresses? (c) How many usable hosts? (d) What is the range of addresses in this block (first and last)?",
+    "hints": [
+      "Host bits = 32 minus the prefix length.",
+      "The block size is a power of two aligned on that boundary: 192.168.4.0/22 starts at a multiple of 4 in the third octet and spans 4 third-octet values."
+    ],
+    "solution": "(a) $32 - 22 = 10$ host bits. (b) $2^{10} = 1024$ addresses. (c) $1024 - 2 = 1022$ usable hosts. (d) The block spans the third octet values 4 through 7: addresses 192.168.4.0 through 192.168.7.255, with 192.168.4.0 as network and 192.168.7.255 as broadcast."
+  },
+  "independentExercise": {
+    "prompt": "A firm receives 10.8.0.0/16 and carves it into equal /24 subnets, one per environment. (a) How many /24 subnets fit in a /16? (b) How many usable hosts per /24? (c) Each trading environment needs 3 subnets; how many full environments can be carved out, and how many subnets remain unused?",
+    "hints": [
+      "Compare prefix lengths: 24 - 16 = 8 subnet bits.",
+      "Divide evenly and keep the remainder."
+    ],
+    "solution": "(a) $24 - 16 = 8$ subnet bits $\\Rightarrow 2^8 = 256$ subnets. (b) $2^8 - 2 = 254$ usable hosts each. (c) $\\lfloor 256 / 3 \\rfloor = 85$ complete environments, using 255 subnets, leaving 1 subnet unused. (Check: $85 \\times 3 = 255 \\le 256$.)"
+  },
+  "commonMistakes": [
+    "Forgetting the two reserved addresses (network and broadcast) and answering $2^h$ instead of $2^h - 2$ for usable hosts.",
+    "Assuming a /26 block starts anywhere - CIDR blocks align on their own size, so 10.20.30.64/26 is valid but 10.20.30.65/26 is not.",
+    "Expecting DNS changes to be instant - records live in caches for up to their TTL after the authoritative server has moved on.",
+    "Blaming 'the network' without locating the layer: link (cable/switch), route (IP), port (transport) and name (DNS) fail in different ways with different fixes."
+  ],
+  "realWorldApplication": "Every cloud deployment, Kubernetes cluster and corporate LAN is planned in CIDR blocks with private ranges and NAT at the edge; DNS TTLs decide how fast failovers can move traffic between sites.",
+  "quantFinanceApplication": "Exchange colocation cages allocate private /24s per function (feed handlers, gateways, admin), and desks cache venue hostnames at startup because a per-message DNS lookup would add latency and a single point of failure to the tick path.",
+  "summary": [
+    "Layering: link frames, IP routes, transport delivers process-to-process via ports, applications define semantics - each header peeled off in reverse on arrival.",
+    "CIDR: usable hosts $= 2^{32 - p} - 2$; a /24 holds 254 hosts, a /26 holds 62, and blocks align on their own size.",
+    "Private ranges (10/8, 172.16/12, 192.168/16) are NAT'ed at the edge; trading infrastructure lives almost entirely in private space.",
+    "DNS resolves names through stub → recursive → root → TLD → authoritative servers, with A/AAAA/CNAME records cached up to their TTL."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "numeric",
+      "prompt": "How many usable host addresses does a /26 block contain?",
+      "answer": 62,
+      "explanation": "$2^{32-26} = 64$ addresses, minus the network and broadcast addresses $= 62$ usable hosts."
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "Which layer is responsible for delivering data between processes using port numbers?",
+      "options": ["Link layer", "Transport layer", "Internet layer", "Application layer"],
+      "answerIndex": 1,
+      "explanation": "Ports are the transport layer's (TCP/UDP) way of demultiplexing packets to the right process; IP routes between hosts, not processes."
+    },
+    {
+      "id": "q3",
+      "type": "mcq",
+      "prompt": "Which of these addresses is NOT in a private range?",
+      "options": ["10.1.2.3", "172.20.5.9", "8.8.8.8", "192.168.1.1"],
+      "answerIndex": 2,
+      "explanation": "8.8.8.8 is public (it is a well-known public DNS resolver). 172.16/12 covers 172.16-172.31, so 172.20.5.9 is private."
+    },
+    {
+      "id": "q4",
+      "type": "numeric",
+      "prompt": "How many total addresses does a /28 block contain?",
+      "answer": 16,
+      "explanation": "$2^{32-28} = 2^4 = 16$ addresses (14 usable after network and broadcast)."
+    },
+    {
+      "id": "q5",
+      "type": "ms",
+      "prompt": "Which statements are true?",
+      "options": [
+        "DNS answers are cached by resolvers for up to the record's TTL",
+        "A /24 has 254 usable host addresses",
+        "NAT is required for routing between hosts inside a private datacenter",
+        "IPv6 addresses are 64 bits long"
+      ],
+      "answerIndices": [0, 1],
+      "explanation": "TTL caching and the $2^8 - 2 = 254$ arithmetic are both correct. Inside a datacenter, plain private-IP routing works without NAT, and IPv6 addresses are 128 bits."
+    },
+    {
+      "id": "q6",
+      "type": "short",
+      "prompt": "Which DNS record type maps a hostname to an IPv4 address?",
+      "modelAnswer": "The A record maps a hostname to an IPv4 address (AAAA does the same for IPv6).",
+      "keywords": ["A record", "A "],
+      "explanation": "A for IPv4, AAAA for IPv6, CNAME for aliases - knowing the distinction matters when a failover changes which record type moves."
+    }
+  ],
+  "flashcards": [
+    { "type": "definition", "front": "What does CIDR notation 10.20.30.0/26 mean?", "back": "The first 26 bits are the network part; 6 host bits give $2^6 = 64$ addresses (62 usable), aligned on a 64-address boundary." },
+    { "type": "formula", "front": "Usable hosts in a prefix", "back": "$2^{32 - p} - 2$ for IPv4 prefix $p$; subtract 1 for network and 1 for broadcast." },
+    { "type": "definition", "front": "What is a DNS TTL?", "back": "Seconds a resolver may cache a record; it bounds staleness after changes - a TTL of 3600 means up to an hour of old answers." },
+    { "type": "concept", "front": "Name the practical four layers", "back": "Link (frames) → Internet/IP (routing) → Transport (ports, TCP/UDP) → Application (FIX, ITCH, HTTP, DNS). Failures live in a specific layer; diagnose top-down or bottom-up." }
+  ],
+  "references": [
+    { "label": "RFC 1918 - Address Allocation for Private Internets", "url": "https://datatracker.ietf.org/doc/html/rfc1918" },
+    { "label": "RFC 1035 - Domain Names (DNS)", "url": "https://datatracker.ietf.org/doc/html/rfc1035" },
+    { "label": "Cloudflare - What is DNS?", "url": "https://www.cloudflare.com/learning/dns/what-is-dns/" }
+  ],
+  "skills": ["networking", "low-latency"]
+}

@@ -1,0 +1,237 @@
+{
+  "id": "cpp-testing-frameworks",
+  "moduleId": "ph4-cpp-l9",
+  "title": "GoogleTest, Benchmarking Frameworks and CI Pipelines",
+  "estMinutes": 26,
+  "difficulty": "advanced",
+  "prereqs": [
+    "cpp-tooling"
+  ],
+  "objectives": [
+    "Write a GoogleTest fixture with SetUp and TEST_F, and choose correctly between EXPECT and ASSERT",
+    "Select the right assertion for floating-point comparisons (EXPECT_DOUBLE_EQ/NEAR) and exceptions (EXPECT_THROW)",
+    "Explain what a CI pipeline should run per commit: build matrix, tests, sanitiser jobs",
+    "Sketch a YAML CI configuration that builds two configurations and runs tests via ctest"
+  ],
+  "motivation": "A pricing fix passes manual testing on three examples and ships; two weeks later a regression breaks the TWAP scheduler and nobody notices until fills arrive wrong. The desk's answer was not more careful humans - it was a fixture-based test suite that runs in 40 seconds on every commit, with CI refusing to merge any commit that fails. Testing frameworks make correctness a property of the pipeline, not of vigilance.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "GoogleTest: assertions and fixtures"
+    },
+    {
+      "type": "p",
+      "md": "GoogleTest rests on two primitives. `TEST(Suite, Name)` defines a test as ordinary C++ plus **assertions**. `EXPECT_*` records a failure and *continues* the test (one test can report several problems); `ASSERT_*` records a failure and *returns from the test immediately* - mandatory when continuing would dereference invalid state. Fixtures - a class deriving from `::testing::Test` with `TEST_F` - give every test a freshly constructed environment: the fixture's constructor runs per test, `SetUp()` runs before each test's body, `TearDown()` after. This per-test freshness is what kills order-dependence: no test can corrupt another's state."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <algorithm>\n#include <gtest/gtest.h>\n\n// Class under test: a tiny one-sided limit book\nclass Book {\npublic:\n    void add(double px, int qty) {\n        totalQty_ += qty;\n        best_ = std::max(best_, px);\n    }\n    double best() const { return best_; }\n    int totalQty() const { return totalQty_; }\nprivate:\n    double best_ = 0.0;\n    int totalQty_ = 0;\n};\n\nclass BookTest : public ::testing::Test {\nprotected:\n    void SetUp() override {        // runs before EVERY test in this fixture\n        book_.add(100.0, 10);      // shared starting state\n    }\n    Book book_;                    // constructed fresh per test\n};\n\nTEST_F(BookTest, TracksBestPrice) {\n    book_.add(101.5, 5);\n    EXPECT_DOUBLE_EQ(book_.best(), 101.5);   // exact-bit near-equality for doubles\n    EXPECT_EQ(book_.totalQty(), 15);         // 10 (SetUp) + 5\n}\n\nTEST_F(BookTest, LowerAddLeavesBestUnchanged) {\n    book_.add(99.0, 7);\n    ASSERT_EQ(book_.totalQty(), 17);         // ASSERT: abort THIS test if wrong\n    EXPECT_DOUBLE_EQ(book_.best(), 100.0);   // only reached if the assert held\n}",
+      "caption": "Each TEST_F gets a new Book with SetUp state: no test depends on another having run."
+    },
+    {
+      "type": "p",
+      "md": "Assertion choice is semantic: `EXPECT_EQ` for integers (exact), `EXPECT_DOUBLE_EQ` for doubles when values should match to about 4 ULPs (unit in the last place - tighter than naive `==` yet tolerant of legitimate codegen reassociation), `EXPECT_NEAR(a, b, tol)` when the tolerance is a domain statement ('within half a tick'), `EXPECT_THROW(expr, Ex)` / `EXPECT_NO_THROW` for error contracts, and `ASSERT_*` whenever the next line would be invalid after a failure - e.g. asserting a pointer is non-null *before* dereferencing it."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "EXPECT after a fatal precondition",
+      "md": "`EXPECT_EQ(ptr, nullptr); ptr->run();` - with EXPECT, the test *continues after a failed expectation* and dereferences null. Where continuation is unsafe, use ASSERT. A crashed test runner reports less than a failed one."
+    },
+    {
+      "type": "h2",
+      "text": "Benchmarking frameworks in the test world"
+    },
+    {
+      "type": "p",
+      "md": "Unit tests answer *is it correct*; micro-benchmarks answer *is it fast enough to stay that way*. Google Benchmark harnesses (covered in the benchmarking lesson) belong in the same repository and the same review discipline as tests: a performance regression test runs a critical kernel and CI can flag when its time-per-item grows beyond a threshold. Keep the two separate in CI - tests plus sanitisers for correctness, uninstrumented release builds for timings."
+    },
+    {
+      "type": "h2",
+      "text": "CI pipelines: correctness on every commit"
+    },
+    {
+      "type": "p",
+      "md": "A C++ CI pipeline should, per commit: configure and build in **both Debug and Release** (different flag sets catch different failures); run the unit tests in Debug; run a sanitiser job (ASan/UBSan in Debug flags, TSan where threads exist); build Release for performance artefacts; and enforce the tooling gates from the previous lesson (`-Werror`, clang-format check, clang-tidy). The sketch below is a GitHub Actions workflow - the same shape translates to GitLab CI, Jenkins or a self-hosted runner."
+    },
+    {
+      "type": "code",
+      "lang": "text",
+      "code": "name: cpp-ci\non: [push, pull_request]\n\njobs:\n  build-test:\n    runs-on: ubuntu-latest\n    strategy:\n      matrix:\n        build: [Debug, Release]        # both configurations on every commit\n    steps:\n      - uses: actions/checkout@v4\n      - name: Configure (CMake + Ninja, warnings-as-errors)\n        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=${{ matrix.build }} \\\n                   -DCMAKE_CXX_FLAGS=\"-Wall -Wextra -Wpedantic -Werror\"\n      - name: Build\n        run: cmake --build build\n      - name: Unit tests\n        run: ctest --test-dir build --output-on-failure   # runs GoogleTest binaries\n\n  sanitizers:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - name: ASan + UBSan build and test\n        run: |\n          cmake -B build-asan -G Ninja -DCMAKE_BUILD_TYPE=Debug \\\n                -DCMAKE_CXX_FLAGS=\"-fsanitize=address,undefined -fno-omit-frame-pointer\"\n          cmake --build build-asan\n          ctest --test-dir build-asan --output-on-failure",
+      "caption": "Two builds, tests, and a sanitiser lane - the minimum credible C++ CI."
+    },
+    {
+      "type": "p",
+      "md": "A test suite is a proof, written in the language the compiler already checks. Unit tests prove properties of components; integration tests prove the components compose; the CI pipeline proves the proofs run on every change. The craft is choosing *what* to prove: the boundary conditions, the invariants, and the regression list — because testing everything is impossible and testing nothing is a deployment strategy."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "// tests/test_pnl.cpp - GoogleTest, testing what actually breaks\n#include <gtest/gtest.h>\n#include \"pricer/pnl.hpp\"\n\nTEST(PnL, FlatPositionHasZeroPnL) {\n    Position p{0, 0.0};\n    EXPECT_DOUBLE_EQ(realised_pnl(p, 100.0), 0.0);\n}\n\nTEST(PnL, AverageCostUpdatesOnIncreasing) {\n    Position p;\n    p.apply_fill(+100, 50.0);\n    p.apply_fill(+100, 60.0);\n    EXPECT_DOUBLE_EQ(p.avg_cost, 55.0);      // weighted, not last-price\n}\n\nTEST(PnL, ReducingFlipRealisesCorrectly) {\n    Position p;\n    p.apply_fill(+100, 50.0);\n    p.apply_fill(-150, 60.0);                // flip to short\n    EXPECT_DOUBLE_EQ(p.realised, 1000.0);   // 100 * 10 profit\n    EXPECT_EQ(p.qty, -50);\n    EXPECT_DOUBLE_EQ(p.avg_cost, 60.0);      // new side priced at fill\n}\n\nTEST(PnL, NoFloatingDriftAcrossCycle) {\n    Position p;\n    for (int i = 0; i < 100000; ++i) p.apply_fill(+1, 0.1);\n    EXPECT_NEAR(p.qty * p.avg_cost, 10000.0, 1e-6);   // accumulation sanity\n}",
+      "caption": "Test the invariants and the flip cases — those are where P&L bugs live."
+    },
+    {
+      "type": "p",
+      "md": "The benchmark half of the framework matters as much as the correctness half, because latency regressions are bugs that tests cannot see. GoogleTest's sibling (`benchmark::`) measures what microseconds cost; the discipline is to *fix the environment* (pin the CPU governor, warm caches, report distributions not means — the percentile lesson made this exact point) and to alarm on percentile drift, not on noise. A CI that reports \"mean 4.2µs\" has told you almost nothing; one that reports \"p99 was 9µs, now 14µs\" has caught a real regression before production does."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Tests that pass and prove nothing",
+      "md": "Three anti-patterns to hunt in reviews: (1) *tautologies* — `EXPECT_EQ(f(x), f(x))` or re-implementing the logic under test; (2) *fixture soup* — one giant setup used by every test, so no test can be understood alone and none test a clean state; (3) *float equality* — `EXPECT_EQ` on doubles fails on the last ulp; use EXPECT_NEAR with a tolerance tied to the magnitudes involved. A suite with any of these has coverage-shaped holes exactly where confidence is highest."
+    },
+    {
+      "type": "steps",
+      "title": "What each CI element buys you",
+      "items": [
+        "Build matrix (Debug+Release): release-only optimiser bugs and debug-only assert failures both surface.",
+        "-Werror in the CI flags: the warning wall stays clean; the sign-compare bug from the tooling lesson cannot merge.",
+        "ctest: discovers and runs every registered test binary; --output-on-failure prints the failing GoogleTest output.",
+        "Sanitiser lane: ASan/UBSan catch memory/UB bugs your tests trigger; TSan adds race detection for threaded code.",
+        "Green pipeline = the merge gate: no human 'looks fine' step between commit and main."
+      ]
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Extend the BookTest fixture with a new test `RejectsNonPositiveQty` asserting that `book_.add(100.0, 0)` throws `std::invalid_argument`, and explain (a) why you would write the throw assertion before any state assertions, (b) why the fixture design guarantees this test cannot see state left by `TracksBestPrice`.",
+    "hints": [
+      "GoogleTest has EXPECT_THROW / EXPECT_NO_THROW / EXPECT_ANY_THROW.",
+      "Recall what runs (constructor, SetUp) and when, per TEST_F."
+    ],
+    "solution": "```cpp\nTEST_F(BookTest, RejectsNonPositiveQty) {\n    EXPECT_THROW(book_.add(100.0, 0), std::invalid_argument);\n    EXPECT_EQ(book_.totalQty(), 10);   // rejected add changed nothing\n}\n``` (a) First assert the *contract*: if the call silently succeeded (no throw), every later state assertion would test a corrupted premise, so the throw check is the anchor. (b) GoogleTest constructs a fresh `BookTest` object per test and calls `SetUp()` before each body - `TracksBestPrice`'s mutations died with its fixture instance, so this test always starts from one 100.0/10 add. No ordering, no shared statics."
+  },
+  "independentExercise": {
+    "prompt": "Your team's CI currently builds Release only and runs `./run_all.sh` manually. Write a concrete upgrade plan: (a) the two build configurations to add and what each catches; (b) the sanitiser lane contents and the bug classes it covers; (c) the exact cmake/ctest commands (per the sketch) for the sanitiser job; (d) one paragraph on why benchmarks from this pipeline must come from a separate uninstrumented Release job, referencing DoNotOptimize-era lessons.",
+    "hints": [
+      "Optimised and debug builds fail in different ways: asserts live in Debug; optimiser-induced UB shows in Release.",
+      "ASan/UBSan pair in one build; TSan must be built alone (it is incompatible with other sanitisers in one binary)."
+    ],
+    "solution": "(a) Add Debug (asserts live, optimisation off - catches logic errors `assert()` was written for) and keep Release (`-DNDEBUG`, `-O3` - catches optimiser-sensitive code like signed overflow 'working' at -O0). (b) ASan+UBSan lane: out-of-bounds, use-after-free, double-free (ASan) and signed overflow/misaligned or null deref/bad shifts (UBSan); add a separate TSan lane for data races - it cannot share a binary with ASan. (c) `cmake -B build-asan -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS=\"-fsanitize=address,undefined -fno-omit-frame-pointer\"` then `cmake --build build-asan` then `ctest --test-dir build-asan --output-on-failure`. (d) Sanitiser instrumentation roughly doubles runtime and perturbs cache behaviour, and Debug has no optimisation at all - so any timing from these jobs measures the instrumentation. Benchmark jobs use a clean Release build (`-O3 -march=native`, no sanitiser) with Google Benchmark's DoNotOptimize discipline; CI tracks those numbers separately and flags regressions against a baseline."
+  },
+  "commonMistakes": [
+    "Using EXPECT where state would be invalid after failure (dangling pointer, null deref) - a follow-on crash hides the real report.",
+    "Comparing doubles with EXPECT_EQ/== and flaking on compiler reassociation; use EXPECT_DOUBLE_EQ or EXPECT_NEAR with a stated tolerance.",
+    "Writing tests that depend on execution order or shared statics - fixtures exist precisely to give each test a fresh world.",
+    "Testing only the happy path: every error contract (throw cases, boundary quantities) needs its own EXPECT_THROW/NEAR tests.",
+    "A CI that builds Release only: it misses assert-enabled Debug failures and never runs the sanitiser lane."
+  ],
+  "realWorldApplication": "GoogleTest is the de-facto C++ unit framework (Chromium, LLVM, TensorFlow all use it); production shops wire it into ctest/CI so every merge is gated by thousands of fixture-fresh assertions plus sanitiser jobs.",
+  "quantFinanceApplication": "A pricing library's CI runs its PnL-parity tests under ASan on every commit; a memory bug that would have corrupted a risk report once a week becomes a red pipeline in 40 seconds.",
+  "summary": [
+    "TEST/TEST_F + EXPECT (continue) vs ASSERT (abort this test); fixtures construct fresh state and run SetUp before each test.",
+    "Floating-point assertions are semantic choices: EXPECT_DOUBLE_EQ (~4 ULP) or EXPECT_NEAR with a domain tolerance, not raw ==.",
+    "EXPECT_THROW/EXPECT_NO_THROW test error contracts explicitly; assert them before any state checks that presume the contract.",
+    "CI per commit: Debug+Release build matrix, unit tests via ctest, ASan/UBSan lane (TSan separate), tooling gates -Werror/format/tidy.",
+    "Benchmarks live in CI too, but from an uninstrumented Release job - never from sanitiser or Debug builds."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "In a GoogleTest fixture, when does `SetUp()` run?",
+      "options": [
+        "Once, before the entire suite",
+        "Before the body of every test in the fixture",
+        "Only if the test fails",
+        "After TearDown, for cleanup"
+      ],
+      "answerIndex": 1,
+      "explanation": "Each TEST_F constructs a fresh fixture object; SetUp() runs before each test's body (TearDown after). That per-test freshness is what makes tests order-independent."
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "What is the behavioural difference between EXPECT_EQ and ASSERT_EQ?",
+      "options": [
+        "EXPECT is for ints, ASSERT for doubles",
+        "EXPECT records the failure and continues the test; ASSERT records it and returns from the test immediately",
+        "ASSERT is faster; EXPECT prints more detail",
+        "No difference - both continue"
+      ],
+      "answerIndex": 1,
+      "explanation": "EXPECT accumulates all failures in one run; ASSERT aborts the current test. Use ASSERT when continuing would be unsafe (null pointer, out-of-bounds state)."
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "In the BookTest fixture from the lesson (SetUp adds 100.0 with qty 10), the test `LowerAddLeavesBestUnchanged` calls `book_.add(99.0, 7)` and asserts the total quantity. What value does it assert?",
+      "answer": 17,
+      "explanation": "10 from SetUp + 7 from the add = 17; the best price stays 100.0 because 99.0 < 100.0."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "Why is `EXPECT_DOUBLE_EQ(a, b)` usually preferred over `EXPECT_EQ(a, b)` for computed doubles?",
+      "options": [
+        "It casts both to float to speed comparison",
+        "It compares within ~4 ULPs, tolerating legitimate floating-point reassociation by the optimiser",
+        "It rounds both values to 2 decimals",
+        "It prints a diff instead of failing"
+      ],
+      "answerIndex": 1,
+      "explanation": "Bit-exact equality fails when -O3 reassociates an expression (e.g. FMA contraction); EXPECT_DOUBLE_EQ allows a 4-ULP window. For a domain tolerance ('within half a tick'), EXPECT_NEAR states it explicitly."
+    },
+    {
+      "id": "q5",
+      "type": "code-output",
+      "prompt": "What does this program print? (It mirrors the fixture's logic in plain C++.)",
+      "language": "cpp",
+      "code": "#include <algorithm>\n#include <iostream>\n\nint main() {\n    double best = 0.0;\n    int totalQty = 0;\n    auto add = [&](double px, int qty) {\n        totalQty += qty;\n        best = std::max(best, px);\n    };\n    add(100.0, 10);\n    add(101.5, 5);\n    std::cout << best << ' ' << totalQty << '\\n';\n    return 0;\n}",
+      "answer": "101.5 15",
+      "explanation": "After the SetUp-equivalent add(100.0,10) and add(101.5,5): best = max(100.0, 101.5) = 101.5; totalQty = 15. Exactly what TEST_F(BookTest, TracksBestPrice) asserts."
+    },
+    {
+      "id": "q6",
+      "type": "mcq",
+      "prompt": "In the CI sketch, why does the pipeline build both Debug and Release on every commit?",
+      "options": [
+        "To double test coverage",
+        "Different builds catch different failures: asserts only exist in Debug (-DNDEBUG removes them in Release), and optimiser-sensitive UB only shows in Release",
+        "Debug builds run on Windows, Release on Linux",
+        "Ninja requires two build directories to function"
+      ],
+      "answerIndex": 1,
+      "explanation": "The matrix is about failure modes, not volume: Debug keeps assert() and enables logic-error catching; Release exposes optimisation-sensitive UB and produces performance artefacts."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "EXPECT vs ASSERT in GoogleTest",
+      "back": "EXPECT: record failure, continue the test (multiple failures per test). ASSERT: record failure and return from the test immediately - required when continuation would use invalid state."
+    },
+    {
+      "type": "concept",
+      "front": "GoogleTest fixture lifecycle",
+      "back": "Per TEST_F: fresh fixture object constructed -> SetUp() -> test body -> TearDown() -> object destroyed. Tests cannot see each other's state."
+    },
+    {
+      "type": "definition",
+      "front": "EXPECT_DOUBLE_EQ vs EXPECT_NEAR",
+      "back": "DOUBLE_EQ: near-exact (about 4 ULPs) for computed doubles. NEAR(a, b, tol): an explicit domain tolerance, e.g. half a tick. Raw == flakes under optimiser reassociation."
+    },
+    {
+      "type": "concept",
+      "front": "Minimum credible C++ CI",
+      "back": "Debug+Release matrix, unit tests via ctest, ASan/UBSan sanitiser lane (TSan separate for threads), -Werror/format/tidy gates; benchmarks from a separate clean Release job."
+    }
+  ],
+  "references": [
+    {
+      "label": "GoogleTest — primer and advanced guide",
+      "url": "https://google.github.io/googletest/primer.html"
+    },
+    {
+      "label": "CTest — driving test suites",
+      "url": "https://cmake.org/cmake/help/latest/manual/ctest.1.html"
+    },
+    {
+      "label": "GitHub Actions — workflow syntax",
+      "url": "https://docs.github.com/en/actions/reference/workflow-syntax-for-github-actions"
+    }
+  ],
+  "skills": [
+    "cpp-engineering"
+  ]
+}

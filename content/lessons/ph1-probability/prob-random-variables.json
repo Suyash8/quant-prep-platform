@@ -1,0 +1,227 @@
+{
+  "id": "prob-random-variables",
+  "moduleId": "ph1-probability",
+  "title": "Random Variables, PMFs and CDFs",
+  "estMinutes": 27,
+  "difficulty": "core",
+  "prereqs": ["prob-conditional-bayes"],
+  "objectives": [
+    "Define a random variable as a function from outcomes to numbers and distinguish discrete from continuous",
+    "Construct a PMF for a discrete random variable and verify it sums to 1",
+    "Compute event probabilities from a CDF, using P(a < X <= b) = F(b) - F(a)",
+    "Explain why the distinction between P(X < x) and P(X <= x) matters for discrete variables"
+  ],
+  "motivation": "Tomorrow's PnL is not a single number you can know in advance - it is a quantity whose value is determined by chance. A random variable is the standard device for turning that sentence into mathematics: assign every outcome of the market a number, then study the pattern of probabilities over those numbers. PMFs and CDFs are the two complementary pictures of that pattern, and every risk number you will ever produce is computed from one of them.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "A random variable is a measurement, not a mystery"
+    },
+    {
+      "type": "p",
+      "md": "Formally, a **random variable** is a function from the sample space to the real line: it measures something about each outcome. Roll two dice and let $X$ = their sum; each of the 36 outcomes gets a number between 2 and 12. Let $Y$ = tomorrow's portfolio return in percent; each market scenario gets a number, usually a continuum of them. The distinction matters: $X$ is **discrete** (it takes isolated values, so probabilities sit in lumps called point masses), while $Y$ is **continuous** (values fill an interval, and single points carry zero probability - only ranges carry probability)."
+    },
+    {
+      "type": "p",
+      "md": "Once outcomes are numbers, questions about chance become statements about arithmetic ranges: \"PnL worse than -\\$10,000\" becomes \"$X \\le -10$ (in thousands)\". That translation is the whole point - it lets calculus and code work on uncertainty."
+    },
+    {
+      "type": "h2",
+      "text": "The PMF: where the probability mass sits"
+    },
+    {
+      "type": "p",
+      "md": "For a discrete random variable, the **probability mass function** lists the probability of each value: $p(k) = P(X = k)$. Two rules make a list a legitimate PMF: every entry lies in $[0, 1]$ and the entries sum to exactly 1 - total probability has to live somewhere. Example: flip a fair coin twice and count heads."
+    },
+    {
+      "type": "table",
+      "headers": ["$k$ (heads)", "$P(X = k)$", "$F(k) = P(X \\le k)$"],
+      "rows": [
+        ["0", "0.25", "0.25"],
+        ["1", "0.50", "0.75"],
+        ["2", "0.25", "1.00"]
+      ]
+    },
+    {
+      "type": "p",
+      "md": "The third column is the star of this lesson: $F(k)$ simply accumulates the PMF from the left. The double coin flip gives each of $\\{HH, HT, TH, TT\\}$ probability $1/4$; $X = 1$ on two of the four outcomes, hence the mass 0.5 in the middle."
+    },
+    {
+      "type": "interactive",
+      "component": "DistributionViewer",
+      "params": {
+        "distribution": "binomial",
+        "n": 2,
+        "p": 0.5
+      },
+      "caption": "The same double-flip distribution drawn as a PMF (bars) and its CDF (stairs) - note the CDF only ever jumps upward, right where the bars stand."
+    },
+    {
+      "type": "h2",
+      "text": "The CDF: the accumulator"
+    },
+    {
+      "type": "math",
+      "tex": "F(x) = P(X \\le x), \\qquad P(a < X \\le b) = F(b) - F(a)",
+      "caption": "Cumulative distribution function and the interval formula"
+    },
+    {
+      "type": "p",
+      "md": "The CDF $F$ is defined for **every** real $x$ (not just values $X$ can take), is non-decreasing, runs from 0 up to 1, and jumps at each point mass - it is right-continuous, so $F(x)$ includes the jump at $x$. All probability questions reduce to reading $F$: the probability of landing in an interval is the difference of the CDF at its endpoints."
+    },
+    {
+      "type": "steps",
+      "title": "Worked example: reading the two-dice-sum CDF",
+      "items": [
+        "For $X$ = sum of two fair dice, accumulate counts: $F(7) = (1+2+3+4+5+6)/36 = 21/36 \\approx 0.5833$.",
+        "$F(10) = (21 + 5 + 4 + 3)/36 = 33/36 \\approx 0.9167$ - sums 8, 9, 10 add 5, 4, 3 outcomes.",
+        "Interval: $P(8 \\le X \\le 10) = F(10) - F(7) = 33/36 - 21/36 = 12/36 = 1/3 \\approx 0.3333$.",
+        "Strictness check: $P(X < 7) = F(6) = 15/36 \\approx 0.4167$, one atom of $6/36$ less than $F(7)$ - for discrete variables the little $\\le$ sign carries real probability."
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Returns, masses and gaps",
+      "md": "Daily returns are modelled as continuous, but real order books create discrete features: with no news, a limit-locked asset has a literal mass at 0.00% return. Mixing scales is fine - a random variable can be partly discrete, partly continuous - but a risk report that ignores the mass at zero will misstate the probability of exactly-flat days. The CDF picture (with its jumps) handles both regimes in one object."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "from itertools import product\n\nsums = [d1 + d2 for d1, d2 in product(range(1, 7), repeat=2)]\npmf = {s: sums.count(s) / 36 for s in range(2, 13)}\nprint(round(sum(pmf.values()), 12))                 # PMF sums to 1\ncdf = 0.0\nfor s in sorted(pmf):\n    cdf += pmf[s]\n    if s in (7, 10):\n        print(s, round(cdf, 4))                     # F(7), F(10)\nprint(round(sum(pmf[s] for s in range(8, 11)), 4))  # P(8 <= X <= 10)",
+      "caption": "Build a PMF by counting outcomes, verify it sums to 1, then accumulate to get the CDF."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Three independent bonds each have default probability 0.1 over one year. Let $X$ = number of defaults. Build the full PMF table for $X = 0, 1, 2, 3$, verify it sums to 1, and compute $P(X \\ge 2)$.",
+    "hints": [
+      "For $X = 1$: one bond defaults (3 ways to choose which) and two survive.",
+      "$P(X \\ge 2)$ can be summed directly or found by the complement rule."
+    ],
+    "solution": "$P(0) = 0.9^3 = 0.729$. $P(1) = 3 \\times 0.1 \\times 0.9^2 = 0.243$. $P(2) = 3 \\times 0.1^2 \\times 0.9 = 0.027$. $P(3) = 0.1^3 = 0.001$. Sum $= 0.729 + 0.243 + 0.027 + 0.001 = 1$. $P(X \\ge 2) = 0.027 + 0.001 = 0.028$, or by complement $1 - (0.729 + 0.243) = 0.028$."
+  },
+  "independentExercise": {
+    "prompt": "Using the two-dice-sum distribution from the lesson, compute (a) $P(X > 9)$ and (b) $P(4 \\le X \\le 6)$, each via CDF differences. State which F-values you used.",
+    "hints": [
+      "(a) $P(X > 9) = 1 - F(9)$ - why does the strict inequality let you use the complement?",
+      "(b) $P(4 \\le X \\le 6) = F(6) - F(3)$ - the lower end includes mass at 4, so subtract $F(3)$, not $F(4)$."
+    ],
+    "solution": "(a) $F(9) = 30/36 \\approx 0.8333$, so $P(X > 9) = 1 - 30/36 = 6/36 \\approx 0.1667$ (outcomes with sum 10, 11, 12). (b) $F(6) = 15/36$, $F(3) = 3/36$, so $P(4 \\le X \\le 6) = 15/36 - 3/36 = 12/36 \\approx 0.3333$."
+  },
+  "commonMistakes": [
+    "Summing a PMF that does not total exactly 1 - always check before using it.",
+    "For discrete variables, writing P(X < x) = F(x): the correct identity is P(X <= x) = F(x), and the missing atom can be a large probability.",
+    "Using P(a < X < b) = F(b) - F(a) for discrete X, which silently drops the mass at b; use P(a < X <= b).",
+    "Believing single points have zero probability in general - true for continuous variables only."
+  ],
+  "realWorldApplication": "Queueing systems count arrivals (discrete), sensor measurements produce continuous readings, and reliability engineering mixes both - CDFs are the universal interface for answering 'what is the chance the value lands in this range?'",
+  "quantFinanceApplication": "A VaR report is a CDF read backwards: find the x where F(x) = 0.05 and report -x as the loss threshold. Discrete masses appear in real markets too: limit-up/limit-down days put atoms on extreme returns, and 'no trade today' puts an atom on zero PnL.",
+  "summary": [
+    "A random variable maps outcomes to numbers; discrete variables carry point masses, continuous ones carry density over ranges.",
+    "A PMF lists $P(X = k)$; it must be non-negative and sum to 1.",
+    "The CDF $F(x) = P(X \\le x)$ accumulates probability; $P(a < X \\le b) = F(b) - F(a)$.",
+    "$F$ is non-decreasing, ranges from 0 to 1, jumps at atoms, and is right-continuous.",
+    "For discrete variables, strict versus inclusive inequalities change the answer by exactly one atom."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "Which of the following is a valid PMF for a discrete random variable?",
+      "options": [
+        "$p(0) = 0.3,\\ p(1) = 0.4,\\ p(2) = 0.4$",
+        "$p(0) = 0.2,\\ p(1) = 0.5,\\ p(2) = 0.3$",
+        "$p(0) = -0.1,\\ p(1) = 0.6,\\ p(2) = 0.5$",
+        "$p(0) = 0.5,\\ p(1) = 0.4$"
+      ],
+      "answerIndex": 1,
+      "explanation": "A PMF needs every value in $[0,1]$ and a total of exactly 1. Option 1 sums to 1.1; option 3 has a negative mass; option 4 sums to 0.9. Only option 2 qualifies."
+    },
+    {
+      "id": "q2",
+      "type": "numeric",
+      "prompt": "For $X$ = sum of two fair dice, what is $F(7) = P(X \\le 7)$? (4 decimal places.)",
+      "answer": 0.5833,
+      "tolerance": 0.001,
+      "explanation": "Counts accumulate to $1+2+3+4+5+6 = 21$ of 36 outcomes: $21/36 = 7/12 \\approx 0.5833$."
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "For the same two-dice sum, what is $P(X < 7)$? (4 decimal places.)",
+      "answer": 0.4167,
+      "tolerance": 0.001,
+      "explanation": "$P(X < 7) = F(6) = (1+2+3+4+5)/36 = 15/36 \\approx 0.4167$ - exactly one atom ($6/36$) less than $F(7)$."
+    },
+    {
+      "id": "q4",
+      "type": "code-output",
+      "prompt": "What does this Python code print? (It uses the default-counting PMF from the lesson.)",
+      "language": "python",
+      "code": "pmf = {0: 0.729, 1: 0.243, 2: 0.027, 3: 0.001}\nprint(round(sum(pmf.values()), 1))\nprint(round(pmf[2] + pmf[3], 4))",
+      "answer": "1.0\n0.028",
+      "explanation": "The PMF totals exactly 1 (the first check you should always run), and $P(X \\ge 2) = 0.027 + 0.001 = 0.028$."
+    },
+    {
+      "id": "q5",
+      "type": "short",
+      "prompt": "In what way is a CDF more general than a PMF, and how do you recover an interval probability from a CDF?",
+      "modelAnswer": "The CDF is defined for all real x and accumulates all mass below x, so it also describes continuous variables that have no PMF. An interval probability is a difference: P(a < X <= b) = F(b) - F(a).",
+      "keywords": ["accumulate", "interval", "difference", "continuous"],
+      "explanation": "The PMF exists only for discrete variables; the CDF exists for any random variable and encodes everything the PMF knows plus the ability to answer range questions by subtraction."
+    },
+    {
+      "id": "q6",
+      "type": "mcq",
+      "prompt": "For a **continuous** random variable, what is $P(X = 2.5)$ for any exact value?",
+      "options": [
+        "It equals the density at 2.5",
+        "It equals F(2.5)",
+        "It is 0 - probability only lives on intervals",
+        "It depends on the units of measurement"
+      ],
+      "answerIndex": 2,
+      "explanation": "Continuous variables spread probability over ranges with a density; any single point has zero probability. Densities are not probabilities - only their integrals over intervals are."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "definition",
+      "front": "Random variable",
+      "back": "A function from the sample space to the real line; it assigns a numerical measurement to each outcome."
+    },
+    {
+      "type": "formula",
+      "front": "PMF validity conditions",
+      "back": "$p(k) = P(X = k)$ with $0 \\le p(k) \\le 1$ for all k and $\\sum_k p(k) = 1$."
+    },
+    {
+      "type": "formula",
+      "front": "Interval probability via CDF",
+      "back": "$P(a < X \\le b) = F(b) - F(a)$ where $F(x) = P(X \\le x)$."
+    },
+    {
+      "type": "concept",
+      "front": "P(X < x) vs P(X <= x)",
+      "back": "For discrete X these differ by the atom p(x); the CDF uses the inclusive version and is right-continuous."
+    },
+    {
+      "type": "concept",
+      "front": "Continuous variable at a point",
+      "back": "P(X = x) = 0 for every x; probability is carried by intervals through the density, not by points."
+    }
+  ],
+  "references": [
+    {
+      "label": "OpenStax Introductory Statistics - Discrete Random Variables",
+      "url": "https://openstax.org/details/books/introductory-statistics-2e"
+    },
+    {
+      "label": "Seeing Theory - Random Variables",
+      "url": "https://seeing-theory.brown.edu/probability-distributions/index.html"
+    }
+  ],
+  "skills": [
+    "probability"
+  ]
+}

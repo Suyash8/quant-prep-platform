@@ -1,0 +1,333 @@
+import Link from 'next/link';
+import { getCurrentUser } from '@/lib/auth';
+import { db } from '@/lib/db';
+import { listCompanies, getCompany, getMatrix, getMap } from '@/lib/content';
+import { AppShell, PublicHeader } from '@/components/app-shell';
+import { ApplicationTracker } from '@/components/application-tracker';
+import {
+  ArrowRight, BarChart3, Briefcase, Building2, ClipboardList, Compass, FileText, Layers,
+  ListChecks, MapPin, Route, ShieldCheck, Table2, Target,
+} from 'lucide-react';
+
+export const metadata = { title: 'Career explorer — QuantFoundry' };
+
+const CATEGORY_LABEL: Record<string, string> = {
+  'prop-trading': 'Proprietary trading',
+  'asset-manager': 'Asset management',
+  'bank': 'Investment banking',
+  'market-maker': 'Market making',
+  'fund': 'Fund',
+  'market-data': 'Market data & fintech',
+};
+
+const CATEGORY_DESC: Record<string, string> = {
+  'prop-trading': 'Speed, probability and low-latency C++ under exchange constraints.',
+  'asset-manager': 'Portfolio analytics, factor research and platform engineering.',
+  'bank': 'Pricing engines, risk systems and structured product technology.',
+  'market-maker': 'Continuous two-sided quoting with microsecond decision loops.',
+  'fund': 'Multi-manager platforms and research infrastructure at scale.',
+  'market-data': 'Data pipelines, terminals and platform reliability engineering.',
+};
+
+// per-firm one-liners (derived from each profile's research notes)
+const COMPANY_BLURB: Record<string, string> = {
+  'barclays': 'Structured products tech with unusually concrete published skill bars.',
+  'blackrock': 'Aladdin — one of the largest risk platforms in asset management.',
+  'bloomberg': 'Terminals, data pipelines and platform reliability at global scale.',
+  'citadel-securities': 'Market making with demanding C++ and low-latency interviews.',
+  'goldman-sachs': 'The best-documented hiring prep of any bank — platforms and strats.',
+  'imc': 'Publishes its full recruitment process — rare and genuinely useful.',
+  'jane-street': 'OCaml-first trading tech; famously explicit interview guidance.',
+  'jpmorgan': 'A structured how-we-hire journey across payments and markets tech.',
+  'jump-trading': 'Research-driven prop trading with a performance-first C++ culture.',
+  'millennium': 'Multi-manager platform: many pods, heavy research infrastructure.',
+  'morgan-stanley': 'Broad markets-and-banking tech org; breadth-oriented hiring.',
+  'optiver': 'One of the few firms publishing an official SWE interview guide.',
+  'susquehanna-international-group': 'Trading, quant research and technology with an options heritage.',
+  'two-sigma': 'Data-driven fund: research engineering and platform at scale.',
+  'ubs': 'Concrete skill bars published on its own job board.',
+};
+
+
+// fixed track colour coding — consistent on every career page
+const TRACK_CHIP: Record<string, string> = { A: 'chip-success', B: 'chip-info', C: 'chip-danger', D: 'chip-warning', E: 'chip-accent' };
+const TRACK_TILE: Record<string, string> = { A: 'icon-tile-accent', B: 'icon-tile-info', C: 'icon-tile-danger', D: 'icon-tile-warning', E: 'icon-tile-violet' };
+
+const AVATAR_TILES = ['icon-tile-accent', 'icon-tile-info', 'icon-tile-warning', 'icon-tile-danger', 'icon-tile-violet', 'icon-tile-gold'];
+const POP_DELAYS = ['0ms', '70ms', '140ms', '210ms'];
+const SLIDE_DELAYS = ['0ms', '60ms', '120ms', '180ms', '240ms', '300ms'];
+
+const RESUME_TIPS = [
+  {
+    icon: BarChart3,
+    tile: 'icon-tile-info',
+    title: 'Present projects with evidence',
+    body: 'Quantify: “order book sustaining 1.2M updates/s with p99 match latency 3.4µs (benchmark included in repo)” beats “built a fast order book”. Every claimed number must be reproducible from your repository — a reviewer may check.',
+  },
+  {
+    icon: ListChecks,
+    tile: 'icon-tile-accent',
+    title: 'Structure',
+    body: 'One page for internships and graduate roles. Projects with metrics, then skills grouped honestly (C++17/20, Python, NumPy/pandas, SQL, Linux), then education. No skill bars, no invented familiarity.',
+  },
+  {
+    icon: Target,
+    tile: 'icon-tile-warning',
+    title: 'What reviewers screen for',
+    body: 'Evidence of C++ depth (memory, concurrency, performance work), numerical/linear algebra coursework or projects, and genuine algorithmic practice. Research infrastructure and reproducible benchmarks read stronger than buzzwords.',
+  },
+  {
+    icon: ShieldCheck,
+    tile: 'icon-tile-violet',
+    title: 'Credibility rule',
+    body: 'Never invent accomplishments, benchmark results or employment history. If you cannot demonstrate it, do not claim it — interviewers probe every line.',
+  },
+];
+
+export default async function CareerPage() {
+  const user = await getCurrentUser();
+  const companies = listCompanies();
+  const matrix = getMatrix();
+  const map = getMap();
+
+  let applications: { id: string; company: string; role: string; status: string; note: string; updatedAt: Date }[] = [];
+  if (user) {
+    applications = await db.application.findMany({ where: { userId: user.id }, orderBy: { updatedAt: 'desc' } });
+  }
+
+  const enriched = companies.map(c => {
+    const full = getCompany(c.slug);
+    const tracks = new Set((full?.roles ?? []).map(r => r.track));
+    return { ...c, roles: full?.roles.length ?? 0, areas: full?.competencyAreas.length ?? 0, tracks: tracks.size };
+  });
+  const rolesTotal = enriched.reduce((n, c) => n + c.roles, 0);
+  const areasTotal = enriched.reduce((n, c) => n + c.areas, 0);
+  const tracksCount = Object.keys(map.tracks).length;
+
+  const statTiles = [
+    { icon: Building2, tile: 'icon-tile-gold', value: String(companies.length), label: 'Companies profiled' },
+    { icon: Briefcase, tile: 'icon-tile-info', value: String(rolesTotal), label: 'Roles mapped' },
+    { icon: Layers, tile: 'icon-tile-violet', value: String(areasTotal), label: 'Competency areas' },
+    { icon: Route, tile: 'icon-tile-accent', value: String(tracksCount), label: 'Career tracks' },
+  ];
+
+  const body = (
+    <div className="max-w-6xl mx-auto px-4 lg:px-6 py-8">
+      <header className="page-hero anim-slide-up">
+        <span className="icon-tile icon-tile-gold"><Briefcase /></span>
+        <div>
+          <h1>Career explorer</h1>
+          <p className="page-sub">{companies.length} companies · {rolesTotal} mapped roles · {tracksCount} career tracks</p>
+        </div>
+      </header>
+      <p className="-mt-2.5 mb-6 max-w-3xl text-xs font-semibold leading-relaxed text-muted anim-slide-up">
+        Honest preparation for quantitative hiring. Facts marked <em>sourced</em> come from official career pages with
+        retrieval dates; patterns are labelled <em>inferred</em> — never presented as guarantees.
+      </p>
+
+      {/* stat row */}
+      <section className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {statTiles.map((s, i) => (
+          <div key={s.label} className="stat-tile anim-pop-in" style={{ animationDelay: POP_DELAYS[i] }}>
+            <span className={`icon-tile icon-tile-sm ${s.tile}`}><s.icon /></span>
+            <p className="stat-value mt-2 tnum">{s.value}</p>
+            <p className="stat-label">{s.label}</p>
+          </div>
+        ))}
+      </section>
+
+      {/* Tracks */}
+      <section className="mt-10">
+        <div className="section-head">
+          <span className="icon-tile icon-tile-sm icon-tile-info"><Route /></span>
+          <h2>Career tracks</h2>
+          <span className="chip ml-auto">{tracksCount} tracks · one curriculum each</span>
+        </div>
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {Object.entries(map.tracks).map(([key, t], i) => (
+            <div
+              key={key}
+              id={key}
+              className="qf-card p-5 flex flex-col scroll-mt-20 anim-slide-up hover:-translate-y-0.5 hover:shadow-lg transition-all"
+              style={{ animationDelay: SLIDE_DELAYS[i % SLIDE_DELAYS.length] }}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className={`chip ${TRACK_CHIP[key] ?? 'chip-accent'}`}>Track {key}</span>
+                <span className={`icon-tile icon-tile-sm ${TRACK_TILE[key] ?? 'icon-tile-accent'}`}><Route /></span>
+              </div>
+              <h3 className="mt-3 font-extrabold tracking-tight leading-snug">{t.title}</h3>
+              <p className="mt-1 text-xs font-bold text-faint">Typical employers: {t.employers}</p>
+              <p className="mt-2 text-sm text-muted leading-relaxed">{t.focus}</p>
+              <div className="mt-auto pt-4">
+                <Link href="/curriculum" className="btn3d btn3d-ghost btn3d-sm">
+                  Mapped curriculum <ArrowRight className="h-3.5 w-3.5" />
+                </Link>
+              </div>
+            </div>
+          ))}
+          {/* undecided card — completes the grid, routes to the diagnostic */}
+          <div className="qf-card-flat p-5 flex flex-col !bg-accent-soft/60 border-2 border-accent/30">
+            <div className="flex items-center justify-between gap-2">
+              <span className="chip">Track ?</span>
+              <span className="icon-tile icon-tile-sm"><Compass /></span>
+            </div>
+            <h3 className="mt-3 font-extrabold tracking-tight leading-snug">Undecided?</h3>
+            <p className="mt-1 text-xs font-bold text-faint">Every track shares the same core phases</p>
+            <p className="mt-2 text-sm text-muted leading-relaxed">
+              The first phases are common to all five tracks — start the curriculum and take the diagnostic; your
+              placement picks the track with you.
+            </p>
+            <div className="mt-auto pt-4">
+              <Link href="/diagnostic" className="btn3d btn3d-ghost btn3d-sm">
+                Take the diagnostic <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Requirements matrix */}
+      {matrix && (
+        <section className="mt-10">
+          <div className="section-head">
+            <span className="icon-tile icon-tile-sm icon-tile-warning"><Table2 /></span>
+            <h2>Requirements matrix</h2>
+            <span className="chip ml-auto tnum">Updated {matrix.generatedAt}</span>
+          </div>
+          <div className="mb-3 flex flex-wrap items-center gap-1.5 text-xs">
+            <span className="text-faint font-bold">Legend:</span>
+            <span className="chip chip-danger">essential</span>
+            <span className="chip chip-warning">frequently required</span>
+            <span className="chip chip-accent">role-dependent</span>
+            <span className="chip">varies by seat</span>
+          </div>
+          <div className="qf-card p-2 sm:p-4 overflow-x-auto thin-scroll">
+            <table className="qf-table">
+              <thead>
+                <tr>
+                  <th>Skill</th>
+                  <th>Asset managers</th>
+                  <th>Banks</th>
+                  <th>Prop trading</th>
+                  <th>Hedge funds</th>
+                  <th>Market data</th>
+                </tr>
+              </thead>
+              <tbody>
+                {matrix.rows.map(r => (
+                  <tr key={r.skill}>
+                    <td className="font-bold capitalize" title={r.note ?? undefined}>
+                      {r.skill.replace(/-/g, ' ')}
+                      {r.note && <span className="ml-1.5 text-faint" title={r.note}>ⓘ</span>}
+                    </td>
+                    {['assetManagers', 'banks', 'propTrading', 'hedgeFunds', 'marketData'].map(k => {
+                      const v = r[k as keyof typeof r] as string;
+                      const cls = v === 'essential' ? 'chip-danger' : v === 'frequently required' ? 'chip-warning' : v === 'role-dependent' ? 'chip-accent' : '';
+                      const cellChip = cls ? 'chip ' + cls : 'chip';
+                      return <td key={k}><span className={cellChip}>{v}</span></td>;
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {/* Company profiles */}
+      <section className="mt-10">
+        <div className="section-head">
+          <span className="icon-tile icon-tile-sm icon-tile-gold"><Building2 /></span>
+          <h2>Company preparation profiles</h2>
+          <span className="chip ml-auto">{companies.length} firms</span>
+        </div>
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {enriched.map((c, i) => (
+            <div
+              key={c.slug}
+              className="qf-card p-5 flex flex-col anim-slide-up hover:-translate-y-0.5 hover:shadow-lg transition-all"
+              style={{ animationDelay: SLIDE_DELAYS[i % SLIDE_DELAYS.length] }}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <span className={`icon-tile ${AVATAR_TILES[i % AVATAR_TILES.length]}`}>
+                  <span className="font-black text-xl">{c.name.charAt(0)}</span>
+                </span>
+                <span className="chip">{CATEGORY_LABEL[c.category] ?? c.category}</span>
+              </div>
+              <h3 className="mt-3 font-extrabold tracking-tight text-lg">{c.name}</h3>
+              <p className="mt-0.5 text-sm text-muted leading-snug">{COMPANY_BLURB[c.slug] ?? CATEGORY_DESC[c.category] ?? 'Quantitative hiring preparation profile.'}</p>
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                <span className="chip"><MapPin className="h-3 w-3" /> {c.roles} roles</span>
+                <span className="chip"><Layers className="h-3 w-3" /> {c.areas} areas</span>
+                <span className="chip"><Route className="h-3 w-3" /> {c.tracks} tracks</span>
+              </div>
+              <div className="mt-auto pt-4">
+                <Link href={`/career/${c.slug}`} className="btn3d btn3d-sm w-full sm:w-auto">
+                  Explore roles <ArrowRight className="h-3.5 w-3.5" />
+                </Link>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Resume guidance */}
+      <section className="mt-10">
+        <div className="section-head">
+          <span className="icon-tile icon-tile-sm icon-tile-violet"><FileText /></span>
+          <h2>Resume guidance for quantitative developers</h2>
+        </div>
+        <div className="grid md:grid-cols-2 gap-4">
+          {RESUME_TIPS.map((tip, i) => (
+            <div
+              key={tip.title}
+              className="qf-card-flat p-5 anim-slide-up hover:-translate-y-0.5 hover:shadow-lg transition-all"
+              style={{ animationDelay: SLIDE_DELAYS[i % SLIDE_DELAYS.length] }}
+            >
+              <div className="flex items-center gap-3">
+                <span className={`icon-tile icon-tile-sm ${tip.tile}`}><tip.icon /></span>
+                <h3 className="font-extrabold tracking-tight">{tip.title}</h3>
+              </div>
+              <p className="mt-2.5 text-sm text-muted leading-relaxed">{tip.body}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Application tracker */}
+      {user ? (
+        <section className="mt-10">
+          <div className="section-head">
+            <span className="icon-tile icon-tile-sm icon-tile-accent"><ClipboardList /></span>
+            <h2>Application tracker</h2>
+            <span className="chip ml-auto tnum">{applications.length} logged</span>
+          </div>
+          <ApplicationTracker initial={applications.map(a => ({ id: a.id, company: a.company, role: a.role, status: a.status, note: a.note }))} />
+        </section>
+      ) : (
+        <section className="mt-10 rounded-2xl border-2 border-accent bg-accent-soft p-5 sm:p-6 anim-slide-up">
+          <div className="flex flex-wrap items-center gap-4 justify-between">
+            <div className="flex items-center gap-4 min-w-0">
+              <span className="icon-tile bg-surface text-accent-deep dark:text-accent"><Compass /></span>
+              <div>
+                <h2 className="font-extrabold text-lg tracking-tight">Not sure where you stand?</h2>
+                <p className="text-sm text-muted">Take the 28-question diagnostic and start at the phase that matches you — no wasted weeks.</p>
+              </div>
+            </div>
+            <Link href="/diagnostic" className="btn3d">Take the diagnostic <ArrowRight className="h-4 w-4" /></Link>
+          </div>
+        </section>
+      )}
+    </div>
+  );
+
+  if (!user) {
+    return (
+      <div className="min-h-screen flex flex-col">
+        <PublicHeader user={null} />
+        {body}
+      </div>
+    );
+  }
+  return <AppShell user={{ name: user.name, email: user.email, role: user.role }} isAdmin={user.role === 'admin'}>{body}</AppShell>;
+}

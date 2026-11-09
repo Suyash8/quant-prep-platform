@@ -1,0 +1,250 @@
+{
+  "id": "py-iterators-generators-decorators",
+  "moduleId": "ph3-python-foundations",
+  "title": "Iterators, Generators, Decorators and Context Managers",
+  "estMinutes": 27,
+  "difficulty": "foundation",
+  "prereqs": ["py-oop"],
+  "objectives": [
+    "Explain the iteration protocol - iter(), next() and StopIteration - as what a for-loop actually does",
+    "Write generator functions with yield and generator expressions, and explain why they stream values lazily with constant memory",
+    "Write a decorator that wraps a function to add timing behaviour, using functools.wraps to preserve identity",
+    "Use with-statement context managers for resource safety, including a @contextmanager-built one"
+  ],
+  "motivation": "A session of market data does not fit in memory, a profiler must time functions you did not write, and a database connection must close even when the query crashes. Four Python mechanisms solve these exactly: iterators define how anything becomes loopable, generators stream millions of quotes one at a time, decorators bolt timing or caching onto existing functions, and context managers guarantee cleanup. They are the marks of Python written by someone who has moved past scripts.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "The iteration protocol"
+    },
+    {
+      "type": "p",
+      "md": "Every for-loop runs on one machinery: the iterable's iter() produces an **iterator**, and each step calls next() on it until it raises StopIteration - the loop's normal exit. You can drive that protocol by hand to see what a for-loop hides, and any object offering __iter__ or __next__ can join the ecosystem: list, dict, file and set are all iterable in exactly this way."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "it = iter(['AAPL', 'MSFT', 'TSLA'])\nprint(next(it))   # AAPL\nprint(next(it))   # MSFT\nprint(next(it))   # TSLA\n# a fourth next(it) would raise StopIteration",
+      "caption": "A for-loop is exactly this dance - next() until StopIteration - wrapped in syntax."
+    },
+    {
+      "type": "h2",
+      "text": "Generators: sequences that compute on demand"
+    },
+    {
+      "type": "p",
+      "md": "A function containing **yield** is a generator function. Calling it runs no body at all - it returns a lazy iterator; each next() runs the body to the next yield, hands back that value, and freezes the function with all local state intact until demanded again. Because values exist one at a time and never as a full list, a generator can stream a session of prices through a loop with constant memory. That is the pattern behind reading a market-data feed without loading it whole."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "def price_stream(start, drift, n):\n    \"\"\"Yield n simulated prices, each drifting up by a fixed factor.\"\"\"\n    price = start\n    for _ in range(n):\n        yield price\n        price *= 1 + drift\n\nfor p in price_stream(100.0, 0.01, 3):\n    print(round(p, 2))     # 100.0, 101.0, 102.01 - one per line",
+      "caption": "The generator pauses at each yield and resumes exactly where it stopped - state included."
+    },
+    {
+      "type": "p",
+      "md": "A **generator expression** is a comprehension with parentheses: `(q * p for q, p in zip(qtys, prices))`. It looks like the list version from the control-flow lesson but produces nothing until consumed - which is why feeding it to sum() aggregates while holding one value at a time. Rule of thumb: pass generator expressions into aggregations, build lists when you need to iterate more than once."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "qtys = [250, 100, 50]\nprices = [42.25, 43.50, 41.75]\nnotional = sum(q * p for q, p in zip(qtys, prices))\nprint(notional)   # 17000.0",
+      "caption": "One pass, one running total - no intermediate list of leg values."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Generators are single-use",
+      "md": "Once a generator is exhausted, it is empty forever - sum it twice and the second pass finds nothing. If results must be revisited, store list(gen()) instead. This bug is silent: no error, just a suspicious zero."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "def gen():\n    yield 10\n    yield 20\n\ng = gen()\nprint(sum(g))   # 30\nprint(sum(g))   # 0  - exhausted on the first pass",
+      "caption": "The second sum(g) re-consumes the same, now-empty iterator."
+    },
+    {
+      "type": "h2",
+      "text": "Decorators: wrapping functions"
+    },
+    {
+      "type": "p",
+      "md": "Some concerns - timing, logging, caching, retries - belong to every function equally, and copy-pasting them into each one is how codebases rot. A **decorator** is a function that takes a function and returns a wrapped replacement; the `@name` line is pure shorthand for `f = name(f)`. Inside the wrapper, `*args, **kwargs` forward any call arguments, and functools.wraps preserves the wrapped function's name and docstring so tooling still sees the real function."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import functools\nimport time\n\ndef timed(func):\n    @functools.wraps(func)\n    def wrapper(*args, **kwargs):\n        start = time.perf_counter()\n        result = func(*args, **kwargs)\n        elapsed = time.perf_counter() - start\n        print(f'{func.__name__}: {elapsed:.6f}s')\n        return result\n    return wrapper\n\n@timed\ndef total_notional(trades):\n    return sum(qty * price for _, qty, price in trades)\n\ntrades = [('AAPL', 250, 42.25), ('MSFT', 100, 43.50)]\nprint(total_notional(trades))\n# total_notional: 0.000012s   <- timing varies between runs\n# 14912.5",
+      "caption": "@timed adds profiling to any function without touching its body - the wrapper intercepts, times, then returns the real result."
+    },
+    {
+      "type": "h2",
+      "text": "Context managers: resources with guarantees"
+    },
+    {
+      "type": "p",
+      "md": "The with-statement from the files lesson is a general protocol: the context manager's __enter__ runs at the `with`, its __exit__ runs when the block ends - **even if an exception occurred**. That guarantee is what makes with open(...) safe. You can build your own with contextlib.contextmanager: write a generator with a single yield; code before the yield is the enter phase, code after it the exit phase."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "from contextlib import contextmanager\nimport time\n\n@contextmanager\ndef timed_section(label):\n    start = time.perf_counter()\n    yield                       # the with-block body runs here\n    print(f'{label}: {time.perf_counter() - start:.6f}s')\n\nwith timed_section('loading fills'):\n    fills = [100, 250, 150]\nprint(len(fills))               # 3",
+      "caption": "Same timing idea, now as a block: everything between the with and the yield is measured, whatever happens inside."
+    },
+    {
+      "type": "interactive",
+      "component": "RandomWalk",
+      "params": {
+        "steps": 60,
+        "pUp": 0.5
+      },
+      "caption": "A simulated price path arrives one tick at a time - exactly how a generator streams data to a consumer instead of materialising the whole history."
+    },
+    {
+      "type": "p",
+      "md": "These four ideas - iterator protocol, generators, decorators, context managers - explain most of what looks like magic in mature Python codebases, and they power the iteration inside pandas and NumPy that later modules lean on. Recognising them turns unfamiliar code into four known shapes."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Write a generator function `large_fills(fills, min_qty)` that yields only the (symbol, qty, price) tuples whose quantity is at least min_qty. Test it over `[('AAPL', 250, 42.25), ('MSFT', 100, 43.50), ('TSLA', 300, 41.75)]` with min_qty 200, printing symbol and qty for each yielded fill.",
+    "hints": [
+      "The function needs a for loop over fills and a yield inside an if.",
+      "Yield the whole tuple, then unpack it in the consuming for loop.",
+      "Only AAPL (250) and TSLA (300) pass the min_qty 200 filter."
+    ],
+    "solution": "```python\ndef large_fills(fills, min_qty):\n    for symbol, qty, price in fills:\n        if qty >= min_qty:\n            yield symbol, qty, price\n\nfills = [('AAPL', 250, 42.25), ('MSFT', 100, 43.50), ('TSLA', 300, 41.75)]\nfor symbol, qty, price in large_fills(fills, 200):\n    print(symbol, qty)\n```\nOutput:\n\n```\nAAPL 250\nTSLA 300\n```\nThe generator yields nothing until the consuming loop asks, then hands over exactly the two qualifying fills - one at a time, no filtered copy built."
+  },
+  "independentExercise": {
+    "prompt": "Build a `counted` decorator that tracks how many times each decorated function has been called: the wrapper increments an attribute `wrapper.calls` (starting at 0) on every invocation before returning the real result, and use functools.wraps. Decorate a `value(qty, price)` function returning qty * price, call it with (250, 42.25) and (100, 43.50), print both results, then print value.calls.",
+    "hints": [
+      "Set wrapper.calls = 0 after defining wrapper but before returning it.",
+      "The wrapper must return func(*args, **kwargs) so the real value still comes out.",
+      "Hand check: 250 x 42.25 = 10562.5."
+    ],
+    "solution": "```python\nimport functools\n\ndef counted(func):\n    @functools.wraps(func)\n    def wrapper(*args, **kwargs):\n        wrapper.calls += 1\n        return func(*args, **kwargs)\n    wrapper.calls = 0\n    return wrapper\n\n@counted\ndef value(qty, price):\n    return qty * price\n\nprint(value(250, 42.25))   # 10562.5\nprint(value(100, 43.50))   # 4350.0\nprint(value.calls)         # 2\n```\nThe wrapper intercepts every call, increments the counter stored on the wrapper object itself, and returns the true product - two calls, so value.calls prints 2."
+  },
+  "commonMistakes": [
+    "Consuming a generator twice and reading a silent 0 instead of an error - generators are single-use; materialise a list if you must iterate again.",
+    "Calling a generator function and expecting values immediately: gen() runs no body, it returns a lazy iterator that must be consumed.",
+    "Wrapping a function without functools.wraps, so its __name__ and docstring become 'wrapper' and None in logs and tooling.",
+    "Forgetting the yield inside a @contextmanager generator - without exactly one yield, the with-statement has no enter/exit phases and fails."
+  ],
+  "realWorldApplication": "Log and data-feed processors stream files with generators rather than loading them whole; profiling decorators and timing context managers are standard instrumentation; every with-block in a codebase is a context manager doing guaranteed cleanup.",
+  "quantFinanceApplication": "A tick feed streamed through a generator keeps a backtest's memory flat no matter how many quotes the day held, and a @timed decorator around the signal-generation step is the cheapest first profiler a desk tool gets."
+  , "summary": [
+    "For-loops are iter() + next() until StopIteration; any object with that protocol can be looped over.",
+    "Generators (yield) and generator expressions stream values lazily with constant memory - but are single-use; second passes see nothing.",
+    "Decorators wrap functions to add behaviour (timing, counting, caching) without touching the wrapped body; @name is sugar for f = name(f).",
+    "Context managers (with) guarantee __exit__ cleanup even on exceptions; @contextmanager builds one from a generator with a single yield."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "code-output",
+      "prompt": "What does this script print?",
+      "language": "python",
+      "code": "def gen():\n    yield 1\n    yield 2\n    yield 3\n\ng = gen()\nprint(next(g))\nprint(next(g))\nprint(sum(g))",
+      "answer": "1\n2\n3",
+      "explanation": "Two next() calls consume 1 and 2; sum(g) then consumes what remains - only 3 - and prints 3."
+    },
+    {
+      "id": "q2",
+      "type": "code-output",
+      "prompt": "What does this script print?",
+      "language": "python",
+      "code": "def gen():\n    yield 10\n    yield 20\n\ng = gen()\nprint(sum(g))\nprint(sum(g))",
+      "answer": "30\n0",
+      "explanation": "The first sum exhausts the generator (10 + 20 = 30); the second finds it empty and sums nothing, printing 0 - generators are single-use."
+    },
+    {
+      "id": "q3",
+      "type": "code-output",
+      "prompt": "What does this script print?",
+      "language": "python",
+      "code": "def shout(fn):\n    def wrapper():\n        return fn().upper()\n    return wrapper\n\n@shout\ndef greet():\n    return 'fill received'\n\nprint(greet())",
+      "answer": "FILL RECEIVED",
+      "explanation": "@shout replaces greet with wrapper, which calls the original and upper-cases its result before returning."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "Why do generators use far less memory than building an equivalent list?",
+      "options": [
+        "They compress values before storing them",
+        "They compute and hand over one value at a time, never holding the whole sequence",
+        "They store values on disk instead of RAM",
+        "They convert all values to integers"
+      ],
+      "answerIndex": 1,
+      "explanation": "A generator's body is paused between yields - it keeps one value and its local state alive, producing the next only on demand, so memory stays constant regardless of sequence length."
+    },
+    {
+      "id": "q5",
+      "type": "mcq",
+      "prompt": "Calling next() on an exhausted generator raises which exception?",
+      "options": [
+        "ValueError",
+        "IndexError",
+        "StopIteration",
+        "It returns None"
+      ],
+      "answerIndex": 2,
+      "explanation": "StopIteration is the protocol's end signal - a for-loop catches it internally, which is why loops simply end instead of crashing."
+    },
+    {
+      "id": "q6",
+      "type": "mcq",
+      "prompt": "What guarantee does a with-statement give you about its block?",
+      "options": [
+        "The block runs at least twice",
+        "The context manager's cleanup (__exit__) runs when the block ends, even if an exception occurred",
+        "The block's variables become global",
+        "Exceptions inside the block are always silently ignored"
+      ],
+      "answerIndex": 1,
+      "explanation": "The protocol calls __enter__ at the with and __exit__ on every exit path - that is why with open(...) never leaks a handle, even mid-crash. Exceptions still propagate; they are not swallowed."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "definition",
+      "front": "What does yield do to a function?",
+      "back": "Turns it into a generator: calling it returns a lazy iterator; each next() runs the body to the next yield, then freezes it with local state until demanded again."
+    },
+    {
+      "type": "concept",
+      "front": "How many times can a generator be consumed?",
+      "back": "Once - after StopIteration it yields nothing more, so sum(g) twice gives the total then 0. Materialise list(g) if you must iterate repeatedly."
+    },
+    {
+      "type": "concept",
+      "front": "What is a decorator?",
+      "back": "A function that takes a function and returns a wrapped replacement; @name is sugar for f = name(f). Use functools.wraps to preserve the wrapped function's name and docstring."
+    },
+    {
+      "type": "concept",
+      "front": "What does a with-statement guarantee?",
+      "back": "__enter__ runs at the with, __exit__ runs when the block ends even on an exception - guaranteed cleanup for files, locks and connections. contextlib.contextmanager builds one from a single-yield generator."
+    },
+    {
+      "type": "code-output",
+      "front": "g = gen() (yields 10, 20); print(sum(g)); print(sum(g)) - output?",
+      "back": "30 then 0 - the first sum exhausts the generator, the second finds it empty."
+    }
+  ],
+  "references": [
+    {
+      "label": "Python.org - Generators",
+      "url": "https://docs.python.org/3/tutorial/classes.html#generators"
+    },
+    {
+      "label": "Python.org - contextlib module",
+      "url": "https://docs.python.org/3/library/contextlib.html"
+    },
+    {
+      "label": "PEP 343 - The with statement",
+      "url": "https://peps.python.org/pep-0343/"
+    }
+  ],
+  "skills": ["python"]
+}

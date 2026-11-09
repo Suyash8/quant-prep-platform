@@ -1,0 +1,225 @@
+{
+  "id": "cpp-templates",
+  "moduleId": "ph4-cpp-l5",
+  "title": "Function and Class Templates",
+  "estMinutes": 28,
+  "difficulty": "advanced",
+  "prereqs": ["cpp-stl-memory-traits"],
+  "objectives": [
+    "Explain how function and class templates generate typed code at compile time and when instantiation actually happens",
+    "Write function templates with correct template argument deduction, including explicit template arguments",
+    "Write class templates with type and non-type parameters and predict sizeof of an instantiation",
+    "Use full specialisation and C++17 class template argument deduction (CTAD) appropriately"
+  ],
+  "motivation": "A PnL engine needs the same accumulate-and-report loop for double P&L, for integer lot counts, and for a fixed-point price type. Copy-pasting the loop three times is how divergence bugs start: fix one copy, forget the other two. C++ templates make the *type itself* a parameter, and the compiler stamps out a typed copy for every type you use - std::vector, std::map and every STL algorithm you already rely on are themselves templates.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Why templates exist"
+    },
+    {
+      "type": "p",
+      "md": "Templates solve the oldest problem in typed languages: writing one algorithm that works for many types without paying for it at runtime. The alternatives all leak. Copy-paste diverges. `void*` throws type safety away. Virtual dispatch costs an indirect call per element. A template makes the type a parameter: you write the algorithm once, and the compiler stamps out a typed copy - an **instantiation** - for each type actually used. There is no function pointer, no boxing, no vtable: the generated machine code is what you would have handwritten. That guarantee is why templates are called a **zero-overhead abstraction**."
+    },
+    {
+      "type": "h2",
+      "text": "Function templates and deduction"
+    },
+    {
+      "type": "p",
+      "md": "A function template declares `T` as a type parameter and uses it like an ordinary type. At each call site the compiler performs **template argument deduction** from the arguments. Deduction is all-or-nothing per parameter: in `midpoint(99, 100.5)` the compiler would have to make `T` both `int` and `double`, so it refuses and reports conflicting deduction. Either cast one argument or state the template argument explicitly: `midpoint<double>(99, 100.5)` computes $99 + (100.5 - 99)/2 = 99.75$."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "// C++17\n#include <iostream>\n\ntemplate<typename T>               // T is a type parameter\nT midpoint(T bid, T ask) {\n    return bid + (ask - bid) / 2;\n}\n\nint main() {\n    std::cout << midpoint(99, 101) << \"\\n\";       // T = int    -> 100\n    std::cout << midpoint(99.0, 101.0) << \"\\n\";   // T = double -> 100\n    // midpoint(99, 100.5);  // compile error: T deduced as int AND double\n}",
+      "caption": "One source, one generated function per argument type."
+    },
+    {
+      "type": "callout",
+      "variant": "info",
+      "title": "What the compiler actually does",
+      "md": "Nothing is generated when a template is merely parsed. Machine code for `midpoint<double>` appears only when a call instantiates it, and a template that is never used generates no code at all. This is also why template code lives in headers: the compiler must see the full definition at the point of instantiation."
+    },
+    {
+      "type": "h2",
+      "text": "Class templates and non-type parameters"
+    },
+    {
+      "type": "p",
+      "md": "Classes take two kinds of template parameters: types (`typename T`) and compile-time constants (`std::size_t N`) - the latter are **non-type template parameters**. Every distinct $(T, N)$ combination is a different, unrelated class: `FixedVec<double, 4>` and `FixedVec<double, 8>` share no code, and their `sizeof` differs. Because `N` is known at compile time the elements live inline in the object - no heap allocation, exactly like `std::array`."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "// C++17\n#include <cstddef>\n#include <iostream>\n\ntemplate<typename T, std::size_t N>   // N is a non-type parameter\nclass FixedVec {\npublic:\n    void push(T x) { data_[n_++] = x; }\n    T total() const {\n        T sum{};\n        for (std::size_t i = 0; i < n_; ++i) sum += data_[i];\n        return sum;\n    }\nprivate:\n    T data_[N]{};\n    std::size_t n_ = 0;\n};\n\nint main() {\n    FixedVec<double, 4> px;                     // concrete type FixedVec<double,4>\n    px.push(10.5); px.push(11.25); px.push(9.75); px.push(10.0);\n    std::cout << px.total() << \"\\n\";            // 41.5\n    std::cout << sizeof(FixedVec<double, 4>) << \"\\n\"; // 40 = 4 doubles + count\n    std::cout << sizeof(FixedVec<double, 8>) << \"\\n\"; // 72 = 8 doubles + count\n}",
+      "caption": "Each (T, N) pair instantiates its own class with its own layout."
+    },
+    {
+      "type": "interactive",
+      "component": "MemoryLayout",
+      "params": { "totalBytes": 40, "bytesPerRow": 8 },
+      "caption": "FixedVec<double, 4> occupies 40 bytes: four doubles inline plus an 8-byte count. Every (T, N) instantiation lays out differently - and none of them carries a hidden pointer or vtable."
+    },
+    {
+      "type": "h2",
+      "text": "Where the code lives, and what it costs"
+    },
+    {
+      "type": "p",
+      "md": "The compiler needs the full template definition visible wherever an instantiation happens, so templates almost always live in headers, definitions and all. Splitting a template across a .cpp compiles cleanly but fails at link time with an *undefined reference*, because the using translation unit could not instantiate what it could not see. The flip side of generating typed copies is **code bloat**: fifty instantiations of a large algorithm mean fifty copies in the binary. Measure before worrying - small template functions usually inline to nothing - but when bloat is real, deduce toward one common type or move the type-independent core into a non-template function."
+    },
+    {
+      "type": "h2",
+      "text": "Specialisation and CTAD"
+    },
+    {
+      "type": "p",
+      "md": "When one exact argument set deserves a different implementation, write a **full specialisation**: `template<> class FixedVec<bool, 64>` with a bit-packed body. The compiler prefers the most specialised match, silently, at compile time. A **partial specialisation** replaces a whole family instead, e.g. `template<typename T, std::size_t N> class FixedVec<T*, N>` for every pointer element type. This is how `std::vector<bool>` famously packs its bits - a compile-time decision with zero runtime cost."
+    },
+    {
+      "type": "p",
+      "md": "Since C++17 you can often omit the template arguments of a class template altogether: **class template argument deduction** (CTAD) infers them from constructor arguments, so `std::pair px(1, 2.5)` means `std::pair<int, double>` with no `make_pair`. Your own class templates can opt in with deduction guides; the standard library already is."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "// C++17 - class template argument deduction (CTAD)\n#include <iostream>\n#include <utility>\n#include <vector>\n\nint main() {\n    std::pair px(1, 2.5);          // std::pair<int, double>, no make_pair\n    std::vector qx{10.5, 11.25};   // std::vector<double>\n    std::cout << px.first << \" \" << qx[0] << \"\\n\";   // 1 10.5\n}",
+      "caption": "C++17: the compiler deduces class template arguments like it deduces function template arguments."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Why desks care",
+      "md": "A pricing kernel written as a template instantiates once per price representation - `double`, fixed-point, decimal. The compiler inlines the right arithmetic into the hot loop, so the abstraction costs nothing at runtime; the bill arrives instead as compile time and binary size, which is usually the right trade."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Write a function template `total(const std::vector<T>& v)` that returns the sum of the elements. Then trace exactly what the compiler does for two calls: `total(std::vector<double>{10.5, 11.25, 9.75, 10.0})` and `total(std::vector<int>{200, 300, -50})`. State what `T` is deduced as in each case, the returned value, and how many functions are generated.",
+    "hints": [
+      "Declare `template<typename T> T total(const std::vector<T>& v)` - deduction reads the vector's element type.",
+      "Initialise the accumulator with `T sum{};` so it becomes zero of the right type for any T.",
+      "One instantiation is generated per distinct T that appears at a call site."
+    ],
+    "solution": "```cpp\n// C++17\ntemplate<typename T>\nT total(const std::vector<T>& v) {\n    T sum{};\n    for (const T& x : v) sum += x;\n    return sum;\n}\n```\n\nFor the first call the compiler deduces `T = double` and generates `total<double>`: $10.5 + 11.25 + 9.75 + 10.0 = 41.5$. For the second it deduces `T = int` and generates a separate `total<int>`: $200 + 300 - 50 = 450$. **Two independent functions** were generated at two call sites; if `total` is never called for a third type, no code for it exists.\n\n`T sum{}` zero-initialises whatever T is, so the template works for any type that is default-constructible and supports `+=`. The tempting `T sum = 0;` would fail to compile for types without a constructor from `int` - `T{}` is the general form."
+  },
+  "independentExercise": {
+    "prompt": "Extend the lesson's `FixedVec<T, N>` (with `push` and `total`) into a tiny fill accumulator. Instantiate `FixedVec<double, 3>`, push the fill prices 10.5, 11.25 and 9.75, and print the total. Answer precisely: (a) What is the exact type name the compiler generates? (b) What does `total()` return? (c) What is `sizeof(FixedVec<double, 3>)` on x86-64? (d) What happens inside the binary the moment someone else also creates a `FixedVec<int, 3>`?",
+    "hints": [
+      "For double with no padding needs: sizeof = $N \\times 8$ bytes of data plus 8 bytes for the std::size_t count.",
+      "Two instantiations from the same template are unrelated types; each generates its own push/total machine code."
+    ],
+    "solution": "(a) The compiler generates the concrete class `FixedVec<double, 3>` from the template - a real type in the binary, distinct from every other `FixedVec<T, N>`.\n\n(b) $10.5 + 11.25 + 9.75 = 31.5$.\n\n(c) $3 \\times 8 = 24$ bytes of inline doubles plus the 8-byte `std::size_t` count $= \\mathbf{32}$ bytes, with no padding needed (alignment 8 is satisfied).\n\n(d) A **second, independent instantiation** `FixedVec<int, 3>` is generated: its own `push`/`total` code and layout (integers take 4 bytes, so its layout and arithmetic differ). That is code bloat's price - paid in binary size, never in per-element runtime dispatch."
+  },
+  "commonMistakes": [
+    "Defining a template only in a .cpp file - instantiation needs the full definition at the point of use, so templates live in headers and the mistake surfaces as linker errors, not compiler errors.",
+    "Calling `f(1, 2.5)` against a single-type-parameter template: T is deduced as both int and double and deduction fails. Cast an argument or write `f<double>(1, 2.5)`.",
+    "Writing `T sum = 0;` instead of `T sum{};` - the first fails to compile for types with no constructor from int.",
+    "Assuming the compiler checks all template code at definition: dependent code is diagnosed only at instantiation, so bugs can stay hidden until a new type is used.",
+    "Forgetting that every distinct (T, N) set generates another copy of the code - instantiating a big template across dozens of types bloats the binary."
+  ],
+  "realWorldApplication": "The entire STL is templates, and low-latency pricing engines use templates to specialise hot kernels per instrument or price representation at compile time, deliberately trading binary size and compile time for zero runtime dispatch.",
+  "quantFinanceApplication": "An order book template instantiates once per price/quantity type - double for research, fixed-point for production - and the compiler weaves the correct arithmetic into the hot path with no virtual calls on any tick.",
+  "summary": [
+    "Templates parameterise code on types (`typename T`) and compile-time values (`std::size_t N`); the compiler instantiates a typed copy at each point of use.",
+    "An unused template generates no code; each distinct argument set costs binary size, never per-element runtime dispatch.",
+    "Deduction is per-parameter and all-or-nothing: `f(1, 2.5)` fails with one T - cast, or specify `f<double>(1, 2.5)`.",
+    "Full specialisations (`template<>`) and partial specialisations replace the primary template for specific argument sets; the most specialised match wins.",
+    "Since C++17, CTAD deduces class template arguments from constructor calls: `std::pair px(1, 2.5)`."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "When does the compiler actually generate machine code for `midpoint<double>`?",
+      "options": [
+        "As soon as it parses the template definition",
+        "When it reaches a call such as `midpoint(99.0, 101.0)` and instantiates T = double",
+        "At program startup, once for every type it can imagine",
+        "At link time, when the linker resolves the call"
+      ],
+      "answerIndex": 1,
+      "explanation": "Instantiation happens at the point of use with concrete template arguments. Parsing a template generates nothing, and an unused template generates no code at all."
+    },
+    {
+      "id": "q2",
+      "type": "code-output",
+      "prompt": "What does this C++17 program print?",
+      "language": "cpp",
+      "code": "#include <iostream>\ntemplate<typename T> T twice(T x) { return x + x; }\nint main() {\n    std::cout << twice(21) << \"\\n\";\n    std::cout << twice(1.5) << \"\\n\";\n    std::cout << twice<double>(21) << \"\\n\";\n}",
+      "answer": "42\n3\n42",
+      "explanation": "`twice(21)` instantiates `twice<int>`: 42. `twice(1.5)` instantiates `twice<double>`: 3.0, printed by iostream as `3`. The explicit `twice<double>(21)` forces T = double even for the int literal: 21.0 + 21.0 = 42.0, printed as `42`."
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "Given `template<typename T> struct Box { T v; };`, what is `sizeof(Box<double>)` on x86-64?",
+      "answer": 8,
+      "explanation": "The struct contains exactly one 8-byte double. A template adds no hidden members - no tag, no pointer - so the wrapper's size equals its member's size."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "You define a class template entirely in one .cpp file and use it from another translation unit. What happens?",
+      "options": [
+        "It works: templates are automatically exported like inline functions",
+        "The compiler silently duplicates the definition into every translation unit",
+        "A linker error: the using translation unit cannot instantiate a template whose full definition it never saw",
+        "Undefined behaviour at runtime"
+      ],
+      "answerIndex": 2,
+      "explanation": "The compiler needs the full template definition visible at the point of instantiation. A .cpp-only definition compiles but produces an *undefined reference* at link time - the classic reason templates live in headers."
+    },
+    {
+      "id": "q5",
+      "type": "mcq",
+      "prompt": "A primary template `FixedVec<T, N>` exists, plus `template<> class FixedVec<bool, 64>`. What code does `FixedVec<bool, 64> x;` use?",
+      "options": [
+        "A compile error: exact-argument specialisations are not allowed",
+        "The primary template, silently",
+        "The specialised version - a full specialisation wins over the primary template",
+        "The primary template with sizeof(bool) rounded up"
+      ],
+      "answerIndex": 2,
+      "explanation": "A full specialisation replaces the primary template for that exact argument set. This is the mechanism behind `std::vector<bool>`'s bit packing."
+    },
+    {
+      "id": "q6",
+      "type": "code-output",
+      "prompt": "What does this C++17 program print?",
+      "language": "cpp",
+      "code": "#include <iostream>\ntemplate<typename T, int N> struct Fixed { T data[N]; };\nint main() {\n    std::cout << sizeof(Fixed<double, 4>) << \" \" << sizeof(Fixed<char, 10>);\n}",
+      "answer": "32 10",
+      "explanation": "`Fixed<double, 4>` holds four 8-byte doubles = 32 bytes; `Fixed<char, 10>` holds ten 1-byte chars = 10 bytes. The template adds no hidden members; each (T, N) instantiation is exactly its data."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "definition",
+      "front": "What is a template instantiation?",
+      "back": "The concrete function or class the compiler generates from a template for one specific set of template arguments (e.g. midpoint<double>). Each distinct argument set generates separate code; unused templates generate none."
+    },
+    {
+      "type": "code-output",
+      "front": "template<typename T, int N> struct Fixed { T data[N]; }; What is sizeof(Fixed<double, 4>) on x86-64?",
+      "back": "32 - four 8-byte doubles. Templates add no hidden members or tags."
+    },
+    {
+      "type": "concept",
+      "front": "Why must template definitions live in headers?",
+      "back": "The compiler needs the full definition visible at the point of instantiation. A .cpp-only definition gives undefined-reference linker errors from other translation units."
+    },
+    {
+      "type": "concept",
+      "front": "Full vs partial specialisation?",
+      "back": "Full: one exact argument set is replaced, template<> class X<bool, 64>. Partial: a whole family is replaced, template<typename T> class X<T*, N>. The most specialised match wins."
+    }
+  ],
+  "references": [
+    { "label": "cppreference — Function template", "url": "https://en.cppreference.com/w/cpp/language/function_template" },
+    { "label": "cppreference — Class template", "url": "https://en.cppreference.com/w/cpp/language/class_template" },
+    { "label": "cppreference — Template specialization", "url": "https://en.cppreference.com/w/cpp/language/template_specialization" },
+    { "label": "cppreference — Class template argument deduction (C++17)", "url": "https://en.cppreference.com/w/cpp/language/class_template_argument_deduction" }
+  ],
+  "skills": ["cpp-advanced"]
+}

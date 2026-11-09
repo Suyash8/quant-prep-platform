@@ -1,0 +1,263 @@
+{
+  "id": "cpp-internals-optimisation",
+  "moduleId": "ph4-cpp-l6",
+  "title": "What the Compiler Does: Inlining, RVO and UB Consequences",
+  "estMinutes": 28,
+  "difficulty": "advanced",
+  "prereqs": ["cpp-internals-abi"],
+  "objectives": [
+    "Explain what -O0 versus -O2 changes at the machine-code level (stack traffic, registers, inlining) under the as-if rule",
+    "Describe inlining as an enabling optimisation: constant folding and vectorisation across call boundaries",
+    "Distinguish guaranteed copy elision (C++17 prvalues) from optional RVO/NRVO and predict constructor/destructor sequences",
+    "Reason about signed-overflow undefined behaviour as an optimiser licence, including the x + 1 > x constant-fold",
+    "Read small x86-64 snippets (lea, mov, call *offset(%rax)) and connect them to the source constructs that produce them"
+  ],
+  "motivation": "A pricing kernel runs 8x faster after nothing but a flag change, and a bounds check that always fired in the debug build disappears in production. Neither is mysterious: the optimiser is legally allowed to do all of it, because the only contract is observable behaviour - and undefined behaviour suspends even that. To benchmark honestly, to debug a release binary, and to know when the compiler is 'smart' versus when it is exploiting you, you need a working model of what it does.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "The same source, two binaries"
+    },
+    {
+      "type": "p",
+      "md": "The only rule the optimiser must obey is the **as-if rule**: the program's observable behaviour (I/O, volatile accesses, and the results of well-defined operations) must be unchanged. Within that, everything is negotiable. At **-O0** gcc translates almost literally: every variable, including parameters, lives on the stack, and calls are real calls - debugger-friendly, memory-bound. At **-O2** it allocates registers, inlines, eliminates dead code and vectorises loops. Watch the same two-line function at both levels:"
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "int add(int a, int b) {\n    return a + b;\n}",
+      "caption": "One function, two translations below."
+    },
+    {
+      "type": "code",
+      "lang": "text",
+      "code": "add(int, int) at -O0 (objdump, gcc; shape varies slightly by version):\n        push   %rbp\n        mov    %rsp,%rbp\n        mov    %edi,-0x14(%rbp)    # store param a to the stack\n        mov    %esi,-0x18(%rbp)    # store param b to the stack\n        mov    -0x14(%rbp),%edx    # reload a\n        mov    -0x18(%rbp),%eax    # reload b\n        add    %edx,%eax\n        pop    %rbp\n        ret",
+      "caption": "Four stack accesses for two integers. -O0 is a straight-line transcript of the AST."
+    },
+    {
+      "type": "code",
+      "lang": "text",
+      "code": "add(int, int) at -O2:\n        lea    (%rdi,%rsi,1),%eax   # eax = a + b, computed where it sits\n        ret",
+      "caption": "Two instructions. No stack, no spills - and lea even does the add."
+    },
+    {
+      "type": "p",
+      "md": "Count the memory traffic: the -O0 body touches the stack four times for the parameters alone (2 stores, 2 loads); the -O2 body touches it **zero** times. Multiply that difference by every call in a hot pricing loop and the 'flag change speedup' stops being mysterious."
+    },
+    {
+      "type": "h2",
+      "text": "Inlining: the gateway optimisation"
+    },
+    {
+      "type": "p",
+      "md": "Inlining copies a callee's body into its call site. It is not primarily about saving the `call`/`ret` - it is about what becomes *possible* afterwards: arguments known at compile time can be folded, constants propagate across the old call boundary, and loops the optimiser could not see before can now be vectorised. Inline `int square(int x) { return x * x; }` and call `square(7)`: the whole thing folds at compile time and the call site executes one instruction."
+    },
+    {
+      "type": "code",
+      "lang": "text",
+      "code": "int use() { return square(7); }    # after -O2 inlining + constant folding:\n        mov    $0x31,%eax    # 0x31 = 49 - no call, no multiply, computed at build time",
+      "caption": "The optimisation cascade: inline -> fold -> delete code."
+    },
+    {
+      "type": "p",
+      "md": "The cost side is real: every inline duplicates code, and bloated code spills out of the instruction cache. So -O2 inlines *heuristically* (small, hot, single-use functions), not greedily - and virtual calls resist inlining because the callee is only known at runtime, unless devirtualised (previous lesson). This is why 'inline everything' is not a strategy and why profile-guided optimisation exists."
+    },
+    {
+      "type": "h2",
+      "text": "Copy elision: guaranteed vs granted"
+    },
+    {
+      "type": "p",
+      "md": "Returning an object by value nominally means constructing it, then copy/move-constructing it into the caller. Since **C++17**, when the return expression is a **prvalue** - an unnamed temporary like `return Report{};` - the standard *guarantees* elision: the object is constructed directly in the caller's storage. No copy, no move, not even conceptually, and it happens even with the copy and move constructors deleted. This is **guaranteed copy elision**. Returning a *named* local (NRVO) is different: the compiler is *permitted* to elide and usually does, but it is optional - so the move constructor must still exist and must still be cheap."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <cstdio>\n\nstruct Report {\n    Report()              { std::puts(\"constructed\"); }\n    Report(const Report&) { std::puts(\"copied\"); }\n    Report(Report&&)      { std::puts(\"moved\"); }\n    ~Report()             { std::puts(\"destroyed\"); }\n};\n\nReport make() {\n    return Report{};      // prvalue: C++17 guarantees NO copy, NO move\n}\n\nint main() {\n    Report r = make();\n    std::puts(\"done\");\n}",
+      "caption": "The object is built exactly where r lives, at every optimisation level."
+    },
+    {
+      "type": "code",
+      "lang": "text",
+      "code": "constructed\ndone\ndestroyed",
+      "caption": "Exact output with -std=c++17, at -O0 and -O2 alike. No 'copied', no 'moved' - it is the standard, not the optimiser, at work."
+    },
+    {
+      "type": "callout",
+      "variant": "info",
+      "title": "Why this changed how you write factories",
+      "md": "Pre-C++17, returning big objects meant relying on the optimiser's goodwill (or writing output parameters). Since C++17, `return Curve{std::move(members)...};`-style paranoia is unnecessary for prvalues: the prvalue is never an object until it lands in the caller. For named locals, NRVO still applies in practice - but keep moves cheap, because the standard only grants that one."
+    },
+    {
+      "type": "h2",
+      "text": "Undefined behaviour is an optimisation licence"
+    },
+    {
+      "type": "p",
+      "md": "For **unsigned** integers, overflow is defined: it wraps modulo $2^{32}$. For **signed** integers, overflow is **undefined behaviour** - and the optimiser reads UB not as 'may crash' but as 'assumes it never happens'. Consequence: `x + 1 > x` is folded to constant `true` at -O2, because a world where it is false requires $x$ to be `INT_MAX` - a world the compiler may ignore. The same licence lets the vectoriser assume loop counters never wrap and let it reorder arithmetic freely. It is not the compiler being clever with your assumptions; it is the standard saying your assumptions hold *unconditionally*."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <cstdio>\n#include <climits>\n\nint f(int x) {\n    return x + 1 > x;\n}\n\nint main() {\n    std::printf(\"%d %d\\n\", f(0), f(INT_MAX));\n}",
+      "caption": "Compile at -O0 and at -O2 and run both. The source text is identical."
+    },
+    {
+      "type": "code",
+      "lang": "text",
+      "code": "-O0 output: 1 0\n-O2 output: 1 1",
+      "caption": "At -O0 the addition executes (INT_MAX + 1 wraps to INT_MIN in practice, INT_MIN > INT_MAX is false). At -O2 the function is constant-folded. Both are 'correct' - the -O2 world simply refuses to imagine overflow."
+    },
+    {
+      "type": "code",
+      "lang": "text",
+      "code": "f(int) at -O2 (objdump, gcc):\n        mov    $1,%eax     # the entire function: always true\n        ret",
+      "caption": "There is no add anywhere. UB gave the optimiser the proof it needed."
+    },
+    {
+      "type": "p",
+      "md": "The practical protocol: know which UB you actually invoke (signed overflow, out-of-bounds, uninitialised reads, strict aliasing), hunt it in CI with **-fsanitize=undefined**, and if wrapping arithmetic is genuinely what you want, say so with `unsigned` types or `-fwrapv` - then the compiler stops exploiting the licence. Reading the generated assembly (`objdump -d`, Compiler Explorer) closes the loop: `lea` doing arithmetic, `mov \\$imm` where computation used to be, and `call *0x10(%rax)` where a virtual call survived."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Take the Report program from the lesson (with `Report`, `make()` returning `Report{}`, and the printouts in constructor, copy, move and destructor). (a) Predict and verify its output with `-std=c++17 -O0` and with `-std=c++17 -O2`. (b) Now change the body to `Report c; return c;` (named local) and predict what changes - then verify with `-fno-elide-constructors` added. (c) State which of the two cases the standard *guarantees* and why that matters for a factory returning a 1 MB statistics table.",
+    "hints": [
+      "Prvalue returns have guaranteed elision in C++17 - the optimisation level cannot change them.",
+      "-fno-elide-constructors disables the *optional* elisions; prvalues are untouched by the flag in C++17.",
+      "A named local return is NRVO: permitted, popular, not guaranteed."
+    ],
+    "solution": "(a) Both levels print exactly `constructed`, `done`, `destroyed` - guaranteed elision constructs the prvalue directly in `r`, so level-independent output. (b) NRVO still typically prints the same three lines at normal settings, but with `-fno-elide-constructors` the named case shows `constructed`, then `moved` (a move construct into the return slot), then `done`, `destroyed` - proving NRVO was optional all along. The prvalue case is unaffected by the flag. (c) Only the prvalue form is guaranteed. For a 1 MB table that means you may design `return Curve{...};` factories with copy/move deleted and still be portable - and you never pay for a 1 MB copy by accident; the named-local fallback must keep a cheap move."
+  },
+  "independentExercise": {
+    "prompt": "Your team's release notes say: 'switched the aggregator from -O0 to -O2'. The aggregator is a loop `for (int i = 0; i < n; ++i) s += a[i];` over 100,000,000 doubles (s is double, indices int).\n\n(a) Using the -O0 add() translation as a model, estimate how many stack memory accesses -O0 performs per loop iteration for index and accumulator bookkeeping alone, versus -O2. (b) The measured wall time drops from 0.40 s to 0.07 s (illustrative numbers for a memory-resident array). Name the two optimisation mechanisms doing most of that work. (c) Someone 'optimises' the loop to `for (int i = 0; i <= n; ++i)` believing it is equivalent - explain the signed-overflow problem and what -O2 may legally do.",
+    "hints": [
+      "At -O0, every variable access is a stack access; count i, s and the bound checks.",
+      "-O2 keeps the hot variables in registers and vectorises the loop (SIMD, several elements per instruction).",
+      "When i reaches INT_MAX, what does i + 1 do - and what may a compiler assume about a loop counter that must overflow to exit?"
+    ],
+    "solution": "(a) -O0: each iteration stores/reloads `i` and `s` and re-loads the bound - roughly 6+ stack accesses per iteration where -O2 keeps `i` and `s` in registers (0 stack accesses in the loop body) and unrolls/vectorises. (b) Register allocation removing the memory round-trips, and **vectorisation** (SSE/AVX: several doubles summed per instruction) - plus loop unrolling; the memory bandwidth then dominates, which is why the gain is bounded rather than 30x. (c) With `i <= n` and `n = INT_MAX`, `++i` overflows signed int - UB. The compiler may assume it never happens and emit an **infinite loop** (this is the canonical example); at -O0 it happens to wrap and exit in practice. The safe pattern is `i < n` with `size_t`/`int` chosen so the bound cannot equal `INT_MAX`, or a `unsigned`/wide counter."
+  },
+  "commonMistakes": [
+    "Reading -O0 behaviour as 'what the language does': -O0 is a literal, memory-heavy translation, not a semantics reference - UB in particular behaves differently across levels.",
+    "Assuming RVO is guaranteed like C++17 prvalue elision: named-local (NRVO) returns are optional; keep moves cheap.",
+    "Writing `x + 1 > x` or `i <= n` on ints expecting wrap-around: signed overflow is UB and the optimiser exploits its impossibility.",
+    "Believing inlining is always a win - code bloat evicts the instruction cache; compilers inline heuristically for a reason.",
+    "Benchmarking with UB present: the optimiser may delete the very code you are timing once it proves it 'cannot happen'.",
+    "Comparing -O0 debug timings to production without expecting orders-of-magnitude gaps from stack traffic alone."
+  ],
+  "realWorldApplication": "Release builds of browsers, databases and trading kernels are built at -O2/-O3 with sanitised CI builds; engineers routinely read Compiler Explorer assembly to understand performance cliffs and to confirm what UB did to a code path.",
+  "quantFinanceApplication": "A Monte Carlo pricer's inner loop is exactly the sum-loop discussed here: at -O2 the vectoriser turns it into SIMD adds, and a stray signed-overflow index can change it from a vectorised loop into an infinite one - the difference between a 20-microsecond and a hung risk report.",
+  "summary": [
+    "The as-if rule is the optimiser's only constraint: -O0 translates literally (parameters on the stack, 4+ stack accesses in add()), while -O2 uses registers, inlines, folds and vectorises.",
+    "Inlining matters less for the removed call than for the cascade it enables: constant folding and vectorisation across the old call boundary.",
+    "C++17 guarantees copy elision for prvalue returns (no copy, no move, deletable copy/move ctors); NRVO for named locals is optional - keep moves cheap.",
+    "Signed overflow is UB: the optimiser may fold x + 1 > x to true and may turn an overflowing loop counter into an infinite loop; use unsigned/-fwrapv/UBSan when wrapping is intended.",
+    "Small x86-64 idioms decode source intent: lea for register arithmetic, mov \\$imm for compile-time folding, call *0x10(%rax) for surviving virtual dispatch."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "code-output",
+      "prompt": "Compiled with `g++ -std=c++17` (any optimisation level), what does this program print on stdout?",
+      "language": "cpp",
+      "code": "#include <cstdio>\n\nstruct Report {\n    Report()              { std::puts(\"constructed\"); }\n    Report(const Report&) { std::puts(\"copied\"); }\n    Report(Report&&)      { std::puts(\"moved\"); }\n    ~Report()             { std::puts(\"destroyed\"); }\n};\n\nReport make() {\n    return Report{};\n}\n\nint main() {\n    Report r = make();\n    std::puts(\"done\");\n}",
+      "answer": "constructed\ndone\ndestroyed",
+      "explanation": "C++17 guarantees copy elision for prvalue returns: the temporary is constructed directly in r's storage. No 'copied', no 'moved' - at any optimisation level."
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "Which of these is GUARANTEED by the C++17 standard (not just commonly done by optimisers)?",
+      "options": [
+        "Returning a named local variable elides the copy/move",
+        "Returning a prvalue (`return Report{};`) constructs the object directly in the caller's storage",
+        "-O2 always inlines every function called once",
+        "Signed integer overflow wraps modulo 2^32"
+      ],
+      "answerIndex": 1,
+      "explanation": "Guaranteed copy elision applies to prvalues. NRVO (named locals) is permitted, not required; inlining is always a heuristic; signed overflow is undefined behaviour - unsigned wraps, signed does not."
+    },
+    {
+      "id": "q3",
+      "type": "mcq",
+      "prompt": "At -O2, gcc compiles `int f(int x) { return x + 1 > x; }` to `mov \\$1,%eax; ret` - the function always returns 1. Why is that legal?",
+      "options": [
+        "Because integer addition is always increasing",
+        "Because signed overflow is undefined behaviour, so the compiler may assume x + 1 never overflows",
+        "Because the compiler evaluates f(0) at compile time and caches it",
+        "Because two's complement addition is associative"
+      ],
+      "answerIndex": 1,
+      "explanation": "The only x where x + 1 > x fails is x = INT_MAX, which requires signed overflow - UB. Under the as-if rule the optimiser may discard that world entirely and fold to true. The add does not exist in the output."
+    },
+    {
+      "id": "q4",
+      "type": "ms",
+      "prompt": "Which consequences follow from signed-overflow UB in optimised builds?",
+      "options": [
+        "The optimiser may fold comparisons like x + 1 > x to constants",
+        "The optimiser may vectorise or reorder loops assuming counters never wrap - an overflowing counter can become an infinite loop",
+        "The compiler must insert a runtime check and abort on overflow",
+        "The program is guaranteed to wrap to INT_MIN like unsigned arithmetic"
+      ],
+      "answerIndices": [0, 1],
+      "explanation": "UB is an optimisation licence: assume it never happens, then simplify. There is no mandatory runtime check (that is what UBSan is for, opt-in), and wrapping is only *defined* for unsigned types."
+    },
+    {
+      "id": "q5",
+      "type": "numeric",
+      "prompt": "In the -O0 translation of `int add(int a, int b) { return a + b; }` shown in the lesson, how many stack memory accesses does the function body perform on the two parameters (stores + loads)?",
+      "answer": 4,
+      "explanation": "Two stores (params a and b into stack slots) plus two loads (reloading them to compute) = 4. The -O2 body performs 0 - it adds in registers via lea."
+    },
+    {
+      "id": "q6",
+      "type": "short",
+      "prompt": "Beyond removing the call/ret itself, why is inlining called a 'gateway' optimisation? Give one concrete example of what it enables.",
+      "modelAnswer": "Because it exposes the callee's body to the caller's context, enabling further optimisations across the old call boundary: constant folding (square(7) folds to the constant 49 - a single mov \\$0x31,%eax), cross-call dead-code elimination, and vectorisation of loops that were previously invisible.",
+      "keywords": ["constant", "fold", "vectori", "dead code", "cascade"],
+      "explanation": "The call/ret savings are the small part; folding known arguments, propagating constants and optimising across the boundary is where -O2 builds get their speed. That is also why bloated inlining can hurt: it trades code size for those opportunities."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "The as-if rule",
+      "back": "The optimiser may transform code any way it likes as long as observable behaviour of well-defined operations is unchanged. Undefined behaviour is outside the contract - and is treated as impossible, hence exploitable for simplification."
+    },
+    {
+      "type": "definition",
+      "front": "Guaranteed copy elision (C++17) vs RVO/NRVO",
+      "back": "Prvalue returns (`return T{...};`): elision GUARANTEED - constructed in the caller's storage, works even with deleted copy/move. Named-local returns (NRVO): optional elision, compiler usually does it; keep move constructors cheap."
+    },
+    {
+      "type": "code-output",
+      "front": "x86-64: what does `int add(int a,int b){return a+b;}` look like at -O2?",
+      "back": "lea (%rdi,%rsi,1),%eax ; ret - one arithmetic instruction in registers; the -O0 version makes 4 stack accesses (2 stores + 2 loads) before the add."
+    },
+    {
+      "type": "error-identification",
+      "front": "A loop `for (int i = 0; i <= n; ++i)` hangs after switching to -O2. What changed?",
+      "back": "With n = INT_MAX, ++i overflows signed int - UB. The optimiser assumed the counter never wraps and removed the exit; -O0 happened to wrap. Fix the bound/type (i < n, size_t, unsigned) rather than relying on wrap."
+    }
+  ],
+  "references": [
+    {
+      "label": "cppreference - Copy elision (C++17 guarantee)",
+      "url": "https://en.cppreference.com/w/cpp/language/copy_elision"
+    },
+    {
+      "label": "cppreference - Undefined behavior (signed overflow)",
+      "url": "https://en.cppreference.com/w/cpp/language/ub"
+    },
+    {
+      "label": "GCC - Optimization options (-O0, -O1, -O2, -O3)",
+      "url": "https://gcc.gnu.org/onlinedocs/gcc/Optimize-Options.html"
+    },
+    {
+      "label": "Compiler Explorer (godbolt.org) - read the assembly yourself",
+      "url": "https://godbolt.org/"
+    }
+  ],
+  "skills": ["cpp-internals", "cpp-performance"]
+}

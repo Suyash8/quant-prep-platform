@@ -1,0 +1,252 @@
+{
+  "id": "prc-forwards-futures-pricing",
+  "moduleId": "ph9-pricing",
+  "title": "Forward and Futures Pricing",
+  "estMinutes": 27,
+  "difficulty": "specialist",
+  "prereqs": [
+    "inst-futures-forwards"
+  ],
+  "objectives": [
+    "Derive the cost-of-carry forward price $F_0 = S_0 e^{(r-q)T}$ from a no-arbitrage argument",
+    "Price forwards on assets paying dividend yields, lump dividends, or incurring storage costs, with verified arithmetic",
+    "Identify rich and cheap forward quotes and size the resulting cash-and-carry or reverse cash-and-carry arbitrage",
+    "Explain why daily settlement makes futures prices differ slightly from forward prices"
+  ],
+  "motivation": "Your desk is quoted a 6-month forward on a stock index at \\$104 while the index trades at \\$100 and money costs 5%. Is that a fair price, a gift, or a trap? The cost-of-carry model answers in one line - and pricing engines, ETF hedgers and commodity desks all embed it. This lesson derives the formula from first principles, verifies it numerically, and shows how to convert a mispriced quote into a locked-in arbitrage.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Two ways to own the asset at time T"
+    },
+    {
+      "type": "p",
+      "md": "A forward contract obliges you to buy an asset at a fixed **forward price** $F_0$ at maturity $T$, agreed today at zero cost. Because nothing is paid today, $F_0$ is not a prediction of the future price - it is whatever value makes two ways of owning the asset at $T$ equally cheap. **Way 1:** agree today to buy at $T$ for $F_0$. **Way 2:** buy the asset now at the spot price $S_0$, borrowing $S_0$ at rate $r$; at $T$ you owe $S_0 e^{rT}$. If way 2 is cheaper than way 1, everyone buys spot and sells forwards until the advantage disappears. Equilibrium forces the two costs to coincide:"
+    },
+    {
+      "type": "math",
+      "tex": "F_0 = S_0 e^{rT}",
+      "caption": "No income. Dividend yield $q$ or storage costs adjust the carry."
+    },
+    {
+      "type": "p",
+      "md": "Anything the asset pays out lowers the cost of carrying it (you receive income while you hold it), and anything you must spend to hold it raises the cost. A **continuous dividend yield** $q$ means the holder's position grows at rate $q$ while the cash price does not, so only $e^{-qT}$ units must be bought today: $F_0 = S_0 e^{(r-q)T}$. A **known lump dividend** with present value $I$ is subtracted from the spot before financing: $F_0 = (S_0 - I)e^{rT}$. **Storage costs** are negative income: their present value $C$ is added, $F_0 = (S_0 + C)e^{rT}$."
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Carry component",
+        "Forward price",
+        "Effect on $F_0$"
+      ],
+      "rows": [
+        [
+          "No income",
+          "$S_0 e^{rT}$",
+          "baseline"
+        ],
+        [
+          "Continuous yield $q$",
+          "$S_0 e^{(r-q)T}$",
+          "lower"
+        ],
+        [
+          "Lump income, PV $I$",
+          "$(S_0 - I)e^{rT}$",
+          "lower"
+        ],
+        [
+          "Storage costs, PV $C$",
+          "$(S_0 + C)e^{rT}$",
+          "higher"
+        ]
+      ]
+    },
+    {
+      "type": "h2",
+      "text": "Verified numeric examples"
+    },
+    {
+      "type": "p",
+      "md": "Take $S_0 = \\$, continuously compounded $r = 5\\%$, $T = 0.5$ years. The engine below computes all three carry variants and one arbitrage check; every printed number was verified by hand: $e^{0.025} = 1.025315$, so the no-income forward is $100 \\times 1.025315 = \\$."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import numpy as np\n\ndef forward_price(S, r, T, q=0.0, income_pv=0.0):\n    \"\"\"Cost of carry: F = (S - income_pv) * exp((r - q) * T).\"\"\"\n    return (S - income_pv) * np.exp((r - q) * T)\n\nprint(f\"F, no income          {forward_price(100, 0.05, 0.5):.6f}\")\nprint(f\"F, dividend yield 2%  {forward_price(100, 0.05, 0.5, q=0.02):.6f}\")\nprint(f\"F, lump dividend PV=2 {forward_price(100, 0.05, 0.5, income_pv=2.0):.6f}\")\n\nfair = forward_price(100, 0.05, 0.5)\nprint(f\"cash-and-carry if quoted F=104: profit at T = {104 - fair:.6f}, \"\n      f\"PV = {(104 - fair) * np.exp(-0.05 * 0.5):.6f}\")",
+      "caption": "Output: 102.531512, 101.511306, 100.480882; profit 1.468488 (PV 1.432231)."
+    },
+    {
+      "type": "p",
+      "md": "Read the signs: the 2% yield cuts the forward by roughly half the yield over the half-year, and subtracting the \\$2 dividend PV from the spot before financing lowers $F_0$ by exactly the financed amount $2e^{0.025} = 2.0506$. The same engine in C++:"
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <cmath>\n#include <cstdio>\n\n// Cost-of-carry forward price. Use either a continuous yield q, or the PV I of\n// lump income paid during the life - pass the other as 0.\ndouble forwardPrice(double S, double r, double T, double q = 0.0, double incomePV = 0.0) {\n    return (S - incomePV) * std::exp((r - q) * T);\n}\n\nint main() {\n    std::printf(\"F, no income          = %.6f\\n\", forwardPrice(100.0, 0.05, 0.5));\n    std::printf(\"F, dividend yield 2%%  = %.6f\\n\", forwardPrice(100.0, 0.05, 0.5, 0.02));\n    std::printf(\"F, lump dividend PV=2 = %.6f\\n\", forwardPrice(100.0, 0.05, 0.5, 0.0, 2.0));\n    const double S = 1800.0, r = 0.04, storagePV = 5.0 * std::exp(-0.04);\n    std::printf(\"F, gold with storage  = %.6f\\n\", (S + storagePV) * std::exp(r));\n    const double fair = forwardPrice(100.0, 0.05, 0.5);\n    std::printf(\"arb profit if F=104   = %.6f (PV %.6f)\\n\", 104.0 - fair, (104.0 - fair) * std::exp(-0.025));\n    return 0;\n}",
+      "caption": "C++17, self-contained. Prints 102.531512, 101.511306, 100.480882, 1878.459394, 1.468488 (PV 1.432231)."
+    },
+    {
+      "type": "h2",
+      "text": "Arbitrage when the quote is wrong"
+    },
+    {
+      "type": "p",
+      "md": "Suppose the market quotes $F = \\$104$ while the fair value is $F^* = 100\\,e^{0.05 \\times 0.5} = \\$102.5315$. Sell the forward, buy the asset with borrowed money. At $T$ you deliver the asset, receive \\$104, repay the loan of \\$102.5315, and keep **\\$1.4685 riskless** - a *cash-and-carry*, worth \\$1.4322 today. If instead the quote sits **below** the fair value (say $F = \\$99$ against a dividend-adjusted fair value $F^* = (100-2)\\,e^{0.05 \\times 0.5} = \\$100.4809$), the reverse trade applies: sell the stock, lend the proceeds, buy the forward - at $T$ you pocket $100.4809 - 99 = \\$1.4809$."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Bounds, not points",
+      "md": "Real markets have bid-ask spreads, short-sale fees and balance-sheet costs, so no-arbitrage defines a **band** around the fair value rather than a single price. Desk pricing engines compute the band width from actual frictions and only flag quotes outside it - that is why 'riskless profit' survives in the wild at all."
+    },
+    {
+      "type": "h2",
+      "text": "Futures versus forwards: the settlement wedge"
+    },
+    {
+      "type": "p",
+      "md": "Futures are exchange-traded and **marked to market daily**: gains and losses hit your margin account each day instead of arriving once at $T$. Timing changes value. If the underlying is positively correlated with interest rates, the gains you receive early are reinvested at (typically) the higher prevailing rates, so market clearing pushes the futures price slightly **above** the forward price - the *convexity adjustment*. For short-dated equity or FX contracts the wedge is negligible; for long-dated interest-rate-sensitive contracts it is a real pricing term."
+    },
+    {
+      "type": "list",
+      "ordered": false,
+      "items": [
+        "**Settlement:** forwards settle once at maturity; futures settle daily against margin.",
+        "**Credit:** forwards carry counterparty risk; the clearinghouse stands behind futures.",
+        "**Standardization:** futures come in fixed sizes, maturities and tick conventions; forwards are bespoke.",
+        "**Valuation:** a matured-forward PnL is one number; futures PnL is a daily cash flow stream you must finance or reinvest."
+      ]
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "An index trades at $S_0 = $ = \\$100 with continuous dividend yield $q = 2\\%$. Rates are 5% (continuously compounded) and the 6-month forward is quoted at \\$103. Compute the fair forward price, decide whether an arbitrage exists, and if so lay out the trade and its profit at $T$ and in present value.",
+    "hints": [
+      "Use $F_0 = S_0 e^{(r-q)T}$ with $r - q = 0.03$ and $T = 0.5$.",
+      "Quote above fair value means sell the forward and carry the asset.",
+      "Profit at $T$ is quote minus financing cost; discount at $e^{-rT}$ for PV."
+    ],
+    "solution": "Fair value: $F_0 = 100 \\cdot e^{0.03 \\times 0.5} = 100 \\cdot e^{0.015} = $100e^{-qT} = 100e^{-0.01} = $ = \\$99.0050, buy that many shares today (dividends reinvested grow the holding to exactly 1 share at $T$), and sell the forward at \\$103. At $T$ the loan costs $99.0050 \\times e^{0.025} = $103 - 101.5113 = $ = \\$1.4887 riskless. Present value: $1.4887 \\times e^{-0.025} = $ = \\$1.4519. Verified: $e^{0.015} = 1.015113$, $e^{-0.025} = 0.975310$."
+  },
+  "independentExercise": {
+    "prompt": "Gold trades at $S_0 = $ = \\$1800 per ounce. Continuously compounded rates are 4% and storing one ounce costs $5 per year, paid at the end of the year. A 1-year forward is quoted at \\$1890. Compute the fair forward price (storage paid in arrears has PV $5e^{-0.04}$), then size the arbitrage: the trade, the profit at $T$, and its PV.",
+    "hints": [
+      "All-in cost of carrying one ounce = financed spot + future value of storage.",
+      "PV of storage $= 5 \\times e^{-0.04} = 4.8039$, so $F_0 = (1800 + 4.8039)e^{0.04}$.",
+      "Quote above fair: sell forward, buy spot, borrow everything."
+    ],
+    "solution": "$F_0 = (1800 + 4.8039) \\times e^{0.04} = 1804.8039 \\times 1.040811 = $ = \\$1878.4594 (equivalently $1800e^{0.04} + 5 = 1873.4594 + 5$). The quote $1890 is rich: sell forward at $1890, buy an ounce with $1800 borrowed, and borrow the PV of storage \\$4.8039 to cover the cost when it falls due. At $T$ you owe $1804.8039 \\times 1.040811 = 1878.4594$ including storage; profit at $T$ = $1890 - 1878.4594 = $ = \\$11.5406, PV = $11.5406 \\times e^{-0.04} = $ = \\$11.0879 per ounce. The trade is riskless because every future cash flow is fixed today."
+  },
+  "commonMistakes": [
+    "Mixing compounding conventions: $e^{rT}$ belongs to continuous rates, $(1+r)^T$ to annual compounding - never inside the same formula.",
+    "Forgetting the direction of carry: dividend income lowers $F_0$, storage costs raise it.",
+    "Reading the forward price as a forecast of the spot price - it is a no-arbitrage financing number, not a view.",
+    "Quoting arbitrage profit without dating it: \\$1.4887 at $T$ and \\$1.4519 today are the same trade, but mixing them into one ledger corrupts PnL."
+  ],
+  "realWorldApplication": "ETF arbitrage desks, commodity merchants and FX swap traders live off cost-of-carry arithmetic: every day they compare forward and futures quotes against financing, dividends and storage to find carry that can be locked in with borrowed money.",
+  "quantFinanceApplication": "The $F_0 = S_0 e^{(r-q)T}$ engine shown above, wrapped with a friction band, is exactly the pre-trade check a systematic basis-desk runs before putting on a cash-and-carry.",
+  "summary": [
+    "The forward price is set by no-arbitrage between buying spot on borrowed money and agreeing today: $F_0 = S_0 e^{(r-q)T}$, with lump income $I$ and storage $C$ entering as $(S_0 - I + C)e^{rT}$.",
+    "A quote above fair value triggers a cash-and-carry (sell forward, buy spot, borrow); a quote below fair triggers the reverse trade.",
+    "Verified example: $S_0 = 100$, $r = 5\\%$, $T = 0.5$ gives $F_0 = 102.5315$; a $104 quote locks \\$1.4685 at $T$ (PV \\$1.4322).",
+    "Futures differ from forwards through daily settlement; rate correlation creates a small convexity wedge that only matters for long-dated, rate-sensitive underlyings."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "numeric",
+      "prompt": "$S_0 = $ continuous, no income, $T = 0.5$. What is the fair forward price (in dollars, to the nearest cent)?",
+      "answer": 102.53,
+      "tolerance": 0.02,
+      "explanation": "$F_0 = 100 e^{0.05 \\times 0.5} = 100 e^{0.025} = 102.5315$."
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "The 6-month forward on a stock is quoted **above** the fair cost-of-carry value. Which trade locks in the arbitrage?",
+      "options": [
+        "Sell the forward, buy the stock with borrowed money",
+        "Buy the forward, short the stock, lend the proceeds",
+        "Buy the forward and buy the stock",
+        "Sell the forward and short the stock"
+      ],
+      "answerIndex": 0,
+      "explanation": "A rich forward is sold while the asset is acquired cheaply with borrowed funds (cash-and-carry). Option B is the reverse cash-and-carry, which arbitrages a *cheap* forward. Options C and D leave one leg unhedged."
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "Same stock ($S_0 = \\$) now pays a continuous dividend yield $q = 2\\%$, $r = 5\\%$, $T = 0.5$. Fair forward price?",
+      "answer": 101.51,
+      "tolerance": 0.02,
+      "explanation": "$F_0 = 100 e^{(0.05-0.02)\\times 0.5} = 100 e^{0.015} = 101.5113$."
+    },
+    {
+      "id": "q4",
+      "type": "numeric",
+      "prompt": "A known dividend on $S_0 = $ = \\$100 has present value $I = $ = \\$2, $T = 0.5$. If the market forward is quoted at \\$99, what is the reverse cash-and-carry profit **at maturity** per share?",
+      "answer": 1.48,
+      "tolerance": 0.02,
+      "explanation": "Fair $F_0 = (100-2)e^{0.025} = 98 \\times 1.025315 = 100.4809$. Profit at $T$ = $100.4809 - 99 = 1.4809$; its PV is $1.4519$ - the question asks for the at-maturity figure."
+    },
+    {
+      "id": "q5",
+      "type": "short",
+      "prompt": "In one or two sentences: why can the futures price differ from the forward price on the same underlying and maturity?",
+      "modelAnswer": "Futures are marked to market daily, so gains are received (and losses paid) before maturity; the reinvestment/financing of those interim cash flows changes value. When the underlying is correlated with interest rates this creates a convexity adjustment, typically making futures slightly more expensive than forwards.",
+      "keywords": [
+        "daily",
+        "settlement",
+        "mark",
+        "correlation",
+        "convexity"
+      ],
+      "explanation": "The two contracts have identical terminal claims but different cash-flow timing; daily settlement plus rate correlation produces the convexity wedge."
+    },
+    {
+      "id": "q6",
+      "type": "code-output",
+      "prompt": "What does this Python code print?",
+      "language": "python",
+      "code": "import numpy as np\nF = 100 * np.exp(0.05 * 0.5)\nprint(round(F, 2))\nprint(round(F - 100, 2))",
+      "answer": "102.53\n2.53",
+      "explanation": "$e^{0.025} = 1.0253151...$, so $F = 102.5315...$ rounds to 102.53 and the carry $F - S_0 = 2.5315...$ rounds to 2.53."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "formula",
+      "front": "Cost-of-carry forward price (continuous yield $q$)",
+      "back": "$F_0 = S_0 e^{(r-q)T}$. With lump income PV $I$ or storage PV $C$: $F_0 = (S_0 - I + C)e^{rT}$."
+    },
+    {
+      "type": "definition",
+      "front": "Cash-and-carry arbitrage",
+      "back": "When the quoted forward exceeds fair value: sell the forward, buy the asset with borrowed funds, deliver at T and keep quote minus $S_0 e^{(r-q)T}$ risklessly."
+    },
+    {
+      "type": "concept",
+      "front": "Is the forward price a prediction?",
+      "back": "No. It is a no-arbitrage financing number: spot grown at the net carry rate. Views about the future spot enter neither derivation nor value."
+    },
+    {
+      "type": "concept",
+      "front": "Futures vs forwards in one line",
+      "back": "Daily mark-to-market turns the terminal PnL into a daily cash-flow stream; rate correlation then creates a small convexity wedge between futures and forward prices."
+    }
+  ],
+  "references": [
+    {
+      "label": "Wikipedia - Cost of carry",
+      "url": "https://en.wikipedia.org/wiki/Cost_of_carry"
+    },
+    {
+      "label": "CME Group Education - Futures fundamentals",
+      "url": "https://www.cmegroup.com/education.html"
+    }
+  ],
+  "skills": [
+    "pricing",
+    "numerical-finance"
+  ]
+}

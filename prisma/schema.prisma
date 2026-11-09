@@ -1,0 +1,253 @@
+// QuantFoundry database schema — Prisma + SQLite
+// Notes:
+// - Curriculum content (lessons/problems/assessments/projects/companies) lives in content/*.json
+//   and is validated by scripts/validate-content.mjs. The DB mirrors metadata for progress
+//   tracking, so learner progress keys to stable content ids.
+// - Auth uses our own credential + session implementation (scrypt hashes, httpOnly cookies).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  role         String   @default("learner") // learner | admin
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // gamification
+  xp            Int      @default(0)
+  streakCount   Int      @default(0)
+  longestStreak Int      @default(0)
+  lastStudyDate DateTime?
+  dailyGoalXp   Int      @default(50)
+
+  sessions            Session[]
+  diagnosticResults   DiagnosticResult[]
+  lessonProgress      LessonProgress[]
+  assessmentAttempts  AssessmentAttempt[]
+  problemAttempts     ProblemAttempt[]
+  cardStates          CardState[]
+  drillSessions       DrillSession[]
+  projectProgress     ProjectProgress[]
+  notes               Note[]
+  bookmarks           Bookmark[]
+  studyPlans          StudyPlan[]
+  learningSessions    LearningSession[]
+  applications        Application[]
+  skillStates         UserSkill[]
+  xpEvents            XpEvent[]
+}
+
+/** Gamification: XP ledger. One row per award; the ledger is append-only. */
+model XpEvent {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount    Int
+  source    String   // lesson_pass | lesson_master | exercise | drill | problem | assessment | revision | backfill | streak_bonus
+  detail    String?
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+// PHASE 0 — diagnostic
+model DiagnosticResult {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assessmentId String
+  areaScores  String   // JSON {area: {correct, total, pct}}
+  totalPct    Float
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+}
+
+// Lesson progress + mastery engine
+model LessonProgress {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lessonId     String
+  status       String   @default("not_started") // not_started|in_progress|attempted|passed|mastered|needs_revision
+  kcBestPct    Float    @default(0)   // best knowledge-check score
+  kcAttempts   Int      @default(0)
+  exerciseDone Boolean  @default(false)
+  retrievalDone Boolean @default(false) // passed a later retrieval assessment
+  secondsSpent Int      @default(0)
+  updatedAt    DateTime @updatedAt
+  createdAt    DateTime @default(now())
+
+  @@unique([userId, lessonId])
+  @@index([userId, status])
+}
+
+model AssessmentAttempt {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assessmentId String
+  kind         String   // diagnostic|assessment|interview|screening
+  scorePct     Float
+  detail       String   // JSON per-question results
+  startedAt    DateTime @default(now())
+  submittedAt  DateTime?
+
+  @@index([userId, assessmentId])
+}
+
+model ProblemAttempt {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  problemSlug String
+  language   String   // cpp17 | cpp20 | python | sql
+  status     String   // passed | failed | compile_error | runtime_error | timeout
+  passedTests Int
+  totalTests Int
+  runtimeMs  Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  @@index([userId, problemSlug])
+}
+
+// Spaced repetition (SM-2 state per user per card)
+model CardState {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cardKey     String   // "<lessonId>:<cardIdx>" or "quiz:<lessonId>:<qId>" for failed questions
+  source      String   // lesson | quiz_miss
+  front       String
+  back        String
+  cardType    String   @default("concept")
+  ease        Float    @default(2.5)
+  intervalDays Float   @default(0)
+  repetitions Int      @default(0)
+  lapses      Int      @default(0)
+  dueAt       DateTime @default(now())
+  lastGrade   Int      @default(0)
+  lastReviewedAt DateTime?
+
+  @@unique([userId, cardKey])
+  @@index([userId, dueAt])
+}
+
+// Mental math drills
+model DrillSession {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mode      String   // addition | multiplication | mixed | percentages | fractions | squares | division
+  level     Int      @default(1)
+  correct   Int
+  total     Int
+  avgMs     Float    @default(0)
+  durationS Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+model ProjectProgress {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectSlug   String
+  status        String   @default("not_started") // not_started|in_progress|completed
+  milestonesDone Int     @default(0)
+  notes         String   @default("")
+  updatedAt     DateTime @updatedAt
+
+  @@unique([userId, projectSlug])
+}
+
+model Note {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lessonId  String
+  body      String
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, lessonId])
+}
+
+model Bookmark {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  targetType String   // lesson | problem
+  targetId   String
+  createdAt  DateTime @default(now())
+
+  @@unique([userId, targetType, targetId])
+}
+
+model StudyPlan {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  config    String   // JSON {hoursPerWeek, days, track, targetDate, mode}
+  tasks     String   // JSON array of scheduled tasks
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model LearningSession {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind      String   @default("lesson") // lesson | practice | revision | drills | assessment
+  seconds   Int      @default(0)
+  day       String   // YYYY-MM-DD for aggregation
+  createdAt DateTime @default(now())
+
+  @@index([userId, day])
+}
+
+model Application {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company   String
+  role      String
+  status    String   @default("planned") // planned|applied|oa|interview|offer|rejected
+  note      String   @default("")
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model UserSkill {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  skill     String
+  level     Float    @default(0) // 0..1 mastery estimate
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, skill])
+}

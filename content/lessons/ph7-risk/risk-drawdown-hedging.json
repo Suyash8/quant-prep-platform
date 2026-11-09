@@ -1,0 +1,238 @@
+{
+  "id": "risk-drawdown-hedging",
+  "moduleId": "ph7-risk",
+  "title": "Drawdown, Exposure, Sensitivity and Hedging",
+  "estMinutes": 25,
+  "difficulty": "core",
+  "prereqs": [
+    "risk-es-stress"
+  ],
+  "objectives": [
+    "Compute running peaks, drawdowns and maximum drawdown on a value series",
+    "Explain why drawdown matters to investors beyond volatility",
+    "Quantify exposure and sensitivity (beta, duration, DV01) for a position",
+    "Size a hedge from a sensitivity and check what risk remains after hedging"
+  ],
+  "motivation": "Volatility treats a +10% day and a -10% day symmetrically; investors do not. Drawdown measures the actual peak-to-trough pain an investor must sit through, and behavioural finance (plus redemption clauses) makes that pain economically real. This lesson computes drawdowns from a series and then covers the other half of risk management practice: measuring exposure through sensitivities and laying hedges against them.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Drawdown: the pain metric"
+    },
+    {
+      "type": "math",
+      "tex": "DD_t = \\frac{V_t - \\max_{s \\le t} V_s}{\\max_{s \\le t} V_s}",
+      "caption": "Drawdown at time $t$: distance below the running peak"
+    },
+    {
+      "type": "p",
+      "md": "The **maximum drawdown** (MaxDD) is the most negative value this ever reaches. Work through a hypothetical fund's weekly values in \\$k: $100,\\ 110,\\ 105,\\ 118,\\ 112,\\ 96,\\ 104,\\ 121,\\ 116,\\ 130$."
+    },
+    {
+      "type": "steps",
+      "title": "Computing drawdowns step by step",
+      "items": [
+        "Running peak: $100 \\to 110 \\to 110 \\to 118 \\to 118 \\to 118 \\to 118 \\to 121 \\to 121 \\to 130$ (a peak only updates when the value exceeds everything before it).",
+        "Drawdowns against the running peak: $0,\\ 0,\\ (105-110)/110 = -4.5\\%,\\ 0,\\ (112-118)/118 = -5.1\\%,\\ (96-118)/118 = -18.6\\%,\\ (104-118)/118 = -11.9\\%,\\ 0,\\ (116-121)/121 = -4.1\\%,\\ 0$.",
+        "**MaxDD = -18.6%**: from the 118 peak to the 96 trough, a \\$22k fall on a \\$118k peak.",
+        "Recovery: the fund only re-topped at 121 (week 8) - it spent four weeks 'underwater' after the trough.",
+        "Note the asymmetry: a $-18.6\\%$ drawdown needs a $+22/96 = +22.9\\%$ gain to recover. Losses and gains are not symmetric in percentage space."
+      ]
+    },
+    {
+      "type": "p",
+      "md": "Why investors care more about MaxDD than volatility: drawdown is path-dependent - two funds with identical volatility can have very different worst-peak-to-trough journeys, and redemption decisions, margin calls and career risk all key off the drawdown, not the standard deviation. The **Calmar ratio** annualises return divided by MaxDD to reward strategies that avoid deep holes."
+    },
+    {
+      "type": "h2",
+      "text": "Exposure and sensitivity"
+    },
+    {
+      "type": "p",
+      "md": "Exposure is how much of your capital rides on each risk factor; sensitivity is how much value changes per unit of the factor. Three workhorses:"
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Sensitivity",
+        "Definition",
+        "Worked example"
+      ],
+      "rows": [
+        [
+          "Beta",
+          "$\\operatorname{Cov}/\\operatorname{Var}$ vs the market",
+          "A \\$5m book with $\\beta = 1.2$ moves like \\$6m of market index"
+        ],
+        [
+          "Duration",
+          "$\\%$ price change per $1\\%$ (100bp) yield move",
+          "\\$10m bonds, duration 5: 100bp rise $\\Rightarrow$ $-5\\% \\times 10m = -\\$500k$"
+        ],
+        [
+          "DV01",
+          "Dollar value of one basis point",
+          "$10m \\times 5 \\times 0.0001 = $5{,}000$ per bp"
+        ]
+      ]
+    },
+    {
+      "type": "h2",
+      "text": "Hedging: cancelling the sensitivity"
+    },
+    {
+      "type": "p",
+      "md": "A hedge is a position with opposite sensitivity of matching size. Beta hedge: to neutralise a \\$5m book with $\\beta = 1.2$, short \\$6m of index futures ($1.2 \\times 5m$). Residual risk: the book still carries idiosyncratic risk the index cannot offset, and basis risk - the hedge instrument tracks a slightly different basket than the book."
+    },
+    {
+      "type": "p",
+      "md": "Duration hedge: the $10m bond position has DV01 $5,000/bp. If a futures contract hedges DV01 \\$4,000/bp, the required number of contracts is $5{,}000/4{,}000 = 1.25$ - in practice rounded, and imperfect because the future's cheapest-to-deliver bond may drift relative to your bonds. Hedge ratios drift too: as yields and positions move, yesterday's perfect hedge becomes today's residual, which is why desks re-hedge on schedules or thresholds."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Drawdown drives hedging decisions",
+      "md": "Many funds cut exposure at a MaxDD trigger (say $-10\\%$) to stop the hole deepening - 'de-risking'. This converts drawdown into a control variable: the sensitivity table tells you *what* to reduce, and by how much, to move the portfolio's risk metrics back inside limits."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Hedging removes the risk you measured",
+      "md": "A beta hedge eliminates market sensitivity as *measured over the estimation window*. In a regime change, realised beta can differ sharply - the hedge performs worst exactly when you most need it. Treat hedge ratios as estimates under continuous review, never as identities."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "A fund's monthly values are \\$200k, \\$230k, \\$207k, \\$195k, \\$240k. Compute the running peaks, each drawdown, the maximum drawdown (in %), and the percentage gain needed from the trough to recover the previous peak.",
+    "hints": [
+      "The peak updates only when value exceeds all prior values.",
+      "Recovery gain is measured from the trough to the peak that preceded the drawdown."
+    ],
+    "solution": "Peaks: $200, 230, 230, 230, 240$. Drawdowns: $0, 0, (207-230)/230 = -10.0\\%, (195-230)/230 = -15.2\\%, 0$. MaxDD $= 15.2\\%$ (230 to 195, a \\$35k fall). Recovery needs $35/195 = +17.9\\%$ from the trough - bigger than the fall itself, the recovery asymmetry in action."
+  },
+  "independentExercise": {
+    "prompt": "A \\$20m multi-asset book has $\\beta = 0.8$ to the index and holds \\$8m of bonds with duration 4. (a) What notional of index futures neutralises the equity beta? (b) What is the book's DV01 from the bond sleeve? (c) If a futures contract has DV01 \\$2,500/bp, how many contracts hedge the bond sleeve? (d) Name one risk the hedges do NOT remove.",
+    "hints": [
+      "Beta hedge notional $= \\beta \\times$ book value.",
+      "DV01 $= V \\times D \\times 0.0001$."
+    ],
+    "solution": "(a) $0.8 \\times 20{,}000{,}000 = \\$16m$ short index futures. (b) $8{,}000{,}000 \\times 4 \\times 0.0001 = $3{,}200$ per bp. (c) $3{,}200/2{,}500 = 1.28$ contracts (round to 1 or 2 in practice, leaving residual). (d) Idiosyncratic risk of the holdings, basis risk between hedges and holdings, and any sensitivity not in the hedge set (e.g. credit spreads)."
+  },
+  "commonMistakes": [
+    "Measuring drawdown against the starting value instead of the running peak - the trough must be compared with the highest value before it.",
+    "Assuming a 20% loss needs a 20% gain to recover; percentages are asymmetric ($1/(1-0.2) - 1 = 25\\%$).",
+    "Hedging notional instead of sensitivity: matching dollar amounts is not hedging unless the sensitivities match.",
+    "Forgetting that fractional hedge ratios and rounding leave residual exposure that must be monitored."
+  ],
+  "realWorldApplication": "Maximum drawdown appears in every institutional due-diligence questionnaire, drives de-risking triggers and fund terminations, and is the metric most investors remember; DV01 is the daily language of every fixed-income trading desk.",
+  "quantFinanceApplication": "Risk systems compute running peaks and drawdown series incrementally on every mark, and position systems maintain live sensitivities (beta, DV01, greeks) so the hedging module can compute trade-sized hedge orders automatically.",
+  "summary": [
+    "Drawdown compares each value to the running peak; maximum drawdown is the deepest such gap.",
+    "Percentage losses and recovery gains are asymmetric: $-18.6\\%$ needs $+22.9\\%$ back.",
+    "Sensitivities (beta, duration, DV01) convert positions into factor exposures; hedging means offsetting those sensitivities.",
+    "Hedges remove the measured sensitivity, leaving basis, idiosyncratic and regime-change risk to monitor."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "numeric",
+      "prompt": "Series: 100, 110, 105, 118, 112, 96 (in \\$k). What is the maximum drawdown in %, to one decimal?",
+      "answer": -18.6,
+      "tolerance": 0.15,
+      "explanation": "Running peak before 96 is 118; drawdown $= (96-118)/118 = -18.64\\%$."
+    },
+    {
+      "id": "q2",
+      "type": "numeric",
+      "prompt": "After the $-18.6\\%$ drawdown to a trough of 96, what percentage gain returns the fund to its 118 peak? To one decimal.",
+      "answer": 22.9,
+      "tolerance": 0.2,
+      "explanation": "$22/96 = 0.2292 \\approx +22.9\\%$ - larger than the 18.6% fall, the recovery asymmetry."
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "\\$10m of bonds, duration 5. DV01 in dollars per basis point?",
+      "answer": 5000,
+      "tolerance": 50,
+      "explanation": "$10{,}000{,}000 \\times 5 \\times 0.0001 = $5{,}000$."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "A book worth \\$4m has beta 1.5. The beta-neutralising hedge is:",
+      "options": [
+        "Short \\$4m of index futures",
+        "Short \\$6m of index futures",
+        "Long \\$6m of index futures",
+        "Short \\$1.5m of index futures"
+      ],
+      "answerIndex": 1,
+      "explanation": "Hedge notional $= \\beta \\times V = 1.5 \\times 4m = \\$6m$, with sign opposite to the exposure - short."
+    },
+    {
+      "id": "q5",
+      "type": "ms",
+      "prompt": "Which risks survive a beta hedge and a duration hedge executed correctly?",
+      "options": [
+        "Idiosyncratic risk of individual holdings",
+        "Basis risk between hedge instruments and the book",
+        "The market sensitivity measured in the estimation window",
+        "Model error in the sensitivity estimates themselves"
+      ],
+      "answerIndices": [
+        0,
+        1,
+        3
+      ],
+      "explanation": "Hedges cancel the measured sensitivities only; single-name risk, basis mismatch and estimation error all remain - and (2) is precisely what the hedge removes."
+    },
+    {
+      "id": "q6",
+      "type": "short",
+      "prompt": "Why do investors focus on maximum drawdown rather than volatility when evaluating fund managers?",
+      "modelAnswer": "Drawdown captures the worst peak-to-trough loss an investor must endure - it drives redemptions, margin calls and career risk, and is path-dependent in a way symmetric volatility measures are not.",
+      "keywords": [
+        "peak",
+        "trough",
+        "path"
+      ],
+      "explanation": "Volatility averages fluctuations symmetrically; drawdown records the depth and duration of the worst losing journey, which is what investors actually experience and react to."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "formula",
+      "front": "Drawdown",
+      "back": "$DD_t = (V_t - \\max_{s\\le t} V_s)/\\max_{s\\le t} V_s$; maximum drawdown is its most negative value."
+    },
+    {
+      "type": "formula",
+      "front": "Recovery gain after a drawdown of $d$",
+      "back": "$1/(1+d) - 1$; e.g. a $-20\\%$ drawdown needs $+25\\%$ to recover."
+    },
+    {
+      "type": "formula",
+      "front": "DV01",
+      "back": "$DV01 = V \\times D \\times 0.0001$ - the dollar P&L for a one-basis-point yield move."
+    },
+    {
+      "type": "concept",
+      "front": "What does a hedge remove - and not remove?",
+      "back": "It cancels the measured sensitivity (beta/duration/DV01); it does not remove basis risk, idiosyncratic risk or errors in the sensitivity estimate."
+    }
+  ],
+  "references": [
+    {
+      "label": "Chekhlov, Uryasev & Zabarankin - Drawdown measure in portfolio optimization",
+      "url": "https://www.ise.ufl.edu/uryasev/files/2011/11/drawdown.pdf"
+    },
+    {
+      "label": "Investopedia - Maximum Drawdown",
+      "url": "https://www.investopedia.com/terms/m/maximum-drawdown-drawdown.asp"
+    }
+  ],
+  "skills": [
+    "risk",
+    "portfolio"
+  ]
+}

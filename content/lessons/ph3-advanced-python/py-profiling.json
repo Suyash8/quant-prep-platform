@@ -1,0 +1,321 @@
+{
+  "id": "py-profiling",
+  "moduleId": "ph3-advanced-python",
+  "title": "Profiling, Benchmarking and Performance Work",
+  "estMinutes": 25,
+  "difficulty": "advanced",
+  "prereqs": [
+    "py-asyncio"
+  ],
+  "objectives": [
+    "Apply the measure-first workflow: reproduce at scale, profile, optimise only the hot spot, re-measure with the same benchmark",
+    "Interpret cProfile output, distinguishing tottime from cumtime and choosing what to optimise",
+    "Run trustworthy micro-benchmarks with timeit and time.perf_counter (repeats, realistic sizes, controlled conditions)",
+    "Use tracemalloc to find peak memory and allocation hot spots",
+    "Explain why vectorised numpy code outperforms Python loops and estimate speedups from profiling data"
+  ],
+  "motivation": "The overnight risk report takes 40 minutes and the desk wants it in 10. Before touching a line of code you need to know where those 40 minutes actually go - and intuition about hot loops is wrong more often than right. Profiling and disciplined benchmarking turn performance work from superstition into engineering, and they are what tell you whether the numpy or C++ rewrite (next lessons) is even worth attempting.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Measure first: the performance workflow"
+    },
+    {
+      "type": "p",
+      "md": "Production performance work follows a fixed loop: **(1)** reproduce the slowness at production-like scale, **(2)** profile to find the few percent of code eating most of the time, **(3)** fix only that spot, **(4)** re-measure with the *same* benchmark. Skip step 2 and you optimise whatever you understand best - typically the wrong thing. A useful prior: in most real programs, a small fraction of the code accounts for the large majority of runtime; the profiler's job is to name it."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import timeit\n\nsetup = \"import numpy as np; xs = list(range(100_000)); arr = np.arange(100_000)\"\nloop = timeit.timeit(\"s = 0\\nfor x in xs: s += x\", setup=setup, number=100)\nvec = timeit.timeit(\"arr.sum()\", setup=setup, number=100)\nprint(f\"python loop {loop:.3f}s   numpy {vec:.4f}s\")",
+      "caption": "On a typical laptop the numpy reduction is 10-100x faster: one C loop over typed memory vs a million interpreted bytecode operations. Exact numbers vary - that is why you benchmark locally."
+    },
+    {
+      "type": "h2",
+      "text": "cProfile: where the time goes"
+    },
+    {
+      "type": "p",
+      "md": "`cProfile` instruments every function call and reports two key columns. **tottime** is time spent in the function's own body, excluding its callees. **cumtime** is time in the function *including* everything it called. Sort by tottime to find the code that itself burns cycles; a function with huge cumtime but tiny tottime is just the messenger - its callees are the problem. Feed results to `pstats` for sorting and printing."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import cProfile, pstats, io\n\ndef portfolio_report():\n    prices = [100 + (i % 7) * 0.5 for i in range(200_000)]\n    total = 0.0\n    for p in prices:                     # the hot loop\n        total += p * (1 + 0.01)\n    return total\n\npr = cProfile.Profile()\npr.enable()\nportfolio_report()\npr.disable()\nbuf = io.StringIO()\npstats.Stats(pr, stream=buf).sort_stats(\"tottime\").print_stats(5)\nprint(\"\\n\".join(buf.getvalue().splitlines()[4:10]))",
+      "caption": "A 200k-element loop shows up as tottime concentrated in portfolio_report's own body - the profile points at the loop, not the list comprehension."
+    },
+    {
+      "type": "h2",
+      "text": "Micro-benchmarks that do not lie"
+    },
+    {
+      "type": "list",
+      "ordered": false,
+      "items": [
+        "Use `time.perf_counter()` or `timeit` with several repeats; report the minimum or median, never a single lucky run.",
+        "Benchmark at realistic sizes - cache effects make n=100 results meaningless for n=10,000,000.",
+        "Compare like with like: same machine, same background load, same interpreter flags and GC state.",
+        "Warm up before timing: the first call pays import, allocator and cache-cold costs.",
+        "Keep a single benchmark script and re-run it unchanged after every change - trend lines beat absolute numbers."
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "The warmed-up REPL lie",
+      "md": "Benchmarking inside a long-lived REPL or notebook that has already imported numpy and touched the data gives different numbers from a fresh process - caches and allocator state differ. Automate one script, run it identically each time, and treat a 5% change on a noisy box as noise."
+    },
+    {
+      "type": "h2",
+      "text": "Memory: the other budget"
+    },
+    {
+      "type": "p",
+      "md": "Time is not the only resource. `tracemalloc` traces allocations and reports current and **peak** memory, plus the exact lines that allocated them. Object churn - building throwaway lists inside loops - drives both peak memory and GC pauses. The generator pipelines from the iterators lesson exist precisely to stream instead of materialise; growing a list with `+=` or calling `np.append` per element reallocates repeatedly."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import tracemalloc\n\ntracemalloc.start()\ndata = [x * 1.0 for x in range(1_000_000)]\ncurrent, peak = tracemalloc.get_traced_memory()\nprint(f\"current {current/1e6:.1f} MB, peak {peak/1e6:.1f} MB\")\ntracemalloc.stop()\n# current 32.4 MB, peak 32.4 MB",
+      "caption": "A million boxed floats: ~8 MB of pointers in the list plus ~24 MB of float objects - versus 8 MB for an equivalent float64 numpy array."
+    },
+    {
+      "type": "p",
+      "md": "The cardinal rule of optimisation work: **measure before you touch anything**. Programmers are famously bad at guessing where time goes — the expensive line is rarely the one you suspect, and \"obvious\" optimisations routinely make things slower. The professional loop is: profile, find the top cost, fix it, profile again. Anything else is superstition."
+    },
+    {
+      "type": "p",
+      "md": "Here is a real comparison on this machine: summing square roots of the first million integers, once as a Python loop and once through NumPy. The profile and the wall clock agree:"
+    },
+    {
+      "type": "code",
+      "lang": "text",
+      "code": "loop  version : 1 call, 0.120 s tottime  (pure Python)\nnumpy version : 6 calls, 0.010 s tottime  (arange + sqrt + sum)\n\nwall clock: loop 0.091 s  vs  numpy 0.008 s   ->  ~11x faster",
+      "caption": "Actual cProfile output and wall-clock times from a 1-million-element run"
+    },
+    {
+      "type": "p",
+      "md": "Read the profile the way an engineer would. The loop version spends all 120 ms *inside one function* — there is nothing to optimise except the loop itself, and the fix is not micro-tuning the Python but moving the work into C (NumPy, or a compiled extension). The NumPy profile splits into three cheap calls. The lesson generalises: **profile output tells you which layer the cost lives in, and that decides which tool you reach for.** Rewriting the loop body would have bought 10–20%; switching layers bought 11x."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "The observer effect is real",
+      "md": "cProfile adds overhead per function *call*, so it exaggerates the cost of many-cheap-calls code (function-call-heavy designs look worse than they are). For per-line detail on a hot region, drop to `line_profiler`; for honest end-to-end numbers, use `time.perf_counter()` around the whole workload and trust the wall clock over the profiler. Rule of thumb: profile to find *where*, wall-clock to prove *how much*."
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Situation",
+        "First tool",
+        "Why"
+      ],
+      "rows": [
+        [
+          "Unknown hotspot anywhere",
+          "cProfile + sort_stats('cumulative')",
+          "Whole-program call graph, zero setup"
+        ],
+        [
+          "One known hot function",
+          "line_profiler (kernprof -l)",
+          "Per-line cost inside the suspect"
+        ],
+        [
+          "\"Is A faster than B?\"",
+          "timeit / perf_counter",
+          "Nanosecond-honest microbenchmarks, warm caches"
+        ],
+        [
+          "Memory blow-up",
+          "tracemalloc / memray",
+          "Allocation sites, not just peak RSS"
+        ],
+        [
+          "Production latency",
+          "py-spy (sampling, no restart)",
+          "Attach to a live process, ~1% overhead"
+        ]
+      ]
+    },
+    {
+      "type": "h2",
+      "text": "From profile to fix: a worked case"
+    },
+    {
+      "type": "steps",
+      "title": "Rolling median of the last 100 tick prices, 100k ticks",
+      "items": [
+        "Profile says 92% of tottime is in `sorted(window)` called once per tick: re-sorting 100 elements per update is $O(n \\log n)$ per tick.",
+        "Fix the algorithm, not the constant: maintain two heaps (max-heap for the low half, min-heap for the high half) with lazy deletion - $O(\\log n)$ per tick.",
+        "Re-run the *same* benchmark: 6.8 s down to 0.4 s - a ~17x speedup on the same machine, same input, same script.",
+        "Only now consider bigger hammers (numpy, C++ bindings - next lessons), and re-measure again. Algorithmic fixes usually beat language swaps."
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Profile before you bind",
+      "md": "The decision to write a C extension (py-cpp-interop lesson) must come from a profile showing time concentrated in a pure-Python hot spot that numpy cannot express. Binding the wrong 5% of the code buys you nothing; binding the right one can buy 50x."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "A profile of an 8.0-second report shows:\n\n| function | tottime | cumtime | calls |\n|---|---|---|---|\n| `h: build_report` | 0.1 | 6.9 | 1 |\n| `g: score_positions` | 5.2 | 5.4 | 1 |\n| `f: fetch_prices` | 1.5 | 1.5 | 40 |\n| (other) | 1.2 | 1.2 | - |\n\n(a) Which function would you optimise first, and why? (b) What fraction of total time does it own? (c) What does `h`'s huge cumtime but tiny tottime tell you?",
+    "hints": [
+      "tottime excludes callees; cumtime includes them.",
+      "A big cumtime with small tottime means the time belongs to the callees."
+    ],
+    "solution": "(a) `g` - its own body (tottime 5.2 s) is the largest self-time block. (b) $5.2 / 8.0 = 65\\%$ of total time. (c) `h` merely *calls* the expensive code: its 6.9 s cumtime is mostly inherited from `g` and `f`, so rewriting `h` itself would achieve nothing. Optimise `g`'s inner loop first, then `f`'s per-call cost (40 calls, 1.5 s self-time) if more speed is needed."
+  },
+  "independentExercise": {
+    "prompt": "Benchmark two ways to compute a compounded growth factor over 10,000 daily returns `r` (float64):\n\n```python\ndef loop_version(r):\n    v = 1.0\n    for x in r:\n        v *= (1 + x)\n    return v\n\ndef vec_version(r):\n    return float(np.prod(1 + r))\n```\n\nWrite a timeit harness (number=200, with a proper setup), run it, report both medians and the speedup, and then answer: for which workloads would you accept the loop version in production anyway?",
+    "hints": [
+      "timeit.timeit(stmt, setup=..., number=...); use timeit.repeat for stability.",
+      "Give both versions identical inputs; build the array once in setup.",
+      "A loop is acceptable when it runs rarely, on small n, and clarity matters."
+    ],
+    "solution": "```python\nimport timeit, statistics\nsetup = \"\"\"import numpy as np\nr = np.random.default_rng(0).normal(0.0002, 0.01, size=10_000)\ndef loop_version(r):\n    v = 1.0\n    for x in r:\n        v *= (1 + x)\n    return v\ndef vec_version(r):\n    return float(np.prod(1 + r))\n\"\"\"\nt_loop = statistics.median(timeit.repeat(\"loop_version(r)\", setup=setup,\n                                         number=200, repeat=5))\nt_vec = statistics.median(timeit.repeat(\"vec_version(r)\", setup=setup,\n                                        number=200, repeat=5))\nprint(t_loop / t_vec)   # typically ~10-30x at n=10_000\n```\nReport the ratio of medians rather than single runs. In production the loop version remains fine when the function runs rarely (e.g. once per nightly batch), n is small (hundreds), and the plain loop is easier to audit - performance work is only justified where the profile says it pays."
+  },
+  "commonMistakes": [
+    "Optimising code you never profiled - the slow part is rarely the part you suspect.",
+    "Reporting a single timing run instead of the median of repeats; noise dominates.",
+    "Benchmarking at toy sizes (n=100) and extrapolating to production (n=10M) - caches change the regime.",
+    "Comparing timings across different machines, background loads or interpreter flags.",
+    "Ignoring memory: peak allocation and object churn cause GC pauses that CPU-time profiles never show.",
+    "Micro-optimising a function whose tottime is 0.1 s when another owns 5 s - let tottime pick the target."
+  ],
+  "realWorldApplication": "Performance engineering in every backend follows this loop: profile (cProfile, perf, py-spy), fix the top hot spot, re-benchmark. The same discipline decides when to reach for numpy, Cython or C++ instead of rewriting everything blindly.",
+  "quantFinanceApplication": "Overnight batch jobs (risk reports, factor computation, backtests) are tuned exactly this way: cProfile identifies the hot scoring loop, tracemalloc catches a materialising pipeline before it exhausts memory, and the profile justifies - or kills - a C++ rewrite proposal.",
+  "summary": [
+    "Workflow: reproduce at scale -> profile -> optimise the hot spot -> re-measure with the same benchmark. Intuition about hot code is unreliable.",
+    "cProfile: tottime = time in the function's own body; cumtime = including callees. Optimise the largest tottime, not the largest cumtime that merely calls it.",
+    "Trustworthy micro-benchmarks: timeit/perf_counter, several repeats, median or min, realistic sizes, identical conditions.",
+    "tracemalloc reports current and peak allocation; generator pipelines and preallocation beat object churn.",
+    "numpy reductions beat Python loops by 10-100x at scale because compiled C loops replace interpreted per-element bytecode."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "In cProfile output, what is the difference between tottime and cumtime?",
+      "options": [
+        "tottime includes callees, cumtime excludes them",
+        "tottime is the function's own body time; cumtime includes all callees",
+        "They are the same number reported in different units",
+        "tottime measures memory, cumtime measures CPU"
+      ],
+      "answerIndex": 1,
+      "explanation": "tottime excludes time spent in sub-calls; cumtime adds everything the function triggered. Large cumtime + tiny tottime = the function is just a caller of expensive children."
+    },
+    {
+      "id": "q2",
+      "type": "numeric",
+      "prompt": "A profiled job takes 8.0 s total. Function `g` has tottime 5.2 s. What percentage of total runtime does `g`'s own body consume? (Answer in percent.)",
+      "answer": 65,
+      "tolerance": 0.5,
+      "explanation": "5.2 / 8.0 = 0.65 = 65%. That is the share a rewrite of g's body could target."
+    },
+    {
+      "id": "q3",
+      "type": "ms",
+      "prompt": "Which practices make a micro-benchmark trustworthy? Select all that apply.",
+      "options": [
+        "Run timeit.repeat several times and report the median",
+        "Benchmark at a realistic data size",
+        "Use whatever machine happens to be least busy at the moment, changing between runs",
+        "Keep the interpreter flags and background load identical across compared runs"
+      ],
+      "answerIndices": [
+        0,
+        1,
+        3
+      ],
+      "explanation": "Repeat and take the median to control noise; realistic sizes because caches change the regime; identical conditions because you are comparing ratios. Changing machines between runs invalidates the comparison."
+    },
+    {
+      "id": "q4",
+      "type": "short",
+      "prompt": "Why is `arr.sum()` on a numpy float64 array typically 10-100x faster than a Python `for` loop summing a list of floats?",
+      "modelAnswer": "numpy's sum is a single compiled C loop over contiguous, homogeneous 8-byte doubles, while the Python loop executes interpreted bytecode per element and repeatedly boxes/unboxes PyObject floats; numpy also avoids per-element type dispatch and pointer chasing.",
+      "keywords": [
+        "C",
+        "bytecode",
+        "contiguous",
+        "boxed",
+        "interpreted",
+        "loop"
+      ],
+      "explanation": "The speedup comes from moving the loop into compiled code over typed contiguous memory and eliminating per-element object overhead - exactly the object-model cost this module began with."
+    },
+    {
+      "id": "q5",
+      "type": "mcq",
+      "prompt": "Your nightly job is too slow. What is the correct first move?",
+      "options": [
+        "Rewrite the slowest-looking module in C++",
+        "Add multiprocessing everywhere",
+        "Profile it at production-like scale to find where the time goes",
+        "Upgrade the Python version"
+      ],
+      "answerIndex": 2,
+      "explanation": "Measure first: profiles routinely show the real hot spot is not the suspected one, and every later decision (vectorise, thread, bind) should be justified by the profile."
+    },
+    {
+      "id": "q6",
+      "type": "mcq",
+      "prompt": "What does tracemalloc primarily give you?",
+      "options": [
+        "Function-level CPU timings",
+        "Current and peak memory usage with the allocation sites responsible",
+        "A count of live threads",
+        "The size of the C stack"
+      ],
+      "answerIndex": 1,
+      "explanation": "tracemalloc traces Python allocations: current bytes, peak bytes, and per-line allocation statistics - the tool for object churn and memory blow-ups, complementing cProfile's time focus."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "definition",
+      "front": "tottime vs cumtime (cProfile)",
+      "back": "tottime: time in the function's own body, excluding callees. cumtime: including everything it called. Optimise the biggest tottime; treat big-cumtime/tiny-tottime functions as callers."
+    },
+    {
+      "type": "concept",
+      "front": "The measure-first workflow",
+      "back": "Reproduce at production scale -> profile -> fix only the hot spot -> re-measure with the SAME benchmark. Never optimise unprofiled code."
+    },
+    {
+      "type": "concept",
+      "front": "Trustworthy benchmark rules",
+      "back": "Repeat and take the median; realistic data sizes; identical machine/flags/load; warm caches; one reusable benchmark script."
+    },
+    {
+      "type": "error-identification",
+      "front": "Spot the flaw: 'I ran my benchmark once, it took 4.2s, the old version took 4.3s - new version is faster.'",
+      "back": "Single runs are noise. Use timeit.repeat / perf_counter with repeats, report median or min, and only conclude when the gap exceeds the run-to-run spread."
+    },
+    {
+      "type": "code-output",
+      "front": "What are the two numbers tracemalloc.get_traced_memory() returns?",
+      "back": "(current, peak): bytes currently allocated and the high-water mark since tracing started."
+    }
+  ],
+  "references": [
+    {
+      "label": "Python docs - The Python Profilers (cProfile, pstats)",
+      "url": "https://docs.python.org/3/library/profile.html"
+    },
+    {
+      "label": "Python docs - timeit",
+      "url": "https://docs.python.org/3/library/timeit.html"
+    },
+    {
+      "label": "Python docs - tracemalloc",
+      "url": "https://docs.python.org/3/library/tracemalloc.html"
+    }
+  ],
+  "skills": [
+    "python"
+  ]
+}

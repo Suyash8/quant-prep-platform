@@ -1,0 +1,244 @@
+{
+  "id": "py-collections",
+  "moduleId": "ph3-python-foundations",
+  "title": "Lists, Dicts, Sets and Tuples",
+  "estMinutes": 25,
+  "difficulty": "foundation",
+  "prereqs": ["py-setup-syntax"],
+  "objectives": [
+    "Create and index lists, tuples, dicts and sets, including negative indices and slices",
+    "Choose the correct container for a task by weighing mutability, ordering and uniqueness requirements",
+    "Update records in dicts safely with [] and .get(), and de-duplicate with sets and their algebra",
+    "Predict and avoid the shared-reference (aliasing) bug when assigning lists"
+  ],
+  "motivation": "One variable holds one price; a real desk holds hundreds of positions, thousands of fills and a watchlist that changes by the minute. Python's four built-in containers - list, tuple, dict, set - are how programs carry that many values, and picking the wrong one (a list where membership tests dominate, a dict where order matters) shows up immediately as slow or buggy code. This lesson builds the four structures around finance-shaped data.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Lists: ordered and mutable"
+    },
+    {
+      "type": "p",
+      "md": "A **list** is an ordered sequence you can grow, shrink and edit in place. Index from 0, use negative indices to count from the end, and slice with `[start:stop]` to grab ranges - the stop index is excluded. The built-ins len(), sum(), max() and min() work on any list of numbers, which makes quick sanity checks on fills and prices effortless."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "fills = [100, 250, 150]\nfills.append(300)        # grow in place\nprint(fills[0])          # 100\nprint(fills[-1])         # 300 - negative index counts from the end\nprint(len(fills))        # 4\nprint(sum(fills))        # 800 - total shares traded\nprint(fills[1:3])        # [250, 150] - slice excludes the stop index",
+      "caption": "Slicing never raises IndexError: fills[99:] is simply empty."
+    },
+    {
+      "type": "p",
+      "md": "Lists are **references**: the assignment `b = a` does not copy the data, it creates a second name for the same list, so mutating through either name is visible through both. This is the most common bug in beginner data code. When you truly need an independent duplicate, call a.copy() or list(a)."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "a = [1, 2]\nb = a            # a second name for the same list - not a copy\nb.append(3)\nprint(a)         # [1, 2, 3] - changed through b!\n\nc = a.copy()     # a genuine, independent copy\nc.append(4)\nprint(a)         # [1, 2, 3] - untouched\nprint(c)         # [1, 2, 3, 4]",
+      "caption": "Assignment shares; .copy() duplicates. Keep the difference in your bones."
+    },
+    {
+      "type": "h2",
+      "text": "Tuples: ordered and immutable"
+    },
+    {
+      "type": "p",
+      "md": "A **tuple** is an ordered sequence that can never change - ideal for fixed-shape records like one trade, and safe to pass around because no code can mutate it. Tuple unpacking binds each element to a name in a single line, which is how functions commonly return several related values. A one-element tuple needs a trailing comma: `(42,)`."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "trade = ('AAPL', 250, 42.17)\nsymbol, qty, price = trade         # unpacking\nprint(symbol, qty, price)          # AAPL 250 42.17\n# trade[0] = 'MSFT'                # TypeError: tuples cannot be modified",
+      "caption": "Immutability is a feature: a tuple record cannot drift out of shape under your feet."
+    },
+    {
+      "type": "h2",
+      "text": "Dictionaries: key to value"
+    },
+    {
+      "type": "p",
+      "md": "A **dict** maps keys to values - the workhorse for records like positions and for lookups like symbol to last price. Lookup by key is O(1) on average because keys are hashed (watch the visual below), keys must be immutable types, and since Python 3.7 dicts remember insertion order. Reading a missing key with `[]` raises KeyError; .get(key, default) reads with a fallback instead, and assignment to a new key simply adds it."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "position = {'symbol': 'AAPL', 'qty': 250, 'avg_cost': 41.80}\nprint(position['qty'])                # 250\nprint(position.get('venue', 'ARCA'))  # ARCA - default when the key is absent\nposition['qty'] += 100                # add 100 shares\nposition['venue'] = 'ARCA'\nprint(position)   # {'symbol': 'AAPL', 'qty': 350, 'avg_cost': 41.8, 'venue': 'ARCA'}",
+      "caption": "Note the repr prints 41.8 for the float written 41.80 - trailing zeros are not stored."
+    },
+    {
+      "type": "interactive",
+      "component": "HashTableVisual",
+      "params": {
+        "keys": ["AAPL", "MSFT", "TSLA", "NVDA"],
+        "buckets": 8
+      },
+      "caption": "Dict keys are hashed into buckets, which is why position['MSFT'] is an average O(1) lookup no matter how many symbols the book holds."
+    },
+    {
+      "type": "h2",
+      "text": "Sets: unique members only"
+    },
+    {
+      "type": "p",
+      "md": "A **set** stores each value at most once and answers `in` membership tests in O(1) on average. Build one from a literal or de-duplicate any list with set(list). Sets support algebra: union `|`, intersection `&`, difference `-` - which turns 'which names do both analysts watch?' into a one-character question."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "watch = {'AAPL', 'MSFT', 'AAPL'}      # duplicate collapses\nprint(len(watch))                     # 2\nprint('TSLA' in watch)                # False\n\na = {'AAPL', 'MSFT', 'TSLA'}\nb = {'MSFT', 'NVDA'}\nprint(len(a | b))                     # 4 - union\nprint(len(a & b))                     # 1 - intersection",
+      "caption": "Sets print in arbitrary order - never rely on set ordering for output."
+    },
+    {
+      "type": "h2",
+      "text": "Choosing the right container"
+    },
+    {
+      "type": "table",
+      "headers": ["Collection", "Ordered", "Mutable", "Duplicates", "Typical desk use"],
+      "rows": [
+        ["list", "yes", "yes", "allowed", "time series of fills or prices"],
+        ["tuple", "yes", "no", "allowed", "one fixed trade record (symbol, qty, price)"],
+        ["dict", "insertion order", "yes", "keys unique", "position book: symbol to qty"],
+        ["set", "no", "yes", "never", "watchlists, de-duplication, membership tests"]
+      ]
+    },
+    {
+      "type": "p",
+      "md": "The selection rule is to pick the structure by the operations you will run most: frequent append and index access means a list; lookups by identifier mean a dict; uniqueness and membership mean a set; a record that must never change means a tuple. Costly refactors usually trace back to choosing a list where a dict belonged."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Given this portfolio, compute the total market value with a for loop and an accumulator, printing the result.\n\n```python\nportfolio = [\n    {'symbol': 'AAPL', 'qty': 250, 'price': 42.25},\n    {'symbol': 'MSFT', 'qty': 100, 'price': 43.50},\n    {'symbol': 'TSLA', 'qty': 50, 'price': 41.75},\n]\n```",
+    "hints": [
+      "Start the accumulator at 0 and add qty * price for each dict as you iterate over the list.",
+      "Each element of the list is a dict, so reach the fields with pos['qty'] and pos['price'].",
+      "Hand check: 250 x 42.25 = 10562.5 and 50 x 41.75 = 2087.5."
+    ],
+    "solution": "```python\nportfolio = [\n    {'symbol': 'AAPL', 'qty': 250, 'price': 42.25},\n    {'symbol': 'MSFT', 'qty': 100, 'price': 43.50},\n    {'symbol': 'TSLA', 'qty': 50, 'price': 41.75},\n]\ntotal = 0\nfor pos in portfolio:\n    total += pos['qty'] * pos['price']\nprint(total)   # 17000.0\n```\nThe three legs are 10562.5, 4350.0 and 2087.5, which sum to a market value of \\$17,000.00. All values are exactly representable in binary, so the printed total is clean."
+  },
+  "independentExercise": {
+    "prompt": "Two analysts keep their watchlists as plain lists, duplicates included: `a = ['AAPL', 'MSFT', 'TSLA', 'AAPL', 'MSFT']` and `b = ['MSFT', 'NVDA']`. Convert both to sets, then print four numbers: how many distinct names each analyst watches, how many names appear on at least one list, how many on both, and how many on exactly one list.",
+    "hints": [
+      "len() of a set counts distinct members.",
+      "Union | answers 'at least one', intersection & answers 'both', and ^ (symmetric difference) answers 'exactly one'.",
+      "Set a collapses to 3 distinct names, set b has 2."
+    ],
+    "solution": "```python\na = set(['AAPL', 'MSFT', 'TSLA', 'AAPL', 'MSFT'])\nb = set(['MSFT', 'NVDA'])\nprint(len(a))      # 3\nprint(len(b))      # 2\nprint(len(a | b))  # 4 - AAPL, MSFT, TSLA, NVDA\nprint(len(a & b))  # 1 - MSFT only\nprint(len(a ^ b))  # 3 - AAPL, TSLA, NVDA\n```\nThe union is {AAPL, MSFT, TSLA, NVDA}; the intersection is {MSFT}; the symmetric difference drops the shared MSFT, leaving 3 names."
+  },
+  "commonMistakes": [
+    "Assuming b = a copies a list - both names point to one list, so appends through b appear in a. Use .copy().",
+    "Using a list where membership tests dominate: `x in list` scans every element, while `x in set` or `x in dict` hashes in O(1) on average.",
+    "Accessing a missing dict key with [] and crashing on KeyError - use .get(key, default) when absence is normal.",
+    "Writing a one-element tuple as (42) - that is just the int 42 in brackets. Tuples need the comma: (42,)."
+  ],
+  "realWorldApplication": "Every data pipeline stages its records in exactly these four shapes: rows arrive as lists or tuples, entities live in dicts keyed by identifier, and sets de-duplicate feeds before they reach a database.",
+  "quantFinanceApplication": "A position book is a dict keyed by symbol; each fill arrives as a tuple (symbol, qty, price); the day's fills accumulate in a list; and the compliance universe is a set. Choosing these four correctly is the skeleton of any trading tool."
+  , "summary": [
+    "Lists are ordered and mutable with 0-based indexing and slices; assignment shares references, so use .copy() for real duplicates.",
+    "Tuples are immutable records with unpacking; dicts are hashed key-to-value maps with O(1) average lookup and .get() for safe reads.",
+    "Sets collapse duplicates and support |, &, - algebra with fast membership tests.",
+    "Choose containers by dominant operation: index/append -> list, lookup -> dict, membership/uniqueness -> set, fixed record -> tuple."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "code-output",
+      "prompt": "What does this script print?",
+      "language": "python",
+      "code": "prices = [42.1, 43.0, 41.9, 44.2]\nprint(prices[1])\nprint(prices[-2])\nprint(len(prices))",
+      "answer": "43.0\n41.9\n4",
+      "explanation": "Index 1 is the second element (43.0); index -2 counts two from the end (41.9); the list holds 4 elements."
+    },
+    {
+      "id": "q2",
+      "type": "code-output",
+      "prompt": "What does this script print?",
+      "language": "python",
+      "code": "pos = {'qty': 250, 'symbol': 'AAPL'}\npos['qty'] += 50\nprint(pos['qty'])\nprint(pos.get('venue', 'ARCA'))",
+      "answer": "300\nARCA",
+      "explanation": "+= updates the value at the existing key to 300; 'venue' is missing, so .get() returns the default 'ARCA' instead of raising KeyError."
+    },
+    {
+      "id": "q3",
+      "type": "mcq",
+      "prompt": "Which built-in collection is immutable?",
+      "options": [
+        "list",
+        "dict",
+        "tuple",
+        "set"
+      ],
+      "answerIndex": 2,
+      "explanation": "Tuples cannot be modified after creation, which is why they can serve as dict keys and fixed-shape records. Lists, dicts and sets are all mutable."
+    },
+    {
+      "id": "q4",
+      "type": "code-output",
+      "prompt": "What does this script print?",
+      "language": "python",
+      "code": "t = ('MSFT', 100, 43.5)\ns, q, p = t\nprint(s, q, p)",
+      "answer": "MSFT 100 43.5",
+      "explanation": "Tuple unpacking binds s='MSFT', q=100, p=43.5; print with several arguments joins them with spaces."
+    },
+    {
+      "id": "q5",
+      "type": "code-output",
+      "prompt": "What does this script print?",
+      "language": "python",
+      "code": "a = [1, 2]\nb = a\nb.append(3)\nprint(a)",
+      "answer": "[1, 2, 3]",
+      "explanation": "Assignment copies the reference, not the list: a and b are two names for one list, so the append through b is visible through a."
+    },
+    {
+      "id": "q6",
+      "type": "ms",
+      "prompt": "Which expressions change `fills` in place? (Select all that apply.)",
+      "options": [
+        "fills.append(100)",
+        "sorted(fills)",
+        "fills.sort()",
+        "fills + [100]"
+      ],
+      "answerIndices": [0, 2],
+      "explanation": "append mutates the list, and .sort() sorts in place. sorted() returns a NEW sorted list, and + builds a new concatenated list, leaving fills unchanged."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "List vs tuple - when is each right?",
+      "back": "Lists are mutable and meant to grow or shrink; tuples are immutable fixed records - and only tuples (of immutable items) can be dict keys."
+    },
+    {
+      "type": "code-output",
+      "front": "a = [1, 2]; b = a; b.append(3). What is a now?",
+      "back": "[1, 2, 3] - assignment copies the reference, not the list. Use a.copy() for an independent duplicate."
+    },
+    {
+      "type": "definition",
+      "front": "What does position.get('venue', 'ARCA') return?",
+      "back": "The value at key 'venue', or the default 'ARCA' when the key is missing - instead of raising KeyError like position['venue'] would."
+    },
+    {
+      "type": "concept",
+      "front": "When is a set the right container?",
+      "back": "When duplicates must collapse and membership tests dominate: watchlists, de-duplication, and set algebra with |, &, -."
+    },
+    {
+      "type": "definition",
+      "front": "Which types can be dict keys?",
+      "back": "Immutable ones: str, int, float, bool, and tuples of those. Lists cannot be keys because they can change."
+    }
+  ],
+  "references": [
+    {
+      "label": "Python.org - Data Structures tutorial",
+      "url": "https://docs.python.org/3/tutorial/datastructures.html"
+    },
+    {
+      "label": "Python.org - Dictionaries and sets in the standard types docs",
+      "url": "https://docs.python.org/3/library/stdtypes.html#dict"
+    }
+  ],
+  "skills": ["python"]
+}

@@ -1,0 +1,241 @@
+{
+  "id": "ts-garch",
+  "moduleId": "ph8-time-series",
+  "title": "Volatility Clustering, ARCH and GARCH",
+  "estMinutes": 28,
+  "difficulty": "advanced",
+  "prereqs": ["ts-arima"],
+  "objectives": [
+    "Recognise volatility clustering and ARCH effects from the ACF of squared returns",
+    "Derive the unconditional variance of a GARCH(1,1) process from its recursion and verify the stationarity condition $\\alpha + \\beta < 1$",
+    "Compute one-step and two-step conditional variance forecasts from a fitted GARCH(1,1)",
+    "Explain the leverage effect, GJR extension, and what diagnostics a fitted volatility model must pass"
+  ],
+  "motivation": "ARMA models made the *mean* of returns predictable - but the mean of daily returns is nearly zero, and the money is in the *variance*. Markets alternate between calm and turbulent regimes that cluster in time, and a risk system that assumes constant variance will be calm precisely when it should be scared. GARCH turns yesterday's shock size into today's risk forecast, which is the engine inside VaR, position sizing and option pricing.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Volatility clustering: the empirical fact"
+    },
+    {
+      "type": "p",
+      "md": "Plot daily returns and two features jump out. First, the returns themselves show almost no autocorrelation - yesterday's sign barely predicts today's. Second, their *magnitude* does: big moves follow big moves, quiet days follow quiet days. The formal signature: the ACF of returns is near zero, but the ACF of **squared returns** is large and decays slowly. That is the ARCH effect, and it invalidates the constant-variance assumption of every model from the last two lessons."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import numpy as np\nrng = np.random.default_rng(5)\n# simulate returns with clustering: GARCH-ish variance path\nsigma2 = 1.0\nr = []\nfor t in range(500):\n    eps = rng.normal(0, sigma2 ** 0.5)\n    r.append(eps)\n    sigma2 = 0.4 + 0.1 * eps**2 + 0.86 * sigma2   # the GARCH(1,1) below\nr = np.array(r)\nprint(round(np.corrcoef(r[:-1], r[1:])[0, 1], 3))      # ~0.00 - return ACF\nprint(round(np.corrcoef(r[:-1]**2, r[1:]**2)[0, 1], 3))  # ~0.2-0.3 - squared ACF",
+      "caption": "The smoking gun, simulated: returns are uncorrelated, squared returns are not. (Correlation values are simulation output - approximate.)"
+    },
+    {
+      "type": "h2",
+      "text": "ARCH and GARCH: modelling the variance itself"
+    },
+    {
+      "type": "p",
+      "md": "Engle's ARCH(1) made the variance conditional on the last shock: $\\sigma^2_t = \\omega + \\alpha\\,\\varepsilon^2_{t-1}$. Bollerslev's GARCH(1,1) added memory in the variance itself, which captures the slow decay the data shows:"
+    },
+    {
+      "type": "math",
+      "tex": "\\sigma^2_t = \\omega + \\alpha\\, \\varepsilon^2_{t-1} + \\beta\\, \\sigma^2_{t-1}, \\qquad \\omega > 0,\\ \\alpha, \\beta \\ge 0,\\ \\alpha + \\beta < 1",
+      "caption": "GARCH(1,1): variance is a weighted blend of long-run level, last shock, and last variance"
+    },
+    {
+      "type": "steps",
+      "title": "Deriving the unconditional variance",
+      "items": [
+        "Write the shock as $\\varepsilon_{t-1} = \\sigma_{t-1} \\, z_{t-1}$ with $z$ standardised (unit variance), so $\\mathbb{E}[\\varepsilon^2_{t-1}] = \\mathbb{E}[\\sigma^2_{t-1}]$.",
+        "Take unconditional expectations of both sides, writing $\\bar{\\sigma}^2 = \\mathbb{E}[\\sigma^2_t]$: $\\bar{\\sigma}^2 = \\omega + \\alpha\\,\\bar{\\sigma}^2 + \\beta\\,\\bar{\\sigma}^2$.",
+        "Collect terms: $\\bar{\\sigma}^2 (1 - \\alpha - \\beta) = \\omega$.",
+        "Therefore $\\bar{\\sigma}^2 = \\dfrac{\\omega}{1 - \\alpha - \\beta}$ - finite only when $\\alpha + \\beta < 1$, which is the stationarity condition.",
+        "The sum $\\alpha + \\beta$ (the **persistence**) controls how fast today's variance reverts to $\\bar{\\sigma}^2$: convergence rate $\\approx (\\alpha+\\beta)^{k}$ after $k$ steps."
+      ]
+    },
+    {
+      "type": "p",
+      "md": "Numbers, in daily percent-squared units (hypothetical but realistic): $\\omega = 0.4$, $\\alpha = 0.10$, $\\beta = 0.86$. Persistence $= 0.96$, comfortably stationary. Long-run variance $= 0.4/(1 - 0.96) = 0.4/0.04 = 10$, so the long-run daily volatility is $\\sqrt{10} \\approx 3.16\\%$. The half-life of a shock is $\\ln 0.5 / \\ln 0.96 \\approx 17$ days - turbulence, once started, hangs around for weeks, exactly as plotted data suggests."
+    },
+    {
+      "type": "h2",
+      "text": "Forecasting: the one-step computation"
+    },
+    {
+      "type": "steps",
+      "title": "One and two steps ahead",
+      "items": [
+        "Suppose today's realised numbers are $\\varepsilon^2_t = 16$ (a $4\\%$ daily move) and $\\sigma^2_t = 9$.",
+        "One step: $\\sigma^2_{t+1} = \\omega + \\alpha\\,\\varepsilon^2_t + \\beta\\,\\sigma^2_t = 0.4 + 0.10 \\times 16 + 0.86 \\times 9 = 0.4 + 1.6 + 7.74 = 9.74$.",
+        "So tomorrow's forecast volatility is $\\sqrt{9.74} \\approx 3.12\\%$ - up from today's conditional $3.00\\%$ because of the shock, yet still below the long-run $3.16\\%$ toward which the blend pulls the forecast.",
+        "Two steps: $\\sigma^2_{t+2} = \\omega + (\\alpha + \\beta)\\,\\sigma^2_{t+1} = 0.4 + 0.96 \\times 9.74 = 9.75$ (shock terms beyond one step enter only through the variance channel).",
+        "Beyond: $\\sigma^2_{t+k} \\to 10$ geometrically at rate $0.96^{k-1}$ - the forecast curve decays smoothly to the long-run level."
+      ]
+    },
+    {
+      "type": "p",
+      "md": "Annualising with the usual $\\sqrt{252}$ scaling: $3.16\\% \\times \\sqrt{252} \\approx 50\\%$ a year (hypothetical parameters; annualisation itself is exact arithmetic). Note what the forecast did *not* use: any information about the sign of the shock - GARCH is symmetric, which brings us to the leverage effect."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "The leverage effect",
+      "md": "Empirically, negative returns raise subsequent volatility more than equal-sized positive returns - falling prices raise leverage, which raises risk. GJR-GARCH adds a term $\\gamma\\,\\varepsilon^2_{t-1}\\,\\mathbb{1}[\\varepsilon_{t-1} < 0]$ to capture the asymmetry; equity vol models that ignore it systematically under-forecast risk after crashes."
+    },
+    {
+      "type": "interactive",
+      "component": "RandomWalk",
+      "params": {
+        "n": 250,
+        "garchOmega": 0.4,
+        "garchAlpha": 0.1,
+        "garchBeta": 0.86,
+        "seed": 5
+      },
+      "caption": "Simulated GARCH(1,1) path: quiet stretches and turbulent bursts - clustering that a constant-variance model would call impossible."
+    },
+    {
+      "type": "h2",
+      "text": "Fitting and diagnosing"
+    },
+    {
+      "type": "p",
+      "md": "GARCH parameters are estimated by maximum likelihood on returns (the same principle as the MLE lesson - the likelihood is just a product of conditional normals with time-varying $\\sigma_t$). Three diagnostics decide whether the fit is real: the **standardised residuals** $\\varepsilon_t/\\sigma_t$ should be white noise (no remaining ACF), their **squares** should show no remaining ARCH effect, and the fitted $\\alpha + \\beta$ should be strictly below 1 - values at or above it signal an integrated process where the long-run variance does not exist."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "def garch_forecast(omega, alpha, beta, eps2_last, sigma2_last, steps=3):\n    out, s2 = [], sigma2_last\n    for k in range(1, steps + 1):\n        s2 = omega + alpha * eps2_last + beta * s2 if k == 1 \\\n             else omega + (alpha + beta) * s2\n        out.append(s2)\n    return out\n\nprint([round(v, 3) for v in garch_forecast(0.4, 0.10, 0.86, 16, 9)])\n# [9.74, 9.75, 9.76] - converging toward the long-run variance of 10",
+      "caption": "The recursion is three lines: after one step, shocks enter only through the variance blend, so convergence to $\\omega/(1-\\alpha-\\beta)$ is geometric."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Long-run variance when persistence nears 1",
+      "md": "With $\\alpha + \\beta = 0.995$, $\\bar{\\sigma}^2 = \\omega/0.005 = 200\\,\\omega$ - technically finite but effectively unreachable, and a small estimation error in $\\alpha + \\beta$ swings it wildly. Report persistence alongside the long-run level; a fitted persistence at or above 1 means the model has no anchor at all (integrated GARCH) and forecasts drift without bound."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "A GARCH(1,1) has $\\omega = 0.2$, $\\alpha = 0.1$, $\\beta = 0.8$ (percent-squared units). (a) Derive and compute the unconditional variance and the long-run daily volatility. (b) Given $\\varepsilon^2_t = 4$ and $\\sigma^2_t = 1$, compute the one-step-ahead conditional variance and volatility.",
+    "hints": [
+      "Unconditional variance: $\\omega/(1 - \\alpha - \\beta)$.",
+      "One step: $\\omega + \\alpha\\,\\varepsilon^2_t + \\beta\\,\\sigma^2_t$.",
+      "Take square roots at the end."
+    ],
+    "solution": "(a) Persistence $= 0.9$; $\\bar{\\sigma}^2 = 0.2/(1 - 0.9) = 2.0$, so long-run volatility $= \\sqrt{2} \\approx 1.41\\%$ per day. (b) $\\sigma^2_{t+1} = 0.2 + 0.1 \\times 4 + 0.8 \\times 1 = 0.2 + 0.4 + 0.8 = 1.4$, so $\\sigma_{t+1} = \\sqrt{1.4} \\approx 1.18\\%$ - today's shock lifts tomorrow's risk above the long-run level."
+  },
+  "independentExercise": {
+    "prompt": "A GARCH(1,1) has $\\omega = 0.3$, $\\alpha = 0.05$, $\\beta = 0.9$. (a) Compute persistence, the unconditional variance, and the long-run daily volatility. (b) Compute the shock half-life (first $k$ with $0.95^k \\le 0.5$). (c) With $\\varepsilon^2_t = 1$ and $\\sigma^2_t = 6.25$, compute the one-step forecast variance and volatility.",
+    "hints": [
+      "$1 - \\alpha - \\beta = 0.05$ in part (a).",
+      "$\\ln 0.5 / \\ln 0.95 \\approx 13.5$ - round to the first integer $k$.",
+      "One step: $0.3 + 0.05 \\times 1 + 0.9 \\times 6.25$."
+    ],
+    "solution": "(a) Persistence $= 0.95$; $\\bar{\\sigma}^2 = 0.3/0.05 = 6.0$, so $\\sqrt{6} \\approx 2.45\\%$ per day. (b) $0.95^{13} \\approx 0.513$, $0.95^{14} \\approx 0.488$, so the half-life is $14$ days. (c) $\\sigma^2_{t+1} = 0.3 + 0.05 + 5.625 = 5.975$, so $\\sigma_{t+1} = \\sqrt{5.975} \\approx 2.44\\%$ - barely moved, because the mild shock ($\\varepsilon^2 = 1$) barely raises the blend."
+  },
+  "commonMistakes": [
+    "Quoting the unconditional variance as $\\omega/(\\alpha + \\beta)$ - the denominator is $1 - \\alpha - \\beta$.",
+    "Using a fitted model whose $\\alpha + \\beta \\ge 1$ and still reporting a 'long-run volatility' - none exists under non-stationarity.",
+    "Testing for ARCH effects on the ACF of returns instead of squared returns - returns look clean precisely when squares do not.",
+    "Assuming GARCH captures the leverage effect; plain GARCH is sign-blind, GJR-style extensions are not."
+  ],
+  "realWorldApplication": "Power-grid load forecasting, insurance claim modelling and internet traffic management all use GARCH-style conditional variance because bursts of demand cluster the same way market bursts do.",
+  "quantFinanceApplication": "One-day-ahead VaR, options-market volatility forecasting and volatility-targeted position sizing all consume the $\\sigma^2_{t+1} = \\omega + \\alpha\\varepsilon^2_t + \\beta\\sigma^2_t$ recursion computed in this lesson.",
+  "summary": [
+    "Volatility clustering shows up as significant ACF of squared returns while return ACF stays near zero - the ARCH effect.",
+    "GARCH(1,1): $\\sigma^2_t = \\omega + \\alpha\\varepsilon^2_{t-1} + \\beta\\sigma^2_{t-1}$ with unconditional variance $\\omega/(1-\\alpha-\\beta)$, finite iff $\\alpha + \\beta < 1$.",
+    "One-step forecast is a weighted blend of long-run level, last shock and last variance; beyond one step convergence to the long-run level is geometric at rate $\\alpha + \\beta$.",
+    "Persistence $\\alpha + \\beta$ sets shock half-life ($\\approx 17$ days at $0.96$); plain GARCH is symmetric, GJR adds the leverage effect."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "numeric",
+      "prompt": "A GARCH(1,1) has $\\omega = 0.4$, $\\alpha = 0.10$, $\\beta = 0.86$. What is its unconditional variance?",
+      "answer": 10,
+      "tolerance": 0.1,
+      "explanation": "$\\bar{\\sigma}^2 = \\omega/(1 - \\alpha - \\beta) = 0.4/(1 - 0.96) = 0.4/0.04 = 10$ (percent-squared daily units)."
+    },
+    {
+      "id": "q2",
+      "type": "numeric",
+      "prompt": "For the same model with $\\varepsilon^2_t = 16$ and $\\sigma^2_t = 9$, what is the one-step-ahead conditional variance $\\sigma^2_{t+1}$?",
+      "answer": 9.74,
+      "tolerance": 0.05,
+      "explanation": "$\\sigma^2_{t+1} = 0.4 + 0.10 \\times 16 + 0.86 \\times 9 = 0.4 + 1.6 + 7.74 = 9.74$."
+    },
+    {
+      "id": "q3",
+      "type": "mcq",
+      "prompt": "Which condition makes the GARCH(1,1) unconditional variance finite?",
+      "options": [
+        "$\\omega < 1$",
+        "$\\alpha < \\beta$",
+        "$\\alpha + \\beta < 1$",
+        "$\\beta < 1$ and $\\alpha$ arbitrary"
+      ],
+      "answerIndex": 2,
+      "explanation": "Persistence $\\alpha + \\beta$ must be below 1 for $\\omega/(1-\\alpha-\\beta)$ to exist; $\\alpha = 0.9$ alone with $\\beta = 0.9$ would blow up despite both being individually below 1."
+    },
+    {
+      "id": "q4",
+      "type": "ms",
+      "prompt": "Which observations constitute evidence of ARCH effects in a return series? Select all that apply.",
+      "options": [
+        "Significant autocorrelation of squared returns",
+        "Visible volatility clustering in the plotted returns",
+        "Near-zero autocorrelation of the returns themselves",
+        "A large mean absolute return"
+      ],
+      "answerIndices": [0, 1, 2],
+      "explanation": "ARCH effects are about the second moment: squares autocorrelated, clustering visible, while the return mean shows little predictability. The *average size* of returns is irrelevant."
+    },
+    {
+      "id": "q5",
+      "type": "short",
+      "prompt": "In one sentence, what is the leverage effect and why does plain GARCH(1,1) fail to capture it?",
+      "modelAnswer": "Negative shocks raise future volatility more than positive shocks of equal size, but GARCH(1,1) responds only to the squared shock, which erases the sign - GJR-style terms are needed to model the asymmetry.",
+      "keywords": ["negative", "squared", "sign"],
+      "explanation": "Squaring the shock removes sign information, so any sign-dependent response is invisible to the plain model."
+    },
+    {
+      "id": "q6",
+      "type": "numeric",
+      "prompt": "Using $\\alpha + \\beta = 0.96$, what is the approximate shock half-life in days (first $k$ with $0.96^k \\le 0.5$, computed as $\\ln 0.5 / \\ln 0.96 \\approx 16.98$)?",
+      "answer": 17,
+      "tolerance": 1,
+      "explanation": "$\\ln 0.5/\\ln 0.96 \\approx 16.98$, so the half-life is about $17$ days - long persistence means long turbulent episodes."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "formula",
+      "front": "GARCH(1,1) recursion",
+      "back": "$\\sigma^2_t = \\omega + \\alpha\\varepsilon^2_{t-1} + \\beta\\sigma^2_{t-1}$; finite long-run variance needs $\\alpha + \\beta < 1$."
+    },
+    {
+      "type": "formula",
+      "front": "GARCH unconditional variance",
+      "back": "$\\bar{\\sigma}^2 = \\omega/(1 - \\alpha - \\beta)$, derived by taking unconditional expectations of the recursion."
+    },
+    {
+      "type": "concept",
+      "front": "Persistence and half-life",
+      "back": "$\\alpha + \\beta$ is the decay rate of a shock's effect; half-life $\\approx \\ln 0.5/\\ln(\\alpha + \\beta)$."
+    },
+    {
+      "type": "concept",
+      "front": "ARCH effect test",
+      "back": "Check autocorrelation of squared (or absolute) returns, not returns: clustering lives in the second moment."
+    }
+  ],
+  "references": [
+    {
+      "label": "Hyndman & Athanasopoulos, fpp3 - Further forecasting topics (GARCH)",
+      "url": "https://otexts.com/fpp3/"
+    },
+    {
+      "label": "arch (python) documentation - GARCH models",
+      "url": "https://arch.readthedocs.io/en/latest/univariate/introduction.html"
+    }
+  ],
+  "skills": ["time-series"]
+}

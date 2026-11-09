@@ -1,0 +1,235 @@
+{
+  "id": "stat-hypothesis-testing",
+  "moduleId": "ph8-statistics",
+  "title": "Hypothesis Testing, p-Values and Power",
+  "estMinutes": 27,
+  "difficulty": "core",
+  "prereqs": ["stat-mle-confidence"],
+  "objectives": [
+    "Set up null and alternative hypotheses and carry out a one-sample $t$-test end to end with the critical-value and $p$-value approaches",
+    "Interpret a $p$-value correctly and reject common misreadings of it",
+    "Distinguish Type I and Type II errors and explain what statistical power depends on",
+    "Quantify the multiple-testing problem and state why backtests need correction for it"
+  ],
+  "motivation": "A desk shows you a strategy with mean daily return $2.1\\%$ over 25 days against a benchmark of $1.0\\%$. Is it genuinely better, or is that the kind of gap noise produces? Hypothesis testing is the disciplined procedure for that question - and the multiple-testing correction is what stops a desk testing 20 variants from celebrating an inevitable fluke.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "The courtroom logic of testing"
+    },
+    {
+      "type": "p",
+      "md": "A test starts from a **null hypothesis** $H_0$ - the boring default, typically 'no effect' or 'the mean equals the benchmark' - and asks whether the data would be surprising under it. The **alternative** $H_1$ is what you suspect instead. You never 'prove' $H_0$; you either reject it (evidence strong enough) or fail to reject it (evidence insufficient, which is not the same as evidence of absence). The two possible mistakes deserve a table:"
+    },
+    {
+      "type": "table",
+      "headers": ["", "H₀ is true", "H₀ is false"],
+      "rows": [
+        ["Reject H₀", "Type I error (false positive), probability $\\alpha$", "Correct, probability $1-\\beta$ = power"],
+        ["Keep H₀", "Correct, probability $1-\\alpha$", "Type II error (false negative), probability $\\beta$"]
+      ]
+    },
+    {
+      "type": "p",
+      "md": "You choose $\\alpha$ (usually $0.05$) before looking at data. Power - the chance of detecting a real effect - is not chosen; it follows from the effect size, the noise and the sample size. Low power is the quiet killer of research pipelines: it wastes months chasing effects that were real but undetectable at that sample size."
+    },
+    {
+      "type": "h2",
+      "text": "One $t$-test, fully worked"
+    },
+    {
+      "type": "p",
+      "md": "Scenario (hypothetical): mean daily return over $n = 25$ days is $\\bar{x} = 2.1\\%$ with sample standard deviation $s = 3.0\\%$; the benchmark is $\\mu_0 = 1.0\\%$. Two-sided test at $\\alpha = 0.05$."
+    },
+    {
+      "type": "steps",
+      "title": "The five moves of a $t$-test",
+      "items": [
+        "State hypotheses: $H_0: \\mu = 1.0$ vs $H_1: \\mu \\ne 1.0$.",
+        "Standard error: $\\mathrm{SE} = s/\\sqrt{n} = 3.0/\\sqrt{25} = 0.6$.",
+        "Test statistic: $t = (\\bar{x} - \\mu_0)/\\mathrm{SE} = 1.1/0.6 \\approx 1.833$, with $n - 1 = 24$ degrees of freedom.",
+        "Critical value: two-sided $5\\%$ with $24$ df gives $t_{0.025,\\,24} \\approx 2.064$. Since $|1.833| < 2.064$, **fail to reject** $H_0$.",
+        "$p$-value: the chance, if $H_0$ were true, of a $t$ at least this extreme - approximately $0.08$. Since $0.08 > 0.05$, same verdict."
+      ]
+    },
+    {
+      "type": "interactive",
+      "component": "DistributionViewer",
+      "params": {
+        "distribution": "t",
+        "df": 24,
+        "statistic": 1.83,
+        "tails": 2
+      },
+      "caption": "The $t_{24}$ density with the observed statistic marked: the shaded tail area is the $p$-value, and $\\pm 2.064$ bounds the rejection region."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "What a p-value is NOT",
+      "md": "A $p$-value of $0.08$ is **not** 'an $8\\%$ chance the null is true' and **not** the probability the result replicates. It is: assuming $H_0$ is exactly true, the probability of data at least this extreme. The direction of the conditional matters - it runs from hypothesis to data, never the reverse."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import numpy as np\nfrom math import sqrt\nfrom scipy import stats\n\nt_stat = (2.1 - 1.0) / (3.0 / sqrt(25))\np_two = 2 * stats.t.sf(t_stat, df=24)\ncrit = stats.t.ppf(0.975, df=24)\nprint(round(t_stat, 3), round(p_two, 3), round(crit, 3))",
+      "caption": "The same test in code: statistic, approximate two-sided p-value, and the critical value. Prints 1.833 0.079 2.064."
+    },
+    {
+      "type": "h2",
+      "text": "Power: the chance of detecting a real edge"
+    },
+    {
+      "type": "p",
+      "md": "Power answers: *if* the true mean really is $2.1$, how often would this design catch it? The effect size here is $d = (2.1 - 1.0)/3.0 \\approx 0.37$ standard deviations - modest. With $n = 25$ the standard error is $0.6$, so the signal-to-noise ratio of the test is $\\delta = 1.1/0.6 \\approx 1.83$. Approximating the $t_{24}$ rejection boundary by a shifted distribution, the power comes out at roughly $0.42$ (approximately - computed with a normal approximation to the non-central $t$). Barely better than a coin: even a genuinely superior strategy would slip through this test about three times in five. Fixing that needs more days of data, not more optimism."
+    },
+    {
+      "type": "list",
+      "ordered": false,
+      "items": [
+        "**More data**: power climbs with $n$ because the SE falls like $1/\\sqrt{n}$.",
+        "**Bigger true effect**: nothing to tune - but know what size effect matters commercially.",
+        "**Lower noise**: better data hygiene, or a factor model to strip explainable variance.",
+        "**One-sided alternative**: legitimate when the direction is committed *in advance*; do not switch sides after seeing the data."
+      ]
+    },
+    {
+      "type": "h2",
+      "text": "The multiple-testing trap"
+    },
+    {
+      "type": "p",
+      "md": "Suppose a desk tests 20 independent strategies at $\\alpha = 0.05$. Even if *none* has an edge, the chance at least one shows a 'significant' result is $1 - 0.95^{20} \\approx 0.64$. Two-thirds of such research sessions will produce a false discovery. Remedies in rough order of effort: pre-register a single hypothesis, adjust thresholds (Bonferroni: $\\alpha/m$), or hold out fresh data - the last is the one backtesting culture actually enforces."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Now $n = 36$ days, $\\bar{x} = 2.2\\%$, $s = 2.4\\%$, benchmark $\\mu_0 = 1.5\\%$, two-sided $\\alpha = 0.05$, with $t_{0.025,\\,35} \\approx 2.030$. Carry out the full test: hypotheses, standard error, statistic, decision by critical value, and the approximate $p$-value.",
+    "hints": [
+      "SE $= s/\\sqrt{n}$ with $\\sqrt{36} = 6$.",
+      "The statistic is $(\\bar{x} - \\mu_0)/\\mathrm{SE}$.",
+      "Reject only if $|t|$ exceeds the critical value."
+    ],
+    "solution": "$H_0: \\mu = 1.5$ vs $H_1: \\mu \\ne 1.5$. SE $= 2.4/6 = 0.4$. $t = 0.7/0.4 = 1.75$. Since $1.75 < 2.030$, fail to reject $H_0$. The two-sided $p$-value is approximately $0.09$ (table approximation for $t_{35} = 1.75$), consistent with the verdict."
+  },
+  "independentExercise": {
+    "prompt": "A fund claims its mean daily return is $1.0\\%$. You observe $n = 100$ days with $\\bar{x} = 1.9\\%$ and $s = 4.0\\%$. (a) Test $H_0: \\mu = 1.0$ vs $H_1: \\mu \\ne 1.0$ at $\\alpha = 0.05$ using $t_{0.025,\\,99} \\approx 1.984$. (b) Comment on the power of this test if the true effect is as observed ($d \\approx 0.225$).",
+    "hints": [
+      "SE $= 4.0/10 = 0.4$.",
+      "Compare $|t|$ with $1.984$ and with a $p$-value approximation.",
+      "For power: $\\delta = (\\bar{x} - \\mu_0)/\\mathrm{SE}$ against the rejection boundary."
+    ],
+    "solution": "(a) SE $= 0.4$; $t = 0.9/0.4 = 2.25 > 1.984$, so **reject** $H_0$; the approximate two-sided $p$-value is $0.027$. (b) With $n = 100$ the non-centrality $\\delta = 2.25$ sits comfortably past the $1.984$ boundary, so power is decent (roughly $0.6$-$0.7$ by normal approximation - approximate). The same effect with $n = 25$ would give $\\delta \\approx 1.125$ and power near $0.2$: sample size is what turns an edge into a detectable edge."
+  },
+  "commonMistakes": [
+    "Reading the $p$-value as the probability that $H_0$ is true - the conditional runs the other way.",
+    "'Failing to reject' and then reporting the null as confirmed; absence of evidence is not evidence of absence.",
+    "Choosing the one-sided alternative after seeing which way the data leaned - that silently doubles the false-positive rate.",
+    "Running many tests at $\\alpha = 0.05$ without any correction: 20 variants make a false positive likelier than not."
+  ],
+  "realWorldApplication": "Clinical trials, A/B tests and manufacturing acceptance all run this same procedure; product teams that skip power analysis routinely under-sample and misread inconclusive results as 'no effect'.",
+  "quantFinanceApplication": "Strategy screening is hypothesis testing under multiple comparisons: testing many parameter variants inflates false discoveries, which is why live-money decisions require held-out data and adjusted significance thresholds.",
+  "summary": [
+    "A test contrasts $H_0$ against data via a standardised statistic; reject when $|t|$ exceeds the critical value or, equivalently, when $p < \\alpha$.",
+    "A $p$-value is the probability of data at least this extreme given $H_0$ - not the probability $H_0$ is true.",
+    "Type I errors are controlled by $\\alpha$; power (avoiding Type II errors) grows with $n$, effect size and lower noise.",
+    "Testing many hypotheses at once manufactures false positives: $1 - 0.95^{20} \\approx 0.64$ for 20 independent tests."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "A two-sided $t$-test yields $p = 0.03$ at $\\alpha = 0.05$. The correct reading is:",
+      "options": [
+        "The probability $H_0$ is true is $3\\%$",
+        "If $H_0$ is true, data at least this extreme occurs $3\\%$ of the time",
+        "The result will replicate $97\\%$ of the time",
+        "The effect size is $3\\%$"
+      ],
+      "answerIndex": 1,
+      "explanation": "The $p$-value conditions on $H_0$ being true and measures extremeness of the data; it says nothing about the probability of the hypothesis, replication, or effect magnitude."
+    },
+    {
+      "id": "q2",
+      "type": "numeric",
+      "prompt": "With $n = 25$, $\\bar{x} = 2.1$, $s = 3.0$ and $\\mu_0 = 1.0$, what is the $t$ statistic? (Give 3 decimals.)",
+      "answer": 1.833,
+      "tolerance": 0.01,
+      "explanation": "SE $= 3.0/5 = 0.6$; $t = 1.1/0.6 = 1.8333...$"
+    },
+    {
+      "id": "q3",
+      "type": "mcq",
+      "prompt": "Same test, $t_{0.025,24} = 2.064$. The decision is:",
+      "options": [
+        "Reject $H_0$; the strategy is significantly different",
+        "Fail to reject $H_0$; evidence is insufficient at $5\\%$",
+        "Accept $H_0$ as proven true",
+        "Reject $H_0$ because $p$ must be below $0.08$"
+      ],
+      "answerIndex": 1,
+      "explanation": "$|1.833| < 2.064$, so we fail to reject - and 'accept as proven' is never a valid conclusion of a test."
+    },
+    {
+      "id": "q4",
+      "type": "numeric",
+      "prompt": "Testing 20 independent hypotheses at $\\alpha = 0.05$ with no true effects: what is the probability at least one appears significant? (Two decimals; use $1 - 0.95^{20}$.)",
+      "answer": 0.64,
+      "tolerance": 0.02,
+      "explanation": "$0.95^{20} \\approx 0.358$, so the false-discovery probability is $\\approx 0.642$ - the core of the multiple-testing problem."
+    },
+    {
+      "id": "q5",
+      "type": "ms",
+      "prompt": "Which changes increase the power of a test? Select all that apply.",
+      "options": [
+        "Increasing the sample size",
+        "Increasing the sample standard deviation",
+        "A larger true effect",
+        "Raising $\\alpha$ from $0.05$ to $0.10$"
+      ],
+      "answerIndices": [0, 2, 3],
+      "explanation": "More data and bigger effects raise the signal-to-noise ratio; a higher $\\alpha$ widens the rejection region, trading more false positives for power. Larger $s$ *lowers* power."
+    },
+    {
+      "id": "q6",
+      "type": "short",
+      "prompt": "Define a Type II error and state one design change that reduces its probability.",
+      "modelAnswer": "A Type II error is failing to reject a null hypothesis that is actually false; it is reduced by increasing the sample size (or lowering noise, or raising alpha).",
+      "keywords": ["false negative", "failing to reject", "power"],
+      "explanation": "Type II = missing a real effect; its probability $\\beta$ shrinks as power grows with $n$, lower noise, larger effects, or a larger $\\alpha$."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "formula",
+      "front": "One-sample $t$ statistic",
+      "back": "$t = (\\bar{x} - \\mu_0)/(s/\\sqrt{n})$ with $n - 1$ degrees of freedom."
+    },
+    {
+      "type": "definition",
+      "front": "p-value",
+      "back": "The probability, computed under $H_0$, of data at least as extreme as observed - not the probability that $H_0$ is true."
+    },
+    {
+      "type": "definition",
+      "front": "Power",
+      "back": "$1 - \\beta$: the probability of rejecting $H_0$ when it is false; grows with $n$, effect size and lower noise."
+    },
+    {
+      "type": "formula",
+      "front": "Multiple-testing inflation",
+      "back": "For $m$ independent tests at level $\\alpha$, $P(\\ge 1 \\text{ false positive}) = 1 - (1-\\alpha)^m$."
+    }
+  ],
+  "references": [
+    {
+      "label": "OpenStax Introductory Statistics - Hypothesis Testing",
+      "url": "https://openstax.org/details/books/introductory-statistics-2e"
+    },
+    {
+      "label": "NIST/SEMATECH e-Handbook - Tests of Hypotheses",
+      "url": "https://www.itl.nist.gov/div898/handbook/prc/section2/prc2.htm"
+    }
+  ],
+  "skills": ["statistics"]
+}

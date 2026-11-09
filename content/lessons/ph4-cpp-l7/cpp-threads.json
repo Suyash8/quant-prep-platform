@@ -1,0 +1,209 @@
+{
+  "id": "cpp-threads",
+  "moduleId": "ph4-cpp-l7",
+  "title": "std::thread, jthread and Shared State",
+  "estMinutes": 27,
+  "difficulty": "advanced",
+  "prereqs": ["cpp-internals-optimisation"],
+  "objectives": [
+    "Create, join and detach std::thread objects, and explain why an unjoined joinable thread is a bug",
+    "Define a data race precisely and identify unsafe shared-state patterns (reference capture, reads before join)",
+    "Use std::jthread (C++20) with std::stop_token for cooperative, RAII-safe cancellation",
+    "Classify what is legal to share between threads: immutable data, thread-local data, or synchronised data"
+  ],
+  "motivation": "A feed handler decodes packets while another thread rebuilds the order book and a third recomputes risk: concurrency is how market-data systems meet deadlines without serialising every call. But the moment two threads touch the same bytes without synchronisation, the program has undefined behaviour - not a crash you can debug, but a licence to print nonsense prices. This lesson builds the vocabulary - threads, join, shared state, data races - that every later lesson on locks, atomics and lock-free code depends on.",
+  "blocks": [
+    { "type": "h2", "text": "Threads: one address space, many instruction pointers" },
+    { "type": "p", "md": "A **thread** is an independent stream of instructions: its own stack, registers and program counter. Unlike processes, all threads of a program share one address space - the heap, globals and open files. That sharing is the whole point: passing a pointer between threads costs nothing, which is why threads are the unit of concurrency in low-latency systems. It is also the danger: any shared byte can be reached by any thread at any time." },
+    { "type": "p", "md": "Distinguish **concurrency** (tasks overlap, possibly by interleaving on one core) from **parallelism** (tasks run simultaneously on multiple cores). `std::thread` gives you both opportunistically: the scheduler decides. What C++ guarantees is the memory model - which effects are visible to which thread, given the synchronisation you perform. Everything else (cores, affinity, preemption) is platform detail that later low-latency lessons cover." },
+    {
+      "type": "interactive",
+      "component": "MemoryLayout",
+      "params": { "totalBytes": 16, "bytesPerRow": 4 },
+      "caption": "Threads do not get their own memory objects: two threads' pointers can land on the same 4 bytes. Cheap sharing, and the source of every data race."
+    },
+    { "type": "h2", "text": "Creating and joining threads" },
+    { "type": "p", "md": "`std::thread` starts a callable immediately. A thread object is **joinable** until you call `join()` (main waits for completion) or `detach()` (the thread runs on, unowned). Destroying a joinable `std::thread` calls `std::terminate()` - there is no implicit join, so `std::thread` alone is not RAII-safe." },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <iostream>\n#include <thread>\n#include <vector>\n\nint main() {\n    std::vector<std::thread> workers;\n    for (int i = 0; i < 4; ++i) {\n        workers.emplace_back([i] { std::cout << \"worker \" << i << \" done\\n\"; });\n    }\n    for (auto& t : workers) t.join();   // forget this: terminate() at scope exit\n    std::cout << \"all joined\\n\";\n    return 0;\n}",
+      "caption": "join() is also a synchronisation point: everything a worker did before returning is visible to main after join()."
+    },
+    {
+      "type": "callout",
+      "variant": "warn",
+      "title": "std::thread is not RAII (until C++20)",
+      "md": "An exception thrown between construction and `join()` still destroys a joinable thread - and terminates the program. `std::jthread` (C++20) fixes the lifecycle: its destructor **requests stop** and **joins**, and it takes a `std::stop_token` for cooperative cancellation. On a C++17 baseline, wrap `std::thread` in your own RAII class."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "// C++20: std::jthread auto-joins and supports cooperative cancellation\n#include <iostream>\n#include <stop_token>\n#include <thread>\n\nint main() {\n    std::jthread t([](std::stop_token st) {\n        while (!st.stop_requested()) {\n            // poll the book, poll the queue, ... C++17 equivalent needs a\n            // hand-rolled std::atomic<bool> flag checked in the loop\n        }\n        std::cout << \"stopped cleanly\\n\";\n    });\n    t.request_stop();   // the destructor would request stop and join anyway\n    return 0;\n}",
+      "caption": "Labelled C++20: stop_token makes cancellation explicit instead of a boolean you race on."
+    },
+    { "type": "h2", "text": "Shared state and data races" },
+    { "type": "p", "md": "A **data race** is precisely: two or more threads access the same memory location, **at least one access is a write**, and the accesses are not ordered by synchronisation. The consequence is not \"the slower write wins\" - it is **undefined behaviour**: the compiler may assume no races exist, cache values in registers, vectorise reads, and reorder stores. \"Benign race\" is a myth; races on non-atomic types have no defined outcome at all." },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <iostream>\n#include <thread>\n\nint counter = 0;                     // shared, unprotected: a data race\nvoid bump(int n) { for (int i = 0; i < n; ++i) ++counter; }\n\nint main() {\n    std::thread a(bump, 100000), b(bump, 100000);\n    a.join();\n    b.join();\n    std::cout << counter << '\\n';    // often below 200000, never guaranteed\n    return 0;\n}",
+      "caption": "++counter is three steps - load, add, store - and threads interleave inside those steps. This program is undefined, not merely inaccurate."
+    },
+    { "type": "p", "md": "So what *is* safe to share? Exactly three options: **immutable data** (written before threads start, then never written again - `const` makes the intent enforceable), **thread-local data** (`thread_local` gives each thread its own instance), and **synchronised data**, where every conflicting access is ordered by join, a mutex, or an atomic operation. The rest of this module is about building that third option correctly." },
+    {
+      "type": "list",
+      "ordered": false,
+      "items": [
+        "Before sharing `X`, answer: **who writes it, who reads it, and what orders them?** If any answer is \"nobody yet\", you are writing a race.",
+        "Passing locals by reference into a thread that outlives the frame is a second, quieter bug: dangling references, even without a race.",
+        "`std::thread::hardware_concurrency()` gives a hint about core count - it is guidance for pool sizing, never a synchronisation tool."
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Why the desk cares",
+      "md": "A book-builder thread writes the order book while a pricing thread reads it. An unsynchronised read may see a half-updated book - a bid without its ask - and quote nonsense prices. There is no crash, no log line, just silently wrong markets until someone reconciles positions. Race vocabulary is risk vocabulary."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Write a program that sums a `std::vector<double>` of 1,000,000 elements using 4 threads, each summing one contiguous quarter and writing its partial result into `partial[q]` of a pre-sized `std::vector<double>`. Join all threads, then print the total. Then answer: why is `partial[q] = s` from four threads not a data race, while a single shared running total would be?",
+    "hints": [
+      "`partial.resize(4)` before starting the threads - each thread writes only its own element, a distinct memory location.",
+      "A data race needs two threads reaching the *same* location with a write; distinct elements never conflict.",
+      "The join calls create the happens-before edges that make main's final reads safe."
+    ],
+    "solution": "```cpp\n#include <functional>\n#include <iostream>\n#include <thread>\n#include <vector>\n\nvoid sumQuarter(const std::vector<double>& v, int q, std::vector<double>& out) {\n    std::size_t begin = q * v.size() / 4, end = (q + 1) * v.size() / 4;\n    double s = 0;\n    for (std::size_t i = begin; i < end; ++i) s += v[i];\n    out[q] = s;                      // distinct element per thread: no race\n}\n\nint main() {\n    std::vector<double> data(1'000'000, 1.0);\n    std::vector<double> partial(4, 0.0);\n    std::vector<std::thread> ts;\n    for (int q = 0; q < 4; ++q)\n        ts.emplace_back(sumQuarter, std::cref(data), q, std::ref(partial));\n    for (auto& t : ts) t.join();     // happens-before: worker writes -> main reads\n    double total = 0;\n    for (double p : partial) total += p;\n    std::cout << total << '\\n';      // 1000000, deterministically\n}\n```\nThe four writes hit four distinct elements, so there is no conflict between workers. The vector `data` is never written after the threads start (immutable once shared). The final reads of `partial` are ordered after the workers' writes by `join()`, which gives a happens-before edge - without the joins, reading `partial` would itself be a race. A single shared `total += s` inside each worker would be a data race on one location; lessons 2 and 4 show the mutex and atomic fixes."
+  },
+  "independentExercise": {
+    "prompt": "A colleague's function contains: `std::thread t(load_prices, std::ref(buf)); std::cout << buf[0]; ... return;` (so `t` goes out of scope joined-unjoined). Identify **two** distinct bugs by name and mechanism, then rewrite the function so both disappear - once with an explicit `join()` and once with `std::jthread` (C++20).",
+    "hints": [
+      "Bug one fires at scope exit, before any output even prints, if `t` is still joinable.",
+      "Bug two fires at the `cout`: reading `buf` races with the loader's writes because nothing orders them.",
+      "`join()` before reading orders the accesses; `std::jthread` additionally fixes the scope-exit bug automatically."
+    ],
+    "solution": "**Bug 1 - terminate at scope exit:** the thread is still joinable when the function returns; destroying a joinable `std::thread` calls `std::terminate()`, aborting the process. **Bug 2 - data race on `buf`:** `buf[0]` is read while `load_prices` may be writing it, with no synchronisation ordering the accesses - undefined behaviour, so the program may print garbage or anything else. Fix:```cpp\n#include <iostream>\n#include <thread>\n#include <vector>\n\nstd::vector<double> buf;\n\nvoid load_prices(std::vector<double>& b) { b.push_back(42.0); }\n\n// C++17 fix: join before reading; consider a scope guard for exception safety\nvoid run() {\n    std::thread t(load_prices, std::ref(buf));\n    t.join();                        // orders loader's writes before main's read\n    std::cout << buf[0] << '\\n';\n}\n\n// C++20 fix: jthread joins on destruction, so scope exit is safe\n// void run20() {\n//     std::jthread t(load_prices, std::ref(buf));\n//     t.join();                        // still join explicitly before reading\n//     std::cout << buf[0] << '\\n';\n// }\n```\nNote that `std::jthread` alone fixes only bug 1; the read of `buf` still needs the `join()` (or other synchronisation) before it. A destructor that joins is a lifecycle fix, not a data-race fix."
+  },
+  "commonMistakes": [
+    "Letting a joinable `std::thread` be destroyed - this is `std::terminate()`, not an implicit join.",
+    "Detaching a thread \"to avoid the join\", then reading the data it touches: detach removes the only synchronisation point you had.",
+    "Capturing local variables by reference in a thread lambda that outlives the function's stack frame.",
+    "Treating a race as harmless because outputs \"usually look right\" - undefined behaviour has no usual.",
+    "Assuming `++x` is atomic because it is one line of source; it is load-add-store, three operations a thread can interleave with."
+  ],
+  "realWorldApplication": "Every production trading system is multi-threaded: feed handlers decode, book builders update, risk engines price. Correct thread lifecycle and race identification is the entry ticket; getting it wrong shows up as corrupt state, not crashes.",
+  "quantFinanceApplication": "The book-builder/pricing-thread split in this lesson's callout is the canonical shared-state design: one writer thread updates the order book, reader threads consume it, and the entire correctness story is the synchronisation between them - exactly what the rest of this module formalises.",
+  "summary": [
+    "Threads share one address space while keeping private stacks and registers: cheap communication, expensive mistakes.",
+    "A joinable `std::thread` must be joined or detached before destruction; destroying it while joinable calls `std::terminate()`. `std::jthread` (C++20) requests stop and joins in its destructor.",
+    "A data race is concurrent, unsynchronised access to one memory location with at least one write - and it is undefined behaviour in C++.",
+    "The only safe sharing is immutable data, thread-local data, or data ordered by synchronisation (join, mutex, atomics).",
+    "`join()` is more than waiting: it creates the happens-before edge that makes a worker's writes visible to the joining thread."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "What happens when a still-joinable `std::thread` object is destroyed?",
+      "options": [
+        "The destructor joins the thread automatically",
+        "The program calls std::terminate()",
+        "The thread is detached and leaks",
+        "A std::logic_error is thrown"
+      ],
+      "answerIndex": 1,
+      "explanation": "`std::thread`'s destructor terminates the program if the thread is joinable - no implicit join, no exception. `std::jthread` (C++20) is the type that joins on destruction."
+    },
+    {
+      "id": "q2",
+      "type": "code-output",
+      "prompt": "What does this program print (think about what join() guarantees)?",
+      "language": "cpp",
+      "code": "#include <iostream>\n#include <thread>\n\nint main() {\n    int x = 1;\n    std::thread t([&x] { x = 7; });\n    t.join();\n    std::cout << x << '\\n';\n    return 0;\n}",
+      "answer": "7",
+      "explanation": "The lambda's write to `x` happens-before main's read because `t.join()` synchronises the two threads. The output is deterministic: 7."
+    },
+    {
+      "id": "q3",
+      "type": "ms",
+      "prompt": "Which of these are valid operations on a joinable `std::thread t;` (assume another thread object exists where needed)?",
+      "options": [
+        "t.join();",
+        "std::thread t2 = t;",
+        "t.detach();",
+        "std::thread t2 = std::move(t);"
+      ],
+      "answerIndices": [0, 2, 3],
+      "explanation": "`std::thread` is movable but not copyable - copy assignment/construction is a compile error. join() and detach() are the two lifecycle operations."
+    },
+    {
+      "id": "q4",
+      "type": "short",
+      "prompt": "Define a data race precisely, in one or two sentences.",
+      "modelAnswer": "Two or more threads access the same memory location concurrently, at least one access is a write, and the accesses are not ordered by synchronisation. In C++ this is undefined behaviour.",
+      "keywords": ["write", "undefined behaviour", "synchronis"],
+      "explanation": "The definition has three clauses - same location, at least one write, no ordering - and the consequence is UB, not 'last write wins'."
+    },
+    {
+      "id": "q5",
+      "type": "mcq",
+      "prompt": "Which construct both waits for a worker to finish AND guarantees its writes are visible to the waiting thread?",
+      "options": [
+        "std::this_thread::sleep_for(...)",
+        "declaring the shared variable volatile",
+        "calling t.join() on the worker",
+        "std::thread::hardware_concurrency()"
+      ],
+      "answerIndex": 2,
+      "explanation": "`join()` creates a happens-before edge: all writes sequenced before the worker's return are visible afterwards. Sleeping is timing luck; volatile does not provide inter-thread ordering; hardware_concurrency() reports core count."
+    },
+    {
+      "id": "q6",
+      "type": "mcq",
+      "prompt": "What does the destructor of a C++20 std::jthread do if the thread is still joinable (labelled C++20)?",
+      "options": [
+        "Detaches the thread",
+        "Nothing special - same as std::thread",
+        "Requests stop, then joins the thread",
+        "Throws if the thread has not finished"
+      ],
+      "answerIndex": 2,
+      "explanation": "jthread's destructor calls request_stop() (if a stop source exists) and join(), making the type RAII-safe - the standard fix for lesson's terminate-at-scope-exit trap."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "definition",
+      "front": "What exactly is a data race in C++?",
+      "back": "Two+ threads access the same memory location, at least one access is a write, and no synchronisation orders the accesses. Consequence: undefined behaviour."
+    },
+    {
+      "type": "concept",
+      "front": "join() vs detach()",
+      "back": "join(): caller blocks until the thread finishes and gets a happens-before edge on its writes. detach(): ownership is released; no synchronisation, no way to wait - almost never what you want."
+    },
+    {
+      "type": "concept",
+      "front": "Why is std::thread not RAII-safe, and what fixes it?",
+      "back": "Destroying a joinable thread calls std::terminate(). std::jthread (C++20) requests stop and joins in its destructor; on C++17 you write your own scope-guard wrapper."
+    },
+    {
+      "type": "code-output",
+      "front": "int x = 1; std::thread t([&x]{ x = 7; }); t.join(); std::cout << x; - what prints?",
+      "back": "7 - join() synchronises the lambda's write with the read; the output is deterministic."
+    },
+    {
+      "type": "concept",
+      "front": "Name the three safe ways to share data between threads.",
+      "back": "Immutability (write once before threads start), thread_local storage (private copies), or explicit synchronisation (join, mutex, atomics) on every conflicting access."
+    }
+  ],
+  "references": [
+    { "label": "cppreference - std::thread", "url": "https://en.cppreference.com/w/cpp/thread/thread" },
+    { "label": "cppreference - std::jthread (C++20)", "url": "https://en.cppreference.com/w/cpp/thread/jthread" },
+    { "label": "cppreference - Multithreaded execution and data races", "url": "https://en.cppreference.com/w/cpp/language/multithread" },
+    { "label": "Anthony Williams - C++ Concurrency in Action, 2nd ed. (publisher page)", "url": "https://www.manning.com/books/c-plus-plus-concurrency-in-action-second-edition" }
+  ],
+  "skills": ["concurrency"]
+}

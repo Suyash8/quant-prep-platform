@@ -1,0 +1,247 @@
+{
+  "id": "ds-advanced-structures",
+  "moduleId": "ph5-data-structures",
+  "title": "Heaps, Tries, Segment Trees and Fenwick Trees",
+  "estMinutes": 28,
+  "difficulty": "core",
+  "prereqs": ["ds-trees-bst"],
+  "objectives": [
+    "Explain the heap property and map a binary heap onto array indices: parent (i-1)//2, children 2i+1 and 2i+2",
+    "Trace sift-up and sift-down through concrete array states",
+    "Build a running-median stream from a max-heap and a min-heap and justify its O(log n) per-element cost",
+    "Describe how tries store strings and why lookup cost depends on key length, not on the number of stored keys",
+    "Use segment trees and Fenwick trees for range queries with point updates, and compute which nodes an update touches"
+  ],
+  "motivation": "A live median price, the top-of-book ask, prefix sums over a day of ticks, symbol autocomplete - each of these breaks the structures we have built so far. Sorting after every insert is quadratic, scanning for a median is linear, and recomputing prefix sums per query is linear too. Heaps, tries, segment trees and Fenwick trees are the four 'always use the right tree' answers, and together they cover most of the specialised data-structure questions quantitative interviews ask.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Heaps: the priority queue"
+    },
+    {
+      "type": "p",
+      "md": "A **min-heap** is a complete binary tree where every parent is less than or equal to its children, so the minimum sits at the root and can be read in $O(1)$. Because the tree is *complete* (every level full except possibly the last, filled left to right), it needs no pointers at all: index the array from 0, and the node at position $i$ has **parent $(i-1) // 2$**, **children $2i + 1$ and $2i + 2$**. Push appends at the end and **sifts up** by swapping with its parent while smaller; pop replaces the root with the last element and **sifts down** by swapping with the smaller child. Both walks are $O(\\log n)$ deep, so push, pop and the heapify-style build are logarithmic - and the array layout means the structure lives contiguously, cache-friendly like the arrays of the first lesson."
+    },
+    {
+      "type": "interactive",
+      "component": "MemoryLayout",
+      "params": {
+        "totalBytes": 48,
+        "bytesPerRow": 8
+      },
+      "caption": "A heap of six 8-byte values is one contiguous array: index 0 is the root, the children of slot i sit at 2i+1 and 2i+2, the parent at (i-1)//2 - tree logic, array memory."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "class MinHeap:\n    def __init__(self):\n        self.a = []\n\n    def push(self, x):                    # O(log n): append, then sift up\n        self.a.append(x)\n        i = len(self.a) - 1\n        while i > 0:\n            p = (i - 1) // 2\n            if self.a[i] < self.a[p]:\n                self.a[i], self.a[p] = self.a[p], self.a[i]\n                i = p\n            else:\n                break\n\n    def pop(self):                        # O(log n): root out, last in, sift down\n        top, last = self.a[0], self.a.pop()\n        if self.a:\n            self.a[0] = last\n            i, n = 0, len(self.a)\n            while True:\n                l, r, m = 2 * i + 1, 2 * i + 2, i\n                if l < n and self.a[l] < self.a[m]:\n                    m = l\n                if r < n and self.a[r] < self.a[m]:\n                    m = r\n                if m == i:\n                    break\n                self.a[i], self.a[m] = self.a[m], self.a[i]\n                i = m\n        return top\n\nh = MinHeap()\nfor x in [7, 4, 9, 1]:\n    h.push(x)\nprint(h.a)                # [1, 4, 9, 7] - array-encoded tree\nprint(h.pop(), h.a)       # 1 [4, 7, 9]\n\n# Production code uses heapq (a C-accelerated min-heap with the same indices):\nimport heapq\nhq = []\nheapq.heappush(hq, 7); heapq.heappush(hq, 4)\nprint(heapq.heappop(hq))  # 4 - always the smallest",
+      "caption": "A complete binary heap encoded in an array: index arithmetic replaces pointers entirely."
+    },
+    {
+      "type": "h2",
+      "text": "The running median: two heaps in balance"
+    },
+    {
+      "type": "p",
+      "md": "The median of a growing stream cannot be recomputed by sorting each time ($O(n \\log n)$ per element - quadratic overall). The classic solution keeps **two balanced heaps**: a max-heap `lo` holding the smaller half of the data and a min-heap `hi` holding the larger half, with sizes kept within one. The median is then always at the boundary: `max(lo)` for odd counts, the average of `max(lo)` and `min(hi)` for even counts. Each new price does $O(\\log n)$ heap work, so a stream of $n$ prices costs $O(n \\log n)$ total - linear-ish, instead of quadratic."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import heapq\n\nlo, hi = [], []                      # lo: max-heap via negation, hi: min-heap\n\ndef add_price(x):\n    if not lo or x <= -lo[0]:\n        heapq.heappush(lo, -x)       # smaller half\n    else:\n        heapq.heappush(hi, x)        # larger half\n    if len(lo) > len(hi) + 1:        # rebalance: sizes differ by <= 1\n        heapq.heappush(hi, -heapq.heappop(lo))\n    elif len(hi) > len(lo):\n        heapq.heappush(lo, -heapq.heappop(hi))\n\ndef median():\n    if len(lo) > len(hi):\n        return float(-lo[0])         # odd count: top of the bigger half\n    return (-lo[0] + hi[0]) / 2      # even count: average the boundary\n\nfor p in [5, 15, 1, 3]:\n    add_price(p)\n    print(median())                  # 5.0  10.0  5.0  4.0",
+      "caption": "Running median over the stream 5, 15, 1, 3 - each answer matches sorting the prefix, at O(log n) per element."
+    },
+    {
+      "type": "steps",
+      "title": "Worked trace: stream 5, 15, 1, 3",
+      "items": [
+        "5: `lo` empty -> push. State: lo $= \\{5\\}$, hi $= \\{\\}$; median $= 5$.",
+        "15: $15 > 5$ -> `hi`. State: lo $= \\{5\\}$, hi $= \\{15\\}$; sizes equal, median $= (5 + 15)/2 = 10$.",
+        "1: $1 \\le 5$ -> `lo`, now lo $= \\{1, 5\\}$ (max 5), hi $= \\{15\\}$; median $= -\\text{lo.top} = 5$ - correct, since sorted prefix is 1, 5, 15.",
+        "3: $3 \\le 5$ -> `lo` (lo $= \\{1, 3, 5\\}$), then rebalance moves 5 across: lo $= \\{1, 3\\}$ (max 3), hi $= \\{5, 15\\}$; median $= (3 + 5)/2 = 4$ - sorted prefix 1, 3, 5, 15.",
+        "Cost: 4 pushes/pops each of depth $\\le \\log n$, so the whole stream is $O(n \\log n)$ and each answer is immediate - no sorting, no scanning."
+      ]
+    },
+    {
+      "type": "h2",
+      "text": "Tries: strings as paths"
+    },
+    {
+      "type": "p",
+      "md": "A **trie** (prefix tree) stores keys character by character: each edge consumes one character, each node is a prefix, and nodes flagged `is_word` end stored keys. Lookup walks the word's length once - **$O(L)$ where $L$ is the key length, completely independent of how many keys are stored**. That makes tries the natural structure for autocomplete (walk the prefix, then collect the subtree), spell-checking dictionaries and matching tickers; the price is memory, since common prefixes are shared but each node carries a child map. Compare with hashing: a hash set answers *is this exact word present* in expected $O(L)$ to hash, but cannot answer *what words start with 'ST'* - the trie can."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "class Trie:\n    def __init__(self):\n        self.children = {}       # char -> Trie\n        self.is_word = False\n\n    def insert(self, word):      # O(len(word))\n        node = self\n        for ch in word:\n            node = node.children.setdefault(ch, Trie())\n        node.is_word = True\n\n    def contains(self, word):    # O(len(word)) - independent of dictionary size\n        node = self\n        for ch in word:\n            if ch not in node.children:\n                return False\n            node = node.children[ch]\n        return node.is_word\n\n    def starts_with(self, prefix):\n        node = self\n        for ch in prefix:\n            if ch not in node.children:\n                return False\n            node = node.children[ch]\n        return True              # prefix exists even if no word ends here\n\nt = Trie()\nfor w in [\"AAPL\", \"AMZN\", \"MSFT\"]:\n    t.insert(w)\nprint(t.contains(\"AAPL\"), t.contains(\"AAP\"), t.starts_with(\"MS\"))\n# True False True",
+      "caption": "Prefix queries are the trie's whole point - a hash set cannot answer starts_with without scanning every key."
+    },
+    {
+      "type": "h2",
+      "text": "Segment trees and Fenwick trees: range queries that keep up with updates"
+    },
+    {
+      "type": "p",
+      "md": "Prefix sums over an array are cheap to build ($O(n)$) but a point update forces recomputing everything after it - $O(n)$ per update. **Segment trees** store partial range aggregates in a binary tree over the array: any range $[l, r)$ decomposes into $O(\\log n)$ stored nodes, and a point update fixes $O(\\log n)$ ancestors. **Fenwick trees** (Binary Indexed Trees) compress the same idea into one array with a clever index trick: `i & -i` isolates the lowest set bit, and update index $i$ walks $i \\mathrel{+}= i \\ \\&\\ -i$ while a prefix query walks $i \\mathrel{-}= i \\ \\&\\ -i$ - each touching $O(\\log n)$ cells. Both give $O(\\log n)$ update **and** $O(\\log n)$ range query; the Fenwick array is about half the memory and much faster in practice because it is a flat loop over contiguous indices."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "class Fenwick:\n    \"\"\"Prefix sums with point updates, 1-indexed.\"\"\"\n    def __init__(self, n):\n        self.n = n\n        self.t = [0] * (n + 1)\n\n    def add(self, i, delta):         # O(log n) cells touched\n        while i <= self.n:\n            self.t[i] += delta\n            i += i & (-i)            # jump to the next covering block\n\n    def prefix(self, i):             # sum of values[1..i], O(log n)\n        s = 0\n        while i > 0:\n            s += self.t[i]\n            i -= i & (-i)            # peel off lowest set bit\n        return s\n\nf = Fenwick(5)\nfor i, v in enumerate([3, 1, 4, 1, 5], start=1):\n    f.add(i, v)\nprint(f.prefix(3))    # 8  = 3+1+4\nprint(f.prefix(5))    # 14 = 3+1+4+1+5\nprint(f.t[1:])        # [3, 4, 4, 9, 5] - the Fenwick array itself\nf.add(3, -4)          # remove position 3's value\nprint(f.prefix(3))    # 4  = 3+1",
+      "caption": "Fenwick tree: each add touches the cells whose range covers position i; each prefix sums the blocks that tile 1..i."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "class SegmentTree:\n    \"\"\"Iterative (bottom-up) sum segment tree, 0-based values.\"\"\"\n    def __init__(self, values):\n        self.n = len(values)\n        self.t = [0] * (2 * self.n)\n        for i, v in enumerate(values):          # leaves live at [n, 2n)\n            self.t[self.n + i] = v\n        for i in range(self.n - 1, 0, -1):      # parents sum children\n            self.t[i] = self.t[2 * i] + self.t[2 * i + 1]\n\n    def update(self, i, v):                     # set position i, fix ancestors\n        i += self.n\n        self.t[i] = v\n        i //= 2\n        while i >= 1:\n            self.t[i] = self.t[2 * i] + self.t[2 * i + 1]\n            i //= 2\n\n    def query(self, lo, hi):                    # sum over [lo, hi)\n        res = 0\n        lo += self.n\n        hi += self.n\n        while lo < hi:\n            if lo & 1:\n                res += self.t[lo]\n                lo += 1\n            if hi & 1:\n                hi -= 1\n                res += self.t[hi]\n            lo //= 2\n            hi //= 2\n        return res\n\nst = SegmentTree([3, 1, 4, 1, 5])\nprint(st.query(0, 5))   # 14\nprint(st.query(1, 3))   # 5  = 1+4\nst.update(2, 10)\nprint(st.query(0, 5))   # 20 = 3+1+10+1+5",
+      "caption": "Segment tree as two flat arrays of indices: build O(n), update and range query O(log n)."
+    },
+    {
+      "type": "table",
+      "headers": ["Structure", "Update", "Query it serves", "Typical use"],
+      "rows": [
+        ["Binary heap", "push/pop O(log n)", "min/max O(1)", "priority queues, running median, schedulers"],
+        ["Trie", "insert O(L)", "lookup/starts_with O(L)", "autocomplete, dictionaries, symbol search"],
+        ["Segment tree", "point update O(log n)", "range aggregate O(log n)", "range min/sum with updates, order statistics"],
+        ["Fenwick tree", "point update O(log n)", "prefix sum O(log n)", "prefix sums, inversion counting, 2D grids"]
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Running median of execution prices",
+      "md": "A desk streaming fills wants a live median price per stock. Two heaps deliver it at $O(\\log n)$ per fill with two arrays - no sort, no rescan - and the same pair of heaps generalises to sliding-window medians with lazy deletion. Fenwick trees earn their keep on the opposite question: VWAP-like bucketed sums ('total volume traded below price p') answered in $O(\\log n)$ as ticks arrive. Both fit in a few hundred lines and run comfortably inside a tick budget."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Run the two-heap median algorithm on the price stream 8, 3, 10, 2, 7. After each arrival, state the contents of `lo` and `hi` (as sets, noting which element each heap's top is) and the median returned. Which arrival triggers a rebalance, and why is the invariant 'sizes differ by at most 1' essential?",
+    "hints": [
+      "New value joins the half its comparison against the current median boundary selects.",
+      "Rebalance fires when one side exceeds the other by 2 (after adding).",
+      "Check each median against the sorted prefix by hand."
+    ],
+    "solution": "8: lo $= \\{8\\}$, hi $= \\{\\}$ -> median 8. 3: $3 \\le 8$ -> lo $= \\{3, 8\\}$; lo exceeds hi by 2, so rebalance moves 8 to hi: lo $= \\{3\\}$, hi $= \\{8\\}$ -> median $(3+8)/2 = 5.5$ (sorted 3, 8). 10: $10 > 3$ -> hi $= \\{8, 10\\}$, hi is bigger, rebalance moves 8 to lo: lo $= \\{3, 8\\}$, hi $= \\{10\\}$ -> median $8$ (sorted 3, 8, 10). 2: $2 \\le 8$ -> lo $= \\{2, 3, 8\\}$; rebalance moves 8 to hi: lo $= \\{2, 3\\}$, hi $= \\{8, 10\\}$ -> median $(3+8)/2 = 5.5$ (sorted 2, 3, 8, 10). 7: $7 > 3$ -> hi $= \\{7, 8, 10\\}$; rebalance moves 7 to lo: lo $= \\{2, 3, 7\\}$ (top 7), hi $= \\{8, 10\\}$ -> median $7$ (sorted 2, 3, 7, 8, 10). Every arrival (after the first) triggers exactly one rebalance here because halves stay within one; without the invariant, the median would not sit at the heap boundary and the formula max(lo) / average(max(lo), min(hi)) would be wrong."
+  },
+  "independentExercise": {
+    "prompt": "A Fenwick tree of size $n = 5$ receives `add(i, v)` calls for values $[3, 1, 4, 1, 5]$ at positions 1..5. (a) Trace the tree array `t[1..5]` after all adds (show which cells each add touches). (b) Compute `prefix(3)` and `prefix(5)` from the array. (c) How many cells does `add(2, x)` touch, and which? (d) Give one sentence on why update and prefix query are both O(log n).",
+    "hints": [
+      "add walks i += i & -i; prefix walks i -= i & -i.",
+      "For n = 5 the walk stops when the index exceeds 5.",
+      "prefix(i) sums exactly the cells whose ranges tile 1..i."
+    ],
+    "solution": "(a) add(1,3): touches t[1], t[2], t[4]. add(2,1): t[2], t[4]. add(3,4): t[3], t[4]. add(4,1): t[4]. add(5,5): t[5]. Final: $t = [\\_, 3, 4, 4, 9, 5]$ (t[2] $= 3+1$, t[4] $= 3+1+4+1 = 9$). (b) prefix(3) $= t[3] + t[2] = 4 + 4 = 8$ ($= 3+1+4$); prefix(5) $= t[5] + t[4] = 5 + 9 = 14$ (total). (c) add(2, x): $2 \\to 2+2=4 \\to 4+4=8 > 5$ - two cells, t[2] and t[4]. (d) The index arithmetic splits any prefix into at most $\\log_2 n$ disjoint stored blocks and any update into the at most $\\log_2 n$ blocks covering the position - each step discards or adds one set bit of the index."
+  },
+  "commonMistakes": [
+    "Using 1-based child formulas (2i and 2i+1) on a 0-indexed heap array - correct 0-based children are 2i+1 and 2i+2.",
+    "Forgetting to negate when using Python's min-heap heapq as a max-heap.",
+    "Storing the median heap halves unbalanced after inserts - sizes must differ by at most 1 or the boundary formula breaks.",
+    "Treating trie lookup as O(1) like hashing - it is O(L) in the key length, which is fine but a different claim.",
+    "Applying Fenwick trees to range-min queries - the index trick only works for invertible aggregates like sums (prefix + difference); range minima need a segment tree."
+  ],
+  "realWorldApplication": "OS schedulers and event loops run on priority queues (heaps); autocomplete and spell-checkers run on tries; SQL engines and spreadsheets maintain running aggregates with tree-shaped prefix structures - the same four designs at every scale.",
+  "quantFinanceApplication": "Live running medians and VWAP bucket queries during the session use the two-heap and Fenwick patterns from this lesson; top-of-book queries and expiry-aware schedulers use heaps; ticker autocomplete on 10,000+ symbols is a trie because prefix queries are its native operation.",
+  "summary": [
+    "A binary heap is a complete tree in a flat array: parent (i-1)//2, children 2i+1 and 2i+2; push/pop sift O(log n) and the root is the min/max.",
+    "A max-heap of the smaller half plus a min-heap of the larger half yields a running median at O(log n) per element, sizes kept within one.",
+    "Tries store keys character by character: lookup and prefix queries cost O(L) regardless of dictionary size.",
+    "Segment trees answer range aggregates and Fenwick trees answer prefix sums, both O(log n) per update and query, via index arithmetic over flat arrays."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "In a 0-indexed array-encoded heap, the children of the node at index $i$ sit at:",
+      "options": ["$2i$ and $2i + 1$", "$2i + 1$ and $2i + 2$", "$i + 1$ and $i + 2$", "$\\lfloor i/2 \\rfloor$ and $\\lfloor i/2 \\rfloor + 1$"],
+      "answerIndex": 1,
+      "explanation": "Zero-indexing shifts the familiar 1-based formula: children are $2i + 1$ and $2i + 2$, and the parent is $(i-1) // 2$. Option 1 is the 1-based children formula, a classic off-by-one."
+    },
+    {
+      "id": "q2",
+      "type": "numeric",
+      "prompt": "In a 0-indexed heap array, what is the parent index of the node stored at index 12?",
+      "answer": 5,
+      "tolerance": 0.5,
+      "explanation": "Parent = (12 - 1) // 2 = 5. Its children are 2*5+1 = 11 and 2*5+2 = 12 - consistent, since 12 is the right child of index 5."
+    },
+    {
+      "id": "q3",
+      "type": "code-output",
+      "prompt": "What does this Python code print?",
+      "language": "python",
+      "code": "import heapq\nh = []\nfor x in [7, 4, 9, 1]:\n    heapq.heappush(h, x)\nprint(h)\nprint(heapq.heappop(h), h)",
+      "answer": "[1, 4, 9, 7]\n1 [4, 7, 9]",
+      "explanation": "Pushing 7, 4, 9, 1 with sift-ups yields the valid min-heap [1, 4, 9, 7] (root 1; 1 <= 4; 4 <= 7). heappop removes the root 1, moves the last element 7 to the top and sifts it down against the smaller child 4, leaving [4, 7, 9]."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "A trie stores 1,000,000 ticker symbols. What does checking whether 'GS' is a stored symbol cost?",
+      "options": [
+        "O(1) - hash of the whole string",
+        "O(log n) with n = 1,000,000",
+        "O(L) with L = 2 - independent of how many symbols are stored",
+        "O(n) - must scan the dictionary"
+      ],
+      "answerIndex": 2,
+      "explanation": "Trie lookup walks exactly the characters of the query: 2 edges for 'GS', then check is_word. The stored key count never enters the cost - that is the trie's defining property, and the reason autocomplete is its native use."
+    },
+    {
+      "id": "q5",
+      "type": "numeric",
+      "prompt": "A Fenwick tree has $n = 8$. How many cells does `add(6, x)` update (count the cells whose indices the walk touches, including t[6])?",
+      "answer": 2,
+      "tolerance": 0.5,
+      "explanation": "The update walk is i += i & -i: 6 -> 6 + 2 = 8 -> 8 + 8 = 16 > 8, stop. It touches t[6] and t[8] - two cells, each log-bounded, which is why updates stay O(log n)."
+    },
+    {
+      "id": "q6",
+      "type": "mcq",
+      "prompt": "Why does the two-heap running median cost only O(log n) per new price?",
+      "options": [
+        "The median value can be found by hashing the price into one of the heaps.",
+        "Each price triggers at most a constant number of heap pushes/pops, each O(log n), and no sorting or scanning occurs.",
+        "The heaps store prices in sorted order so the median is at index n/2 in O(1).",
+        "The rebalance step copies all elements between the heaps."
+      ],
+      "answerIndex": 1,
+      "explanation": "Per price: one push (O(log n) sift), plus at most one rebalance pop+push (O(log n)) - a constant number of logarithmic operations. No full sort happens (that would be O(n log n) per price) and rebalance moves a single element, not all of them."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "formula",
+      "front": "Heap index arithmetic (0-based array)",
+      "back": "parent(i) = (i-1)//2, children = 2i+1 and 2i+2; min/max at index 0; push and pop sift O(log n) levels."
+    },
+    {
+      "type": "error-identification",
+      "front": "A colleague writes children(i) = (2i, 2i+1) for a 0-indexed heap. What is wrong?",
+      "back": "That is the 1-based formula. Zero-indexed children are 2i+1 and 2i+2 - using 2i and 2i+1 collides children with the parent's own slot at i+1."
+    },
+    {
+      "type": "concept",
+      "front": "Running median with two heaps",
+      "back": "Max-heap lo holds the smaller half, min-heap hi the larger half, sizes within 1: median = max(lo) (odd) or average(max(lo), min(hi)) (even). O(log n) per insert, O(1) query."
+    },
+    {
+      "type": "formula",
+      "front": "Fenwick tree index trick",
+      "back": "i & -i isolates the lowest set bit. Update: i += i & -i (climb to covering blocks). Prefix: i -= i & -i (peel blocks of 1..i). Both O(log n) over a flat array."
+    }
+  ],
+  "references": [
+    {
+      "label": "Python docs — heapq",
+      "url": "https://docs.python.org/3/library/heapq.html"
+    },
+    {
+      "label": "Wikipedia — Fenwick tree",
+      "url": "https://en.wikipedia.org/wiki/Fenwick_tree"
+    },
+    {
+      "label": "Wikipedia — Trie",
+      "url": "https://en.wikipedia.org/wiki/Trie"
+    }
+  ],
+  "skills": ["dsa"]
+}

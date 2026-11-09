@@ -1,0 +1,212 @@
+{
+  "id": "qalg-orderbook-structures",
+  "moduleId": "ph5-quant-algorithms",
+  "title": "Order-Book Data Structures",
+  "estMinutes": 28,
+  "difficulty": "advanced",
+  "prereqs": ["qalg-streaming"],
+  "objectives": [
+    "Describe price-time priority and translate it into concrete data-structure requirements",
+    "Design a limit order book from a map of price levels plus FIFO queues and analyse each operation's complexity",
+    "Use a heap with negated prices to maintain a best bid in O(log N) insert, O(1) peek",
+    "Explain O(1) order cancellation via an id index and the role of lazy deletion"
+  ],
+  "motivation": "A matching engine processes hundreds of thousands of order events per second and must answer one question instantly after each event: what is the best bid and best ask, and who is first in line at that price? Every microsecond of book maintenance is latency in the tick-to-trade path, so the choice between a heap, a sorted map and per-level queues is a trading decision, not just an engineering one.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Price-time priority: the contract the structure must honour"
+    },
+    {
+      "type": "p",
+      "md": "An exchange matches orders by **price-time priority**: the best-priced order trades first, and among equal prices the earliest arrival trades first. That sentence dictates the data structure. For each side you need the *extreme* price fast (best bid = highest, best ask = lowest); within a price **level** you need strict FIFO order; and you must support **cancels and replaces** at arbitrary positions - a large fraction of live flow is cancels, not new orders. The structure is judged on these operations, and on whether it keeps levels with no remaining orders out of the best-price answer."
+    },
+    {
+      "type": "interactive",
+      "component": "OrderBookVisual",
+      "params": {
+        "bids": [[100.2, 300], [100.1, 500], [100.0, 200]],
+        "asks": [[100.4, 200], [100.5, 400]]
+      },
+      "caption": "Bids stack downward from the best bid, asks upward from the best ask; inside each level, time order rules."
+    },
+    {
+      "type": "h2",
+      "text": "The canonical design: map of levels + FIFO queues"
+    },
+    {
+      "type": "p",
+      "md": "The standard design composes three pieces. (1) A **dictionary** $\\text{price} \\to \\text{queue}$ maps each active price level to a deque of orders, so appending a new order at an existing level is $O(1)$ and popping the front after a fill is $O(1)$. (2) A **sorted key structure** over active prices (a balanced tree, skip list, or sorted container) yields the best bid/ask in $O(1)$ via min/max and inserts or erases a level in $O(\\log M)$, where $M$ is the number of live levels. (3) A **hash index** $\\text{order id} \\to (\\text{price}, \\text{qty})$ makes cancellation $O(1)$ lookup, with removal from the level's queue."
+    },
+    {
+      "type": "table",
+      "headers": ["Operation", "Mechanism", "Complexity"],
+      "rows": [
+        ["New order at existing level", "append to that level's deque", "$O(1)$"],
+        ["New order at a new level", "insert key into sorted structure", "$O(\\log M)$"],
+        ["Cancel / replace by id", "hash lookup + queue removal or tombstone", "$O(1)$ lookup"],
+        ["Best bid / best ask", "min/max of sorted keys (or heap top)", "$O(1)$"],
+        ["Match at the top of book", "pop deque front, decrement qty", "$O(1)$"],
+        ["Level becomes empty", "erase key from sorted structure", "$O(\\log M)$"]
+      ]
+    },
+    {
+      "type": "p",
+      "md": "A **heap** is a common lighter-weight alternative for one side: Python's `heapq` is a min-heap, so bids are stored with **negated prices** to make the best bid float to the top - a trick worth memorising. Heaps give $O(\\log N)$ insert and $O(1)$ peek at the best price, but they cannot cancel a specific order efficiently: the classic workaround is **lazy deletion** - mark the order dead in the id index, and discard dead entries when they surface at the heap top. Production engines that must *iterate* levels (for depth feeds) prefer the sorted map; engines that only need the top of book accept the heap."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import heapq\nfrom collections import deque\n\n# Bid side: max-heap by negating prices (heapq is a min-heap)\nbids = []\nfor px, oid in [(100.1, \"o2\"), (100.3, \"o1\"), (100.2, \"o3\")]:\n    heapq.heappush(bids, (-px, oid))     # O(log N)\nprint(bids[0][1])                        # best bid id: O(1) peek\n\n# One price level: FIFO by arrival\ncancelled = {\"o4\"}                      # lazy-deletion set\nlevel = deque()\nfor oid in [\"o1\", \"o4\", \"o5\"]:\n    level.append(oid)\nlevel.remove(\"o4\")                       # eager cancel: O(k) scan of the level\nprint(list(level))                       # o1 still ahead of o5",
+      "caption": "Best bid via negated-price heap; time priority inside a level via deque."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Phantom levels and float keys",
+      "md": "Two recurring production bugs. A level emptied by fills must be erased from the sorted structure, or the best-price answer reports **phantom liquidity**. And keying levels by raw floats invites equality failures - $100.10$ vs $100.09999999...$; store prices as **integer ticks** ($100.10 \\to 10010$) and format for display only."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Why the complexity table is a trading decision",
+      "md": "If your strategy only trades at the top of book, heap + lazy deletion is minimal and fast. If it consumes depth or computes level-by-level imbalance, you need the sorted map's ordered iteration. Choosing the wrong one shows up as microseconds - and in HFT, microseconds are the edge."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Process these events on an empty book (buy side only): add o1: buy 150 @ 100.0; add o2: buy 200 @ 100.1; add o3: buy 250 @ 100.0; cancel o2; then a market sell of 150. State the best bid after each step and exactly which orders fill.",
+    "hints": [
+      "Best bid is the highest active price; cancels remove both quantity and queue position.",
+      "A market sell walks levels from the best bid downward, FIFO within each level."
+    ],
+    "solution": "Add o1: best bid 100.0. Add o2: best bid 100.1. Add o3: best bid 100.1 (o3 rests behind o1 at 100.0). Cancel o2: level 100.1 empties - best bid **100.0**. Market sell 150: pops the front of level 100.0 - **o1 fills fully** (150 @ 100.0); o3 remains 250 @ 100.0 and is now first in line."
+  },
+  "independentExercise": {
+    "prompt": "Ask side of a book: 300 @ 100.4 (orders x, y, z in arrival order), 200 @ 100.5. A marketable buy of 350 arrives. (a) Which orders fill and at what quantities? (b) Compute the volume-weighted average fill price to 4 decimal places. (c) What is the best ask afterwards?",
+    "hints": [
+      "Fill at the best ask until its level is exhausted, then walk up.",
+      "Average price = total notional / total quantity."
+    ],
+    "solution": "(a) Level 100.4 fills 300 (x, y, z FIFO), then level 100.5 fills the remaining 50. (b) Notional $= 300 \\times 100.4 + 50 \\times 100.5 = 30{,}120 + 5{,}025 = 35{,}145$; average $= 35{,}145 / 350 = \\textbf{100.4143}$. (c) Level 100.4 is empty (erase the key); best ask **100.5** with 150 remaining."
+  },
+  "commonMistakes": [
+    "Forgetting to negate prices on the bid side of a min-heap, which surfaces the *lowest* bid as 'best'.",
+    "Leaving emptied price levels in the sorted structure, reporting phantom best prices.",
+    "Keying levels by floating-point prices instead of integer ticks.",
+    "Removing an order from the middle of a deque without an id index, scanning the whole level per cancel.",
+    "Treating heap peek as O(log N) - push/pop are O(log N), but peeking the top is O(1)."
+  ],
+  "realWorldApplication": "Every exchange matching engine and market-data feed handler implements this structure; crypto venues and dark pools use the same price-time (or price-pro-rata) discipline with the same complexity trade-offs.",
+  "quantFinanceApplication": "The book structure defines the strategy's information set: top-of-book strategies need O(1) peek, depth-based strategies need ordered level iteration - complexity choices map directly to latency and edge.",
+  "summary": [
+    "Price-time priority = best price first, FIFO within a price level; the data structure must make both O(1).",
+    "Canonical book: dict price → deque (levels) + sorted key structure (best price, O(log M) level changes) + id hash (O(1) cancel).",
+    "Heapq is a min-heap: store bids with negated prices to get the best bid at the top; peek O(1), push/pop O(log N).",
+    "Cancellation is the hard operation for heaps - lazy deletion (tombstones + validity checks on pop) is the standard fix.",
+    "Erase empty levels and use integer ticks: phantom liquidity and float-key collisions are the two classic book bugs."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "code-output",
+      "prompt": "What does this Python code print?",
+      "language": "python",
+      "code": "import heapq\nfrom collections import deque\n\nbids = []\nfor px, oid in [(100.1, \"o2\"), (100.3, \"o1\"), (100.2, \"o3\")]:\n    heapq.heappush(bids, (-px, oid))\nprint(bids[0][1])\n\ncancelled = {\"o4\"}\nlevel = deque()\nfor oid in [\"o1\", \"o4\", \"o5\"]:\n    level.append(oid)\nlevel.remove(\"o4\")\nprint(list(level))",
+      "answer": "o1\n['o1', 'o5']",
+      "explanation": "Negated prices make the best bid (100.3) the heap minimum, so bids[0] is (-100.3, 'o1') and bids[0][1] is 'o1'. The deque is FIFO: after removing o4, o1 precedes o5."
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "Why are bid prices negated before pushing onto Python's heapq?",
+      "options": [
+        "To save memory on the price field",
+        "heapq is a min-heap, so negation turns 'highest price first' into 'smallest key first'",
+        "Negated floats compare faster than positive floats",
+        "To allow cancellation in O(1)"
+      ],
+      "answerIndex": 1,
+      "explanation": "heapq always pops the smallest key. Negating prices makes the largest price the smallest key, so the best bid sits at the heap top. Cancellation is a separate problem, solved by lazy deletion or an id index."
+    },
+    {
+      "id": "q3",
+      "type": "mcq",
+      "prompt": "What does O(1) order cancellation by id require, and what does a heap give you for free?",
+      "options": [
+        "A hash index from order id to its level/position; a heap requires lazy deletion for cancels",
+        "A hash index; a heap cancels any element in O(1) too",
+        "A sorted array; heaps cancel in O(1)",
+        "Nothing - O(1) cancellation is impossible"
+      ],
+      "answerIndex": 0,
+      "explanation": "The id hash locates the order instantly; removal from its level queue is then cheap. Heaps cannot efficiently delete arbitrary elements, hence the tombstone-and-skip lazy-deletion pattern."
+    },
+    {
+      "id": "q4",
+      "type": "numeric",
+      "prompt": "Ask side: 300 @ 100.4, 200 @ 100.5. A marketable buy of 350 arrives. What is the volume-weighted average fill price (4 decimal places)?",
+      "answer": 100.4143,
+      "tolerance": 0.001,
+      "unit": "price",
+      "explanation": "Notional $= 300 \\times 100.4 + 50 \\times 100.5 = 35{,}145$; average $= 35{,}145/350 = 100.4143$."
+    },
+    {
+      "id": "q5",
+      "type": "ms",
+      "prompt": "Which statements about order-book structures are true?",
+      "options": [
+        "Within one price level, matching follows FIFO arrival order",
+        "A heap supports O(1) deletion of an arbitrary order id",
+        "A sorted key structure supports ordered iteration over all levels",
+        "Emptied levels should be erased to avoid phantom best prices"
+      ],
+      "answerIndices": [0, 2, 3],
+      "explanation": "FIFO within a level is time priority; sorted structures enable depth iteration; empty levels must be erased. Heaps cannot delete arbitrary elements in O(1) - that needs the id index plus lazy deletion."
+    },
+    {
+      "id": "q6",
+      "type": "short",
+      "prompt": "Why should an order book key its price levels by integer ticks rather than floating-point prices? Answer in one or two sentences.",
+      "modelAnswer": "Floats have rounding error, so two logically equal prices can compare unequal and split one level into phantom levels. Integer ticks are exact, hash cleanly, and map back to display prices on output.",
+      "keywords": ["tick", "rounding", "float"],
+      "explanation": "Binary floats cannot represent most decimal prices exactly; accumulating levels keyed by floats risks collisions and misses. Integer ticks eliminate the entire class of bugs."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "definition",
+      "front": "Price-time priority",
+      "back": "Matching rule: orders execute at the best price first, and among equal prices, earliest arrival first. Dictates best-price lookup plus FIFO queues per level."
+    },
+    {
+      "type": "concept",
+      "front": "The negated-price heap trick",
+      "back": "heapq is a min-heap; push (-price, id) for bids so the best (highest) bid is the smallest key at the top. Peek O(1), push/pop O(log N)."
+    },
+    {
+      "type": "formula",
+      "front": "Complexities of the canonical book design",
+      "back": "Append at existing level O(1); new level O(log M); cancel lookup O(1) via id hash; best bid/ask O(1); match pop O(1); erase empty level O(log M)."
+    },
+    {
+      "type": "error-identification",
+      "front": "A book's best bid still shows a price whose level has zero remaining orders. What is the bug class?",
+      "back": "Phantom liquidity: the emptied level was never erased from the sorted structure (or stale heap entries were never lazily deleted). Fix: erase empty levels / discard dead entries on pop."
+    }
+  ],
+  "references": [
+    {
+      "label": "Wikipedia - Order book (trading)",
+      "url": "https://en.wikipedia.org/wiki/Order_book"
+    },
+    {
+      "label": "Python docs - heapq (heap queue)",
+      "url": "https://docs.python.org/3/library/heapq.html"
+    },
+    {
+      "label": "Python docs - collections.deque",
+      "url": "https://docs.python.org/3/library/collections.html#collections.deque"
+    }
+  ],
+  "skills": ["dsa", "microstructure"]
+}

@@ -1,0 +1,253 @@
+{
+  "id": "pb-classic-puzzles",
+  "moduleId": "ph6-probability-brainteasers",
+  "title": "Classic Puzzles: Monty Hall, Birthday and Card Problems",
+  "estMinutes": 26,
+  "difficulty": "core",
+  "prereqs": ["prob-conditional-bayes"],
+  "objectives": [
+    "Derive the 2/3 winning probability for switching in the Monty Hall problem from an explicit case breakdown",
+    "Compute the exact probability of a shared birthday among n people using the complement product, and evaluate it at n = 23",
+    "Compute card probabilities such as two-card blackjack and at-least-one-ace using counting and complements",
+    "State the assumptions each puzzle needs, and identify how relaxing an assumption changes the answer"
+  ],
+  "motivation": "Interview brainteasers are not trivia: they test whether you can state assumptions, condition on information, and compute exactly. Monty Hall turns on what the host knows, the birthday problem turns on complements, and card problems turn on counting without replacement. Getting each one right in 60 seconds is a trainable skill, and the same conditioning discipline prices information in markets.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Monty Hall: where the information hides"
+    },
+    {
+      "type": "p",
+      "md": "Three doors: one hides a car, two hide goats. You pick door 1. The host, who knows where the car is, opens one of the other two doors and always reveals a goat, then offers you a switch to the remaining closed door. Almost everyone's instinct says switching cannot matter - two doors, 50/50. The instinct fails because it ignores the constraint on the host: he cannot open your door and cannot open the car door, so his reveal is **forced** precisely when your initial pick was wrong. Forced moves carry information, and the case table below makes it impossible to miss."
+    },
+    {
+      "type": "table",
+      "headers": ["Car is behind", "Probability", "Host opens", "If you switch"],
+      "rows": [
+        ["Door 1 (your pick)", "$1/3$", "Door 2 or 3, a goat, freely chosen", "Lose"],
+        ["Door 2", "$1/3$", "Door 3 (forced - cannot open car or your pick)", "Win"],
+        ["Door 3", "$1/3$", "Door 2 (forced)", "Win"]
+      ]
+    },
+    {
+      "type": "p",
+      "md": "The three rows are equally likely because the car was placed uniformly at random. Switching wins in two of them, so $P(\\text{win} \\mid \\text{switch}) = \\tfrac{2}{3}$, while sticking keeps the original $\\tfrac{1}{3}$. One sentence to memorise: **switching wins exactly when your first pick was wrong**, and your first pick is wrong with probability $\\tfrac{2}{3}$."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "The Monty Fall variant",
+      "md": "If the host instead trips and knocks open door 2 **at random**, and it happens to show a goat, the answer changes to $1/2$. Bayes: $P(\\text{car on 3} \\mid \\text{door 2 open, goat}) \\propto \\tfrac{1}{2} \\times \\tfrac{1}{3}$ and $P(\\text{car on 1} \\mid \\text{door 2 open, goat}) \\propto \\tfrac{1}{2} \\times \\tfrac{1}{3}$ - equal, so each closed door now holds the car with probability $\\tfrac{1}{2}$. In interviews, always ask *who knows what and what are they constrained to do* before quoting $2/3$."
+    },
+    {
+      "type": "interactive",
+      "component": "ProbabilitySimulator",
+      "params": {
+        "game": "monty-hall",
+        "trials": 10000,
+        "strategies": ["stick", "switch"]
+      },
+      "caption": "Simulate thousands of games: sticking converges to 1/3, switching to 2/3. Then flip the host rule to 'random door' and watch switching drop to 1/2."
+    },
+    {
+      "type": "h2",
+      "text": "The birthday problem: 23 people is enough"
+    },
+    {
+      "type": "p",
+      "md": "Question: how many people must be in a room before two almost certainly share a birthday? Assume 365 equally likely birthdays and independence between people (ignore leap years and twins). The direct route - probability that *some* pair matches - is messy because the events are not independent. The complement is clean: compute the probability that **nobody** matches, by lining people up one at a time. Person 1 fixes a date; person 2 must avoid one date ($364/365$); person 3 must avoid two dates ($363/365$); and so on."
+    },
+    {
+      "type": "math",
+      "tex": "P(\\text{no match among } n) = \\prod_{k=0}^{n-1} \\frac{365-k}{365}, \\qquad P(\\text{some match}) = 1 - \\prod_{k=0}^{n-1} \\frac{365-k}{365}",
+      "caption": "Each factor removes one unavailable date."
+    },
+    {
+      "type": "steps",
+      "title": "Evaluate at n = 23",
+      "items": [
+        "The product runs over $k = 0, 1, \\dots, 22$: twenty-three factors from $\\tfrac{365}{365}$ down to $\\tfrac{343}{365}$.",
+        "Multiply (or sum logarithms): the product is approximately $0.4927$.",
+        "So $P(\\text{some shared birthday}) = 1 - 0.4927 = \\textbf{0.5073}$, about $50.7\\%$ - already better than even with just 23 people."
+      ]
+    },
+    {
+      "type": "table",
+      "headers": ["People (n)", "P(at least one shared birthday)"],
+      "rows": [
+        ["23", "50.7%"],
+        ["30", "70.6%"],
+        ["50", "97.0%"],
+        ["70", "99.9%"]
+      ]
+    },
+    {
+      "type": "p",
+      "md": "Intuition for why it grows so fast: with $n$ people there are $\\binom{n}{2}$ pairs, each a chance to collide - 23 people give 253 pairs, and pairs collide much more readily than intuition suggests. The exact computation handles the dependence that the naive pair-by-pair estimate ignores."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "from fractions import Fraction\np = Fraction(1)\nfor k in range(23):\n    p *= Fraction(365 - k, 365)\nprint(float(1 - p))          # 0.5072972343239854\n\n# Monte Carlo cross-check\nimport random\nhits = sum(1 for _ in range(100000)\n           if len({random.randrange(365) for _ in range(23)}) < 23)\nprint(hits / 100000)         # ~0.507",
+      "caption": "Exact fractions and simulation agree: 23 people give ~50.7%."
+    },
+    {
+      "type": "h2",
+      "text": "Card problems: dependent draws, counted exactly"
+    },
+    {
+      "type": "p",
+      "md": "Cards are drawn **without replacement**, so draws are dependent: after an ace leaves the deck, only 3 aces remain among 51 cards. The workhorse moves are (i) multiply conditional probabilities along a path, and (ii) use the complement for 'at least one' events. Example of (i): two aces in two draws is $\\tfrac{4}{52} \\times \\tfrac{3}{51} = \\tfrac{1}{221} \\approx 0.45\\%$."
+    },
+    {
+      "type": "steps",
+      "title": "Two-card blackjack (ace + ten-value)",
+      "items": [
+        "Ace first: $\\tfrac{4}{52}$. Then any of the 16 ten-value cards (tens, jacks, queens, kings) from 51 cards: $\\tfrac{16}{51}$.",
+        "Ten-value first, then ace: same product $\\tfrac{16}{52} \\times \\tfrac{4}{51}$ by symmetry.",
+        "The two orders are disjoint, so add: $P = 2 \\times \\tfrac{4}{52} \\times \\tfrac{16}{51} = \\tfrac{32}{663} \\approx 0.0483$, about $\\textbf{4.83\\%}$."
+      ]
+    },
+    {
+      "type": "p",
+      "md": "For 'at least one', go to the complement. The probability a 5-card hand has no ace is the number of ace-free hands over all hands: $\\binom{48}{5} / \\binom{52}{5} = \\tfrac{1{,}712{,}304}{2{,}598{,}960} \\approx 0.6588$. Hence $P(\\text{at least one ace}) = 1 - 0.6588 = 0.3412$, about $34.1\\%$. Complements turn a multi-path 'or' into a single clean count."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Card counting as conditional probability",
+      "md": "A Hi-Lo counter keeps a **running count** (+1 for 2-6, 0 for 7-9, -1 for tens and aces) and divides by decks remaining to get the **true count**. A true count of +10 means disproportionately many high cards remain, so blackjacks and dealer busts are more likely - each point of true count is worth roughly $+0.5\\%$ of expected value to the player. It is the birthday-problem lesson in reverse: as cards are removed, the remaining deck is *not* the deck you started with, and conditioning on removals is exactly where the edge lives."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Generalise Monty Hall to **four** doors, one car, three goats. You pick door 1; the host (who knows, and never opens your door or the car) opens exactly **one** other door revealing a goat, then offers the switch. Compute $P(\\text{win} \\mid \\text{switch})$ by a case table, exactly as for three doors.",
+    "hints": [
+      "Your initial pick is right with probability $1/4$ and wrong with probability $3/4$.",
+      "When your initial pick is wrong, the car is behind one of the two unopened doors - and the host still cannot open it.",
+      "Ask: after the reveal, is switching ever forced to lose when the first pick was wrong?"
+    ],
+    "solution": "Case table: car behind door 1 (prob $1/4$): host opens any goat door, switching loses. Car behind door 2, 3, or 4 (prob $3/4$ total): your pick is wrong, the host opens a goat among the doors you did not pick, and the car stays behind the remaining unopened door - switching wins. These are all the cases and each first row is equally likely, so $P(\\text{win} \\mid \\text{switch}) = \\tfrac{3}{4}$. With $d$ doors and one reveal, switching wins with probability $(d-1)/d$; the gap between sticking and switching widens as $d$ grows."
+  },
+  "independentExercise": {
+    "prompt": "Work from a standard 52-card deck. (a) Compute $P(\\text{a 5-card hand contains at least one ace})$ exactly, using $\\binom{52}{5} = 2{,}598{,}960$ and $\\binom{48}{5} = 1{,}712{,}304$. (b) Compute the exact fraction for $P(\\text{two-card blackjack})$ and convert to a percentage to two decimals.",
+    "hints": [
+      "For (a), count hands with *no* ace first, then take the complement.",
+      "For (b), add the two disjoint orders: ace-then-ten and ten-then-ace."
+    ],
+    "solution": "(a) $P = 1 - \\tfrac{\\binom{48}{5}}{\\binom{52}{5}} = 1 - \\tfrac{1{,}712{,}304}{2{,}598{,}960} = \\tfrac{886{,}656}{2{,}598{,}960} \\approx 0.3412 \\approx \\textbf{34.1\\%}$. (b) $P = 2 \\times \\tfrac{4}{52} \\times \\tfrac{16}{51} = \\tfrac{128}{2652} = \\mathbf{\\frac{32}{663}} \\approx 4.83\\%$."
+  },
+  "commonMistakes": [
+    "Arguing Monty Hall is 50/50 because two doors remain - the correct conditioning is on the host's constrained behaviour, not on the number of closed doors.",
+    "Computing the birthday probability by summing $\\binom{n}{2}/365$ over pairs and treating pair matches as independent - they overlap; use the complement product instead.",
+    "Multiplying card probabilities as if draws were independent: $\\tfrac{4}{52} \\times \\tfrac{4}{52}$ is wrong for two aces; the second draw is out of 51 with 3 aces left.",
+    "Forgetting to double the ace/ten order in blackjack - ace-first and ten-first are disjoint cases and both must be added."
+  ],
+  "realWorldApplication": "A/B testing, duplicate-detection and hashing-collision analyses all reuse the birthday computation, and any 'host with private information' reasoning maps onto adverse-selection problems in trading.",
+  "quantFinanceApplication": "Market makers face Monty-Hall-style adverse selection: the counterparty who eagerly trades against your quote often 'knows which door the car is behind'. Conditioning on *why* you were offered a trade is the same skill as conditioning on why the host opened door 3.",
+  "summary": [
+    "Monty Hall: switching wins with probability $2/3$ because it wins exactly when the first pick (probability $2/3$ of being wrong) was wrong; the host's forced reveal is what carries the information.",
+    "If the reveal is random rather than informed (Monty Fall), switching wins only $1/2$ - assumptions about knowledge drive the answer.",
+    "Birthday problem: $P(\\text{match}) = 1 - \\prod_{k=0}^{n-1}(365-k)/365$, which crosses 50% at $n = 23$ ($\\approx 50.7\\%$).",
+    "Cards: draws are dependent; blackjack is $2 \\times \\tfrac{4}{52} \\times \\tfrac{16}{51} = \\tfrac{32}{663} \\approx 4.83\\%$, and at-least-one-ace uses the complement $1 - \\binom{48}{5}/\\binom{52}{5} \\approx 34.1\\%$.",
+    "Interview protocol: state assumptions, do the small case analysis explicitly, and verify with an exact computation or simulation."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "In the standard Monty Hall game (host knows where the car is, always opens a goat door you did not pick, always offers the switch), what is $P(\\text{win} \\mid \\text{switch})$?",
+      "options": ["$1/3$", "$1/2$", "$2/3$", "It depends on which door the host opens"],
+      "answerIndex": 2,
+      "explanation": "Switching wins exactly when your initial pick was wrong, which has probability $2/3$. The host's forced reveal does not change that."
+    },
+    {
+      "id": "q2",
+      "type": "numeric",
+      "prompt": "What is the smallest number of people for which the probability of at least one shared birthday exceeds $1/2$?",
+      "answer": 23,
+      "explanation": "$1 - \\prod_{k=0}^{22}\\frac{365-k}{365} \\approx 0.5073 > 0.5$, while $n = 22$ gives $\\approx 0.4757$. The crossing point is 23."
+    },
+    {
+      "id": "q3",
+      "type": "mcq",
+      "prompt": "Monty Fall variant: the host does NOT know where the car is and opens one of your unpicked doors uniformly at random; it happens to show a goat. Now what is $P(\\text{win} \\mid \\text{switch})$?",
+      "options": ["$1/3$", "$1/2$", "$2/3$", "$2/5$"],
+      "answerIndex": 1,
+      "explanation": "Conditioning on the lucky reveal: the surviving two doors are equally likely to hold the car, since a random reveal that lands on a goat gives no preference between them. So switching wins with probability $1/2$ - the host's knowledge, not the reveal itself, creates the $2/3$."
+    },
+    {
+      "id": "q4",
+      "type": "numeric",
+      "prompt": "What is $P(\\text{two-card blackjack})$ in percent, to two decimal places?",
+      "answer": 4.83,
+      "tolerance": 0.1,
+      "unit": "%",
+      "explanation": "$P = 2 \\times \\frac{4}{52} \\times \\frac{16}{51} = \\frac{32}{663} \\approx 0.048265$, i.e. $4.83\\%$."
+    },
+    {
+      "id": "q5",
+      "type": "ms",
+      "prompt": "Which statements about the Monty Hall analysis are TRUE? Select all that apply.",
+      "options": [
+        "The host must never open your door or the door hiding the car",
+        "Even with a random (unknowing) host, switching still wins $2/3$",
+        "Switching wins exactly when your initial pick was wrong",
+        "The $2/3$ relies on the car being placed uniformly at random"
+      ],
+      "answerIndices": [0, 2, 3],
+      "explanation": "The $2/3$ needs an informed, constrained host (a), the case decomposition (c), and the uniform prior on the car's position (d). A random host gives $1/2$ after a lucky goat reveal, so (b) is false."
+    },
+    {
+      "id": "q6",
+      "type": "code-output",
+      "prompt": "What does this Python code print?",
+      "language": "python",
+      "code": "from fractions import Fraction\np = Fraction(1)\nfor k in range(23):\n    p *= Fraction(365 - k, 365)\nprint(round(float(1 - p), 4))",
+      "answer": "0.5073",
+      "explanation": "The loop multiplies the 23 complement factors $\\frac{365-k}{365}$ for $k=0..22$; the probability of a match is $1 - p \\approx 0.50729723$, which rounds to $0.5073$."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "probability",
+      "front": "Monty Hall (informed host, always reveals a goat): $P(\\text{win} \\mid \\text{switch})$?",
+      "back": "$2/3$ - switching wins exactly when your first pick was wrong, and it is wrong with probability $2/3$."
+    },
+    {
+      "type": "formula",
+      "front": "Probability of at least one shared birthday among n people",
+      "back": "$1 - \\prod_{k=0}^{n-1} \\frac{365-k}{365}$; at $n = 23$ this is about $50.7\\%$."
+    },
+    {
+      "type": "concept",
+      "front": "Why does the host's knowledge matter in Monty Hall?",
+      "back": "A knowing host is constrained to avoid the car, so his reveal is informative (2/3). A random reveal that luckily shows a goat is uninformative between the two remaining doors (1/2)."
+    },
+    {
+      "type": "probability",
+      "front": "P(two-card blackjack) exactly?",
+      "back": "$2 \\times \\frac{4}{52} \\times \\frac{16}{51} = \\frac{32}{663} \\approx 4.83\\%$."
+    },
+    {
+      "type": "error-identification",
+      "front": "Spot the error: 'P(some pair shares a birthday) = C(n,2)/365, since each pair matches with probability 1/365.'",
+      "back": "Pair-match events overlap and are not independent, so summing pair probabilities is wrong. Use the complement product $\\prod (365-k)/365$ instead."
+    }
+  ],
+  "references": [
+    {
+      "label": "Wikipedia - Monty Hall problem",
+      "url": "https://en.wikipedia.org/wiki/Monty_Hall_problem"
+    },
+    {
+      "label": "Wikipedia - Birthday problem",
+      "url": "https://en.wikipedia.org/wiki/Birthday_problem"
+    },
+    {
+      "label": "Wikipedia - Blackjack probability",
+      "url": "https://en.wikipedia.org/wiki/Blackjack"
+    }
+  ],
+  "skills": ["probability", "aptitude"]
+}

@@ -1,0 +1,261 @@
+{
+  "id": "py-gil-threading",
+  "moduleId": "ph3-advanced-python",
+  "title": "The GIL, Threading and Multiprocessing",
+  "estMinutes": 27,
+  "difficulty": "advanced",
+  "prereqs": [
+    "py-object-model"
+  ],
+  "objectives": [
+    "Explain why CPython's reference-counted object model requires the Global Interpreter Lock and what the GIL does and does not guarantee",
+    "Predict when threading reduces wall-clock time (I/O-bound work, GIL-releasing C extensions) and when it does not (pure-Python CPU-bound work)",
+    "Use concurrent.futures ThreadPoolExecutor and ProcessPoolExecutor correctly, including the __main__ guard and pickling constraints",
+    "Estimate speedups for chunked work across cores, accounting for serialisation overhead",
+    "Identify race conditions on shared state and apply locks or queues to fix them"
+  ],
+  "motivation": "Your backtest is eight times too slow and your market-data downloader hangs on every tick. Python's answer to both is concurrency, but the GIL means the two problems need different tools. Choosing threads when you needed processes (or asyncio when you needed neither) turns a two-hour job into a two-day one. This lesson builds the decision framework desks actually use: know what is waiting, know what is computing, pick the tool that overlaps the wait.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "What the GIL is and why it exists"
+    },
+    {
+      "type": "p",
+      "md": "CPython manages memory with **reference counting** (py-object-model): every PyObject carries a count of live references. If two threads incremented and decremented that counter at the same instant, races would leak objects or free live ones. So CPython serialises bytecode execution with one global mutex - the **Global Interpreter Lock (GIL)**. At any instant, at most one thread is executing Python bytecode, no matter how many cores you own. The GIL is a CPython implementation detail, but one with a decades-long shadow."
+    },
+    {
+      "type": "p",
+      "md": "The lock is *not* held forever: CPython releases it (1) during blocking I/O - sockets, files, `time.sleep`, (2) inside well-built C extensions doing real computation - NumPy's BLAS-backed matrix multiply, compression, hashing - and (3) every few milliseconds so the interpreter can switch threads. Rule of thumb: time the interpreter does *not* spend running Python bytecode is time another thread can use."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "NumPy changes the calculus",
+      "md": "A `np.linalg.matmul` on large arrays releases the GIL while BLAS crunches. CPU-heavy work that lives in compiled extensions can still benefit from threads - the GIL only blocks *Python bytecode*. This is why a threaded worker pool around numpy-heavy tasks is not automatically pointless."
+    },
+    {
+      "type": "h2",
+      "text": "Threads help waiting, not computing"
+    },
+    {
+      "type": "p",
+      "md": "Wall-clock time = CPU time + wait time. Threads overlap **wait** time (network round-trips, disk reads, sleeps); the GIL prevents them from overlapping **CPU** time spent in bytecode. Four pure-Python CPU threads on four cores finish in roughly the same time as four serial runs:"
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import time\nfrom threading import Thread\n\ndef crunch(n):\n    total = 0\n    for i in range(n):\n        total += i * i\n\nt0 = time.perf_counter()\nthreads = [Thread(target=crunch, args=(10_000_000,)) for _ in range(4)]\nfor t in threads:\n    t.start()\nfor t in threads:\n    t.join()\nprint(f\"{time.perf_counter() - t0:.2f}s\")  # ~= serial time: GIL serialises",
+      "caption": "CPU-bound threads: the wall time barely improves. The same four tasks with time.sleep instead of the loop would finish in about a quarter of the serial time."
+    },
+    {
+      "type": "h2",
+      "text": "Process pools: real parallelism"
+    },
+    {
+      "type": "p",
+      "md": "`multiprocessing` sidesteps the GIL entirely: each process gets its own interpreter, its own GIL, its own memory. The price is data plumbing - arguments and results cross a process boundary through **pickling**, and objects like lambdas, open sockets and live locks cannot be pickled at all. There is no shared memory unless you deliberately create it, which conveniently also prevents accidental data races. The ergonomic API is `concurrent.futures.ProcessPoolExecutor`:"
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "from concurrent.futures import ProcessPoolExecutor\nimport numpy as np\n\ndef one_chunk(args):\n    seed, paths = args\n    rng = np.random.default_rng(seed)\n    z = rng.normal(size=paths)\n    return float(np.mean(np.maximum(z * 0.01, 0.0)))\n\nif __name__ == \"__main__\":          # required on spawn platforms\n    chunks = [(s, 500_000) for s in range(4)]\n    with ProcessPoolExecutor() as ex:\n        results = list(ex.map(one_chunk, chunks))\n    print(results)                  # map preserves submission order",
+      "caption": "Chunk a Monte Carlo across cores. Each worker builds its own seeded Generator - never share one across processes."
+    },
+    {
+      "type": "p",
+      "md": "Two conventions matter in production: the `if __name__ == \"__main__\":` guard (on macOS/Windows children are spawned by re-importing your module - without the guard you recurse into infinite process creation), and top-level worker functions (a `lambda` passed to a process pool raises a pickling error). Prefer few large chunks over many tiny ones: each chunk pays a serialisation round-trip."
+    },
+    {
+      "type": "h2",
+      "text": "Choosing the tool"
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Tool",
+        "Model",
+        "Best for",
+        "Cost"
+      ],
+      "rows": [
+        [
+          "threading",
+          "shared memory, GIL-bound",
+          "I/O-bound: feeds, APIs, disk waits",
+          "low; races possible on shared state"
+        ],
+        [
+          "multiprocessing",
+          "one interpreter per process",
+          "CPU-bound pure-Python work",
+          "high: startup + pickle per chunk"
+        ],
+        [
+          "asyncio",
+          "one thread, cooperative",
+          "very many network connections",
+          "low; blocking calls freeze everything"
+        ]
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "The GIL does not make your code thread-safe",
+      "md": "The GIL protects the *interpreter*, not your invariants. `counter += 1` from two threads can still lose updates - it compiles to read-modify-write bytecodes that interleave. Guard compound operations with a `threading.Lock`, or avoid shared mutable state by passing data through `queue.Queue`."
+    },
+    {
+      "type": "p",
+      "md": "Looking forward: PEP 703 delivered an experimental free-threaded (no-GIL) build from CPython 3.13, and it will take years to become the default everywhere. The mental model here - classify the workload, then pick threads, processes or async - remains the day-one skill either way."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "A job consists of 8 independent pure-Python tasks, each requiring 2 seconds of CPU. The machine has 4 cores. Estimate wall-clock time for:\n\n(a) serial execution\n(b) `ThreadPoolExecutor(max_workers=4)`\n(c) `ProcessPoolExecutor(max_workers=4)` (ignore startup/pickle overhead)\n\nJustify each number in one sentence.",
+    "hints": [
+      "Ask what the GIL permits for pure-Python bytecode.",
+      "Processes give each task a core; 8 tasks over 4 workers means two rounds."
+    ],
+    "solution": "(a) $8 \\times 2 = 16$ s. (b) Still about **16 s** - threads cannot run pure-Python bytecode in parallel; the GIL serialises them, so concurrency adds no CPU throughput. (c) $8 / 4 = 2$ rounds $\\times\\, 2$ s $= $ **4 s** (plus a small fixed cost for process startup and pickling). The takeaway: for CPU-bound pure Python, cores only help through processes."
+  },
+  "independentExercise": {
+    "prompt": "Price an option by Monte Carlo with 1,000,000 paths using a process pool: split into 8 chunks of 125,000 paths. Worker signature: `simulate_chunk(seed, n_paths)` returns the mean payoff for one chunk. Write the full script (with the `__main__` guard) that aggregates chunk results into the final price, and answer: why 8 chunks for 4 workers, why the guard is mandatory, and under what circumstance threads with the same numpy workload would be competitive?",
+    "hints": [
+      "`executor.map(func, seeds, n_paths_list)` maps over multiple iterables in parallel.",
+      "More chunks than workers lets the pool balance load and shrinks the cost of a straggler.",
+      "numpy draws release the GIL during the heavy C-level work."
+    ],
+    "solution": "```python\nimport numpy as np\nfrom concurrent.futures import ProcessPoolExecutor\n\ndef simulate_chunk(seed, n_paths):\n    rng = np.random.default_rng(seed)\n    z = rng.normal(size=n_paths)\n    payoff = np.maximum(z * 0.01, 0.0)   # illustrative payoff on z\n    return float(np.mean(payoff))\n\nif __name__ == \"__main__\":\n    seeds = range(8)\n    with ProcessPoolExecutor(max_workers=4) as ex:\n        parts = ex.map(simulate_chunk, seeds, [125_000] * 8)\n        price = sum(parts)\n    print(price)\n```\nEight chunks for four workers: a worker picks up the next chunk as it finishes, so uneven chunk cost does not idle cores, and the per-chunk serialisation cost stays small. The guard is mandatory because on spawn platforms children re-import the module; top-level code would launch processes recursively. Threads would be competitive here because `rng.normal` and numpy arithmetic release the GIL during their C loops - with a good numpy build, threads avoid the pickle cost entirely."
+  },
+  "commonMistakes": [
+    "Using threads to speed up pure-Python CPU-bound loops - the GIL serialises them; you need processes (or vectorisation).",
+    "Passing lambdas or nested functions to a ProcessPoolExecutor - they cannot be pickled; use top-level functions.",
+    "Forgetting the `if __name__ == \"__main__\":` guard on Windows/macOS and watching processes multiply forever.",
+    "Sharing a counter or dict across threads without a lock - the GIL guarantees interpreter safety, not atomicity of your read-modify-write.",
+    "Creating thousands of tiny chunks: pickle round-trips dominate the actual work. Chunk at least ~10x fewer pieces than elements of work."
+  ],
+  "realWorldApplication": "Every web backend, build system and data pipeline chooses between threads, processes and async queues. In CPython the choice is governed by the GIL: threads for waiting, processes for computing, async for sheer connection count.",
+  "quantFinanceApplication": "Desks parallelise backtests and Monte Carlo pricing across cores with ProcessPoolExecutor, each worker seeded independently for reproducibility, while the market-data layer stays threaded or async because it is almost pure waiting on sockets.",
+  "summary": [
+    "The GIL exists because CPython's reference counting is not thread-safe; it serialises Python bytecode execution but is released during blocking I/O and inside GIL-releasing C extensions like numpy.",
+    "Threads overlap waiting; they do not add CPU throughput for pure-Python code. Processes have separate GILs and give real parallelism at the cost of pickling and startup.",
+    "executor.map preserves submission order; workers must be top-level picklable functions; the __main__ guard prevents recursive spawning.",
+    "The GIL does not make compound operations atomic - shared read-modify-write state still needs locks or queues."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "Which workload gets a near-linear speedup from ThreadPoolExecutor on a multicore machine?",
+      "options": [
+        "Four independent pure-Python nested loops doing arithmetic",
+        "Downloading 200 price files over HTTP",
+        "A numpy matmul on a huge matrix",
+        "Parsing one large CSV with the csv module"
+      ],
+      "answerIndex": 1,
+      "explanation": "Downloads are I/O-bound: threads overlap the waiting, and the GIL is released while sockets block. Pure-Python CPU loops are GIL-serialised; a single numpy matmul already uses BLAS threads; csv parsing is CPU-bound bytecode."
+    },
+    {
+      "id": "q2",
+      "type": "code-output",
+      "prompt": "What does this print?",
+      "language": "python",
+      "code": "from concurrent.futures import ThreadPoolExecutor\n\ndef work(tag):\n    return tag + \"!\"\n\nwith ThreadPoolExecutor(max_workers=1) as ex:\n    print(\" \".join(ex.map(work, [\"a\", \"b\"])))",
+      "answer": "a! b!",
+      "explanation": "executor.map yields results in submission order regardless of completion order; with one worker they also execute sequentially."
+    },
+    {
+      "id": "q3",
+      "type": "ms",
+      "prompt": "Which of these operations release the GIL so other threads can run? Select all that apply.",
+      "options": [
+        "time.sleep(0.1)",
+        "Reading a large file with open(...).read()",
+        "np.linalg.inv on a 2000x2000 matrix",
+        "list.append on a small list"
+      ],
+      "answerIndices": [
+        0,
+        1,
+        2
+      ],
+      "explanation": "Blocking waits and heavy compiled C work release the GIL. list.append is fast interpreter code that runs under the GIL like ordinary bytecode."
+    },
+    {
+      "id": "q4",
+      "type": "numeric",
+      "prompt": "8 independent pure-Python tasks, each 2 seconds of CPU, run with ProcessPoolExecutor(max_workers=4) on 4 cores. Ignoring startup and pickle overhead, what is the expected wall-clock time in seconds?",
+      "answer": 4,
+      "explanation": "4 workers process 4 tasks per round: two rounds x 2 s = 4 s. Each process has its own GIL, so cores are genuinely used."
+    },
+    {
+      "id": "q5",
+      "type": "mcq",
+      "prompt": "Why must arguments and return values of ProcessPoolExecutor workers be picklable?",
+      "options": [
+        "Pickling encrypts the data between processes",
+        "Processes have separate memory spaces, so data crosses the boundary as serialised bytes",
+        "The GIL refuses unpickled objects",
+        "It is only a performance hint - unpicklable objects still work"
+      ],
+      "answerIndex": 1,
+      "explanation": "There is no shared memory between processes: inputs are serialised, sent over a pipe, deserialised in the child, and results travel back the same way. Lambdas, sockets and locks fail this requirement."
+    },
+    {
+      "id": "q6",
+      "type": "short",
+      "prompt": "State one thing the GIL guarantees and one thing it does not.",
+      "modelAnswer": "The GIL guarantees that CPython's internal state (reference counts, interpreter data structures) is not corrupted by concurrent threads - only one thread executes bytecode at a time. It does not make application-level compound operations atomic: counter += 1 or check-then-act sequences can still interleave and race.",
+      "keywords": [
+        "refcount",
+        "reference counting",
+        "atomic",
+        "race",
+        "bytecode",
+        "one thread"
+      ],
+      "explanation": "The GIL protects the interpreter, not your program's invariants - compound operations still need locks."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "definition",
+      "front": "Global Interpreter Lock (GIL)",
+      "back": "CPython's global mutex allowing only one thread to execute Python bytecode at a time. Exists because reference counting is not thread-safe. Released during blocking I/O and by C extensions doing heavy work."
+    },
+    {
+      "type": "concept",
+      "front": "Threads vs processes vs asyncio - the one-line rule",
+      "back": "Waiting on I/O -> threads (or asyncio for many connections). Computing in pure Python -> processes. Computing in numpy/C -> threads may still help (GIL released)."
+    },
+    {
+      "type": "error-identification",
+      "front": "Spot the bug: with ProcessPoolExecutor() as ex: results = list(ex.map(lambda x: x*x, nums))",
+      "back": "Lambdas are not picklable, so a process pool raises a pickling error. Use a top-level function. (The same lambda works fine in a thread pool.)"
+    },
+    {
+      "type": "code-output",
+      "front": "Does executor.map return results in submission order or completion order?",
+      "back": "Submission order - map yields results in the order the inputs were given, even if later tasks finish first."
+    }
+  ],
+  "references": [
+    {
+      "label": "Python docs - concurrent.futures",
+      "url": "https://docs.python.org/3/library/concurrent.futures.html"
+    },
+    {
+      "label": "Python wiki - GlobalInterpreterLock",
+      "url": "https://wiki.python.org/moin/GlobalInterpreterLock"
+    },
+    {
+      "label": "PEP 703 - Making the Global Interpreter Lock Optional",
+      "url": "https://peps.python.org/pep-0703/"
+    }
+  ],
+  "skills": [
+    "python",
+    "concurrency"
+  ]
+}

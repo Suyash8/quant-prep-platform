@@ -1,0 +1,271 @@
+{
+  "id": "mic-spreads-impact",
+  "moduleId": "ph7-microstructure",
+  "title": "Spread Dynamics, Market Impact and Liquidity Provision",
+  "estMinutes": 27,
+  "difficulty": "advanced",
+  "prereqs": [
+    "mic-matching"
+  ],
+  "objectives": [
+    "Explain the three costs inside a spread: order processing, inventory and adverse selection",
+    "Compute the cost of a round trip across the spread and the impact of a large order",
+    "Describe how volatility, tick size and inventory drive spread widening and narrowing",
+    "Explain how market makers manage inventory by skewing quotes"
+  ],
+  "motivation": "The spread looks like a trivial two-cent gap, but it is the price of a service: immediacy. Understanding what market makers charge for - and when they charge more - explains everything from why spreads explode in crashes to why your execution algorithm pays more for urgency than patience.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "What the spread actually pays for"
+    },
+    {
+      "type": "p",
+      "md": "A market maker quoting bid \\$99.98 and ask \\$100.02 earns the spread only if buys and sells arrive in balance. Between earning it, the quote covers three distinct costs:"
+    },
+    {
+      "type": "list",
+      "items": [
+        "**Order processing cost**: the mechanical cost of running quotes - infrastructure, clearing, exchange fees, the tick-size floor. Sets a lower bound on the spread even for a bulletproof stock.",
+        "**Inventory risk cost**: holding shares between buying and offloading them exposes the maker to price moves while positioned. The more volatile the stock and the longer the expected holding time, the wider the required spread.",
+        "**Adverse selection cost**: some counterparties know something. Every fill against an informed trader is a loss on average, and that expected loss is priced into the spread (detailed in the next lesson)."
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Spread as a function of conditions",
+      "md": "Empirically, spread widens with volatility, with adverse-selection risk and when depth thins, and it tightens in calm liquid markets. Tick size is a floor: a theoretical 0.3-cent fair spread on a \\$10 stock cannot be quoted below the 1-cent grid, so competition instead competes on size at the same price."
+    },
+    {
+      "type": "p",
+      "md": "The bid-ask spread is the market's explicit price for immediacy: you can pay it (cross the spread) or you can earn it (provide liquidity and wait). Everything else in transaction-cost analysis is a refinement of this single trade-off. Start with the arithmetic, then the incentives, then the impact — in that order, because each layer explains the noise you will see in the next."
+    },
+    {
+      "type": "steps",
+      "title": "The cost of crossing, on real-size numbers",
+      "items": [
+        "A liquid future trades at 100.00 bid / 100.02 ask: a 2-cent spread on a 100 notional = **2 basis points**.",
+        "A market order to buy 10 million notional crosses the ask. Half-spread paid: $10{,}000{,}000 \\times 0.0002 / 2 = \\$1{,}000$. That is the *instantaneous* cost — the moment the trade prints, the mid has not moved and you are already down 1,000.",
+        "A strategy doing this 100 times a day, 250 days a year, hands over $\\$1{,}000 \\times 100 \\times 250 = \\$25{,}000{,}000$ a year in spread alone. A backtest that ignored this shows a profitable year; the live P&L shows a slow bleed.",
+        "Now the provider's side: the passive limit order that filled you *earned* that 1,000 — but only if the market did not move away from it (adverse selection). If filling you reliably costs more than 1,000 in adverse moves, the spread widens until it doesn't. Spreads are set by this equilibrium, not by greed."
+      ]
+    },
+    {
+      "type": "p",
+      "md": "Market impact is the second cost, and it is not linear. Crossing the spread gets you the displayed size; beyond that you consume depth at worse prices (the *walk* up the book), and beyond the book you move the price itself. The square-root law — impact $\\approx \\sigma\\sqrt{Q/V}$ — is the industry's rough empirical rule: doubling your participation costs about 1.4x, not 2x, and trading 1% of volume costs roughly 1% of a daily vol. It is a law of thumb, not physics, but it is the right order of magnitude for sizing what your order will do."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "The spread you see is not the spread you pay",
+      "md": "Displayed midpoint assumes the book is honest. Your order arrives with information (that is why you are trading), and the book knows it: quotes fade, or the mid was stale. Effective spread paid = $2|P_{exec} - M_{post}|$, measured against the mid a moment *after* your fill. Execution desks live on this number, and it is always worse than the pre-trade screenshot."
+    },
+    {
+      "type": "h2",
+      "text": "Round trips and impact, in numbers"
+    },
+    {
+      "type": "steps",
+      "title": "The cost of trading, measured on the lesson-1 book",
+      "items": [
+        "Quotes: bid $99.98 / ask $100.02, mid \\$100.00. **Round trip**: buy at the ask, sell at the bid costs $100.02 - 99.98 = \\$0.04$ per share, i.e. $4$bp of the mid - before any commissions.",
+        "A 900-share market buy fills entirely at \\$100.02: cost over mid $= 900 \\times 0.02 = \\$18$ (half-spread, 1 cent per share).",
+        "A 2,000-share market buy sweeps to $100.03 for an average of \\$100.0255: cost over mid $= 2{,}000 \\times 0.0255 = \\$51$ - **impact nearly tripled the half-spread cost**.",
+        "The extra \\$33 came from consuming the second level: that difference *is* market impact, paid for depth."
+      ]
+    },
+    {
+      "type": "p",
+      "md": "Practitioners decompose this into **temporary impact** (prices recover after a liquidity-taking burst; you pay a wedge that decays) and **permanent impact** (your order carried information; the mid genuinely re-centres). The empirical **square-root law** summarises many studies: impact grows roughly with the square root of order size relative to daily volume - doubling your size does not double your price concession, but it certainly does not leave it unchanged either. Kyle's lambda formalises the same idea as price change per unit of order-flow imbalance."
+    },
+    {
+      "type": "h2",
+      "text": "The market maker's inventory dance"
+    },
+    {
+      "type": "p",
+      "md": "Quote both sides and net flow decides your position. If buyers hit the ask 1,000 shares more than sellers lift the bid, the maker is long 1,000 - an unwanted, unhedged position earning nothing. The classic response is **skewing quotes**: shift both quotes down a tick or two, making the bid relatively more attractive to sellers and the ask less attractive to buyers, so future flow rebalances the inventory while the position itself marks to the (now lower) mid. Skew direction follows inventory; skew magnitude follows how fast the maker wants to detox."
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Situation",
+        "Maker's action",
+        "Effect"
+      ],
+      "rows": [
+        [
+          "Flat inventory, calm market",
+          "Symmetric quotes, tight spread",
+          "Maximise two-sided flow"
+        ],
+        [
+          "Long 1,000 shares",
+          "Skew quotes down",
+          "Attract sellers, discourage buyers"
+        ],
+        [
+          "Volatility doubles",
+          "Widen spread",
+          "Charge more for inventory risk"
+        ],
+        [
+          "News pending / uncertainty",
+          "Widen spread or pull quotes",
+          "Avoid trading against informed flow"
+        ]
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "info",
+      "title": "Maker-taker economics",
+      "md": "Many venues pay rebates to resting orders and charge takers. A maker earning a 0.2-cent rebate per share can quote tighter than processing cost alone would allow - exchange fee schedules literally shape displayed spreads. Deep-liquidity venues also attract flow, and attracting flow is the real product of a liquidity provider."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Impact is not free to reverse",
+      "md": "After a large buy pushes the mid up, selling the same size does not return you to the original price: you pay impact twice, once each way, minus any temporary component. The round-trip impact cost is why large orders are sliced over time - not to be sneaky, but because one burst buys every level in the book."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Book: bid \\$49.95 (depth 2,000) / ask \\$49.99 (depth 1,000), next ask \\$50.00 (depth 2,000). (a) Compute the mid and relative spread in bp. (b) A market buy of 2,500 shares sweeps both ask levels: compute the average price and the cost over mid per share.",
+    "hints": [
+      "Split the order: 1,000 shares at 49.99, then 1,500 shares at 50.00.",
+      "Cost over mid = average price minus mid."
+    ],
+    "solution": "(a) Mid $= (49.95 + 49.99)/2 = \\$; spread $= \\$; relative spread $= 0.04/49.97 \\approx 8$bp. (b) Cost $= 1{,}000 \\times 49.99 + 1{,}500 \\times 50.00 = 49{,}990 + 75{,}000 = $124{,}990$. Average $= 124{,}990/2{,}500 = \\$. Cost over mid $= 49.996 - 49.97 = 2.6$ cents per share - versus 2 cents for a half-spread-only fill; the extra 0.6 cents is impact from the second level."
+  },
+  "independentExercise": {
+    "prompt": "A market maker is flat and quotes bid \\$20.00 / ask \\$20.04 on a volatile stock. During a burst, it buys 3,000 shares at its ask (inventory now long 3,000) and its fair value estimate drops by one tick to \\$20.01. (a) Explain why widening rather than merely widening the ask is the right response. (b) Suppose it now quotes bid \\$19.96 / ask \\$20.02. Compute the new mid, and state which side becomes relatively more attractive to arriving sellers. (c) What P&L would it lock in if it immediately sold all 3,000 shares at its new bid?",
+    "hints": [
+      "Inventory hurts twice: price risk on the position and unattractive stale quotes.",
+      "P&L of the detox trade: sell price minus average buy price."
+    ],
+    "solution": "(a) The maker is long 3,000 shares on a volatile stock: inventory risk doubles the cost of continuing to hold, so both quotes skew down to attract offsetting sell flow - widening alone would keep buying more inventory. (b) New mid $= (19.96 + 20.02)/2 = \\$; the bid at 19.96 is now only 3 cents below mid while the ask is 3 cents above - symmetric skew around a lower mid, with the *bid* relatively more attractive to arriving sellers who hit it. (c) Selling at 19.96 after buying at 20.04 locks in $(19.96 - 20.04) \\times 3{,}000 = -$2{,}400$ - the realised price of having bought against aggressive flow. Skewing instead hopes to detox at better prices over time; that hope is itself a risk decision."
+  },
+  "commonMistakes": [
+    "Attributing the whole spread to profit - processing, inventory and adverse-selection costs consume most of it.",
+    "Equating impact with the half-spread: only orders fitting inside the top level pay half-spread; bigger orders pay for depth.",
+    "Thinking temporary and permanent impact are the same - one decays, the other re-centres the mid.",
+    "Forgetting the round trip pays the full spread even if the mid never moved."
+  ],
+  "realWorldApplication": "Market makers at firms of every size run inventory-skewing logic continuously; exchanges tune tick sizes and maker-taker fees to shape spreads, and execution analysts fit square-root-law curves to decide how to slice parent orders.",
+  "quantFinanceApplication": "Best-execution systems estimate expected impact before routing an order - comparing a patient slice plan against the immediate sweep cost - and market-making desks monitor realised spread capture per share against inventory-adjusted benchmarks.",
+  "summary": [
+    "The spread prices three costs: order processing, inventory risk and adverse selection.",
+    "Round trips pay the full spread; orders larger than top-level depth pay additional impact for consumed depth.",
+    "Impact grows sublinearly with size (square-root law) and splits into temporary and permanent components.",
+    "Market makers skew quotes with inventory and widen spreads with volatility - liquidity provision is priced risk, not a public utility."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "Which cost does the spread NOT primarily compensate?",
+      "options": [
+        "Order processing and exchange fees",
+        "Inventory price risk while positioned",
+        "Losses to better-informed counterparties",
+        "The exchange's listing fee for the stock"
+      ],
+      "answerIndex": 3,
+      "explanation": "Listing fees are charged to issuers, not embedded in the spread. Processing, inventory and adverse selection are the classic three components."
+    },
+    {
+      "id": "q2",
+      "type": "numeric",
+      "prompt": "Bid \\$99.98 / ask \\$100.02. A round trip (buy then sell one share) costs how many cents?",
+      "answer": 4,
+      "tolerance": 0.01,
+      "explanation": "Buy at the ask (100.02), sell at the bid (99.98): cost $= 0.04$ dollars = 4 cents per share, about 4bp of mid."
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "A 2,000-share buy averages \\$100.0255 against a mid of \\$100.00. Total cost over mid in dollars?",
+      "answer": 51,
+      "tolerance": 0.5,
+      "explanation": "$2{,}000 \\times 0.0255 = \\$51$ - impact nearly tripled the \\$18 half-spread cost of a 900-share order."
+    },
+    {
+      "id": "q4",
+      "type": "short",
+      "prompt": "What does the square-root law describe, and what is its practical implication for order sizing?",
+      "modelAnswer": "It describes how market impact grows roughly with the square root of order size relative to volume; practically, doubling size less than doubles the price concession but still costs meaningfully more, so large orders are sliced over time.",
+      "keywords": [
+        "impact",
+        "square",
+        "size"
+      ],
+      "explanation": "Impact is sublinear but unavoidable; execution algorithms trade size against time, spreading impact across the day."
+    },
+    {
+      "id": "q5",
+      "type": "mcq",
+      "prompt": "A market maker has accumulated a large long inventory. The classic quote response is to:",
+      "options": [
+        "Raise both quotes to profit from the position",
+        "Skew both quotes down to attract sell flow",
+        "Widen the spread symmetrically with no shift",
+        "Stop quoting entirely"
+      ],
+      "answerIndex": 1,
+      "explanation": "Skewing quotes down makes the bid relatively more attractive, inviting sellers to reduce the long inventory; simply widening keeps inviting more inventory."
+    },
+    {
+      "id": "q6",
+      "type": "ms",
+      "prompt": "Which events would widen the spread?",
+      "options": [
+        "Volatility doubles ahead of earnings",
+        "A large informed trader is suspected in the name",
+        "Depth thins as market makers pull quotes",
+        "Trading volume doubles with no risk change and rebates increase"
+      ],
+      "answerIndices": [
+        0,
+        1,
+        2
+      ],
+      "explanation": "Volatility raises inventory cost, informed flow raises adverse-selection cost, thin depth raises the price of immediacy - all widen spreads. Calm flow with higher rebates lets makers quote *tighter*."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "Three components of the spread",
+      "back": "Order processing cost, inventory risk cost, adverse selection cost."
+    },
+    {
+      "type": "formula",
+      "front": "Round-trip spread cost",
+      "back": "Ask $-$ bid per share; on 99.98/100.02 that is \\$0.04 (4bp of a \\$100 mid)."
+    },
+    {
+      "type": "definition",
+      "front": "Temporary vs permanent impact",
+      "back": "Temporary impact is a liquidity wedge that decays after the order; permanent impact re-centres the mid because the order carried information."
+    },
+    {
+      "type": "concept",
+      "front": "Why do market makers skew quotes?",
+      "back": "To steer incoming order flow toward the side that offsets their accumulated inventory, detoxing the position while repricing it."
+    }
+  ],
+  "references": [
+    {
+      "label": "Kyle (1985) - Continuous Auctions and Insider Trading",
+      "url": "https://www.jstor.org/stable/1804811"
+    },
+    {
+      "label": "Avellaneda & Stoikov (2008) - High-frequency trading in a limit order book",
+      "url": "https://www.math.nyu.edu/faculty/avellaned/Avellaneda-Stoikov.pdf"
+    }
+  ],
+  "skills": [
+    "microstructure"
+  ]
+}

@@ -1,0 +1,174 @@
+{
+  "slug": "backtesting-framework",
+  "order": 6,
+  "title": "Bias-Proof Backtesting Framework",
+  "language": "python",
+  "difficulty": "advanced",
+  "prereqLessons": [
+    "bt-lookahead-costs",
+    "bt-data-biases",
+    "bt-strategy-evaluation",
+    "bt-overfitting-validation",
+    "mic-spreads-impact",
+    "py-iterators-generators-decorators",
+    "stat-bootstrap-permutation",
+    "qm-validation"
+  ],
+  "context": "Backtesting is where quant careers are made and quietly destroyed: a framework with a look-ahead bug turns noise into a beautiful equity curve, and the loss appears only with live money. Most in-house frameworks are built by juniors, audited by nobody, and trusted by everybody — which is why bias prevention is designed in, not tested in.\n\nThis project asks you to build a small event-driven backtester whose defining feature is *honesty*: signals execute at a defensible price with real costs, the walk-forward harness resists overfitting, and a built-in self-test proves that a deliberately cheating strategy is caught. The framework is deliberately minimal — one instrument, daily bars — so the hard parts (sequencing, accounting, bias guards) are visible instead of buried under data plumbing.",
+  "problem": "Build an event-driven backtesting framework for daily-bar strategies on a single instrument:\n\n- **Data layer**: loads OHLCV CSV, verifies strictly chronological unique dates, and exposes to strategies only a *view capped at the current bar* — reaching beyond it must be impossible by construction (and provable).\n- **Strategy interface**: `on_bar(bar, position) -> target_weight`; the engine converts target weights to orders on the *next* bar's open (or same-bar close — pick one, document it, and state the bias implication).\n- **Execution**: configurable commission (bps with a minimum fee) and slippage (half-spread plus a square-root market-impact term); fills update cash and position; equity marked at close.\n- **Accounting**: cash conservation must hold exactly; the engine asserts it every bar.\n- **Walk-forward**: split history into consecutive train/validation windows; a parameter grid is optimised on train, evaluated untouched on validation; aggregated out-of-sample results reported next to in-sample ones.\n- **Look-ahead self-test**: a shipping test containing a 'cheating' strategy (sneaks future data through any hole it can find) that must raise, be blocked, or produce a flagged difference — the test documents exactly what the guard catches.\n- **Report**: total return, CAGR, annualised vol, Sharpe, max drawdown, turnover and total cost drag; equity and drawdown CSVs; all deterministic.",
+  "requirements": [
+    "Deterministic, reproducible runs: same input produces byte-identical reports; any random element takes a seed from config.",
+    "Data guard: the strategy-visible data view implements an index cap so that any access past the current bar raises `LookaheadError`; the self-test strategy attempts at least two evasion routes (e.g. closure capture, length probing) and is caught.",
+    "Execution semantics explicitly chosen and documented: signal at close t, fill at open t+1 (or same-bar close with a stated bias warning); costs applied on every fill with a worked example in the docs.",
+    "Cost model: commission in bps with a minimum fee, plus slippage = half-spread + k * sqrt(order_size / ADV); parameters from config; a zero-cost mode must exactly reproduce a frictionless baseline.",
+    "Accounting invariants asserted every bar: shorting rules honoured, cash + position * price == equity, no negative holdings unless shorting is enabled.",
+    "Walk-forward runner: configurable window count/length; selection metric from config; aggregated out-of-sample equity and a per-window table in the report.",
+    "Performance report metrics computed from the equity curve: CAGR, vol, Sharpe, max DD, turnover, cost drag — each with a unit test on a synthetic curve."
+  ],
+  "milestones": [
+    {
+      "title": "Data layer and capped view",
+      "detail": "Chronological validation, capped data view raising on future access, guard unit tests.",
+      "estHours": 6
+    },
+    {
+      "title": "Engine loop and accounting",
+      "detail": "Signal -> order -> fill pipeline, cash/position/equity updates, invariant assertions, frictionless baseline test.",
+      "estHours": 9
+    },
+    {
+      "title": "Cost model",
+      "detail": "Commission + slippage implementation, worked cost example in docs, zero-cost equivalence test.",
+      "estHours": 5
+    },
+    {
+      "title": "Walk-forward harness",
+      "detail": "Window splitting, grid evaluation, out-of-sample aggregation, per-window report table.",
+      "estHours": 6
+    },
+    {
+      "title": "Look-ahead self-test",
+      "detail": "Cheating strategies (closure capture, off-by-one probing) proven to be caught; documentation of guard guarantees and known blind spots.",
+      "estHours": 5
+    },
+    {
+      "title": "Performance report and docs",
+      "detail": "CAGR/vol/Sharpe/DD/turnover/costs with tests, golden report, README with a bias checklist.",
+      "estHours": 5
+    }
+  ],
+  "designGuidance": [
+    {
+      "type": "h2",
+      "text": "Sequencing is the whole game"
+    },
+    {
+      "type": "p",
+      "md": "The one-bar delay is the cheapest honest design: a strategy sees the close of bar $t$, expresses a target weight, and the engine fills at the open of bar $t+1$. Filling a close-$t$ signal at the close of bar $t$ assumes you traded at the exact print you saw — a bias that inflates momentum strategies. If you must fill same-bar, you owe the reader an explicit warning and a slippage model that plausibly covers it."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "for i, bar in enumerate(bars):\n    view = DataWindow(bars, i)              # capped: view[i+1:] raises\n    signal = strategy.on_bar(view.current(), engine.position)\n    if i + 1 < len(bars):                   # engine-side lookahead is fine;\n        engine.execute(signal.target_weight, fill_price=bars[i + 1].open)\n    engine.mark_to_market(bar.close)\n    assert engine.equity == engine.cash + engine.position * bar.close",
+      "caption": "The engine may see the future internally; the strategy may not"
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "The quiet look-aheads",
+      "md": "Classic leaks: a rolling mean that includes the current bar and is then acted on as if known before the close; `pct_change` vs `shift` confusion; normalising by a statistic computed over the full sample (a *future* quantity); tuning parameters against full-sample optimisers. Each deserves a line in your bias checklist."
+    },
+    {
+      "type": "h2",
+      "text": "What the self-test must catch"
+    },
+    {
+      "type": "list",
+      "ordered": false,
+      "items": [
+        "**Index probing**: `data[i + 1]` and requests for 'the last bar' when the true length would reveal the future — the view must not leak true length or future rows.",
+        "**Closure capture**: a strategy that stashes a full-length reference at construction — the guard must live in the view, not in the strategy's good manners.",
+        "**Ordering tricks**: reaching 'the bar after the last' via negative indices or iterators.",
+        "Document what the guard does *not* catch (e.g. survivorship issues, look-ahead inside indicator internals the view wraps) — honesty includes the limits."
+      ]
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Cost component",
+        "Formula",
+        "Default"
+      ],
+      "rows": [
+        [
+          "commission",
+          "max(notional_bps, min_fee)",
+          "1 bp, \\$1 min"
+        ],
+        [
+          "half-spread",
+          "spread/2 on each side",
+          "2 bp"
+        ],
+        [
+          "impact",
+          "k * sqrt(qty / ADV)",
+          "k = 0.5, ADV from data"
+        ]
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Walk-forward beats a single split",
+      "md": "A single train/test split can get lucky. Rolling walk-forward windows measure *stability* of the edge across regimes, and the gap between in-sample and out-of-sample Sharpe is your overfitting telemetry: report both, always."
+    }
+  ],
+  "starterFiles": [
+    {
+      "path": "backtest/strategy.py",
+      "content": "\"\"\"Strategy interface for the backtesting framework.\n\nContract: a strategy sees only data delivered to on_bar. Anything else is a\nlook-ahead bug by definition — the engine's capped data view enforces it.\n\"\"\"\n\nfrom __future__ import annotations\n\nfrom abc import ABC, abstractmethod\nfrom dataclasses import dataclass\n\n\n@dataclass(frozen=True)\nclass Bar:\n    date: str\n    open: float\n    high: float\n    low: float\n    close: float\n    volume: int\n\n\n@dataclass(frozen=True)\nclass Signal:\n    \"\"\"Desired portfolio weight AFTER the current bar (executed next bar).\"\"\"\n\n    date: str\n    target_weight: float    # clipped by the engine to the configured range\n\n\nclass Strategy(ABC):\n    \"\"\"Subclass this and implement on_bar.\"\"\"\n\n    @abstractmethod\n    def on_bar(self, bar: Bar, position_weight: float) -> Signal:\n        \"\"\"Called once per bar, after the close, with the current weight.\"\"\"\n\n    @property\n    def name(self) -> str:\n        return self.__class__.__name__\n\n\nclass BuyAndHold(Strategy):\n    \"\"\"Reference strategy: enter long on the first bar, then hold.\"\"\"\n\n    def __init__(self, weight: float = 1.0) -> None:\n        self._weight = weight\n\n    def on_bar(self, bar: Bar, position_weight: float) -> Signal:\n        return Signal(bar.date, self._weight)\n"
+    },
+    {
+      "path": "tests/test_strategy_contract.py",
+      "content": "\"\"\"Contract tests for the Strategy interface (starter).\"\"\"\n\nimport os\nimport sys\n\nROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))\nsys.path.insert(0, ROOT)\n\nfrom backtest.strategy import Bar, BuyAndHold, Signal, Strategy  # noqa: E402\n\n\ndef test_buy_and_hold_targets_full_weight():\n    bar = Bar(\"2024-01-02\", 10.0, 10.5, 9.9, 10.2, 1000)\n    sig = BuyAndHold().on_bar(bar, 0.0)\n    assert isinstance(sig, Signal)\n    assert sig.target_weight == 1.0\n\n\ndef test_strategy_is_abstract():\n    try:\n        Strategy()  # abstract: instantiation must fail\n    except TypeError:\n        return\n    raise AssertionError(\"Strategy must be abstract (on_bar unimplemented)\")\n\n\ndef main() -> int:\n    failed = 0\n    for test in (test_buy_and_hold_targets_full_weight, test_strategy_is_abstract):\n        try:\n            test()\n            print(f\"PASS {test.__name__}\")\n        except AssertionError as exc:\n            failed += 1\n            print(f\"FAIL {test.__name__}: {exc}\")\n    return 1 if failed else 0\n\n\nif __name__ == \"__main__\":\n    sys.exit(main())\n"
+    }
+  ],
+  "evaluationCriteria": [
+    {
+      "criterion": "Look-ahead guard design and demonstrable self-test catching planted cheats",
+      "weight": 25
+    },
+    {
+      "criterion": "Engine correctness: sequencing, fill semantics, accounting invariants asserted",
+      "weight": 25
+    },
+    {
+      "criterion": "Cost model realism and worked examples; zero-cost equivalence",
+      "weight": 10
+    },
+    {
+      "criterion": "Walk-forward methodology and honest in-sample/out-of-sample reporting",
+      "weight": 15
+    },
+    {
+      "criterion": "Performance metrics correctness with unit tests on synthetic curves",
+      "weight": 15
+    },
+    {
+      "criterion": "Documentation: bias checklist, semantics decisions, reproducibility",
+      "weight": 10
+    }
+  ],
+  "documentationRequirements": [
+    "README.md: architecture, execution-semantics decision and its bias implication, run instructions for a demo strategy.",
+    "BIAS-CHECKLIST.md: every look-ahead vector the framework defends against, how the guard works, and known blind spots.",
+    "A worked cost example: one fill traced end-to-end from order to cash impact with real numbers.",
+    "Reproducibility note: seeds, determinism guarantees, golden-file testing."
+  ],
+  "extensionChallenges": [
+    "Add multi-asset support with per-asset views and cross-sectional signal normalisation (rank-based weights).",
+    "Implement a vectorised backtester over the same config and reconcile results against the event-driven engine bar by bar — disagreements are bugs in one of them.",
+    "Add a simple regime filter (volatility targeting) and measure out-of-sample Sharpe stability across walk-forward windows."
+  ]
+}

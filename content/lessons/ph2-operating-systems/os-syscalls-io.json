@@ -1,0 +1,223 @@
+{
+  "id": "os-syscalls-io",
+  "moduleId": "ph2-operating-systems",
+  "title": "System Calls, Interrupts and File I/O",
+  "estMinutes": 25,
+  "difficulty": "core",
+  "prereqs": ["os-synchronisation"],
+  "objectives": [
+    "Describe the user-to-kernel trap a system call performs and estimate its per-call overhead",
+    "Trace a read()/write() through the VFS and page cache, and explain what fsync() actually guarantees",
+    "Compute syscall counts and aggregate overhead for a given file size and buffer size",
+    "Explain why interrupts, batching, mmap and kernel bypass matter for tail latency in trading systems"
+  ],
+  "motivation": "A feed handler burns an entire core and parses nothing - because it makes one million read() calls per second. The gap between your code and the kernel, the page cache, and the NIC's interrupt line explains overheads that profiling inside your code can never see. This lesson prices that boundary.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "System calls: crossing the privilege boundary"
+    },
+    {
+      "type": "p",
+      "md": "Your code runs in unprivileged **user mode**; the kernel owns the CPU's privileged mode. A **system call** is the one legal door between them: the program puts a syscall number and arguments in registers and executes a trap instruction (syscall on x86-64); the CPU switches to kernel mode, the kernel validates and performs the work, then returns. Entry plus exit costs a few hundred nanoseconds - cheap once, expensive a million times a second."
+    },
+    {
+      "type": "p",
+      "md": "read(fd, buf, n) walks a path: the fd indexes the process's file table, the VFS dispatches to the filesystem, and the data - if it is in the **page cache** - is memcpy'd from kernel pages into your buffer. No disk touch unless the page is missing. write() typically lands in the page cache and returns immediately; the kernel flushes dirty pages later, which is why durability requires fsync()."
+    },
+    {
+      "type": "interactive",
+      "component": "MemoryLayout",
+      "params": {
+        "title": "The read() path, end to end",
+        "regions": [
+          { "name": "your user buffer", "address": "heap of your process", "size": "256 KiB here", "note": "read() copies bytes into it" },
+          { "name": "kernel page cache", "address": "kernel-owned, file-backed", "size": "4 KiB pages", "note": "the source of every cached read" },
+          { "name": "NVMe / disk", "address": "device", "size": "-", "note": "hit only when the page was never cached" }
+        ]
+      },
+      "caption": "read() = page cache to user buffer (one copy). mmap instead puts the cache pages directly in your address space: zero copies, faults on first touch."
+    },
+    {
+      "type": "code",
+      "lang": "c",
+      "code": "#include <fcntl.h>\n#include <stdio.h>\n#include <unistd.h>\n\nint main(void) {\n    int fd = open(\"ticks.csv\", O_RDONLY);\n    if (fd < 0) { perror(\"open\"); return 1; }\n\n    char buf[256 * 1024];                // 256 KiB user buffer\n    ssize_t n;\n    long long total = 0;\n    while ((n = read(fd, buf, sizeof buf)) > 0)\n        total += n;                      // parsing would happen here\n    if (n < 0) perror(\"read\");\n\n    close(fd);\n    printf(\"read %lld bytes\\n\", total);\n    return 0;\n}",
+      "caption": "One buffer, few syscalls: read() fills 256 KiB per call straight from the page cache."
+    },
+    {
+      "type": "h2",
+      "text": "Interrupts: the kernel reacting without being asked"
+    },
+    {
+      "type": "p",
+      "md": "The kernel also reacts to **hardware interrupts**: the timer (which drives preemption), the NIC announcing packets, the disk completing I/O. An interrupt handler runs asynchronously to your thread, stealing cycles and evicting cache lines. A busy 10G NIC can interrupt hundreds of thousands of times per second before moderation; that is why desks steer IRQs away from pinned cores and sometimes busy-poll the NIC instead of waiting to be told."
+    },
+    {
+      "type": "list",
+      "ordered": false,
+      "items": [
+        "Timer interrupts - the heartbeat that ends time slices and drives preemption.",
+        "NIC interrupts - 'packets arrived'; moderated/coalesced to reduce the rate.",
+        "Block-device completion interrupts - 'your I/O finished'.",
+        "Inter-processor interrupts - scheduler kicks and TLB shootdowns (another reason big remaps hurt)."
+      ]
+    },
+    {
+      "type": "h2",
+      "text": "File I/O: batching against the boundary"
+    },
+    {
+      "type": "p",
+      "md": "Syscall overhead is per call, not per byte, so **batching** is the oldest optimisation in the book: fewer, larger read() calls. The userspace stdio layer does the same thing above the kernel. The arithmetic is unforgiving and worth doing by hand:"
+    },
+    {
+      "type": "steps",
+      "title": "Worked example: buffer size vs syscall count",
+      "items": [
+        "File size: 12 MiB = 12,288 KiB.",
+        "4 KiB buffer: $12{,}288 / 4 = 3{,}072$ read() calls.",
+        "256 KiB buffer: $12{,}288 / 256 = 48$ calls - 64x fewer.",
+        "At ~500 ns overhead per call: $3{,}072 \\times 500\\,\\text{ns} = 1.54$ ms versus $48 \\times 500\\,\\text{ns} = 24$ microseconds."
+      ]
+    },
+    {
+      "type": "table",
+      "headers": ["Mechanism", "Copies", "Syscalls per 4 KiB block", "Best for"],
+      "rows": [
+        ["read() loop", "1 (page cache to user)", "1", "simple sequential reads into your own buffers"],
+        ["mmap", "0", "0 (faults instead)", "random access, sharing, zero-copy hot paths"],
+        ["read() + O_DIRECT", "1", "1", "huge sequential dumps that would thrash the page cache"]
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "The arithmetic of bypass",
+      "md": "At 1,000,000 events per second, one read() per event at ~1 microsecond of syscall overhead burns about 1 second of CPU per second - an entire core - before your strategy sees a byte. That is the reason io_uring (batched submission), shared-memory rings and NIC kernel-bypass exist: amortise or eliminate the trap, because at market-data rates the door itself is the cost."
+    },
+    {
+      "type": "p",
+      "md": "Two more hot-path facts. First, fsync() latency spans orders of magnitude by device - tens of microseconds on NVMe, tens of milliseconds on spinning disk - so 'write then fsync per order' is a design decision with a price tag. Second, timestamps belong at the edge: every syscall boundary and queue adds delay, so gateways timestamp on NIC receipt, not after the read loop."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "A replay tool reads an 8 GiB capture. (a) How many read() calls with a 1 MiB buffer? (b) With ~700 ns overhead per call, what is the total syscall overhead? (c) Recompute both for a careless 64 KiB buffer, and state the slowdown factor of (c) versus (a).",
+    "hints": [
+      "8 GiB = 8,192 MiB = 8,388,608 KiB.",
+      "Calls x 700 ns, converted to ms."
+    ],
+    "solution": "(a) $8{,}192\\ \\text{MiB} / 1\\ \\text{MiB} = 8{,}192$ calls. (b) $8{,}192 \\times 700\\,\\text{ns} = 5.73$ ms. (c) $8{,}388{,}608\\ \\text{KiB} / 64 = 131{,}072$ calls costing $131{,}072 \\times 700\\,\\text{ns} \\approx 91.8$ ms - exactly 16x more overhead than the 1 MiB buffer ($131{,}072 / 8{,}192 = 16$)."
+  },
+  "independentExercise": {
+    "prompt": "A feed handler must sustain 1,500,000 events per second and currently calls read() once per event (~800 ns overhead each, all page-cached). (a) What fraction of one core is spent on syscall entry/exit alone? (b) Does one core survive? (c) Give two architectural fixes and what each saves.",
+    "hints": [
+      "Calls per second x per-call overhead = seconds of CPU per second.",
+      "Compare against 1.0 second per second per core."
+    ],
+    "solution": "(a) $1{,}500{,}000 \\times 800\\,\\text{ns} = 1.2$ s per second = 120% of one core. (b) No - a single core cannot even pay the door charge, let alone parse. (c) mmap the shared ring buffer (0 syscalls in steady state, faults paid once at warmup) or batch events so one syscall serves many messages (N times fewer traps). NIC kernel bypass is the further step."
+  },
+  "commonMistakes": [
+    "Treating write() as durable - bytes sit in the page cache until writeback or fsync().",
+    "Reading in tiny buffers: 1,000 calls of 4 KiB instead of 4 calls of 1 MiB is 250x the syscall overhead for the same bytes.",
+    "Confusing the page cache with your application's buffers - one is kernel-owned and shared; read() and mmap both serve from it.",
+    "Assuming interrupts are rare on idle-looking cores: an unmoderated busy NIC can fire hundreds of thousands per second onto whatever core it lands on."
+  ],
+  "realWorldApplication": "Storage engines, web servers and container runtimes all live on this boundary; page-cache behaviour explains most 'the disk is slow' incidents that are really cache misses.",
+  "quantFinanceApplication": "Feed handlers, gateways and replay tools make exactly the batch-or-map decision computed here; desk infrastructure teams budget syscall counts per event the way they budget exchange fees.",
+  "summary": [
+    "A system call is a synchronous trap across the privilege boundary costing a few hundred ns - trivial once, dominant at millions per second.",
+    "read() serves from the page cache when possible (memcpy, no I/O); write() dirties cache and returns before disk; fsync() buys durability at device-dependent cost.",
+    "Batching multiplies: 12 MiB through 4 KiB buffers is 3,072 calls (~1.5 ms overhead) versus 48 calls (~24 microseconds) through 256 KiB buffers.",
+    "Hardware interrupts (timer, NIC) steal cycles asynchronously; steer them off pinned hot cores.",
+    "At market-data rates the syscall boundary itself is the bottleneck - hence mmap rings, io_uring batching and kernel bypass."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "A read() call where all requested pages are already in the page cache does what?",
+      "options": [
+        "Issues I/O to the disk anyway, for safety",
+        "Copies data from kernel page-cache pages into the user buffer",
+        "mmaps the file automatically",
+        "Sleeps until the disk finishes"
+      ],
+      "answerIndex": 1,
+      "explanation": "Page-cache hits need no I/O: the kernel memcpy's the bytes into your buffer and returns. The disk only engages on a cache miss."
+    },
+    {
+      "id": "q2",
+      "type": "numeric",
+      "prompt": "A 48 MiB file is read entirely using 8 KiB read() calls. How many syscalls is that?",
+      "answer": 6144,
+      "unit": "syscalls",
+      "explanation": "48 MiB = 49,152 KiB; 49,152 / 8 = 6,144 read() calls."
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "A hot loop makes 2,000,000 syscalls per second, each costing ~300 ns of entry/exit overhead. What percentage of one core is burned on syscall overhead alone?",
+      "answer": 60,
+      "unit": "%",
+      "explanation": "$2{,}000{,}000 \\times 300\\,\\text{ns} = 0.6$ s per second - 60% of a core spent crossing the privilege boundary before any real work."
+    },
+    {
+      "id": "q4",
+      "type": "ms",
+      "prompt": "Which changes genuinely cut syscall overhead in a hot path?",
+      "options": [
+        "Batch events so one read() serves many messages",
+        "mmap the data instead of copying it through read()",
+        "Insert an fsync() after every event for safety",
+        "Print a debug line per event to trace latency"
+      ],
+      "answerIndices": [0, 1],
+      "explanation": "Batching amortises the trap over more bytes; mmap removes the copy path entirely. fsync adds device-latency stalls, and per-event logging is a syscall storm of its own."
+    },
+    {
+      "id": "q5",
+      "type": "short",
+      "prompt": "Distinguish a syscall trap from a hardware interrupt in one or two sentences.",
+      "modelAnswer": "A syscall trap is synchronous, software-initiated entry into the kernel requested by the running program itself; a hardware interrupt is an asynchronous signal from a device (or the timer) that can arrive between any two instructions.",
+      "keywords": ["synchronous", "asynchronous", "device", "trap"],
+      "explanation": "Both cross into kernel mode, but the program controls when a trap happens; interrupts can strike at any time, which is why they cause jitter on hot cores."
+    },
+    {
+      "id": "q6",
+      "type": "code-output",
+      "prompt": "What does this Python script print?",
+      "language": "python",
+      "code": "size = 12 * 1024 * 1024\nfor buf in (4096, 256 * 1024):\n    print(size // buf)",
+      "answer": "3072\n48",
+      "explanation": "12,582,912 bytes / 4,096 = 3,072 calls; / 262,144 = 48 calls - the 64x batching factor from the lesson's worked example."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "definition",
+      "front": "What is a system call?",
+      "back": "A synchronous trap from user mode into kernel mode: syscall number + arguments in registers, the kernel validates and executes, then returns - a few hundred ns of entry/exit overhead."
+    },
+    {
+      "type": "concept",
+      "front": "What does read() touch first?",
+      "back": "The kernel page cache: hit = memcpy to your buffer, no I/O; miss = disk read. write() dirties cache pages and returns; fsync() is what forces durability."
+    },
+    {
+      "type": "formula",
+      "front": "read() call count",
+      "back": "$\\lceil \\text{bytes} / \\text{buffer size} \\rceil$ calls; 12 MiB via 4 KiB buffers = 3,072 calls, via 256 KiB buffers = 48."
+    },
+    {
+      "type": "concept",
+      "front": "Why kernel bypass / io_uring?",
+      "back": "At ~1M events/s, ~1 microsecond per syscall = one full core on entry/exit alone; batching or bypassing the trap recovers it."
+    }
+  ],
+  "references": [
+    { "label": "man7 - read(2)", "url": "https://man7.org/linux/man-pages/man2/read.2.html" },
+    { "label": "The Linux Programming Interface (Kerrisk) - overview", "url": "https://man7.org/tlpi/" },
+    { "label": "man7 - io_uring_enter(2)", "url": "https://man7.org/linux/man-pages/man2/io_uring_enter.2.html" }
+  ],
+  "skills": ["operating-systems"]
+}

@@ -1,0 +1,232 @@
+{
+  "id": "cf-integers-twos-complement",
+  "moduleId": "ph2-computer-fundamentals",
+  "title": "Signed Integers and Two's Complement",
+  "estMinutes": 25,
+  "difficulty": "foundation",
+  "prereqs": ["cf-binary-hex"],
+  "objectives": [
+    "Explain why sign-magnitude encoding is awkward and how two's complement encodes negative integers",
+    "Negate a number in two's complement by inverting all bits and adding one, and verify by weight sum",
+    "State the ranges of 8-, 16-, 32- and 64-bit signed integers and explain the range asymmetry",
+    "Predict wraparound for unsigned arithmetic and explain why signed overflow is undefined behaviour in C and C++"
+  ],
+  "motivation": "Your ledger must print a loss as -75, not as 181. CPUs only add bit patterns, so the meaning of 'negative' is a convention - and the convention every modern CPU uses is two's complement. It is why subtraction costs the same as addition, why widening a negative number fills with 1-bits, and why a naive unsigned cast turns your PnL into a huge positive number.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Encoding sign: the naive idea and its problems"
+    },
+    {
+      "type": "p",
+      "md": "The obvious encoding, **sign-magnitude**, spends the top bit as a sign flag and keeps the rest as the magnitude: in 8 bits, 00000101 is +5 and 10000101 is -5. It looks natural but has real costs: two encodings of zero (00000000 and 10000000) that hardware must treat as equal, and separate circuits for addition and subtraction. Real hardware wants one adder and one zero."
+    },
+    {
+      "type": "p",
+      "md": "**Two's complement** solves it by giving the top bit a negative weight. In an n-bit pattern, the leading bit contributes $-2^{n-1}$ and the remaining bits contribute positive powers of two, exactly as in the last lesson:"
+    },
+    {
+      "type": "math",
+      "tex": "-b_{n-1}2^{n-1} + \\sum_{i=0}^{n-2} b_i 2^i",
+      "caption": "Value of an n-bit two's complement pattern."
+    },
+    {
+      "type": "p",
+      "md": "Now 11001100 in 8 bits is $-128 + 64 + 8 + 4 = -52$, and 00000000 is the only zero. The clever part: adding patterns and discarding the carry out of the top bit gives correct results automatically, so subtraction is just 'add the negation' - one adder serves both."
+    },
+    {
+      "type": "table",
+      "headers": ["Width", "Unsigned range", "Signed (two's complement) range"],
+      "rows": [
+        ["8 bits", "0 to 255", "-128 to 127"],
+        ["16 bits", "0 to 65,535", "-32,768 to 32,767"],
+        ["32 bits", "0 to 4,294,967,295", "-2,147,483,648 to 2,147,483,647"],
+        ["64 bits", "0 to 2^64 - 1", "-2^63 to 2^63 - 1"]
+      ]
+    },
+    {
+      "type": "p",
+      "md": "Note the asymmetry: one more negative than positive value, because zero consumes a slot on the positive side. Negating -128 has no 8-bit answer - a favourite interview question and a genuine overflow case."
+    },
+    {
+      "type": "interactive",
+      "component": "NumberLine",
+      "params": {
+        "min": -128,
+        "max": 127,
+        "markers": [-128, -52, 0, 52, 127]
+      },
+      "caption": "The 8-bit signed line: 256 values, one extra negative, and 127 + 1 wraps to -128."
+    },
+    {
+      "type": "steps",
+      "title": "Worked example: encode -52 in 8 bits",
+      "items": [
+        "Write +52 in binary: 32 + 16 + 4 = 00110100.",
+        "Invert every bit: 11001011.",
+        "Add 1: 11001011 + 1 = **11001100**.",
+        "Verify with weights: -128 + 64 + 8 + 4 = -52. Correct.",
+        "Shortcut: compute 256 - 52 = 204 = 11001100 - the same answer, and a good hand-check."
+      ]
+    },
+    {
+      "type": "steps",
+      "title": "Negation is its own inverse",
+      "items": [
+        "Take -52 = 11001100 and invert: 00110011.",
+        "Add 1: 00110011 + 1 = 00110100 = 52.",
+        "Invert-then-add-1 maps x to -x and back again; applying it twice returns the original pattern."
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "PnL arithmetic is pattern arithmetic",
+      "md": "A toy ledger keeps an 8-bit PnL. A loss of 75 is stored as 10110101 (256 - 75 = 181 is its unsigned reading). A later win of 200 adds 11001000; summing and dropping the carry gives 01111101, which decodes to 125 - exactly -75 + 200. The hardware never 'knew' about signs; the encoding made ordinary addition correct."
+    },
+    {
+      "type": "h2",
+      "text": "Overflow: wraparound and undefined behaviour"
+    },
+    {
+      "type": "p",
+      "md": "Unsigned arithmetic wraps modulo $2^n$: an 8-bit counter holding 200 that adds 100 lands on 300 mod 256 = 44. Signed overflow is stranger: mathematically 127 + 1 'should' wrap to -128 on the 8-bit line, and in the abstract machine it does - but the C and C++ standards declare signed overflow **undefined behaviour**, letting optimisers assume it never happens. A check like 'if the new total is less than the old one, an overflow occurred' can be optimised away on signed types. Trading consequence: never let a signed total silently overflow - use wider types for money totals and check before adding."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <cstdint>\n#include <cstdio>\n\nint main() {\n    int8_t  pnl   = -75;                 // signed 8-bit: PnL can be negative\n    uint8_t ticks = 200;                 // unsigned 8-bit: wraps modulo 256\n    ticks = ticks + 100;                 // 300 mod 256 = 44 - silent wrap\n    std::printf(\"pnl=%d ticks=%d\\n\", pnl, ticks);\n    return 0;\n}",
+      "caption": "Prints 'pnl=-75 ticks=44' - the signed value survives; the unsigned counter wrapped."
+    },
+    {
+      "type": "h2",
+      "text": "Why quants care beyond PnL"
+    },
+    {
+      "type": "p",
+      "md": "Signed integers carry meaning everywhere: PnL, short positions, inventory deltas, basis-point sensitivities. Two more production-flavoured cases: a 32-bit counter of seconds since 1970 overflows in January 2038 (the 'Y2K38' problem - $2^{31} - 1$ seconds runs out), and market-data sequence numbers that wrap their 32-bit field need an explicit renegotiation rule; TCP solved the same wrap problem with its PAWS algorithm. Choosing widths and signedness is an interface decision, made once and lived with for years."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Encode -100 as an 8-bit two's complement pattern, verifying by weight sum, then show that applying invert-and-add-1 to your answer returns 100.",
+    "hints": [
+      "Start from +100 = 64 + 32 + 4.",
+      "After inverting, do not forget the +1."
+    ],
+    "solution": "+100 = 01100100. Invert: 10011011. Add 1: 10011100. Weights: -128 + 16 + 8 + 4 = -100. Applying the operation again: invert 10011100 -> 01100011, add 1 -> 01100100 = 100, back where we started."
+  },
+  "independentExercise": {
+    "prompt": "A 16-bit PnL field contains 0xFF3C. (1) Interpret it as an unsigned value. (2) Interpret it as two's complement signed. (3) State the PnL in dollars if the field is in cents.",
+    "hints": [
+      "0xFF3C sits near the top of the 16-bit range, so the signed value is negative.",
+      "Signed value = unsigned value - 65,536 when the top bit is set."
+    ],
+    "solution": "(1) 0xFF3C = 15 x 4096 + 15 x 256 + 3 x 16 + 12 = 65,340. (2) The top bit is set, so signed: 65,340 - 65,536 = -196. Check by negation: invert 0xFF3C -> 0x00C3, add 1 -> 0x00C4 = 196. (3) PnL = -196 cents = -\\$1.96."
+  },
+  "commonMistakes": [
+    "Inverting bits and forgetting the +1 - off by one, in the worst way.",
+    "Assuming every negative value has a positive counterpart: negating -128 overflows in 8 bits.",
+    "Reading signed bytes as unsigned (a -75 ledger shows 181) when gluing systems together.",
+    "Using narrow signed types for money totals, where overflow is undefined behaviour in C++."
+  ],
+  "realWorldApplication": "Two's complement is universal in modern CPUs (x86-64, ARM), file formats and wire protocols; converting between signed and unsigned views is a daily task in parsers, protocol gateways and database drivers.",
+  "quantFinanceApplication": "PnL, positions and basis-point sensitivities are signed quantities stored in this encoding; a signedness mistake in a report turns losses into enormous wins - a real, recurring production incident class.",
+  "summary": [
+    "Sign-magnitude wastes a bit on a flag and needs two zeros; two's complement gives the top bit weight -2^(n-1), yielding one zero and free subtraction.",
+    "Negation is invert-all-bits then add 1; applying it twice returns the original value.",
+    "An n-bit signed integer spans -2^(n-1) to 2^(n-1) - 1: one extra negative value, by design.",
+    "Unsigned arithmetic wraps modulo 2^n; signed overflow is undefined behaviour in C/C++ - widen or check before adding."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "numeric",
+      "prompt": "What is the 8-bit two's complement pattern for -1, expressed as an unsigned decimal byte value?",
+      "answer": 255,
+      "explanation": "-1: invert 00000001 -> 11111110, add 1 -> 11111111 = 255 unsigned. In fact 11111111 is -1 at every width."
+    },
+    {
+      "id": "q2",
+      "type": "numeric",
+      "prompt": "How many distinct values can a 16-bit signed integer represent?",
+      "answer": 65536,
+      "explanation": "2^16 = 65,536 patterns; signedness only changes how they are interpreted (-32,768 to 32,767)."
+    },
+    {
+      "id": "q3",
+      "type": "mcq",
+      "prompt": "In two's complement, the most significant bit of an n-bit value represents:",
+      "options": [
+        "Just a sign flag with no place value",
+        "A place value of -2^(n-1)",
+        "A parity bit",
+        "A place value of +2^(n-1)"
+      ],
+      "answerIndex": 1,
+      "explanation": "That negative weight is exactly why one adder handles both signs and there is a single representation of zero."
+    },
+    {
+      "id": "q4",
+      "type": "code-output",
+      "prompt": "What does this C++ program print?",
+      "language": "cpp",
+      "code": "#include <cstdint>\n#include <cstdio>\n\nint main() {\n    int8_t x = -52;\n    int8_t y = -x;\n    std::printf(\"%d\\n\", (int)y);\n    uint8_t u = 250;\n    u = u + 10;\n    std::printf(\"%d\\n\", (int)u);\n    return 0;\n}",
+      "answer": "52\n4",
+      "explanation": "-(-52) = 52, representable in 8 bits so no overflow. 250 + 10 = 260; unsigned 8-bit wraps modulo 256, so u holds 4."
+    },
+    {
+      "id": "q5",
+      "type": "ms",
+      "prompt": "Which statements are true of two's complement?",
+      "options": [
+        "There is exactly one representation of zero",
+        "Subtraction can reuse the addition circuit",
+        "Every negative value has a positive counterpart of the same width",
+        "The leading bit carries negative weight"
+      ],
+      "answerIndices": [0, 1, 3],
+      "explanation": "The range is asymmetric: -128 exists in 8 bits but +128 does not, so option 3 is false. The others follow from the negative-weight design."
+    },
+    {
+      "id": "q6",
+      "type": "short",
+      "prompt": "Why is signed overflow undefined behaviour dangerous in production trading code?",
+      "modelAnswer": "The standard lets optimisers assume overflow never happens, so overflow checks can be deleted and loops restructured; the program may compute nonsense instead of wrapping - silently wrong prices or PnL rather than a clean error.",
+      "keywords": ["undefined", "optimiser", "wrap", "check"],
+      "explanation": "Undefined behaviour removes the safety net precisely when values go out of range - the moment you most need well-defined behaviour."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "formula",
+      "front": "Negate a two's complement value",
+      "back": "Invert every bit, then add 1. Applying the operation twice returns the original value."
+    },
+    {
+      "type": "concept",
+      "front": "Signed range of n bits",
+      "back": "-2^(n-1) to 2^(n-1) - 1; one more negative than positive because zero takes a slot on the positive side."
+    },
+    {
+      "type": "definition",
+      "front": "Undefined behaviour (signed overflow)",
+      "back": "The C/C++ standard imposes no requirement; optimisers may assume it never occurs, so overflow checks can be optimised away and results are unpredictable."
+    },
+    {
+      "type": "code-output",
+      "front": "uint8_t u = 200; then u = u + 100; what is u?",
+      "back": "44 - unsigned arithmetic wraps modulo 256, leaving 300 - 256 = 44."
+    }
+  ],
+  "references": [
+    {
+      "label": "Wikipedia - Two's complement",
+      "url": "https://en.wikipedia.org/wiki/Two%27s_complement"
+    },
+    {
+      "label": "cppreference - Undefined behavior",
+      "url": "https://en.cppreference.com/w/cpp/language/ub"
+    }
+  ],
+  "skills": ["computer-fundamentals"]
+}

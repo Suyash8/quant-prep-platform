@@ -1,0 +1,247 @@
+{
+  "id": "mic-adverse-selection",
+  "moduleId": "ph7-microstructure",
+  "title": "Adverse Selection, Order Flow and Trade Classification",
+  "estMinutes": 27,
+  "difficulty": "advanced",
+  "prereqs": [
+    "mic-spreads-impact"
+  ],
+  "objectives": [
+    "Explain the adverse selection problem using the Glosten-Milgrom logic",
+    "Compute effective and realised spreads and interpret the difference",
+    "Classify trades as buyer- or seller-initiated using the quote rule and the Lee-Ready algorithm",
+    "Explain how the threat of informed trading reshapes quotes, depth and spread dynamics"
+  ],
+  "motivation": "A market maker quoting both sides must trade with whoever arrives - including the trader who knows the earnings number already. This asymmetry, adverse selection, is why spreads exist at all beyond processing costs, why quotes move after every trade, and why the industry invests in classifying order flow. Master this and half of market microstructure modelling falls into place.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "The market maker's dilemma"
+    },
+    {
+      "type": "p",
+      "md": "Glosten-Milgrom's model strips the problem to its bones. A stock is worth either \\$100 or \\$102 with equal odds. Liquidity traders buy or sell for portfolio reasons; an informed trader knows which value is true. The maker posts quotes that must break even *on average across all comers*. If you sell to everyone at the true expected value, the informed trader sells to you precisely when the value is the low one - you systematically buy above value and sell below it. The only defence is quoting a **bid below** expected value and an **ask above** it, making the uninformed flow pay for the informed flow's losses."
+    },
+    {
+      "type": "steps",
+      "title": "A toy version with numbers",
+      "items": [
+        "True value: \\$100 or \\$102, 50/50; expected value \\$101. Suppose the maker quotes bid \\$100.40 / ask \\$101.60 around it.",
+        "A sell order arrives. Probability it comes from an informed trader: say 20%; then true value is \\$100 and the maker overpays $100.40 - 100.00 = \\$0.40$.",
+        "Probability it is liquidity flow: 80%; the maker gains nothing directly but rebalances inventory at fair value.",
+        "Expected loss per unit of sell flow: $0.2 \\times 0.40 = \\$0.08$ per share - which the 60-cent-wide quotes must recover from the 80% uninformed majority.",
+        "Raise the informed share to 40% and the required compensation doubles: the spread widens even though the stock itself did not change."
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Selection is about the counterparty, not the market",
+      "md": "Adverse selection is an *information* asymmetry problem - like insurance sold to buyers who know their own health better. It explains why spreads widen before scheduled news (earnings, data releases) and why quote updates follow trades: each trade is a Bayesian signal about value, and the maker re-learns the posterior with every fill."
+    },
+    {
+      "type": "p",
+      "md": "Adverse selection is the reason market making is a skill rather than a rebate collection scheme. The core asymmetry: the counterparty who *chooses* to trade with you is more likely to know something than the one who arrives at random. Your limit order is an option you have written to the market — free for informed flow to exercise when the price is about to move away from you. Everything in modern microstructure (spread levels, queue strategies, order-flow toxicity measures) is a response to this one mechanism."
+    },
+    {
+      "type": "steps",
+      "title": "A market maker's ledger, made concrete",
+      "items": [
+        "You quote 100.00 bid / 100.04 ask (2 cent half-spread), 500 lots a side, all day. Naive accounting: each round trip earns the 4-cent spread, times volume — a money printer.",
+        "Now suppose 30% of your fills are *informed*: they hit your bid only when fair value is about to drop 20 cents. On those fills you do not earn +2 cents; you lose $20 - 2 = 18$ cents per share relative to the post-move mid.",
+        "Break-even condition: uninformed fills must subsidise informed ones. If $\\pi$ = fraction informed, $s$ = half-spread, $m$ = average adverse move: $\\pi(m - s) \\le (1-\\pi)s$. With $\\pi = 0.3$, $m = 20$ cents: $0.3 \\times 18 = 5.4$ cents of loss vs $0.7 \\times 2 = 1.4$ cents of earned spread — you are losing 4 cents a share on average. **No spread that a liquid market would tolerate fixes this**; the fix is measuring and *avoiding* toxic flow.",
+        "Hence the real tools: order-flow toxicity measures (VPIN-style), quote fading when toxicity spikes, skewing quotes on one-sided book pressure, and in the limit — withdrawing. The measured cost of adverse selection *is* the fee a market maker charges for providing liquidity; the quoted spread is that fee plus operating costs plus a margin for the risk of being wrong about the toxicity estimate."
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Why this is an interview staple",
+      "md": "\"You are making a market and a sharp client keeps lifting your offer — what do you do?\" The expected ladder: widen or fade when the flow is one-sided → check whether the info is news-driven or flow-driven → adjust inventory skew → finally, step aside. Each rung is a quantitative judgement about *why* the counterparty is trading, which is adverse selection operationalised. Trade-classification rules (Lee-Ready and successors) exist because exchanges do not label fills \"informed\" — you infer it from who crossed the spread."
+    },
+    {
+      "type": "h2",
+      "text": "Order flow and trade classification"
+    },
+    {
+      "type": "p",
+      "md": "Analysts summarise flow as buy vs sell volume imbalance, but trade prints alone do not say who initiated. **Trade classification rules** assign direction:"
+    },
+    {
+      "type": "list",
+      "items": [
+        "**Quote rule**: if the trade price is above the mid, the buyer initiated (they lifted the ask); below the mid, the seller initiated (they hit the bid).",
+        "**Tick test** (for prices *at* the mid): an uptick or zero-uptick counts as buyer-initiated; a downtick or zero-downtick as seller-initiated.",
+        "**Lee-Ready algorithm (1991)**: first apply the quote rule; if the price sits exactly at the mid, fall back on the tick test. It is the standard classifier in academic and industry work - simple, computable from quote and trade data alone, and accurate most of the time, with known weakness when quotes are stale or ticks coarse."
+      ]
+    },
+    {
+      "type": "steps",
+      "title": "Classifying four prints against mid = \\$100.00",
+      "items": [
+        "Trade at \\$100.02: above mid $\\Rightarrow$ **buyer-initiated**.",
+        "Trade at \\$99.98: below mid $\\Rightarrow$ **seller-initiated**.",
+        "Trade at \\$100.01: above mid $\\Rightarrow$ **buyer-initiated** (quote rule suffices).",
+        "Trade at \\$100.00: exactly at mid $\\Rightarrow$ quote rule is silent; **tick test** applies - if the last price change was upward, classify as buyer-initiated; downward, seller-initiated."
+      ]
+    },
+    {
+      "type": "h2",
+      "text": "Effective vs realised spreads"
+    },
+    {
+      "type": "p",
+      "md": "The **quoted spread** is what is displayed. The **effective spread** compares actual execution prices to the prevailing mid: a buy at \\$100.02 with mid \\$100.00 pays an effective half-spread of 2 cents (4-cent effective spread). The **realised spread** compares the execution price to the mid *some interval later* (e.g. 5 minutes). If the mid has moved to \\$100.03 by then, the buy at \\$100.02 realised only $-1$ cent vs the new value - the liquidity taker arguably bought cheap, and the liquidity provider lost money. The gap between effective and realised spread is the market's measurement of **adverse selection actually suffered**: a large gap means quotes were systematically wrong on the wrong side of incoming flow."
+    },
+    {
+      "type": "callout",
+      "variant": "info",
+      "title": "PIN and the informed-share dial",
+      "md": "The probability of informed trading (PIN), estimated from buy/sell imbalances via the Easley-O'Hara mixture model, quantifies how much adverse selection a name carries. Regulators and venues watch it as a toxicity meter; market makers cut depth or widen spreads when their estimated PIN rises - the mechanism by which informed traders end up hurting even the uninformed through worse liquidity."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Classification is an estimate",
+      "md": "Lee-Ready misclassifies a real fraction of trades - stale quotes, midpoint executions and crossing venues all blur the signal. Never treat buy/sell-imbalance signals from classified flow as ground truth; treat them as noisy inputs whose error bars you acknowledge, and prefer data with order-level flags when available."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Quotes: bid \\$50.10 / ask \\$50.14. Prints arrive in order: \\$50.14, \\$50.10, \\$50.12, \\$50.12. Classify each print with the quote rule, using Lee-Ready's tick fallback only where the quote rule is silent. For the tick test, note that the last *different* price before the two mid prints was \\$50.10.",
+    "hints": [
+      "Mid $= \\$20.02$ exactly - prints at the mid need the tick test.",
+      "A buy is classified when the print is above mid; a sell below mid."
+    ],
+    "solution": "Mid $= (50.10 + 50.14)/2 = \\$50.12$. A print at \\$50.14 (above mid): buyer-initiated. A print at \\$50.10 (below mid): seller-initiated. Prints 3 and 4 at \\$50.12: exactly at mid, quote rule silent - tick test: after print 2 at \\$50.10, the move to \\$50.12 is an uptick, so print 3 is buyer-initiated; print 4 is a zero-uptick (no price change after an uptick), so it also classifies as buyer-initiated under the standard zero-uptick convention."
+  },
+  "independentExercise": {
+    "prompt": "A maker's quotes: bid \\$20.00 / ask \\$20.04, mid \\$20.02. (a) A buy fills at \\$20.04; compute the effective spread. (b) Five minutes later the mid is \\$20.06. Compute the realised spread for that same buy and say what the sign means for the maker. (c) If 30% of flow is informed and each informed trade costs the maker 4 cents against true value, what per-share expected loss must uninformed flow cover?",
+    "hints": [
+      "Effective spread $= 2 \\times$ (execution price $-$ mid) for a buy.",
+      "Realised spread uses the *later* mid."
+    ],
+    "solution": "(a) Effective spread $= 2 \\times (20.06 - 20.02) = \\$0.08$ (8 cents). (b) Realised spread $= 2 \\times (20.04 - 20.06) = -\\$0.04$: negative - the maker sold (was hit on the ask) 4 cents below the value the market later agreed on, i.e. it was adversely selected on that trade. (c) $0.30 \\times 4 = 1.2$ cents per share of expected loss that quotes must recover from the 70% uninformed majority - the spread's adverse-selection component."
+  },
+  "commonMistakes": [
+    "Assuming every trade at the bid was seller-initiated without checking whether the print is stale or at the mid.",
+    "Applying the tick test when the quote rule already decides - Lee-Ready is quote rule first, tick only at the mid.",
+    "Confusing effective spread (vs current mid) with realised spread (vs future mid); only the latter exposes adverse selection.",
+    "Reading a wide spread as maker greed when it may be rational pricing of measured flow toxicity."
+  ],
+  "realWorldApplication": "Exchanges and brokers compute effective/realised spreads for best-execution reviews; regulators use trade classification to study short-sale patterns and market abuse, and market makers estimate flow toxicity intraday to reprice quotes in real time.",
+  "quantFinanceApplication": "Signal researchers build order-flow imbalance features from Lee-Ready-classified trades; market-making systems run their own toxicity estimates (PIN-style or signed-flow regressions) and feed them directly into quote-skew logic.",
+  "summary": [
+    "Adverse selection: makers must quote wide enough that uninformed flow pays for losses to informed flow (Glosten-Milgrom logic).",
+    "Trade classification: quote rule first (above mid = buy, below = sell), tick test at the mid - together the Lee-Ready algorithm.",
+    "Effective spread measures the cost vs the prevailing mid; realised spread vs a later mid reveals adverse selection actually suffered.",
+    "Higher informed-trading probability widens spreads and thins depth - toxicity reprices liquidity, hurting all traders."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "The core adverse-selection problem for a market maker is that:",
+      "options": [
+        "All traders trade for liquidity reasons",
+        "The counterparties who most want to trade are disproportionately those with better information",
+        "Inventory risk makes holding shares costly",
+        "Exchange fees vary by participant type"
+      ],
+      "answerIndex": 1,
+      "explanation": "Those with the strongest reason to trade *now* often trade because they know something - the maker cannot tell them apart from liquidity traders, so it prices the mixture."
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "Mid is \\$100.00. A trade prints at \\$100.00 exactly. Under Lee-Ready, the classifier applies:",
+      "options": [
+        "The quote rule: it is a buy",
+        "The quote rule: it is a sell",
+        "The tick test based on the previous price change",
+        "Random assignment"
+      ],
+      "answerIndex": 2,
+      "explanation": "At the mid the quote rule is silent; Lee-Ready falls back on the tick test (uptick/zero-uptick = buy, downtick/zero-downtick = sell)."
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "A buy executes at \\$20.04 against a prevailing mid of \\$20.02. Effective spread in cents?",
+      "answer": 4,
+      "tolerance": 0.01,
+      "explanation": "$2 \\times (20.04 - 20.02) = \\$0.04$ = 4 cents - the buy paid a 2-cent half-spread."
+    },
+    {
+      "id": "q4",
+      "type": "numeric",
+      "prompt": "Same buy at \\$20.04, but the mid five minutes later is \\$20.06. Realised spread in cents (2 x (exec - later mid))?",
+      "answer": -4,
+      "tolerance": 0.01,
+      "explanation": "$2 \\times (20.04 - 20.06) = -\\$0.04$: negative realised spread - the maker was adversely selected, selling below the price the market later agreed on."
+    },
+    {
+      "id": "q5",
+      "type": "short",
+      "prompt": "Why do spreads widen before scheduled news such as earnings, even with no order-flow change yet?",
+      "modelAnswer": "The probability of trading against informed counterparties rises around scheduled news, so the adverse-selection component of the spread grows; makers also cut depth because their quotes would be a free option for anyone with the number.",
+      "keywords": [
+        "informed",
+        "adverse selection"
+      ],
+      "explanation": "Quotes must cover the expected loss to informed flow; when that expectation rises - which it does mechanically around announcements - quotes widen preemptively."
+    },
+    {
+      "id": "q6",
+      "type": "ms",
+      "prompt": "Which statements about trade classification are TRUE?",
+      "options": [
+        "The quote rule classifies prints above the mid as buyer-initiated",
+        "The tick test is applied to every trade regardless of its position vs the mid",
+        "Lee-Ready combines quote rule and tick test",
+        "Classification errors can be large when quotes are stale"
+      ],
+      "answerIndices": [
+        0,
+        2,
+        3
+      ],
+      "explanation": "Quote rule handles above/below the mid, tick test only when at the mid (so (1) is false), and Lee-Ready chains the two; stale quotes are the known weakness of both."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "Adverse selection (microstructure)",
+      "back": "Liquidity providers lose systematically to better-informed counterparties; the spread's adverse-selection component makes uninformed flow pay for it."
+    },
+    {
+      "type": "concept",
+      "front": "Lee-Ready algorithm",
+      "back": "Quote rule first: above mid = buyer-initiated, below = seller-initiated; at the mid, apply the tick test (uptick/zero-uptick = buy)."
+    },
+    {
+      "type": "formula",
+      "front": "Effective vs realised spread",
+      "back": "Effective: $2|exec - mid_{now}|$; realised: $2(exec - mid_{later})$ for a buy - the gap measures adverse selection."
+    },
+    {
+      "type": "definition",
+      "front": "PIN",
+      "back": "Probability of informed trading - an Easley-O'Hara estimate of the informed share of order flow; rising PIN causes wider spreads and thinner depth."
+    }
+  ],
+  "references": [
+    {
+      "label": "Lee & Ready (1991) - Inferring trade direction",
+      "url": "https://www.jstor.org/stable/2329128"
+    },
+    {
+      "label": "Glosten & Milgrom (1985) - Bid, ask and transaction prices",
+      "url": "https://www.jstor.org/stable/1803752"
+    }
+  ],
+  "skills": [
+    "microstructure"
+  ]
+}

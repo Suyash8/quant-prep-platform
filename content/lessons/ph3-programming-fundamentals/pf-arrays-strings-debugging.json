@@ -1,0 +1,266 @@
+{
+  "id": "pf-arrays-strings-debugging",
+  "moduleId": "ph3-programming-fundamentals",
+  "title": "Arrays, Strings and Debugging",
+  "estMinutes": 25,
+  "difficulty": "foundation",
+  "prereqs": [
+    "pf-functions-scope"
+  ],
+  "objectives": [
+    "Create lists, index and slice them, and use len, sum, append and direct iteration",
+    "Index, slice and format strings, and build output with f-strings",
+    "Explain list aliasing and avoid accidental shared-reference bugs",
+    "Apply a systematic debugging method and read Python error types (IndexError, TypeError, NameError, ValueError)"
+  ],
+  "motivation": "A day's trading is not one number but a list: hundreds of fills, a price series, a book of symbols. Programs store such collections in arrays (Python calls them lists) and their text labels in strings - and most beginner bugs live exactly here: an index one past the end, a string added to a number, two names pointing at one list. This lesson covers the collections, then a disciplined method for finding those bugs fast.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Lists: many values under one name"
+    },
+    {
+      "type": "p",
+      "md": "A **list** stores an ordered collection of values under one name. `fills = [120, -80, 45, -10]` holds four trades. Items are accessed by **index**, counting from **zero**: `fills[0]` is 120, and negative indexes count from the end, so `fills[-1]` is -10. Built-ins do the daily work: `len(fills)` counts items, `sum(fills)` totals numbers, and `fills.append(x)` adds an item to the end, changing the list in place."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "fills = [120, -80, 45, -10]\nprint(fills[0], fills[-1], len(fills))   # 120 -10 4\nprint(sum(fills))                        # 75 - the net position\nfills.append(60)\nprint(fills)                             # [120, -80, 45, -10, 60]"
+    },
+    {
+      "type": "p",
+      "md": "**Slicing** extracts a sub-list: `prices[1:3]` takes indexes 1 and 2 - the start is included, the **stop is excluded**, which is why the slice holds 3 - 1 = 2 items. Slices never raise errors on out-of-range bounds; they simply truncate. Iterating directly (`for f in fills:`) is usually cleaner than looping over indexes, but indexing is what you need when position matters - like a moving average pairing each price with its predecessor, as in the last lesson."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "prices = [101.0, 102.5, 99.0, 103.5]\nprint(prices[1:3])    # [102.5, 99.0] - indexes 1 and 2; stop 3 excluded\nprint(prices[:2])     # [101.0, 102.5] - an omitted start means from the beginning"
+    },
+    {
+      "type": "interactive",
+      "component": "SortingVisual",
+      "params": {
+        "data": [
+          43.05,
+          41.9,
+          42.17,
+          42.8,
+          41.5
+        ],
+        "algorithm": "bubble"
+      },
+      "caption": "Sorting rearranges a list by comparing and swapping entries - watch how many indexed accesses a five-item list needs, and why position in an array matters."
+    },
+    {
+      "type": "h2",
+      "text": "Strings are sequences too"
+    },
+    {
+      "type": "p",
+      "md": "A **string** is an immutable sequence of characters, and the machinery above works on it too: indexing (`ticket[0]` is `\"B\"`), `len`, slicing, and `for ch in ticket:`. Strings also have operators of their own: `+` concatenates and `*` repeats. Methods like `.lower()`, `.upper()` and `.strip()` return *new* strings - they never modify the original, because strings cannot be changed in place. For building output, **f-strings** embed values directly: `f\"{qty} @ {price:.2f}\"`, where `:.2f` formats the price to two decimal places - exactly what an order ticket needs."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "ticket = \"BUY 100 ACME @ 42.17\"\nprint(ticket.lower())             # buy 100 acme @ 42.17\nprint(ticket[0:3], len(ticket))   # BUY 20\n\nqty = 100\nprice = 42.17\nprint(f\"{qty} x {price:.2f} = {qty * price:.2f}\")",
+      "caption": "The f-string prints `100 x 42.17 = 4217.00` - a formatted order ticket in one line."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Assignment copies the reference, not the list",
+      "md": "`b = a` does not copy a list - both names point at the **same** list, so `b.append(4)` is visible through `a` too. Copy explicitly with `list(a)` or `a.copy()` when you need an independent duplicate. Plain numbers do not have this issue: for ints and floats, `b = a` really does give b its own copy of the value."
+    },
+    {
+      "type": "h2",
+      "text": "Debugging: a method, not guesswork"
+    },
+    {
+      "type": "p",
+      "md": "Bugs are certain; random edits are not a strategy. The disciplined loop: (1) **read the error** - Python's last traceback line names the error type and the failing line; (2) **reproduce** it with the smallest input that still fails; (3) **isolate** by printing types and values just before the crash (`print(type(x), x)`); (4) form one hypothesis, test it, change one thing, re-run. Four error types cover most of this module's crashes."
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Error",
+        "Typical cause",
+        "Example"
+      ],
+      "rows": [
+        [
+          "`IndexError`",
+          "index at or past len(list)",
+          "`prices[4]` when len(prices) is 4"
+        ],
+        [
+          "`TypeError`",
+          "mixing incompatible types",
+          "`\"250\" + 50`"
+        ],
+        [
+          "`NameError`",
+          "misspelled or undefined name",
+          "`totl` instead of `total`"
+        ],
+        [
+          "`ValueError`",
+          "right type, impossible value",
+          "`int(\"12.5\")`"
+        ],
+        [
+          "`ZeroDivisionError`",
+          "denominator is 0",
+          "`avg = total / 0`"
+        ]
+      ]
+    },
+    {
+      "type": "steps",
+      "title": "Worked debug: the off-by-one IndexError",
+      "items": [
+        "Symptom: summing a price list crashes with `IndexError: list index out of range`.",
+        "Suspect code: `for i in range(len(prices) + 1): total = total + prices[i]` - the `+ 1` walks `i` up to 4, and `prices[4]` does not exist in a 4-item list.",
+        "Minimal fix: `for i in range(len(prices))` yields exactly the valid indexes 0..3.",
+        "Better still, sidestep indexes entirely: `for p in prices:` or simply `sum(prices)`.",
+        "Lesson: the traceback named the failing line and error type - reading it first cuts the search to seconds."
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Where beginners' bugs cost money",
+      "md": "An off-by-one that silently drops the last fill misstates the book; an aliasing bug can double-count a position in two reports. Unit checks - comparing a function's output against one hand-computed example - catch both cheaply, and cost minutes."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "This program is meant to sum a price list but crashes. Run it, read the traceback, identify the error type and the failing line, then fix it minimally and state the correct output.\n\n```python\nprices = [101.0, 102.5, 99.0, 103.5]\ntotal = 0\nfor i in range(len(prices) + 1):\n    total = total + prices[i]\nprint(total)\n```",
+    "hints": [
+      "range(len(prices) + 1) yields 0, 1, 2, 3, 4 - how many of those are valid indexes for this list?",
+      "Valid indexes for a 4-item list are 0 through 3."
+    ],
+    "solution": "The traceback is an **IndexError** raised at `total = total + prices[i]`: on the fifth pass `i` is 4, but valid indexes are 0..3. Minimal fix: `for i in range(len(prices)):`. Correct sum: $101.0 + 102.5 + 99.0 + 103.5 = 406.0$, so the fixed program prints **`406.0`**. (Even simpler: `print(sum(prices))`.)"
+  },
+  "independentExercise": {
+    "prompt": "Given `fills = [120, -80, 45, -10]`, write a program that (1) computes the net position with `sum`, (2) finds the largest absolute fill by looping and tracking a running maximum of `abs(f)`, and (3) prints one f-string line in the format `net=75 largest=120`.",
+    "hints": [
+      "Start `largest` at 0 and replace it whenever `abs(f) > largest`.",
+      "An f-string like `f\"net={net} largest={largest}\"` produces the required text."
+    ],
+    "solution": "```python\nfills = [120, -80, 45, -10]\nnet = sum(fills)\nlargest = 0\nfor f in fills:\n    if abs(f) > largest:\n        largest = abs(f)\nprint(f\"net={net} largest={largest}\")\n```\n\nPrints **`net=75 largest=120`**: net = 120 - 80 + 45 - 10 = 75, and the absolute sizes are 120, 80, 45, 10, so the largest is 120."
+  },
+  "commonMistakes": [
+    "Forgetting that indexes start at 0: the first item is list[0] and the last is list[len(list) - 1] (or list[-1]).",
+    "Treating `b = a` as a copy of a list - it is a shared reference; mutations through either name are seen by both.",
+    "Looping over `range(len(list) + 1)` and crashing with IndexError on the final pass.",
+    "Expecting string methods like `ticket.lower()` to change the string in place - strings are immutable; methods return new strings."
+  ],
+  "realWorldApplication": "Data feeds arrive as lists of records and text payloads; parsing, slicing and formatting them - and debugging the inevitable index errors - is the daily texture of data engineering and research code.",
+  "quantFinanceApplication": "A desk's end-of-day script reduces to exactly these moves: sum the fill list into a net position, slice the day's price series for moving averages, and format order tickets with f-strings.",
+  "summary": [
+    "Lists store ordered collections; indexes start at 0, negative indexes count from the end, and slices include start but exclude stop.",
+    "len, sum, append and direct iteration (for f in fills:) cover most list work; indexing matters when position does.",
+    "Strings are immutable sequences: index, slice, concatenate, and format output with f-strings such as f\"{price:.2f}\".",
+    "`b = a` copies a reference for lists, not the data; use a.copy() or list(a) for an independent list.",
+    "Debug method: read the traceback, reproduce minimally, isolate with prints of types and values, change one thing, re-run."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "code-output",
+      "prompt": "What does this print?",
+      "language": "python",
+      "code": "fills = [120, -80, 45, -10]\nprint(fills[2])\nprint(fills[-1])\nprint(sum(fills))",
+      "answer": "45\n-10\n75",
+      "explanation": "Index 2 is the third item (45); index -1 is the last (-10); and 120 - 80 + 45 - 10 = 75."
+    },
+    {
+      "id": "q2",
+      "type": "code-output",
+      "prompt": "What does this print?",
+      "language": "python",
+      "code": "prices = [101.0, 102.5, 99.0, 103.5]\nprint(prices[1:3])\nprint(len(prices))",
+      "answer": "[102.5, 99.0]\n4",
+      "explanation": "The slice takes indexes 1 and 2 - the stop 3 is excluded - and the list has 4 items."
+    },
+    {
+      "id": "q3",
+      "type": "code-output",
+      "prompt": "What does this print?",
+      "language": "python",
+      "code": "s = \"ACME\"\nprint(s * 2)\nprint(len(s))",
+      "answer": "ACMEACME\n4",
+      "explanation": "Multiplying a string repeats it; len counts characters."
+    },
+    {
+      "id": "q4",
+      "type": "code-output",
+      "prompt": "What does this print?",
+      "language": "python",
+      "code": "a = [1, 2, 3]\nb = a\nb.append(4)\nprint(len(a))",
+      "answer": "4",
+      "explanation": "`b = a` makes both names point at the same list, so the append through `b` is visible through `a`: a now has 4 items."
+    },
+    {
+      "id": "q5",
+      "type": "mcq",
+      "prompt": "A list holds 4 items. Which index accesses its last item?",
+      "options": [
+        "4",
+        "3",
+        "-5",
+        "index 4.0"
+      ],
+      "answerIndex": 1,
+      "explanation": "Valid indexes are 0..3 (or -4..-1). Index 4 is one past the end and raises IndexError; -5 is outside the negative range."
+    },
+    {
+      "id": "q6",
+      "type": "code-output",
+      "prompt": "What does this print?",
+      "language": "python",
+      "code": "fills = []\nfor t in [120, -80, 45]:\n    fills.append(t)\nprint(len(fills), fills[0], fills[-1])",
+      "answer": "3 120 45",
+      "explanation": "append adds each trade in order, so the list is [120, -80, 45]: length 3, first item 120, last item 45."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "definition",
+      "front": "What does the slice prices[1:3] return?",
+      "back": "A new list with the items at indexes 1 and 2: start included, stop excluded."
+    },
+    {
+      "type": "concept",
+      "front": "List aliasing",
+      "back": "b = a copies the reference, not the list; both names see mutations. Copy with a.copy() or list(a) when you need independence."
+    },
+    {
+      "type": "concept",
+      "front": "Debugging method",
+      "back": "Read the traceback (error type + line), reproduce minimally, print types and values to isolate, change one thing, re-run."
+    },
+    {
+      "type": "code-output",
+      "front": "What does len([120, -80, 45, -10]) return?",
+      "back": "4 - len counts items; valid indexes run 0..3."
+    }
+  ],
+  "references": [
+    {
+      "label": "Python Tutorial - Data structures (lists)",
+      "url": "https://docs.python.org/3/tutorial/datastructures.html"
+    },
+    {
+      "label": "Python Tutorial - Errors and exceptions",
+      "url": "https://docs.python.org/3/tutorial/errors.html"
+    },
+    {
+      "label": "Python Docs - Formatted string literals (f-strings)",
+      "url": "https://docs.python.org/3/tutorial/inputoutput.html#formatted-string-literals"
+    }
+  ],
+  "skills": [
+    "programming-fundamentals"
+  ]
+}

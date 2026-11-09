@@ -1,0 +1,365 @@
+{
+  "id": "tsmd-oms-positions",
+  "moduleId": "ph10-trading-systems",
+  "title": "Order Management, Trade Capture and Position Keeping",
+  "estMinutes": 27,
+  "difficulty": "advanced",
+  "prereqs": [
+    "tsmd-market-data-path"
+  ],
+  "objectives": [
+    "Trace an order through the full lifecycle state machine from submission to a terminal state",
+    "Map client order IDs to exchange order IDs and explain why both exist",
+    "Capture executions as append-only records and deduplicate them by execution ID",
+    "Compute position, average entry price and realised PnL from a fill history"
+  ],
+  "motivation": "The strategy says 'buy 600'. Between that decision and money changing hands sits the order management system: it tracks every order's state, captures every fill exactly once, and keeps the firm's position ledger honest. Get the lifecycle wrong and you re-quote on orders already filled; get position math wrong and the P&L report lies.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "One order, one state machine"
+    },
+    {
+      "type": "p",
+      "md": "An order is not just an object; it is a **state machine**. You submit it (New), the venue acknowledges it (Accepted), it may fill in pieces (Partially Filled), and it ends in exactly one **terminal state**: Filled, Cancelled or Rejected. Every transition is driven by a message from the venue - the OMS records transitions, it never invents them. Assuming an order is live when it was actually rejected, or cancelled when it partially filled, is how firms accidentally double their exposure."
+    },
+    {
+      "type": "table",
+      "headers": [
+        "State",
+        "Meaning",
+        "Set by"
+      ],
+      "rows": [
+        [
+          "New",
+          "Order built and sent toward the venue",
+          "Your OMS"
+        ],
+        [
+          "Accepted (ack)",
+          "Venue accepted the order into its book",
+          "Venue acknowledgement"
+        ],
+        [
+          "Partially Filled",
+          "Some quantity executed, rest still working",
+          "Venue execution report"
+        ],
+        [
+          "Filled",
+          "Full quantity executed - terminal",
+          "Venue"
+        ],
+        [
+          "Cancelled",
+          "Remaining quantity removed - terminal",
+          "Venue confirming your request"
+        ],
+        [
+          "Rejected",
+          "Venue refused the order - terminal",
+          "Venue"
+        ]
+      ]
+    },
+    {
+      "type": "p",
+      "md": "Two identifiers rule the plumbing. The **client order ID** (`clOrdID`) is yours: you choose it, it must be unique per session, and it is your idempotency key. The **exchange order ID** is the venue's own identifier, assigned at acknowledgement. The OMS keeps the mapping; retransmitted messages are deduplicated against it, so a resend can never become a second order."
+    },
+    {
+      "type": "h2",
+      "text": "Trade capture: append-only, exactly once"
+    },
+    {
+      "type": "p",
+      "md": "Each execution report carries quantity, price, timestamp, side, order IDs and a venue-assigned **execution ID**. Capture appends every report to an immutable log - never overwrite, never delete. Deduplication happens at ingest: if execution ID $e$ was already seen, the report is a resend - ignored for bookkeeping, still logged as received. The append-only log is the firm's ground truth: nightly reconciliation compares it against the venue's ledger, and incident reviews replay it frame by frame."
+    },
+    {
+      "type": "h2",
+      "text": "Position math"
+    },
+    {
+      "type": "p",
+      "md": "**Position** $= \\sum (\\pm\\,\\text{qty})$: buys add, sells subtract; a negative position is a short. Fills arrive at their own prices, so the position's **average entry price** must be recomputed as total cost over total quantity on every new opening fill. When the position shrinks, **realised PnL** is booked: the closing fill's proceeds (or cost) against the average entry of the shares closed. Unrealised PnL is the mark on whatever remains open."
+    },
+    {
+      "type": "steps",
+      "title": "Worked example: a round trip in two exits",
+      "items": [
+        "Buy 150 @ \\$50.20: cost $= 150 \\times 50.20 = 7{,}530.00$. Position $+150$.",
+        "Buy 50 @ \\$49.80: cost $= 2{,}490.00$. Position $+200$, total cost $= 7{,}530 + 2{,}490 = 10{,}020.00$, average entry $= 10{,}020 / 200 = \\$.",
+        "Sell 200 @ \\$50.60 in one fill: proceeds $= 200 \\times 50.60 = 10{,}120.00$. Position flat.",
+        "Realised PnL $= 10{,}120.00 - 10{,}020.00 = \\textbf{+100.00}$.",
+        "Same trade, exit split 120 @ $50.60 and 80 @ \\$50.45: proceeds $= 6{,}072.00 + 4{,}036.00 = 10{,}108.00$, realised PnL $= +88.00$. Exit prices matter; the entry math does not change."
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Signs and fees",
+      "md": "Fees belong in the ledger, not in a footnote: a \\$0.01/share fee on both legs of a 300-share round trip is \\$6.00 - real money against a thin edge. And keep one sign convention everywhere: sells are negative quantities, a negative position is a short, and negative PnL is a loss. Mixed conventions are where money disappears on paper."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "from decimal import Decimal\n\npos = 0\ncash = Decimal(\"0\")\nfills = [(\"B\", 150, \"50.20\"), (\"B\", 50, \"49.80\"), (\"S\", 200, \"50.60\")]\nfor side, qty, px in fills:\n    signed = qty if side == \"B\" else -qty\n    pos += signed\n    cash += signed * Decimal(px)\nprint(pos, cash)",
+      "caption": "Prints: 0 -100.00. Position is flat and cash is -100: the desk is ahead \\$100, so with a flat book, PnL = -cash. Exact decimal arithmetic, no float drift."
+    },
+    {
+      "type": "p",
+      "md": "Position keeping is event sourcing whether or not you call it that: the position is not a field you update, it is the *sum of a stream* — every execution, every correction, every corporate action — applied in order. This reframing explains everything about OMS design: why you persist the events (the position is derivable), why ordering is a correctness property not a nicety (sums are order-dependent once corrections exist), and why reconciliation exists (two independent event streams — yours and the venue's — will drift, and the drift must be found, not assumed away)."
+    },
+    {
+      "type": "steps",
+      "title": "A position's life, traced through real messages",
+      "items": [
+        "09:30:01.100 — `NEWORDER` 500 BUY. Position: 0. Working orders: +500 (this is *exposure*, not position — a distinction your risk system must maintain).",
+        "09:30:01.250 — `EXEC` 300 @ 100.02. Position: +300. Working: 200. Realised: 0. Average cost: 100.02.",
+        "09:30:02.000 — `EXEC` 200 @ 100.03. Position: +500. Working: 0. Average cost: $(300 \\times 100.02 + 200 \\times 100.03)/500 = 100.024$.",
+        "09:30:05.000 — `CORRECTION`: the second fill was 100.00, not 100.03 (busted and re-reported). Position: still +500 (quantity unchanged) but average cost is now $(300 \\times 100.02 + 200 \\times 100.00)/500 = 100.012$, and every downstream P&L number that already printed is wrong until restated. Corrections are why you keep the events.",
+        "09:31:00 — `CORPORATE ACTION`: 2-for-1 split. Position: +1000, cost basis adjusted, all limit prices in working orders cancelled and re-entered by the venue. The position stream just got a non-trade event, and your schema must have had a place for it.",
+        "End of day — venue statement: +1000. Your books: +1000. ✓ Reconciled. Tomorrow it will be something else; that is the norm, not the exception."
+      ]
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Concept",
+        "What it is",
+        "When it changes"
+      ],
+      "rows": [
+        [
+          "Working order",
+          "exposure, not yet a trade",
+          "on send, cancel, reject, partial fill"
+        ],
+        [
+          "Position",
+          "net executed quantity per instrument",
+          "on execution or correction only"
+        ],
+        [
+          "Average cost",
+          "weighted price of the open position",
+          "on every buy/sell that changes the position"
+        ],
+        [
+          "Realised P&L",
+          "closed-portion profit vs average cost",
+          "on reducing trades"
+        ],
+        [
+          "Unrealised P&L",
+          "mark-to-market of the open position",
+          "on every price tick (this is why it is noisy)"
+        ]
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "The four sources of position truth, and none of them agree",
+      "md": "Your OMS thinks you are +500. The drop-copy feed says +502 (two fills still in flight to you). The clearing firm says +498 (a bust you have not processed). Risk is computing on +500. All four are 'correct' at different latency horizons — the system's job is not to prevent the disagreement but to bound it, flag it, and reconcile before it compounds. Design for eventual agreement, not instantaneous equality."
+    },
+    {
+      "type": "p",
+      "md": "Position keeping is event sourcing whether or not you call it that: the position is not a field you update, it is the *sum of a stream* — every execution, every correction, every corporate action — applied in order. This reframing explains everything about OMS design: why you persist the events (the position is derivable), why ordering is a correctness property not a nicety (sums are order-dependent once corrections exist), and why reconciliation exists (two independent event streams — yours and the venue's — will drift, and the drift must be found, not assumed away)."
+    },
+    {
+      "type": "steps",
+      "title": "A position's life, traced through real messages",
+      "items": [
+        "09:30:01.100 — `NEWORDER` 500 BUY. Position: 0. Working orders: +500 (this is *exposure*, not position — a distinction your risk system must maintain).",
+        "09:30:01.250 — `EXEC` 300 @ 100.02. Position: +300. Working: 200. Realised: 0. Average cost: 100.02.",
+        "09:30:02.000 — `EXEC` 200 @ 100.03. Position: +500. Working: 0. Average cost: $(300 \\times 100.02 + 200 \\times 100.03)/500 = 100.024$.",
+        "09:30:05.000 — `CORRECTION`: the second fill was 100.00, not 100.03 (busted and re-reported). Position: still +500 (quantity unchanged) but average cost is now $(300 \\times 100.02 + 200 \\times 100.00)/500 = 100.012$, and every downstream P&L number that already printed is wrong until restated. Corrections are why you keep the events.",
+        "09:31:00 — `CORPORATE ACTION`: 2-for-1 split. Position: +1000, cost basis adjusted, all limit prices in working orders cancelled and re-entered by the venue. The position stream just got a non-trade event, and your schema must have had a place for it.",
+        "End of day — venue statement: +1000. Your books: +1000. ✓ Reconciled. Tomorrow it will be something else; that is the norm, not the exception."
+      ]
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Concept",
+        "What it is",
+        "When it changes"
+      ],
+      "rows": [
+        [
+          "Working order",
+          "exposure, not yet a trade",
+          "on send, cancel, reject, partial fill"
+        ],
+        [
+          "Position",
+          "net executed quantity per instrument",
+          "on execution or correction only"
+        ],
+        [
+          "Average cost",
+          "weighted price of the open position",
+          "on every buy/sell that changes the position"
+        ],
+        [
+          "Realised P&L",
+          "closed-portion profit vs average cost",
+          "on reducing trades"
+        ],
+        [
+          "Unrealised P&L",
+          "mark-to-market of the open position",
+          "on every price tick (this is why it is noisy)"
+        ]
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "The four sources of position truth, and none of them agree",
+      "md": "Your OMS thinks you are +500. The drop-copy feed says +502 (two fills still in flight to you). The clearing firm says +498 (a bust you have not processed). Risk is computing on +500. All four are 'correct' at different latency horizons — the system's job is not to prevent the disagreement but to bound it, flag it, and reconcile before it compounds. Design for eventual agreement, not instantaneous equality."
+    },
+    {
+      "type": "interactive",
+      "component": "OrderStateMachine",
+      "params": {
+        "quantity": 1000
+      }
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Order TRD-771: buy 600 @ limit \\$21.80. Acknowledged. Fills arrive: 150 @ \\$21.40, then 150 @ \\$21.60. You cancel the remainder and the venue confirms. (a) What is the order's final state? (b) What are cumQty and the average fill price? (c) What quantity was cancelled?",
+    "hints": [
+      "Average fill price = total cost of the fills / total filled quantity.",
+      "Terminal states are Filled, Cancelled and Rejected."
+    ],
+    "solution": "(a) **Cancelled** - a terminal state reached with partial fills. (b) cumQty $= 150 + 150 = 300$; cost $= 150 \\times 21.40 + 150 \\times 21.60 = 3{,}210.00 + 3{,}240.00 = 6{,}450.00$; average $= 6{,}450 / 300 = \\$. (c) $600 - 300 = 200$ shares cancelled."
+  },
+  "independentExercise": {
+    "prompt": "A desk buys 300 @ \\$44.10 and later sells 300 @ \\$44.35. Fees are \\$0.01 per share on every fill. Compute (a) gross PnL, (b) total fees, (c) net PnL, and (d) the final position.",
+    "hints": [
+      "Gross PnL ignores fees: proceeds - cost.",
+      "Fees apply to 300 + 300 = 600 shares."
+    ],
+    "solution": "(a) Cost $= 300 \\times 44.10 = 13{,}230.00$; proceeds $= 300 \\times 44.35 = 13{,}305.00$; gross $= +75.00$. (b) $600 \\times 0.01 = \\$. (c) Net $= 75.00 - 6.00 = \\textbf{+69.00}$. (d) Flat (0)."
+  },
+  "commonMistakes": [
+    "Counting a retransmitted execution report twice - dedupe on execution ID.",
+    "Treating Cancelled or Rejected as recoverable; they are terminal states.",
+    "Averaging exit prices into the entry VWAP - average entry covers opening fills only.",
+    "Forgetting fees and rebates; thin edges vanish into them."
+  ],
+  "realWorldApplication": "Every broker OMS, prime-brokerage ledger and regulator's audit trail is built on exactly this: a state machine per order plus an append-only capture log reconciled nightly against venue statements.",
+  "quantFinanceApplication": "Position and average-entry math from this lesson is the base layer under strategy PnL attribution, risk limits and backtesting fill models.",
+  "summary": [
+    "Order lifecycle: New -> Accepted -> (Partially Filled) -> Filled | Cancelled | Rejected; only venue messages drive transitions.",
+    "clOrdID is the firm's idempotency key; the exchange order ID is the venue's - the OMS maps the two.",
+    "Trade capture is append-only and deduplicated by execution ID; it is the ground truth for reconciliation.",
+    "Position = sum of signed fills; average entry = total cost / total quantity; realised PnL books on closing fills."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "Which state transition is impossible?",
+      "options": [
+        "Accepted -> Partially Filled",
+        "Partially Filled -> Cancelled",
+        "Cancelled -> Partially Filled",
+        "New -> Rejected"
+      ],
+      "answerIndex": 2,
+      "explanation": "Cancelled is terminal: nothing fills afterwards. The other transitions are normal lifecycle steps."
+    },
+    {
+      "id": "q2",
+      "type": "numeric",
+      "prompt": "An order for 1,000 shares fills 400 @ \\$101.20 and 400 @ \\$101.30; the remaining 200 are cancelled. What is the average fill price?",
+      "answer": 101.25,
+      "tolerance": 0.01,
+      "explanation": "Cost $= 400 \\times 101.20 + 400 \\times 101.30 = 40{,}480 + 40{,}520 = 81{,}000$ over 800 shares: $81{,}000 / 800 = 101.25$."
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "Starting flat, a desk buys 500 shares and sells 200. What is the resulting position (signed)?",
+      "answer": 300,
+      "explanation": "$+500 - 200 = +300$: long 300 shares."
+    },
+    {
+      "id": "q4",
+      "type": "ms",
+      "prompt": "Which fields must every captured execution carry?",
+      "options": [
+        "Quantity and price",
+        "A unique execution ID",
+        "A timestamp",
+        "The strategy's expected edge"
+      ],
+      "answerIndices": [
+        0,
+        1,
+        2
+      ],
+      "explanation": "Qty, price, execution ID and timestamp are the minimum identity of a fill; the 'expected edge' is a strategy opinion, not trade data."
+    },
+    {
+      "id": "q5",
+      "type": "short",
+      "prompt": "Why is trade capture kept append-only?",
+      "modelAnswer": "An append-only log is immutable, supports audit and regulatory review, enables exact replay for reconciliation and incident forensics, and prevents edits that would desynchronise the firm's view from the venue's ledger.",
+      "keywords": [
+        "audit",
+        "replay",
+        "reconcil",
+        "immutable"
+      ],
+      "explanation": "Mutating capture data destroys the evidence chain; every downstream use (reconciliation, replay, audit) depends on the log never changing."
+    },
+    {
+      "id": "q6",
+      "type": "code-output",
+      "prompt": "What does this position tracker print?",
+      "language": "python",
+      "code": "pos = 0\nfor side, qty in [(\"B\", 300), (\"S\", 500), (\"B\", 400)]:\n    pos += qty if side == \"B\" else -qty\nprint(pos)",
+      "answer": "200",
+      "explanation": "$+300 - 500 + 400 = +200$: the desk went short 200 intraday, then bought back to long 200."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "definition",
+      "front": "Terminal order states",
+      "back": "Filled, Cancelled, Rejected - no further transitions can occur once reached."
+    },
+    {
+      "type": "formula",
+      "front": "Average entry price",
+      "back": "Total cost of opening fills / total quantity, recomputed on every new opening fill."
+    },
+    {
+      "type": "concept",
+      "front": "clOrdID vs exchange order ID",
+      "back": "clOrdID: firm-chosen, unique per session, used for idempotency and dedupe. Exchange ID: venue-assigned at acknowledgement. The OMS maps the two."
+    },
+    {
+      "type": "concept",
+      "front": "Realised vs unrealised PnL",
+      "back": "Realised: locked in by closing fills against average entry. Unrealised: mark-to-market on the position still open."
+    }
+  ],
+  "references": [
+    {
+      "label": "FIX Trading Community - order lifecycle semantics",
+      "url": "https://www.fixtrading.org/"
+    },
+    {
+      "label": "Wikipedia - Order management system",
+      "url": "https://en.wikipedia.org/wiki/Order_management_system"
+    }
+  ],
+  "skills": [
+    "trading-systems"
+  ]
+}

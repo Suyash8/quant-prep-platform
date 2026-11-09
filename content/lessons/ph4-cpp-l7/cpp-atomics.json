@@ -1,0 +1,197 @@
+{
+  "id": "cpp-atomics",
+  "moduleId": "ph4-cpp-l7",
+  "title": "Atomics and Memory Ordering",
+  "estMinutes": 30,
+  "difficulty": "advanced",
+  "prereqs": ["cpp-futures-async"],
+  "objectives": [
+    "Use std::atomic load/store and read-modify-write operations to make concurrent single-word updates race-free",
+    "State what each memory order (relaxed, acquire, release, seq_cst) guarantees and what it deliberately does not",
+    "Derive happens-before edges through a release-store/acquire-load pair on the same object",
+    "Build a correct spinlock from std::atomic_flag and argue why the acquire/release orderings are load-bearing"
+  ],
+  "motivation": "When a mutex is too heavy - one counter to bump, a flag to flip, a hot path where sleeping is disallowed - atomics are the precision tool. But std::atomic is not one behaviour: it is a family of operations whose *ordering* you must choose, and a wrong choice compiles cleanly, passes tests, and corrupts data once a week under production load. Market-data paths live exactly on this knife edge, so the goal here is not memorised rules but the ability to *argue* about ordering: what happens-before means and which edge guarantees which visibility.",
+  "blocks": [
+    { "type": "h2", "text": "Atomics make single accesses race-free" },
+    { "type": "p", "md": "`std::atomic<T>` gives you `load()`, `store()`, and **read-modify-write** (RMW) operations - `fetch_add`, `exchange`, `compare_exchange_*` - that are indivisible with respect to other threads. Where lesson 1's `++counter` raced through load-add-store, `counter.fetch_add(1)` is one atomic step: no interleaving inside it, no undefined behaviour, and a deterministic final value. Atomics also never let the compiler tear the access; on most platforms `is_lock_free()` tells you whether that came from a machine instruction or a hidden lock." },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <atomic>\n#include <iostream>\n#include <thread>\n\nint main() {\n    std::atomic<int> counter{0};\n    auto bump = [&counter] {\n        for (int i = 0; i < 100000; ++i) counter.fetch_add(1);\n    };\n    std::thread a(bump), b(bump);\n    a.join();\n    b.join();\n    std::cout << counter.load() << '\\n';    // 200000, every run\n    return 0;\n}",
+      "caption": "Same program as the race in cpp-threads, one type changed: the final value is now guaranteed, because each increment is indivisible."
+    },
+    { "type": "h2", "text": "Why orderings exist: reordering between threads" },
+    { "type": "p", "md": "Atomicity fixes the counter, but there is a second problem: **compilers and CPUs reorder memory operations**. Within one thread they must preserve single-threaded semantics, so your program always behaves - until a second thread observes the reordered traffic. A flag set before the data is ready, seen by another CPU before the data, produces a stale read with no error message. C++ therefore attaches an **ordering** to every atomic operation via `std::memory_order`." },
+    { "type": "math", "tex": "\\text{happens-before} \\;=\\; \\big(\\text{sequenced-before} \\cup \\text{synchronises-with}\\big)^{+}", "caption": "Transitive closure: intra-thread program order, plus synchronisation edges across threads." },
+    { "type": "p", "md": "The key edge is **synchronises-with**: a release-store to an atomic object $X$ synchronises with an acquire-load of $X$ that reads the stored value. Chaining that edge with program order gives **happens-before**: everything sequenced before the release-store is visible to everything sequenced after the matching acquire-load. Every correctness argument in this module is a walk over such edges. `memory_order_seq_cst` - the default - additionally forces all seq_cst operations into one global total order, which is the easiest to reason about and the most expensive." },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <atomic>\n#include <iostream>\n#include <thread>\n\nint payload = 0;                        // plain, non-atomic data\nstd::atomic<bool> ready{false};\n\nint main() {\n    std::thread producer([] {\n        payload = 42;                                  // (1) plain write\n        ready.store(true, std::memory_order_release);  // (2) publish\n    });\n    std::thread consumer([] {\n        while (!ready.load(std::memory_order_acquire)) { }  // (3) acquire\n        std::cout << payload << '\\n';                  // (4) guaranteed 42\n    });\n    producer.join();\n    consumer.join();\n    return 0;\n}",
+      "caption": "Message passing: release at (2) synchronises-with acquire at (3) once (3) reads true, so (1) happens-before (4). Without the release/acquire pair, (4) could print 0."
+    },
+    {
+      "type": "table",
+      "headers": ["Ordering", "Guarantees", "Does NOT guarantee", "Typical use"],
+      "rows": [
+        ["relaxed", "Atomicity; single total modification order per object", "No cross-thread ordering of surrounding accesses", "Pure counters, statistics"],
+        ["acquire (load)", "Sees all writes that happen-before the paired release-store", "Nothing by itself without a release elsewhere", "Lock acquisition, flag reads"],
+        ["release (store)", "All prior writes become visible to the matching acquire-load", "No ordering for later writes", "Lock release, flag publish"],
+        ["seq_cst (default)", "release+acquire plus one global total order for all seq_cst ops", "Cheapness", "Default; use unless measured otherwise"]
+      ]
+    },
+    {
+      "type": "interactive",
+      "component": "MemoryLayout",
+      "params": { "value": 200000, "type": "int" },
+      "caption": "An atomic int is still (typically) four plain bytes: atomics change the *semantics of accesses*, not the layout. That is why they are cheap - and why ordering matters."
+    },
+    { "type": "h2", "text": "A spinlock you can defend" },
+    { "type": "p", "md": "The smallest lock in C++ is `std::atomic_flag`: `test_and_set` is an RMW that sets the flag and returns the old value, `clear` resets it. A spinlock is: loop `test_and_set` until you win. The orderings are load-bearing, not decoration: the winner's `test_and_set` must be **acquire**, so it synchronises with the previous holder's **release** `clear` - otherwise writes inside the critical section might not be visible to the next locker. This is the mutex lesson's critical section, built from two atomic words." },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <atomic>\n#include <iostream>\n#include <thread>\n\nclass Spinlock {\n    std::atomic_flag f = ATOMIC_FLAG_INIT;   // required initialiser in C++17\npublic:\n    void lock()   { while (f.test_and_set(std::memory_order_acquire)) { } }\n    void unlock() { f.clear(std::memory_order_release); }\n};\n\nSpinlock sl;\nlong long shared = 0;\n\nvoid work(int n) {\n    for (int i = 0; i < n; ++i) {\n        sl.lock();\n        shared += 1;                 // ordinary, non-atomic writes - safe here\n        sl.unlock();\n    }\n}\n\nint main() {\n    std::thread a(work, 50000), b(work, 50000);\n    a.join();\n    b.join();\n    std::cout << shared << '\\n';     // 100000, every run\n    return 0;\n}",
+      "caption": "ATOMIC_FLAG_INIT is needed on a C++17 baseline (C++20 default-initialises). A spinning thread burns CPU, so spinlocks fit only very short critical sections on pinned threads."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "volatile is not atomic, relaxed is not a lock ordering",
+      "md": "`volatile` suppresses compiler caching for hardware registers; it provides **no** atomicity and **no** inter-thread ordering - it cannot fix a data race. And swapping the spinlock's `acquire`/`release` for `relaxed` keeps the mutual *exclusion* (the RMW still serialises) while destroying mutual *visibility*: the next locker may enter and read stale data. Exclusion and visibility are two different guarantees; a lock needs both."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Where this meets the feed",
+      "md": "A seqlock-style price slot works like the message-passing example: the writer stores the price, then release-stores a sequence number; readers acquire-load the sequence and only then read the price. One atomic word orders access to a whole struct - no mutex on the tick path. Whether that beats your mutex is a measurement question, but the correctness argument is the same one you just built."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Prove the Spinlock above correct for this scenario: thread A calls lock(), sets `shared = 7` and calls unlock(); thread B then successfully calls lock() and reads `shared`. Write the happens-before argument as numbered steps, naming the synchronises-with edge explicitly, and state where the argument would collapse if `unlock()` used `memory_order_relaxed`.",
+    "hints": [
+      "An RMW like test_and_set reads the most recent value in the object's modification order - B's successful RMW reads the value A's clear wrote.",
+      "synchronises-with requires a release on one side and an acquire on the other, reading that value, on the SAME atomic object.",
+      "happens-before is transitive: chain program order (sequenced-before) with the synchronisation edge."
+    ],
+    "solution": "**The argument, as edges:**\n1. A: `shared = 7` is sequenced-before A's `f.clear(release)` (program order).\n2. A's clear is a release-store to `f`; B's successful `f.test_and_set(acquire)` is a read-modify-write of the same object `f` that reads the value clear wrote (RMWs read the latest value in modification order; B's RMW succeeded, so it observed the cleared flag). Therefore A's clear **synchronises-with** B's test_and_set.\n3. B's test_and_set is sequenced-before B's read of `shared` (program order).\n4. Transitivity: `shared = 7` happens-before B's read, so B reads 7 - guaranteed.\n\n**Where it collapses:** with `clear(relaxed)` there is no release on the store side, hence no synchronises-with edge with B's acquire; step 2 fails. B's exclusion still holds (the RMW protocol still lets one thread in at a time) but B may read `shared == 0` - stale, reordered, or whatever the compiler and cache hand it. Mutual exclusion without mutual visibility: the classic relaxed-spinlock bug. On x86-64 the acquire/release often assemble to the same plain move, so the bug hides until the code runs on weaker hardware (e.g. ARM) - which is exactly why you argue from the standard, not from one architecture."
+  },
+  "independentExercise": {
+    "prompt": "You are asked to implement a `std::atomic<bool>` spinlock instead of the atomic_flag one: `void lock() { while (expected_true) ... }` starting from `bool expected = false;` and using `compare_exchange_strong(expected, true, ...)` in the loop, plus `store(false, ...)` in `unlock()`. (1) Write the correct memory-order arguments for both operations and justify each in one sentence. (2) Show why resetting `expected = false` before each CAS attempt is required. (3) Your reviewer suggests `store(false, std::memory_order_relaxed)` in unlock to \"save a fence\" - explain concretely what breaks.",
+    "hints": [
+      "Lock acquisition must synchronise with the previous unlock: that dictates one ordering on the CAS's success and one on the store.",
+      "compare_exchange_strong overwrites `expected` with the observed value on failure - if it stays true, every retry fails forever.",
+      "Re-run the guided exercise's argument with a relaxed store: which step loses its edge?"
+    ],
+    "solution": "```cpp\nclass SpinlockB {\n    std::atomic<bool> held{false};\npublic:\n    void lock() {\n        bool expected = false;\n        while (!held.compare_exchange_strong(expected, true,\n                    std::memory_order_acquire, std::memory_order_relaxed)) {\n            expected = false;        // CAS failure wrote the observed value\n        }\n    }\n    void unlock() { held.store(false, std::memory_order_release); }\n};\n```\n**(1)** The CAS success ordering is **acquire**: the winning thread must synchronise with the previous holder's **release** store in unlock, so everything the previous holder did inside the section happens-before this holder's work. The failure ordering can be relaxed: a failed CAS means we must retry and we have not read anything ordered-critical yet (it is the *successful* acquisition that consumes the previous release). **(2)** On failure, `compare_exchange_strong` loads the observed value into `expected`; after the first failure `expected` is `true`, and without resetting it the loop retries CAS(false->true) against a flag that is true - it can only fail again once the flag actually clears, but with `expected` stuck at true every attempt compares wrong; the reset restores the intended 'try to acquire an unheld lock' semantics. **(3)** With `store(relaxed)` there is no release edge, so the next successful acquire-CAS synchronises with nothing: writes made inside the previous critical section are not guaranteed visible to the new holder. Mutual exclusion survives; visibility does not. The 'saved fence' buys microseconds and costs a rare, unreproducible stale-read bug - exactly the trade a correctness argument exists to catch."
+  },
+  "commonMistakes": [
+    "Using volatile to fix a data race - volatile gives neither atomicity nor inter-thread ordering.",
+    "Choosing memory_order_relaxed on a lock or flag \"for speed\" and keeping only mutual exclusion, losing visibility of the protected data.",
+    "Assuming the default is relaxed or acquire - the default is memory_order_seq_cst, which is both stronger and typically slower.",
+    "Believing relaxed makes an atomic non-atomic: relaxed still guarantees atomicity and a per-object modification order; it only drops cross-thread ordering.",
+    "Writing acquire on the unlock or release on the lock - the pairing is release-store/acquire-load; reversed roles synchronise with nothing.",
+    "Forgetting that on x86-64 acquire/release often compile to plain moves, so a wrong ordering can pass every local test and fail on ARM."
+  ],
+  "realWorldApplication": "Atomics underpin reference counts (shared_ptr), lock-free structures, seqlocks and kernel-style flags - anywhere one word must change safely. Memory-order bugs are among the hardest defects in production C++ precisely because they are silent and rare.",
+  "quantFinanceApplication": "Hot market-data paths publish prices through a release/acquire pair (or a seqlock) instead of a mutex, because a woken thread or a held lock costs microseconds the desk cannot spend. The spinlock argument you built here is the template for defending any such publication protocol in code review.",
+  "summary": [
+    "std::atomic makes single accesses indivisible: RMW operations like fetch_add and compare_exchange give race-free, deterministic updates.",
+    "Compilers and CPUs reorder; memory orders control what other threads may observe, not what your thread computes.",
+    "The core edge: a release-store to an object synchronises-with an acquire-load of that object that reads the stored value; chained with program order this gives happens-before.",
+    "relaxed keeps atomicity and per-object modification order only; seq_cst adds one global total order; acquire/release pair up for data publication.",
+    "A spinlock = atomic_flag test_and_set(acquire) + clear(release); the exclusion comes from the RMW protocol, the visibility from the release/acquire edge - both are required.",
+    "volatile is not a synchronisation tool; and x86-64's strong hardware memory model can hide your ordering bugs until ARM day."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "What is the default memory_order for atomic operations if you do not specify one?",
+      "options": ["memory_order_relaxed", "memory_order_acquire", "memory_order_seq_cst", "memory_order_consume"],
+      "answerIndex": 2,
+      "explanation": "All overloads without an explicit ordering parameter default to memory_order_seq_cst - the strongest, safest and typically most expensive option."
+    },
+    {
+      "id": "q2",
+      "type": "code-output",
+      "prompt": "What does this single-threaded program print?",
+      "language": "cpp",
+      "code": "#include <atomic>\n#include <iostream>\n\nint main() {\n    std::atomic<int> a{1};\n    a.fetch_add(2);                 // a becomes 3\n    int x = a.exchange(10);         // x is the OLD value\n    int y = a.fetch_sub(4);         // y is the OLD value\n    std::cout << x << ' ' << y << ' ' << a.load() << '\\n';\n    return 0;\n}",
+      "answer": "3 10 6",
+      "explanation": "fetch_add(2): 1+2=3. exchange(10) returns the old value 3 and stores 10. fetch_sub(4) returns the old value 10 and stores 6. Output: `3 10 6`."
+    },
+    {
+      "id": "q3",
+      "type": "ms",
+      "prompt": "Which of these are read-modify-write operations on std::atomic?",
+      "options": ["fetch_add", "exchange", "store", "compare_exchange_weak"],
+      "answerIndices": [0, 1, 3],
+      "explanation": "fetch_add, exchange and compare_exchange_* read and write the object in one indivisible step. load and store are single-direction accesses, not RMWs."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "In the message-passing pattern, which pair makes the payload write visible to the reader?",
+      "options": [
+        "A relaxed store to the flag and a relaxed load of the flag",
+        "A release store to the flag and an acquire load of the flag that reads it",
+        "Two seq_cst operations on two different objects",
+        "A volatile flag read in a loop"
+      ],
+      "answerIndex": 1,
+      "explanation": "synchronises-with needs a release-store and an acquire-load of the SAME object, with the load observing the stored value - that creates the happens-before edge covering the payload. Relaxed gives no ordering; volatile gives neither atomicity nor ordering."
+    },
+    {
+      "id": "q5",
+      "type": "short",
+      "prompt": "What does memory_order_relaxed still guarantee, and what does it drop?",
+      "modelAnswer": "It keeps atomicity and the single modification order of the object itself (RMWs still read the latest value in that order), but provides no cross-thread ordering of surrounding accesses - nothing synchronises-with a relaxed operation.",
+      "keywords": ["atomicity", "modification order", "reorder"],
+      "explanation": "Relaxed atomics are still atomic - they only drop the happens-before edges. That is why a relaxed counter is correct while a relaxed lock is not."
+    },
+    {
+      "id": "q6",
+      "type": "numeric",
+      "prompt": "An atomic counter starts at 0. Three threads each execute counter.fetch_add(4) exactly once. After joining all three, what is the minimum value a final counter.load() can observe?",
+      "answer": 12,
+      "tolerance": 0.001,
+      "explanation": "12 - and not just the minimum but the exact value: each fetch_add is indivisible and reads the latest value in the object's modification order, so the three increments compose deterministically. That determinism is the whole point of atomics."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "definition",
+      "front": "happens-before",
+      "back": "The transitive closure of sequenced-before (within a thread) and synchronises-with edges (release-store to an object read by an acquire-load of that object). If A happens-before B, A's effects are visible at B."
+    },
+    {
+      "type": "concept",
+      "front": "release/acquire pairing rule",
+      "back": "A release-STORE to atomic object X synchronises-with an ACQUIRE-LOAD of X that reads the stored value. Same object, right roles, observed value - otherwise no edge."
+    },
+    {
+      "type": "definition",
+      "front": "memory_order_relaxed",
+      "back": "Atomicity and the per-object modification order only. No synchronises-with, no ordering of surrounding accesses. Good for pure counters; fatal for locks and data publication."
+    },
+    {
+      "type": "code-output",
+      "front": "atomic<int> a{1}; a.fetch_add(2); int x = a.exchange(10); int y = a.fetch_sub(4); - x, y, a.load()?",
+      "back": "x = 3, y = 10, a = 6. RMW operations return the OLD value; exchange and fetch_sub each store their new value."
+    },
+    {
+      "type": "concept",
+      "front": "Why is volatile not a substitute for atomic?",
+      "back": "volatile only stops the compiler caching/reordering accesses within a thread; it provides no atomicity and no inter-thread happens-before. Data races on volatile variables are still undefined behaviour."
+    }
+  ],
+  "references": [
+    { "label": "cppreference - std::memory_order", "url": "https://en.cppreference.com/w/cpp/atomic/memory_order" },
+    { "label": "cppreference - std::atomic", "url": "https://en.cppreference.com/w/cpp/atomic/atomic" },
+    { "label": "cppreference - std::atomic_flag", "url": "https://en.cppreference.com/w/cpp/atomic/atomic_flag" },
+    { "label": "Jeff Preshing - Memory Ordering at Compile Time / Runtime", "url": "https://preshing.com/20120625/memory-ordering-at-compile-time/" }
+  ],
+  "skills": ["concurrency"]
+}

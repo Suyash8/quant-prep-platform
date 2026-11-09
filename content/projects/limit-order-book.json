@@ -1,0 +1,180 @@
+{
+  "slug": "limit-order-book",
+  "order": 8,
+  "title": "Limit Order Book and Matching Engine",
+  "language": "cpp",
+  "difficulty": "advanced",
+  "prereqLessons": [
+    "mic-order-books",
+    "mic-matching",
+    "mkt-order-types",
+    "qalg-orderbook-structures",
+    "ds-advanced-structures",
+    "ds-hash-tables",
+    "cpp-cache-locality",
+    "cpp-move-semantics",
+    "cpp-benchmarking-profiling"
+  ],
+  "context": "The limit order book is the beating heart of every exchange and every market maker: a price-time-priority structure that must accept, cancel and match hundreds of thousands of orders per second while never getting the queue order wrong. Bugs here are not crashes — they are trades at wrong prices, priority violations that other members can litigate, and phantom liquidity.\n\nThis project asks you to build a working book and matching engine with the semantics an exchange specification would describe, prove them with correctness tests (including property tests), and measure throughput. The design constraints are deliberate: integer tick prices (floating point never touches matching logic), deterministic replay from an order log, and complexity targets you must actually meet.",
+  "problem": "Implement a price-time-priority limit order book and matching engine in C++17:\n\n- **Orders**: limit and market orders on two sides, with unique ids, integer-tick prices and quantities; add, cancel-by-id and replace (price/quantity) operations.\n- **Matching**: incoming marketable orders cross against the opposite side in price-time priority; partial fills supported; trades are emitted as records (maker id, taker id, price, quantity); resting quantities persist.\n- **Queries**: best bid/ask, depth to N levels per side, total quantity within k ticks of the mid.\n- **Correctness**: an assert-based test suite covering crossing, partial fills, cancels (including cancel-after-fill), FIFO within a price level, and property tests (randomised operation sequences maintain invariants: no crossed book, no negative quantities, every id either live or consumed exactly once).\n- **Performance**: a throughput benchmark driving at least 1M mixed operations; report ops/sec and the breakdown (add/cancel/match); deterministic replay from a logged operation sequence must reproduce identical final book state and trades.",
+  "requirements": [
+    "Price-time priority exactly: FIFO within each price level, best price first; market orders execute immediately against the book (or are rejected if the book is empty — the choice documented).",
+    "Integer ticks for all prices in matching logic (`std::int64_t`); any conversion to/from decimal lives at the API edge and is documented (tick size, rounding).",
+    "Cancel/replace is O(1) amortised via an order-id to location map plus level structures; add is O(log P) worst case (P = number of price levels) with the chosen structure documented.",
+    "Depth queries return per-level or cumulative quantities (pick and document); best bid/ask in O(1).",
+    "Trades and fills emitted in matching order with maker/taker attribution; the trade log can be replayed to rebuild the exact final book.",
+    "Property tests with a seeded RNG over at least 100k random operations asserting the invariants (no crossing, no negative qty, id-liveness consistency).",
+    "Throughput benchmark with a mixed workload (e.g. 60% add, 25% cancel, 15% marketable) reporting ops/sec, plus a notes section on the measured bottleneck and one concrete optimisation attempt with before/after numbers."
+  ],
+  "milestones": [
+    {
+      "title": "Types, order entry and book structure",
+      "detail": "Tick/quantity/order types, level container choice, add/reject paths, best bid/ask.",
+      "estHours": 8
+    },
+    {
+      "title": "Matching engine",
+      "detail": "Price-time crossing, partial fills, trade emission, market-order semantics, fill notifications.",
+      "estHours": 8
+    },
+    {
+      "title": "Cancel/replace and depth queries",
+      "detail": "Id map, O(1) cancels, replace as cancel+add or in-place, depth-to-N and near-mid quantity.",
+      "estHours": 6
+    },
+    {
+      "title": "Correctness test suite",
+      "detail": "Deterministic scenario tests + seeded property tests with invariant checks; replay determinism test.",
+      "estHours": 7
+    },
+    {
+      "title": "Benchmark and documentation",
+      "detail": "Mixed-workload throughput harness, bottleneck analysis, one optimisation pass, README with semantics spec.",
+      "estHours": 5
+    }
+  ],
+  "designGuidance": [
+    {
+      "type": "h2",
+      "text": "Choosing the level structure"
+    },
+    {
+      "type": "p",
+      "md": "The classic trade-off: `std::map<Price, Level, std::greater<>>` for bids gives ordered iteration and O(log P) insertion with zero tuning, while `std::unordered_map<Price, Level>` plus a cached best-price pointer gives O(1) inserts and queries but needs careful maintenance on level exhaustion. Either is defensible — write down which you chose, why, and what the worst case is. Do not benchmark your way to a design before you can state the complexity argument."
+    },
+    {
+      "type": "callout",
+      "variant": "warn",
+      "title": "Floating point and prices do not mix",
+      "md": "`0.1 + 0.2 != 0.3` is a book corruption waiting to happen: two 'equal' prices that compare unequal break FIFO grouping and matching. Represent prices as integer ticks end-to-end (`int64_t`), convert at the boundary, and never let a `double` reach the matching code."
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Operation",
+        "Target complexity",
+        "Mechanism"
+      ],
+      "rows": [
+        [
+          "add limit order",
+          "O(log P) or O(1) by design",
+          "ordered map vs hash + cached best"
+        ],
+        [
+          "cancel by id",
+          "O(1) amortised",
+          "hash map id -> (level, position)"
+        ],
+        [
+          "best bid/ask",
+          "O(1)",
+          "cached pointers updated on level change"
+        ],
+        [
+          "match marketable",
+          "O(fills * log P)",
+          "walk opposite side, pop filled quantities"
+        ],
+        [
+          "depth to N levels",
+          "O(N)",
+          "ordered iteration from best"
+        ]
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "struct Level {\n    Price price;\n    std::list<Order> fifo;              // time priority: append at back\n    Qty total;                          // cached sum for depth queries\n};\n\n// bids: descending by price; asks: ascending.\nstd::map<Price, Level, std::greater<Price>> bids_;\nstd::map<Price, Level, std::less<Price>>    asks_;\nstd::unordered_map<OrderId, Location>       index_;  // id -> where it rests",
+      "caption": "One workable skeleton — justify any deviation"
+    },
+    {
+      "type": "h2",
+      "text": "Invariants worth asserting"
+    },
+    {
+      "type": "list",
+      "ordered": false,
+      "items": [
+        "After any operation: best_bid < best_ask (no crossed book) — assert at operation boundaries, not inside matching.",
+        "Every order id is in exactly one state: live in the book, fully filled, or cancelled — never two, never zero-without-history.",
+        "Level totals equal the sum of their orders (maintain incrementally; assert in tests, not in the hot path).",
+        "Replay: the same operation log produces an identical trade sequence and final book — this is your regression net for any structural refactor."
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Priority violations get litigated",
+      "md": "Exchanges publish their matching priority rules precisely because members audit them. If your engine ever matches a later-arriving order at a price level ahead of an earlier one at the same price, that is not a style issue — it is the kind of bug that becomes an arbitration case. Test FIFO explicitly with same-price orders arriving in sequence."
+    }
+  ],
+  "starterFiles": [
+    {
+      "path": "include/lob/types.hpp",
+      "content": "#pragma once\n// Core types for the limit order book. Prices are integer ticks end-to-end:\n// floating point never participates in matching or priority decisions.\n#include <cstdint>\n\nnamespace lob {\n\nusing Price = std::int64_t;     // ticks (e.g. 1 tick = 0.0001 dollars)\nusing Qty = std::int64_t;\nusing OrderId = std::uint64_t;\n\nenum class Side : std::uint8_t { Buy, Sell };\nenum class OrderType : std::uint8_t { Limit, Market };\n\nstruct Order {\n    OrderId id;\n    Side side;\n    OrderType type;\n    Price price;               // ignored for market orders\n    Qty quantity;              // remaining quantity\n    std::uint64_t sequence;    // global arrival counter for time priority\n};\n\nstruct Trade {\n    OrderId makerId;           // resting order that provided liquidity\n    OrderId takerId;           // incoming order that crossed\n    Price price;\n    Qty quantity;\n};\n\ninline const char* toString(Side s) { return s == Side::Buy ? \"BUY\" : \"SELL\"; }\n\n}  // namespace lob\n"
+    },
+    {
+      "path": "include/lob/book_api.hpp",
+      "content": "#pragma once\n// Interface you must implement in src/lob/book.cpp.\n#include <cstddef>\n#include <optional>\n#include <utility>\n#include <vector>\n\n#include \"lob/types.hpp\"\n\nnamespace lob {\n\nclass OrderBook {\npublic:\n    virtual ~OrderBook() = default;\n\n    // Add a limit order; ids must be unique. Marketable limits cross\n    // immediately (matching engine responsibility).\n    virtual void addLimit(const Order& order) = 0;\n\n    // Cancel a resting order by id; returns false if unknown or already filled.\n    virtual bool cancel(OrderId id) = 0;\n\n    // Execute a market order against the book; appends resulting trades\n    // in matching order. Remaining unfilled quantity is discarded\n    // (or rejected if the book is empty — document your choice).\n    virtual void executeMarket(Side side, Qty quantity, std::vector<Trade>& tradesOut) = 0;\n\n    virtual std::optional<Price> bestBid() const = 0;\n    virtual std::optional<Price> bestAsk() const = 0;\n\n    // Depth: (price, quantity) pairs per level, best first, up to `levels`.\n    virtual std::vector<std::pair<Price, Qty>> depth(Side side, std::size_t levels) const = 0;\n};\n\n}  // namespace lob\n"
+    },
+    {
+      "path": "CMakeLists.txt",
+      "content": "# Limit order book build sketch.\ncmake_minimum_required(VERSION 3.16)\nproject(limit_order_book CXX)\n\nset(CMAKE_CXX_STANDARD 17)\nset(CMAKE_CXX_STANDARD_REQUIRED ON)\nenable_testing()\n\nadd_library(lob STATIC\n  src/lob/book.cpp\n  # TODO(project): src/lob/matching.cpp\n)\ntarget_include_directories(lob PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)\ntarget_compile_options(lob PRIVATE -Wall -Wextra)\n\n# TODO(project): register test executables with add_test once written.\n"
+    }
+  ],
+  "evaluationCriteria": [
+    {
+      "criterion": "Matching semantics correctness: price-time priority, partial fills, cancels, market orders",
+      "weight": 35
+    },
+    {
+      "criterion": "Data-structure design meets stated complexity targets; integer-tick discipline",
+      "weight": 15
+    },
+    {
+      "criterion": "Test suite: scenarios, property tests with invariants, replay determinism",
+      "weight": 20
+    },
+    {
+      "criterion": "Throughput benchmark methodology and bottleneck analysis with before/after",
+      "weight": 15
+    },
+    {
+      "criterion": "Documentation: semantics spec, design decisions, build/run instructions",
+      "weight": 15
+    }
+  ],
+  "documentationRequirements": [
+    "README.md: order-lifecycle semantics spec (add/cancel/replace/match), order-state table, build and run instructions.",
+    "The complexity table from design guidance, updated to the structures you actually chose.",
+    "Benchmark section: workload mix, hardware, ops/sec, bottleneck notes and optimisation result.",
+    "The invariants list asserted by tests, so reviewers know what the suite guarantees."
+  ],
+  "extensionChallenges": [
+    "Add stop orders (trigger on the last trade price crossing a threshold) and decide their interaction with priority.",
+    "Implement a pooled node allocator for level FIFOs and measure allocation-count and throughput changes.",
+    "Add self-trade prevention with tests for the three standard policies (cancel-newest, cancel-oldest, cancel-both)."
+  ]
+}

@@ -1,0 +1,228 @@
+{
+  "id": "cpp-production-debugging",
+  "moduleId": "ph4-cpp-l9",
+  "title": "GDB, Crash Analysis and Production Debugging",
+  "estMinutes": 27,
+  "difficulty": "advanced",
+  "prereqs": ["cpp-testing-frameworks"],
+  "objectives": [
+    "Drive GDB: set breakpoints, inspect locals, walk and inspect stack frames with backtrace",
+    "Enable, capture and analyse a core dump for post-mortem debugging of a crashed process",
+    "Explain why debug symbols, -O0 and -fno-omit-frame-pointer matter for debuggable builds",
+    "Apply hot-path logging discipline: level-checked, allocation-free, structured, and honestly scoped"
+  ],
+  "motivation": "At 14:32 the feed handler dies with SIGSEGV; by the time someone reruns it, the market has moved and the client is asking what happened. Teams that own their binaries answer in minutes: the core dump is replayed in GDB, the backtrace names the function, frame and faulting pointer, and the fix ships with a regression test. Teams without that discipline rebuild 'the same conditions' for a day - and often never reproduce.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "GDB: the live debugger"
+    },
+    {
+      "type": "p",
+      "md": "GDB stops a running program at points you choose and lets you interrogate *everything*: locals, memory, registers, stack. The core workflow: set a **breakpoint** (`break file:line`, or `break func`, or conditional `break gateway.cpp:88 if qty > 1000`), `run` until it hits, then inspect (`print expr`, `info locals`) and step (`next` over calls, `step` into them). **Watchpoints** (`watch totalPnl`) break whenever a value changes - invaluable for 'who corrupted this variable'. For a *running* process instead of a fresh start: `gdb -p <pid>` attaches in place."
+    },
+    {
+      "type": "code",
+      "lang": "text",
+      "code": "(gdb) break pricer.cpp:42\nBreakpoint 1 at 0x4011a3: file pricer.cpp, line 42.\n(gdb) run\nBreakpoint 1, price(...) at pricer.cpp:42\n(gdb) print notional\n$1 = 100000\n(gdb) next\n(gdb) print spread\n$2 = 0.25\n(gdb) bt\n#0  price (notional=100000) at pricer.cpp:42\n#1  onFill (f=...) at gateway.cpp:88\n#2  main () at main.cpp:15\n(gdb) frame 1          # walk up to the caller\n(gdb) info locals      # gateway.cpp's locals at this depth\n(gdb) continue",
+      "caption": "bt lists every frame from the innermost up; frame N selects one and lets you inspect it."
+    },
+    {
+      "type": "p",
+      "md": "The **backtrace** is the single most informative command: it is the call stack at the moment of the stop, innermost frame first. Reading it top-down answers 'what was executing'; reading it bottom-up answers 'how did we get here' - frame `#2 main` shows the entry path. Make sure builds carry the data bt needs: compile with `-g` for symbols, `-O0` (or `-O2 -fno-omit-frame-pointer`) so optimisation does not merge or reorder lines, and prefer `-fno-omit-frame-pointer` in profiling/debug builds because frame pointers make stack walking reliable even without full symbols."
+    },
+    {
+      "type": "h2",
+      "text": "Core dumps: post-mortem analysis"
+    },
+    {
+      "type": "p",
+      "md": "A **core dump** is the process's memory image plus register state, written by the kernel when the process dies on a signal (SIGSEGV, SIGABRT, SIGBUS...). It is a snapshot of the exact crash - replayable forever. Enable capturing, then open the corpse:"
+    },
+    {
+      "type": "code",
+      "lang": "bash",
+      "code": "ulimit -c unlimited                 # per-shell: allow core files (default often 0)\ncat /proc/sys/kernel/core_pattern   # where/how cores are named by the kernel\n\n# Build for post-mortem: symbols, no optimisation, frame pointers kept\ng++ -g -O0 -fno-omit-frame-pointer app.cpp -o app\n\n./app                               # crashes -> core file written per core_pattern\ngdb ./app core                      # or: gdb ./app /var/crash/core.xxx\n(gdb) bt full                       # backtrace WITH locals for every frame\n(gdb) info threads                  # all threads' states (multithreaded crash)\n(gdb) thread apply all bt 3         # each thread's top 3 frames",
+      "caption": "The core plus the matching binary (this exact build!) reproduces the crash deterministically."
+    },
+    {
+      "type": "steps",
+      "title": "Worked crash triage: a null quote pointer",
+      "items": [
+        "SIGSEGV in production; core captured. `gdb ./app core` and `bt` shows: `#0 processQuote (Quote* q) at pricer.cpp:31` called from `onTick`.",
+        "`frame 0`, then `print q` prints `0x0` - the faulting pointer is null; the fault was `q->bid`.",
+        "`up` to the caller, `info locals`: the quote cache lookup returned nullptr and was never checked.",
+        "Root cause class: a symbol not in the snapshot today (a quiet market, a delisted contract) - the happy-path assumption 'lookup always succeeds' was never tested.",
+        "Fix: handle the miss (skip + count), add a regression test with EXPECT_THROW/miss-case, and optionally enable a debug-level log line for quote-cache misses."
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "The binary must match the core",
+      "md": "A core is only meaningful against the exact binary (and libraries) that produced it - same commit, same flags. Version your artefacts (embed a git hash in `--version`), archive each release binary, and keep its debug symbols. A core without its matching build is a picture with no caption."
+    },
+    {
+      "type": "h2",
+      "text": "Logging discipline for production"
+    },
+    {
+      "type": "p",
+      "md": "When you cannot attach a debugger, logs are the debugger - so design them. Rules that hold on trading systems: **level-checked and allocation-free on the hot path** (the check `if (debugEnabled)` costs a predictable branch; building the message string costs a malloc on every tick); **structured** fields (`key=value` or JSON) so logs are queryable rather than greppable prose; **one line per event, with context** (symbol, venue, sequence number) so correlated events join up; **latency-relevant events logged with timestamps from the same clock** the latency numbers use; and never log secrets or full payloads of sensitive data."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <cstdio>\n\nstruct Fill { int sym; double px; int qty; };\n\n// Discipline: level-checked, allocation-free logging on the hot path.\nvoid onFill(const Fill& f, bool debugEnabled) {\n    if (debugEnabled)\n        std::printf(\"fill sym=%d px=%.2f qty=%d\\n\", f.sym, f.px, f.qty);\n    // ... hot-path work continues, untouched by the disabled branch\n}\n\nint main() { onFill({42, 101.25, 10}, true); }\n// Prints: fill sym=42 px=101.25 qty=10\n// The anti-pattern: \"fill sym=\" + std::to_string(...) - heap-allocated\n// string built on EVERY call just to be discarded by the level filter.",
+      "caption": "Check the level first; build the message only if it will be emitted."
+    },
+    {
+      "type": "p",
+      "md": "Finally, the honest scope of debugging: core dumps and logs explain *what* broke; fix the *system* with the testing lesson's tools - a regression test, a sanitiser lane, a CI gate - so the same crash cannot return. Production debugging without a follow-up test fix is just archaeology."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "A multithreaded gateway crashed with SIGSEGV and produced a core. Walk the triage: (a) exact commands from enabling cores to opening GDB on the corpse; (b) the commands to see where it crashed, with all locals, and to inspect every thread; (c) the backtrace shows `#0 ... onTick (Quote* q)` with `print q` giving `0x0`. Name the bug class, the code-level fix, and the process-level guard that prevents recurrence.",
+    "hints": [
+      "ulimit controls core size limits; core_pattern names where the kernel writes them.",
+      "bt full, info threads, thread apply all bt cover (b).",
+      "A 0x0 pointer means a lookup/optional path returned null and was dereferenced unchecked."
+    ],
+    "solution": "(a) `ulimit -c unlimited`; check `cat /proc/sys/kernel/core_pattern` for where cores land; rebuild with `g++ -g -O0 -fno-omit-frame-pointer` (the matching build!); run the crashed binary, then `gdb ./app core`. (b) `bt full` (stack + locals per frame); `info threads`; `thread apply all bt` (or `bt N` per thread for the top frames). (c) Bug class: unchecked null from a lookup (e.g. quote-cache miss) dereferenced on the hot path. Fix: test for null/missing and skip-with-counter (or throw a typed error where the contract allows). Guard: a regression test for the miss case in the CI pipeline (plus ASan lane, which flags the null deref path in tests), and a structured debug-level log for cache misses so the condition is observable in production."
+  },
+  "independentExercise": {
+    "prompt": "Design the production-debugging setup for a new matching engine. (a) List the build flags for the debug/post-mortem binary and say what each contributes. (b) Specify your hot-path logging rules: what gets logged at info vs debug, how the level check must be structured, and why string-building on disabled levels is unacceptable (state the cost class). (c) Give the operational runbook order for a 14:32 crash: what is captured first, second, third, and what artefacts go into the post-mortem.",
+    "hints": [
+      "Post-mortem needs symbols, faithful line mapping and walkable stacks: -g, -O0, -fno-omit-frame-pointer.",
+      "printf-style formatted logging of enabled levels costs a branch; building std::string costs heap allocation per call.",
+      "Runbook: preserve evidence before restart (core, logs, binary), then diagnose, then fix with a test."
+    ],
+    "solution": "(a) `-g` symbols for GDB/perf; `-O0` so lines map 1:1 to source (a `-O2 -fno-omit-frame-pointer` release variant for performance cores); `-fno-omit-frame-pointer` so stack walking works in cores; embed the git hash for artefact matching. (b) Info: order events with context (sym, venue, seq), errors/warnings with typed reasons, latency stats periodic. Debug: per-tick details - level-checked *before* any message construction (`if (debugEnabled) printf/log(...)`), allocation-free formatting (printf-style or fmt with stack buffers), one structured line per event. Disabled-level string building is a heap allocation on every tick - it adds hot-path jitter and cache pollution for output nobody reads. (c) 1) Preserve evidence: do not restart until the core (check core_pattern location), log files, and the exact binary are copied aside; 2) `gdb ./app core` - `bt full`, `info threads`, inspect frames, identify fault; 3) fix + regression test + sanitiser/CI guard, then deploy and record the timeline in the post-mortem with the GDB evidence attached."
+  },
+  "commonMistakes": [
+    "Rebuilding a release binary without -g/-O0 and then trying to debug it - the backtrace shows addresses and inlined soup, not lines.",
+    "Analysing a core against a different build than the one that crashed: frames resolve to wrong lines or not at all.",
+    "Building log message strings (std::string, iostream <<) unconditionally on the hot path and discarding them at the level filter.",
+    "Restarting a crashed service before the core dump and logs are preserved - the evidence is gone.",
+    "Logging prose-only lines with no structure or context fields, making cross-event correlation impossible during incidents."
+  ],
+  "realWorldApplication": "Kernel core_pattern pipelines, crash-report collectors and systemd-coredump all implement this exact flow; GDB itself is used daily against live processes (gdb -p) and archives (cores) in every C++ operations team.",
+  "quantFinanceApplication": "A trading system's crash post-mortem is a compliance artefact as well as an engineering one: the GDB backtrace from the archived core plus structured logs reconstructs exactly which orders were in flight when the process died - required for exchange reporting and client answers.",
+  "summary": [
+    "GDB workflow: breakpoint (optionally conditional) -> run -> print/info locals -> bt -> frame N -> continue; watchpoints break on value change.",
+    "Core dumps are post-mortem snapshots: enable with ulimit -c, locate via core_pattern, analyse with gdb ./app core (bt full, info threads).",
+    "Debuggable builds need -g, faithful line mapping (-O0 or careful -O2 with -fno-omit-frame-pointer), and artefact-versioning so the binary matches the core.",
+    "Hot-path logging is level-checked before construction, allocation-free, structured, one line per event with context.",
+    "Every production fix ends in the pipeline: regression test + sanitiser lane, or the crash will return."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "In GDB, which command shows the full call stack at the moment of a stop, innermost frame first?",
+      "options": [
+        "info stack-only",
+        "bt (backtrace)",
+        "frame",
+        "list"
+      ],
+      "answerIndex": 1,
+      "explanation": "bt prints one line per stack frame (#0 innermost upward), naming function, arguments and source location. frame N selects a frame; bt full adds locals for every frame."
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "What is a core dump?",
+      "options": [
+        "A compressed copy of the binary for fast redeployment",
+        "The kernel's memory image + register state of a crashed process, written to disk for post-mortem debugging",
+        "A histogram of CPU core usage",
+        "The compiler's intermediate dump from -save-temps"
+      ],
+      "answerIndex": 1,
+      "explanation": "On a fatal signal the kernel can write the process's memory/registers to a file; opened in GDB against the matching binary, it reproduces the crash state deterministically."
+    },
+    {
+      "id": "q3",
+      "type": "code-output",
+      "prompt": "What does this program print?",
+      "language": "cpp",
+      "code": "#include <cstdio>\n\nstruct Fill { int sym; double px; int qty; };\n\nvoid onFill(const Fill& f, bool debugEnabled) {\n    if (debugEnabled)\n        std::printf(\"fill sym=%d px=%.2f qty=%d\\n\", f.sym, f.px, f.qty);\n}\n\nint main() { onFill({42, 101.25, 10}, true); }",
+      "answer": "fill sym=42 px=101.25 qty=10",
+      "explanation": "printf with %d/%.2f renders sym=42, px to two decimals as 101.25, qty=10 - the level-checked branch emits exactly one structured line."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "Why is `if (debugEnabled) log(...)` considered correct hot-path logging while `log(\"px=\" + std::to_string(px))` (with the level checked inside) is not?",
+      "options": [
+        "The first uses a faster logging library",
+        "The second builds the message string (heap allocation + formatting) on every call even when the level filter discards it; the first checks before any construction",
+        "std::to_string is undefined for doubles",
+        "They are equivalent; it is only style"
+      ],
+      "answerIndex": 1,
+      "explanation": "Argument evaluation happens before the logging function runs, so concatenation costs a malloc/format per tick regardless of the filter. Check the level first; build nothing when disabled."
+    },
+    {
+      "id": "q5",
+      "type": "mcq",
+      "prompt": "You open a core in GDB and the frames show addresses but wrong-looking or missing source lines. Most likely cause?",
+      "options": [
+        "The core file is corrupted",
+        "The binary being used does not match the build that crashed (different commit/flags), or lacks -g symbols",
+        "GDB requires -O2 binaries to show lines",
+        "The kernel wrote the core in a foreign format"
+      ],
+      "answerIndex": 1,
+      "explanation": "Cores are meaningless without the exact matching binary and its debug symbols: same commit, same flags, archived with the release. Mismatched builds resolve frames to wrong lines."
+    },
+    {
+      "id": "q6",
+      "type": "short",
+      "prompt": "Name the three build flags discussed for making a binary debuggable/post-mortem-friendly, and what each contributes (one phrase each).",
+      "modelAnswer": "-g (debug symbols), -O0 (faithful line mapping / no inlining surprises), -fno-omit-frame-pointer (walkable stacks).",
+      "keywords": ["-g", "symbols", "-O0", "frame", "line"],
+      "explanation": "-g emits symbol tables for names and lines; -O0 keeps the optimiser from merging/reordering statements; -fno-omit-frame-pointer keeps frame pointers so stack walking (bt) is reliable even in optimized/profiling builds."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "definition",
+      "front": "Core dump",
+      "back": "Memory image + registers of a crashed process written by the kernel on a fatal signal; analysed post-mortem with gdb ./app core against the exact matching binary."
+    },
+    {
+      "type": "concept",
+      "front": "GDB crash-triage command sequence",
+      "back": "gdb ./app core -> bt full (stack + locals) -> frame N / print expr to inspect -> info threads / thread apply all bt for multithreaded crashes."
+    },
+    {
+      "type": "concept",
+      "front": "Hot-path logging discipline",
+      "back": "Check the level before constructing anything; allocation-free formatting; structured one-line events with context (sym, seq); timestamps from the same clock as latency metrics."
+    },
+    {
+      "type": "definition",
+      "front": "Why -fno-omit-frame-pointer in debug/profiling builds?",
+      "back": "Keeps frame pointers so stack walking (backtraces in GDB and perf) is reliable even when optimisation is on."
+    }
+  ],
+  "references": [
+    {
+      "label": "GDB manual — Backtrace, frames, cores",
+      "url": "https://sourceware.org/gdb/current/onlinedocs/gdb.html/Backtrace.html"
+    },
+    {
+      "label": "man core (Linux core dump files and core_pattern)",
+      "url": "https://man7.org/linux/man-pages/man5/core.5.html"
+    },
+    {
+      "label": "cppreference — printf format specifiers",
+      "url": "https://en.cppreference.com/w/cpp/io/c/fprintf"
+    }
+  ],
+  "skills": [
+    "cpp-engineering"
+  ]
+}

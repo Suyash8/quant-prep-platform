@@ -1,0 +1,205 @@
+{
+  "id": "cpp-mutexes",
+  "moduleId": "ph4-cpp-l7",
+  "title": "Mutexes, Locks and Condition Variables",
+  "estMinutes": 27,
+  "difficulty": "advanced",
+  "prereqs": ["cpp-threads"],
+  "objectives": [
+    "Protect critical sections with std::mutex and the RAII lock types lock_guard, unique_lock and scoped_lock (C++17)",
+    "Write condition-variable waits using the while-loop pattern and explain spurious wakeups",
+    "Diagnose deadlock from a lock-acquisition cycle and prevent it with global lock ordering or std::scoped_lock",
+    "State the invariant a mutex protects, not merely which bytes it covers"
+  ],
+  "motivation": "Two threads each add 100 cents to one position: run serially the sum is exact, run concurrently the position drifts, and a drifted position is a wrong hedge. Mutual exclusion is the simplest correct fix, but locks bring their own failure modes - forgotten unlocks, spurious wakeups, deadlocks - and in trading systems a deadlock is a stalled feed, which is an incident with an audit trail. This lesson turns 'wrap it in a mutex' into a discipline you can argue from: what the lock protects, why the wait loop must be a while, and why lock order is a global design decision.",
+  "blocks": [
+    { "type": "h2", "text": "Critical sections and RAII locks" },
+    { "type": "p", "md": "A `std::mutex` has two operations: `lock()` (block until you hold it) and `unlock()`. The code between them is a **critical section**: at most one thread inside it at a time, so the shared state it touches has a chance to satisfy its invariant. The invariant is the key phrase - a mutex does not protect *data*, it protects a **claim about the data** (\"balance is exact\", \"queue is consistent\") that holds whenever the mutex is free." },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <iostream>\n#include <mutex>\n#include <thread>\n\nlong long balance = 0;\nstd::mutex m;\n\nvoid deposit(int n) {\n    for (int i = 0; i < n; ++i) {\n        std::lock_guard<std::mutex> g(m);   // acquires at construction...\n        balance += 100;                     // critical section\n    }                                       // ...releases at scope exit, even on throw\n}\n\nint main() {\n    std::thread a(deposit, 1000), b(deposit, 1000);\n    a.join();\n    b.join();\n    std::cout << balance << '\\n';           // 200000, every run\n    return 0;\n}",
+      "caption": "lock_guard is RAII: acquire in the constructor, release in the destructor. A forgotten unlock becomes impossible."
+    },
+    { "type": "p", "md": "Never call `m.lock()`/`m.unlock()` by hand in production code: an early `return` or exception between them leaks the lock and the next acquirer blocks forever. The RAII wrappers make scope = lock duration. Which wrapper? `std::lock_guard` when one mutex is held for a whole scope; `std::unique_lock` when you need to lock later, unlock early, or pass the lock to a condition variable; `std::scoped_lock` (C++17) when you need **several** mutexes at once." },
+    {
+      "type": "table",
+      "headers": ["Tool", "Reach for it when", "Notes"],
+      "rows": [
+        ["std::lock_guard<M>", "One mutex, whole scope, no extras", "Zero-overhead, not movable"],
+        ["std::unique_lock<M>", "Condvar wait, manual lock/unlock, early release", "Slightly heavier; movable; required by condition_variable::wait"],
+        ["std::scoped_lock<M...> (C++17)", "Several mutexes in one go", "Deadlock-free acquisition via an internal algorithm"],
+        ["raw lock()/unlock()", "Almost never", "Exceptions and early returns leak the lock"]
+      ]
+    },
+    {
+      "type": "interactive",
+      "component": "ComplexityCompare",
+      "params": {
+        "series": [
+          { "name": "uncontended lock (illustrative, ns)", "points": [[1, 20], [8, 20], [16, 20], [64, 20]] },
+          { "name": "contended lock with futex wake (illustrative, ns)", "points": [[1, 20], [8, 2000], [16, 9000], [64, 40000]] }
+        ]
+      },
+      "caption": "Illustrative orders of magnitude: an uncontended mutex costs tens of nanoseconds; contention adds a kernel round-trip that can cost microseconds. Contention, not the lock instruction, is the latency risk."
+    },
+    { "type": "h2", "text": "Condition variables: waiting for state to change" },
+    { "type": "p", "md": "A mutex stops two threads from stepping on each other; a `std::condition_variable` lets a thread **sleep until state changes** instead of spinning. The protocol is always: hold a `std::unique_lock`, check a condition, `wait()`. Waiting atomically releases the mutex and sleeps; `notify_one()`/`notify_all()` wake sleepers, who re-acquire the mutex before returning from `wait()`." },
+    { "type": "p", "md": "Now the crucial subtlety: `wait()` may return **without any notification** - a **spurious wakeup** - and a notification may fire before you even started waiting (a *lost wakeup* if you checked too naively). Therefore the check must be inside a loop that re-tests the predicate after every wake. `while (!ready) cv.wait(lock);` is the pattern; `cv.wait(lock, pred)` compiles to exactly that loop. An `if` is a bug waiting for a scheduling coincidence." },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <condition_variable>\n#include <iostream>\n#include <mutex>\n#include <queue>\n#include <thread>\n\nstd::queue<int> q;\nstd::mutex m;\nstd::condition_variable cv;\n\nvoid consumer() {\n    for (int got = 0; got < 5; ) {\n        std::unique_lock<std::mutex> lk(m);\n        while (q.empty()) cv.wait(lk);   // 'if' would break on spurious wakeups\n        std::cout << q.front() << '\\n';\n        q.pop();\n        ++got;\n    }\n}\n\nint main() {\n    std::thread c(consumer);\n    for (int i = 1; i <= 5; ++i) {\n        {   std::lock_guard<std::mutex> lk(m);\n            q.push(i);\n        }\n        cv.notify_one();                 // notify AFTER releasing is fine and common\n    }\n    c.join();\n    return 0;\n}",
+      "caption": "One consumer, so the printout is deterministic: 1 to 5, one per line. The while-loop survives spurious wakeups and early notifications."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Notify outside the lock, predicate inside",
+      "md": "You do not need to hold the mutex to call `notify_one()` (and usually you should not - holding it forces the woken thread to block again). But you **must** read or write the shared predicate under the mutex, or the notifier and the sleeper disagree about state. And always re-check the predicate after waking: it is not guaranteed to still hold."
+    },
+    { "type": "h2", "text": "Deadlock and lock ordering" },
+    { "type": "p", "md": "Deadlock needs a **cycle**: thread 1 holds lock A and wants B, thread 2 holds B and wants A, and neither ever lets go. The two classic fixes are discipline and tooling. **Discipline:** agree on a global total order for locks (say, order accounts by id) and always acquire in that order - then a cycle cannot form, because every edge in the wait-for graph points the same way. **Tooling:** `std::scoped_lock(m1, m2)` (C++17) acquires several mutexes using an internal deadlock-avoidance algorithm, so call-site ordering stops mattering." },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <mutex>\n\nstruct Account { std::mutex m; long long cents = 0; };\n\n// BAD: transfer(a,b) locks a then b; transfer(b,a) locks b then a. Under\n// concurrent opposite-direction transfers the two threads can deadlock.\nvoid transfer_bad(Account& a, Account& b, long long c) {\n    std::lock_guard<std::mutex> la(a.m);\n    std::lock_guard<std::mutex> lb(b.m);\n    a.cents -= c;\n    b.cents += c;\n}\n\n// GOOD (C++17): one call acquires both mutexes deadlock-free.\nvoid transfer_ok(Account& a, Account& b, long long c) {\n    std::scoped_lock both(a.m, b.m);\n    a.cents -= c;\n    b.cents += c;\n}",
+      "caption": "With a global lock order (e.g. always lock the lower account id first) transfer_bad would also be safe - but scoped_lock makes the argument impossible to get wrong at a new call site."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "What the mutex protects",
+      "md": "In the transfer example the invariant is not \"the account\" but \"the pair\": while either lock is held, `a.cents + b.cents` must be constant. Holding only one lock breaks the invariant even with no race - the money would briefly exist in two places. Name the invariant your mutex defends; if you cannot, you are locking, not reasoning."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Complete a thread-safe bounded queue class. It holds a `std::queue<int>` and a mutex; implement `void push(int)` (enqueue, notify one waiter) and `int pop()` (blocks until an element exists, using the while-loop pattern with `std::unique_lock` and `cv.wait`). Then explain, line by line, which parts must hold the mutex and which must not.",
+    "hints": [
+      "`pop()` needs `std::unique_lock` because `condition_variable::wait` requires the ability to unlock and relock internally.",
+      "The pusher must modify the queue under the mutex, then notify.",
+      "If `pop()` used `if (q.empty())` instead of `while`, name the two scheduling coincidences that would break it."
+    ],
+    "solution": "```cpp\n#include <condition_variable>\n#include <mutex>\n#include <queue>\n\nclass ThreadSafeQueue {\n    std::queue<int> q_;\n    std::mutex m_;\n    std::condition_variable cv_;\npublic:\n    void push(int v) {\n        {   std::lock_guard<std::mutex> lk(m_);\n            q_.push(v);              // shared state: under the mutex\n        }\n        cv_.notify_one();            // notification itself needs no lock\n    }\n    int pop() {\n        std::unique_lock<std::mutex> lk(m_);   // unique_lock: wait() unlocks it\n        while (q_.empty()) cv_.wait(lk);       // re-test: spurious wakeups\n        int v = q_.front();\n        q_.pop();\n        return v;                    // still holding the lock until lk destructs\n    }\n};\n```\n**Which parts need the mutex:** every access to `q_` - push, front, pop - because the predicate (\"queue non-empty\") and the data must change atomically together. **Which do not:** `notify_one()` can be called after releasing the lock; waking is not part of the invariant. **Why the loop:** `wait()` can return spuriously (no notification at all), and a notification may have been consumed before this thread started waiting; either way the queue can still be empty when we wake, so we must re-test and go back to sleep. With an `if`, a spurious wakeup calls `q_.front()` on an empty queue - undefined behaviour."
+  },
+  "independentExercise": {
+    "prompt": "Three desks hold accounts A (starting \\$1,000), B (\\$500) and C (\\$250). Transfers happen concurrently: A sends \\$200 to B, B sends \\$100 to C, C sends \\$50 to A. Each account has its own mutex. (1) Show a concrete interleaving of two `transfer_bad`-style functions that deadlocks, and name the cycle. (2) Fix the design two ways: a global lock order (which order, and why) and `std::scoped_lock`. (3) Compute the final balances and verify the conserved total.",
+    "hints": [
+      "A deadlock cycle needs each thread to hold something the next thread wants.",
+      "Order accounts by id: A < B < C. Which of the three transfers would violate 'always lock lower id first' if written naively?",
+      "Track each transfer's two legs; the total should stay at 1,000 + 500 + 250."
+    ],
+    "solution": "**(1) The cycle:** the A-to-B transfer locks A then B; the C-to-A transfer locks C then A... but the B-to-C transfer locks B then C. Take A→B (holds A, wants B) and C→A (holds C, wants A): no cycle yet - add B→C (holds B, wants C) and the chain A-wants-B, B-wants-C, C-wants-A forms a cycle through all three threads. Each waits forever. **(2) Fixes:** *Global order* - always acquire in id order A < B < C, so the A→B path locks A then B, the B→C path locks B then C, and C→A must lock A **then** C (lower first). Every wait-for edge now points from a higher-id holder to a lower-id waiter... in fact all edges point \"downward\", and a cycle cannot close. *scoped_lock* - `std::scoped_lock both(a.m, b.m);` acquires both with an internal avoidance algorithm; ordering becomes un-rememberable, hence un-forgettable. **(3) Balances:** A: 1,000 − 200 + 50 = **850**. B: 500 + 200 − 100 = **600**. C: 250 + 100 − 50 = **300**. Total: 850 + 600 + 300 = 1,750 = the starting total, so the \"sum of balances is constant\" invariant is preserved - exactly the invariant the two-lock critical section protects."
+  },
+  "commonMistakes": [
+    "Using `if` instead of `while` before `condition_variable::wait` - one spurious wakeup and you operate on invalid state.",
+    "Notifying while holding the mutex and believing this makes the wakeup non-spurious - spurious wakeups are a property of the primitive, not of your locking.",
+    "Acquiring two mutexes in different orders at different call sites - the textbook deadlock recipe.",
+    "Locking in a destructor or holding a lock across a callback: the callback may try to lock the same mutex, and a non-recursive mutex deadlocks with itself.",
+    "Believing `std::mutex` protects data it never locked around: every read AND write of the shared state must be inside the critical section."
+  ],
+  "realWorldApplication": "Thread-safe queues, rate limiters, configuration stores and connection pools are all 'mutex + condition variable + invariant'. Lock-order violations are among the most common production deadlocks, and they reproduce only under load.",
+  "quantFinanceApplication": "The transfer exercise is a position-transfer between desks: the invariant 'total across the pair is conserved' is a risk constraint, and a deadlock in the transfer path means fills waiting on risk checks - a stalled feed, which desks treat as an outage.",
+  "summary": [
+    "A mutex protects an invariant, not just bytes: state what claim holds while the lock is free.",
+    "RAII wrappers - lock_guard, unique_lock, scoped_lock (C++17) - make scope = lock duration and survive exceptions; raw lock()/unlock() does not.",
+    "Condition variables require a unique_lock, a predicate re-checked in a while loop (or the wait(lock, pred) overload), and notification that may fire spuriously or early.",
+    "Deadlock is a wait-for cycle; a global lock order or std::scoped_lock closes it structurally, not by luck.",
+    "An uncontended mutex is cheap; contention is where microseconds live - design for low hold times and few shared locks."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "Which lock type does condition_variable::wait require in its first argument?",
+      "options": [
+        "std::lock_guard<std::mutex>",
+        "std::unique_lock<std::mutex>",
+        "std::scoped_lock<std::mutex>",
+        "A raw reference to the mutex"
+      ],
+      "answerIndex": 1,
+      "explanation": "wait must unlock and relock the mutex internally as it sleeps and wakes, which needs unique_lock's explicit control. lock_guard cannot be unlocked mid-scope."
+    },
+    {
+      "id": "q2",
+      "type": "code-output",
+      "prompt": "What does this program print?",
+      "language": "cpp",
+      "code": "#include <iostream>\n#include <mutex>\n\nint main() {\n    std::mutex m;\n    {\n        std::lock_guard<std::mutex> a(m);\n        std::cout << \"held \";\n    }\n    std::cout << \"released\\n\";\n    return 0;\n}",
+      "answer": "held released",
+      "explanation": "The lock_guard holds the mutex for the inner scope, so \"held \" prints while it is locked; the destructor releases it at the closing brace, then \"released\" prints. Output is exactly `held released`."
+    },
+    {
+      "id": "q3",
+      "type": "mcq",
+      "prompt": "A spurious wakeup means:",
+      "options": [
+        "notify_all was called by mistake",
+        "wait() may return even though no notification was sent",
+        "The mutex was released too early",
+        "The condition variable was copied"
+      ],
+      "answerIndex": 1,
+      "explanation": "Spurious wakeups are permitted by the standard: wait() can return without any notify call. That is precisely why the predicate must be re-checked in a loop."
+    },
+    {
+      "id": "q4",
+      "type": "ms",
+      "prompt": "Which practices structurally prevent deadlock (as opposed to hoping about timing)?",
+      "options": [
+        "Acquiring all locks in one agreed global order",
+        "std::scoped_lock for multi-lock acquisition (C++17)",
+        "Avoiding user callbacks and blocking calls while holding a lock",
+        "Holding each lock for as long as possible"
+      ],
+      "answerIndices": [0, 1, 2],
+      "explanation": "A global order makes cycles impossible; scoped_lock uses an internal avoidance algorithm; not calling unknown code while locked removes self-deadlock. Holding locks longer increases contention and deadlock windows - it prevents nothing."
+    },
+    {
+      "id": "q5",
+      "type": "short",
+      "prompt": "In one or two sentences: why must a condition-variable wait re-check its predicate in a loop rather than once with an if?",
+      "modelAnswer": "Because wait() can wake spuriously without any notification, and notifications can arrive before the thread starts waiting, so the condition may still be false after waking. The loop re-tests and returns to sleep, while an if would proceed on invalid state.",
+      "keywords": ["spurious", "re-check", "notify"],
+      "explanation": "Two failure modes (spurious wakeup, lost/early notification) mean 'predicate true at wake' is never guaranteed - the while-loop is the fix, and wait(lock, pred) encodes it."
+    },
+    {
+      "id": "q6",
+      "type": "numeric",
+      "prompt": "Account A starts at \\$1,000 and B at \\$500. Two transfers run (each fully protected by scoped_lock on both accounts, so they are serialised): A sends \\$200 to B, then B sends \\$50 to A. What is B's final balance in dollars?",
+      "answer": 650,
+      "tolerance": 0.001,
+      "explanation": "B: 500 + 200 - 50 = 650. With both locks held per transfer, the pair's total (1,500) is conserved at every point between transfers - the invariant the critical section protects."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "lock_guard vs unique_lock vs scoped_lock (C++17)",
+      "back": "lock_guard: one mutex, whole scope, cheapest. unique_lock: movable, manual lock/unlock, required by condvar wait. scoped_lock: several mutexes at once, deadlock-free acquisition."
+    },
+    {
+      "type": "definition",
+      "front": "What is a spurious wakeup?",
+      "back": "condition_variable::wait may return without any notify having been sent. Hence the predicate must be re-checked in a while loop (or use wait(lock, pred))."
+    },
+    {
+      "type": "concept",
+      "front": "The two structural deadlock fixes",
+      "back": "A global total lock order (every acquisition follows it, so the wait-for graph is acyclic) or std::scoped_lock(m1, m2) which acquires multiple mutexes deadlock-free."
+    },
+    {
+      "type": "concept",
+      "front": "What does a mutex actually protect?",
+      "back": "An invariant - a claim about the state that holds whenever the mutex is not held (e.g. 'a.cents + b.cents is constant'). If you cannot state the invariant, the locking is not reasoned."
+    }
+  ],
+  "references": [
+    { "label": "cppreference - std::mutex", "url": "https://en.cppreference.com/w/cpp/thread/mutex" },
+    { "label": "cppreference - std::condition_variable", "url": "https://en.cppreference.com/w/cpp/thread/condition_variable" },
+    { "label": "cppreference - std::scoped_lock (C++17)", "url": "https://en.cppreference.com/w/cpp/thread/scoped_lock" },
+    { "label": "cppreference - Deadlock (general concept)", "url": "https://en.wikipedia.org/wiki/Deadlock" }
+  ],
+  "skills": ["concurrency"]
+}

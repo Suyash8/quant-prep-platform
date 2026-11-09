@@ -1,0 +1,219 @@
+{
+  "id": "cpp-references-pointers",
+  "moduleId": "ph4-cpp-l1",
+  "title": "References and Pointers",
+  "estMinutes": 27,
+  "difficulty": "foundation",
+  "prereqs": ["cpp-control-functions"],
+  "objectives": [
+    "Declare and use references and pointers, reading & and * correctly in both declaration and operator positions",
+    "Mutate caller state through pass-by-reference and pass-by-pointer, and choose between the two styles",
+    "Use nullptr and guard dereferences, and explain why invalid dereferencing is undefined behaviour",
+    "Use const references to pass large read-only objects without copying"
+  ],
+  "motivation": "Pass-by-value copies are fine for an int, but a function that must update a live position - or inspect an order without copying it - needs *aliasing*. References and pointers are C++'s two aliasing tools, and they are exactly where C++ interviews probe: & versus *, rebinding, nullptr, and what dereferencing a bad address really does.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "References: a second name for the same object"
+    },
+    {
+      "type": "p",
+      "md": "A **reference** is declared with & in a declaration - `int& r = price;` - and from then on r *is* price: another name for the same storage, bound at initialisation and **never rebindable** to a second object. There is no null reference and no reference arithmetic; using a reference is syntactically identical to using the original object. That permanence makes references excellent parameters: a function taking `int& position` writes through to the caller's variable with plain assignment syntax. Reading the symbols is the core skill: in a *declaration*, & builds a reference and * builds a pointer; in an *expression*, & is the **address-of** operator and * is the **dereference** (indirection) operator."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <iostream>\n\nint main() {\n    int price = 4200;\n    int& r = price;   // declaration: r is a reference (another name)\n    r += 100;         // r is used just like the object itself\n    int* p = &price;  // declaration: p is a pointer; here & is address-of\n    *p += 100;        // expression: * is dereference, writing through p\n    std::cout << price << '\\n';   // 4400 - both aliases touched the same int\n    return 0;\n}",
+      "caption": "One int, two aliases: the reference writes with plain syntax, the pointer writes through *. Output: 4400"
+    },
+    {
+      "type": "h2",
+      "text": "Pointers: a variable that stores an address"
+    },
+    {
+      "type": "p",
+      "md": "A **pointer** is its own object holding an address: `int* p = &price;` makes p point at price. Unlike a reference, p can be *repointed* later (`p = &other;`), can hold null ('no target right now'), and supports arithmetic across arrays (next lesson). Dereferencing `*p` follows the address and accesses the target - that is the moment the pointer must be valid. One parsing trap: `int* p, q;` declares p as a pointer and q as a plain int, because the * binds to the name, not the type; most style guides therefore declare one pointer per line. To pass an existing variable's address to a function, apply &: `add(&v, 7);`"
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <iostream>\n\nvoid add(int* x, int y) {\n    *x += y;              // write through the pointer\n}\n\nint main() {\n    int v = 5;\n    add(&v, 7);           // pass the address of v\n    add(&v, 3);\n    std::cout << v << '\\n';   // 15 - add mutated the caller's v\n    return 0;\n}",
+      "caption": "An out-parameter the classic way: the caller passes &v, the callee writes through *x. Output: 15"
+    },
+    {
+      "type": "h2",
+      "text": "nullptr and pointer discipline"
+    },
+    {
+      "type": "p",
+      "md": "A pointer that targets nothing must say so with **nullptr** (`int* p = nullptr;`), never with 0 or the older NULL macro. Dereferencing null - or any address your process does not own - is **undefined behaviour**: typically a crash, but the standard permits anything, so 'it worked once' proves nothing. The discipline: whenever a pointer is *allowed* to be null, test it before dereferencing (`if (p) *p += 1;`); whenever null is never acceptable, take a reference instead, because 'a reference cannot be null' is a contract the reader can rely on without a check. And never return a reference or pointer to a local variable: its storage dies when the function returns, leaving a **dangling** alias that reads as undefined behaviour."
+    },
+    {
+      "type": "h2",
+      "text": "Choosing between them"
+    },
+    {
+      "type": "table",
+      "headers": ["Property", "Reference (T&)", "Pointer (T*)"],
+      "rows": [
+        ["Can be null", "No", "Yes - nullptr"],
+        ["Rebindable to another object", "No - bound at initialisation", "Yes - p = &other;"],
+        ["Syntax at use site", "Like the object itself", "Needs * to dereference"],
+        ["Arithmetic / iteration", "None", "Supported (arrays)"],
+        ["Typical role", "Always-present parameters, avoiding copies", "Optional targets, out-parameters, iteration"]
+      ]
+    },
+    {
+      "type": "p",
+      "md": "The most common parameter style in real codebases is the **const reference**: `double feeFor(const Order& o)` promises not to modify while avoiding the copy of a large object. A practical rule of thumb: small values by value; large read-only objects by `const&`; outputs by reference or pointer; targets that may legitimately be absent by pointer (so the caller can pass `nullptr`)."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Dangling aliases",
+      "md": "`int& r = makeTemp();` binds a name to a temporary that dies at the end of the statement; returning a reference to a local does the same at function exit. Reading such an alias afterwards is undefined behaviour - the compiler often cannot stop you, so the rule lives in your head: **an alias may never outlive its object.**"
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Trace this program line by line and write its exact output:\n\n```cpp\n#include <iostream>\n\nint main() {\n    int a = 10;\n    int& r = a;\n    int* p = &a;\n    r = 20;\n    *p = 30;\n    std::cout << a << '\\n';\n    return 0;\n}\n```\n\nThen classify, for each line that uses & or *, whether it is a *declaration* or an *operator*.",
+    "hints": [
+      "r and p are two different doors into the same single int a.",
+      "In `int& r` and `int* p`, the symbols are part of the type; in `*p = 30`, * is an operator acting on p."
+    ],
+    "solution": "`a` starts at 10. `r = 20` writes through the reference, so a == 20. `*p = 30` writes through the pointer, so a == 30. **Output: `30`** - all three names refer to one object. Classification: `int& r = a;` is a declaration (reference type, & is not address-of); `int* p = &a;` is a declaration of a pointer *and* uses the address-of operator on a; `*p = 30;` uses the dereference operator on p."
+  },
+  "independentExercise": {
+    "prompt": "Implement two fill-application functions and drive them from main:\n\n- `void applyFill(int* position, int qty)` adds qty to *position, doing nothing if the pointer is null.\n- `void applyFillRef(int& position, int qty)` adds qty directly.\n\nStart a position at 0, then apply buy 100 (qty 100), sell 30 (qty -30) via the reference style and buy 50 (qty 50) via the pointer style, printing the position after each application. Finally call `applyFill(nullptr, 25)` and print again. Give the final position and one sentence on when each style is preferable.",
+    "hints": [
+      "Both styles should leave the position at the same value - they differ only in syntax and nullability.",
+      "100 - 30 + 50 = 120, and the null call must not change anything."
+    ],
+    "solution": "Final position: **120** (and the null call is a no-op).\n```cpp\n#include <iostream>\n\nvoid applyFill(int* position, int qty) {\n    if (position) *position += qty;   // null guard: optional target\n}\n\nvoid applyFillRef(int& position, int qty) {\n    position += qty;                  // target always exists\n}\n\nint main() {\n    int pos = 0;\n    applyFillRef(pos, 100);\n    std::cout << pos << '\\n';         // 100\n    applyFillRef(pos, -30);\n    std::cout << pos << '\\n';         // 70\n    applyFill(&pos, 50);\n    std::cout << pos << '\\n';         // 120\n    applyFill(nullptr, 25);\n    std::cout << pos << '\\n';         // 120 - guard did nothing\n    return 0;\n}\n```\nPointer style fits an *optional* target (the caller may legitimately have no position to update); reference style documents 'this output always exists' and needs no check at the call site."
+  },
+  "commonMistakes": [
+    "Reading int* p, q; as two pointers - only p is a pointer; q is a plain int.",
+    "Confusing the two roles of & and *: in declarations they build types; in expressions & is address-of and * dereferences.",
+    "Dereferencing a possibly-null pointer without a check - undefined behaviour, usually a crash.",
+    "Writing r = other; on a reference and expecting r to rebind: assignment copies the *value*; r stays bound to its original object.",
+    "Returning a reference or pointer to a local variable, creating a dangling alias that is undefined behaviour to read."
+  ],
+  "realWorldApplication": "Every C++ API boundary uses these tools: const& for read-only inputs, pointers for optional outputs (a lookup that may fail returns nullptr) - recognising the two aliasing styles is required reading for any real codebase.",
+  "quantFinanceApplication": "A matching engine's hot path takes order references to avoid copying an order struct per price level, while a position updater accepts a nullable pointer for instruments with no open position.",
+  "summary": [
+    "A reference (int& r = x;) is a permanent second name for an existing object: no null, no rebinding, used like the object itself.",
+    "A pointer (int* p = &x;) stores an address: reassignable, nullable via nullptr, dereferenced with *.",
+    "In declarations & and * build types; in expressions & is address-of and * is dereference.",
+    "Dereferencing null or invalid addresses is undefined behaviour - test before deref whenever null is possible.",
+    "Parameter style guide: values by value, large read-only objects by const&, outputs by reference, optional targets by pointer."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "code-output",
+      "prompt": "What does this C++17 program print?",
+      "language": "cpp",
+      "code": "#include <iostream>\n\nint main() {\n    int a = 10;\n    int& r = a;\n    int* p = &a;\n    r = 20;\n    *p = 30;\n    std::cout << a << '\\n';\n    return 0;\n}",
+      "answer": "30",
+      "explanation": "r = 20 writes through the reference (a becomes 20); *p = 30 writes through the pointer (a becomes 30). All three names address the same single object."
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "Which statement about a reference is TRUE?",
+      "options": [
+        "It can be null",
+        "It can be rebound to another object later",
+        "It is bound at initialisation and cannot be reseated",
+        "It requires * to access the object"
+      ],
+      "answerIndex": 2,
+      "explanation": "References bind once, can never be null, and are used like the original object - that contract is what makes them safe parameter types."
+    },
+    {
+      "id": "q3",
+      "type": "code-output",
+      "prompt": "What does this C++17 program print?",
+      "language": "cpp",
+      "code": "#include <iostream>\n\nvoid add(int* x, int y) { *x += y; }\n\nint main() {\n    int v = 5;\n    add(&v, 7);\n    add(&v, 3);\n    std::cout << v << '\\n';\n    return 0;\n}",
+      "answer": "15",
+      "explanation": "add receives the address of v and writes through it: 5 + 7 + 3 = 15. If add were called with nullptr it would need a null check first, since dereferencing null is undefined behaviour."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "Which line safely guards a dereference when pointer p may be null?",
+      "options": [
+        "if (p) *p += 1;",
+        "*p += 1; // p might be null",
+        "p += 1;",
+        "if (*p) p += 1;"
+      ],
+      "answerIndex": 0,
+      "explanation": "if (p) tests the pointer itself before dereferencing. Option B dereferences unconditionally; p += 1 advances the pointer without touching the target (and is not a null check); if (*p) tests the *value* pointed at, not whether p is valid."
+    },
+    {
+      "id": "q5",
+      "type": "ms",
+      "prompt": "Given `int x = 5;` in scope, which of these lines compile without error?",
+      "options": [
+        "int* p = nullptr;",
+        "int& r = x;",
+        "int& r2 = nullptr;",
+        "int* q = &x;"
+      ],
+      "answerIndices": [0, 1, 3],
+      "explanation": "Pointers may be null and may take addresses (&x). A reference must bind to an existing object - there is no null reference, so int& r2 = nullptr; is rejected by the compiler."
+    },
+    {
+      "id": "q6",
+      "type": "short",
+      "prompt": "Why do real codebases pass large objects such as an order struct or std::string as const T& instead of by value T?",
+      "modelAnswer": "Passing by value copies the whole object (possibly including a heap allocation); const T& binds directly to the caller's object with no copy, and the const promises the callee will not modify it.",
+      "keywords": ["copy", "const", "reference", "no copy"],
+      "explanation": "const& gives read-only access without the copy cost; by-value remains right for small values or when the function genuinely needs its own mutable copy."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "definition",
+      "front": "Reference vs pointer",
+      "back": "Reference: another name for an existing object, bound once, never null. Pointer: an object storing an address, reassignable, may be nullptr."
+    },
+    {
+      "type": "concept",
+      "front": "The two roles of &",
+      "back": "In a declaration: int& r = x; makes r a reference. In an expression: &x yields the address of x."
+    },
+    {
+      "type": "concept",
+      "front": "The two roles of *",
+      "back": "In a declaration: int* p makes p a pointer. In an expression: *p dereferences - follows the address to the object."
+    },
+    {
+      "type": "definition",
+      "front": "nullptr",
+      "back": "The C++11 literal meaning 'points at nothing'; test with if (p) before dereferencing. Dereferencing null is undefined behaviour."
+    },
+    {
+      "type": "error-identification",
+      "front": "What is wrong with `int& r = makeTemp();`?",
+      "back": "makeTemp() returns a temporary that dies at the end of the statement; r is left dangling, and reading it afterwards is undefined behaviour."
+    }
+  ],
+  "references": [
+    {
+      "label": "cppreference — Reference declaration",
+      "url": "https://en.cppreference.com/w/cpp/language/reference"
+    },
+    {
+      "label": "cppreference — Pointer declaration",
+      "url": "https://en.cppreference.com/w/cpp/language/pointer"
+    },
+    {
+      "label": "ISOCpp FAQ — References",
+      "url": "https://isocpp.org/wiki/faq/references"
+    }
+  ],
+  "skills": ["cpp", "cpp-memory"]
+}

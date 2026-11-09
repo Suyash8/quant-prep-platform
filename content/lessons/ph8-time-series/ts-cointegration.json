@@ -1,0 +1,223 @@
+{
+  "id": "ts-cointegration",
+  "moduleId": "ph8-time-series",
+  "title": "Cointegration, Unit Roots and Forecast Evaluation",
+  "estMinutes": 27,
+  "difficulty": "advanced",
+  "prereqs": ["ts-garch"],
+  "objectives": [
+    "Explain spurious regression and why high $R^2$ between two trending series means nothing",
+    "Describe the ADF unit-root test applied both to levels and to residuals of an equilibrium relation (Engle-Granger logic)",
+    "Define cointegration, standardise a spread with a $z$-score, and connect it to spread/pairs trading entry rules",
+    "Evaluate forecasts with MAE, RMSE and MAPE and insist on comparison against naive benchmarks out of sample"
+  ],
+  "motivation": "Two bonds, two indices, two related stocks: regress one on the other and software cheerfully reports $R^2 = 0.96$. Most of the time that number is an artefact of two series that both drift. Cointegration is the discipline that separates 'both trending' from 'tied together by an equilibrium' - the statistical foundation of spread trading - and forecast evaluation is how you prove the resulting model beats doing nothing.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Spurious regression: the trap"
+    },
+    {
+      "type": "p",
+      "md": "Regress one independent random walk on another. Both drift, so in any finite window they appear to move together: $R^2$ lands high, the slope's $t$-statistic is 'significant', the residuals look fine - and the relation is pure fiction, because re-running the window changes the slope's sign entirely. The diagnosis (Granger and Newbold's classic warning): regression between two unit-root series whose *residuals* are themselves non-stationary is meaningless. The fix comes in two steps - test for unit roots, then look for a *stationary combination* before believing any coefficient."
+    },
+    {
+      "type": "h2",
+      "text": "Unit roots, tested properly"
+    },
+    {
+      "type": "p",
+      "md": "The Augmented Dickey-Fuller test from the stationarity lesson is the standard tool. It regresses $\\Delta y_t$ on $y_{t-1}$ (plus lagged differences to soak up autocorrelation) and asks whether $\\gamma < 0$ significantly: rejection means the level pulls back to a mean (stationary); failure to reject means a unit root. Two wrinkles matter in practice. First, ADF has low power - failing to reject is not proof of a unit root, just absence of evidence. Second, the critical values are non-standard (Dickey-Fuller tables), because under the null the usual $t$-distribution does not apply."
+    },
+    {
+      "type": "h2",
+      "text": "Cointegration: an equilibrium that holds"
+    },
+    {
+      "type": "math",
+      "tex": "y_t \\text{ and } x_t \\text{ are } I(1), \\text{ but } \\; s_t = y_t - \\beta x_t \\; \\text{ is } I(0) \\; \\Longrightarrow \\; (y, x) \\text{ are cointegrated}",
+      "caption": "Cointegration: individually wandering, jointly tethered - the tether is the stationary spread"
+    },
+    {
+      "type": "p",
+      "md": "Economically: two series driven by the same slow forces (sector demand, funding rates, a shared index) can each be non-stationary while their *difference* mean-reverts, because an equilibrium mechanism - arbitrage, substitution, a hedge relationship - pulls them back together. The error-correction view makes the mechanism dynamic: tomorrow's change in $y$ responds to *yesterday's gap* $s_{t-1}$, so deviations from equilibrium create predictable corrections in both legs."
+    },
+    {
+      "type": "steps",
+      "title": "Engle-Granger: find and test the tether",
+      "items": [
+        "Test both series with ADF; each should fail to reject (both plausibly $I(1)$).",
+        "Regress $y$ on $x$ by OLS and collect the residual spread $s_t = y_t - \\hat{\\beta} x_t - \\hat{a}$.",
+        "Run ADF on $s_t$ *with cointegration critical values* (not the ordinary ones - estimation of $\\hat{\\beta}$ shifts the distribution).",
+        "If the spread rejects a unit root: cointegrated, and the OLS slope is a defensible long-run ratio.",
+        "If not: the 'relation' was probably spurious; do not trade it."
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "From spread to trade",
+      "md": "With the spread $s_t$ estimated, standardise it: $z_t = (s_t - \\bar{s})/\\sigma_s$ over a lookback window. The canonical rule - enter when $|z_t| > 2$, exit near $z = 0$, and stop out if $|z|$ keeps growing - is a bet that the cointegration mechanism keeps working. It is statistical scaffolding, not a guarantee: regime shifts (mergers, regulation, funding changes) can kill the tether while $z$ keeps screaming 'revert'."
+    },
+    {
+      "type": "p",
+      "md": "Worked mini-example: suppose a spread over four windows took values $1.2, -0.5, 0.8, -0.3$. The mean is $1.2/4 = 0.3$; squared deviations $0.81, 0.64, 0.25, 0.36$ sum to $2.06$, giving a sample standard deviation of $\\sqrt{2.06/3} \\approx 0.829$. The $z$-scores are then $0.9/0.829 \\approx 1.09$, $-0.8/0.829 \\approx -0.97$, $0.5/0.829 \\approx 0.60$, $-0.6/0.829 \\approx -0.72$ - all inside the $|z| = 2$ band, so a $z$-score rule would sit flat through this stretch."
+    },
+    {
+      "type": "interactive",
+      "component": "RandomWalk",
+      "params": {
+        "n": 200,
+        "series": 2,
+        "cointegrated": true,
+        "beta": 2,
+        "seed": 9
+      },
+      "caption": "Two co-wandering series and their tethered spread: the levels drift apart visually, but the spread channel stays bounded - that boundedness is the tradeable object."
+    },
+    {
+      "type": "h2",
+      "text": "Forecast evaluation: prove it beats naive"
+    },
+    {
+      "type": "p",
+      "md": "A forecast model earns credibility only out of sample, and only against a benchmark. The metrics: MAE (average absolute error, robust to outliers), RMSE (squares errors, so it punishes the big misses a trading desk cares about) and MAPE (percentage error, scale-free but undefined near zero - a poor fit for returns). Mini-example with forecast errors $2, -1, 3$: $\\mathrm{MAE} = 6/3 = 2.0$; $\\mathrm{RMSE} = \\sqrt{(4+1+9)/3} = \\sqrt{14/3} \\approx 2.16$ - RMSE exceeds MAE exactly because the outlier is punished. The benchmarks to beat: for prices, the random-walk forecast ('tomorrow equals today'); for spreads, the long-run mean. If your sophisticated model cannot beat the naive one out of sample, the sophistication is cost, not value. When comparing two models on the same data, the Diebold-Mariano test formalises whether the accuracy difference is significant - accuracy differences on a single path are noisy."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "errors = [2.0, -1.0, 3.0]\nmae = sum(abs(e) for e in errors) / len(errors)\nrmse = (sum(e * e for e in errors) / len(errors)) ** 0.5\nprint(round(mae, 3), round(rmse, 3))    # 2.0 2.16\nspread = [1.2, -0.5, 0.8, -0.3]\nmu = sum(spread) / len(spread)\nsd = (sum((s - mu) ** 2 for s in spread) / (len(spread) - 1)) ** 0.5\nprint([round((s - mu) / sd, 2) for s in spread])   # [1.09, -0.97, 0.6, -0.72]",
+      "caption": "Both worked computations, verified: RMSE > MAE when big misses dominate, and the z-scores match the hand arithmetic."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "A spread series over three observations took values $-3, 1, 4$. (a) Compute MAE and RMSE and state which is larger, with one sentence of why. (b) If instead the errors had been $-2, 1, 2$, would RMSE still exceed MAE, and by how much?",
+    "hints": [
+      "MAE: mean of absolute values. RMSE: square root of the mean of squares.",
+      "For (a): squares are $9, 1, 16$.",
+      "For (b): squares are $4, 1, 4$."
+    ],
+    "solution": "(a) $\\mathrm{MAE} = (3+1+4)/3 = 8/3 \\approx 2.667$; $\\mathrm{RMSE} = \\sqrt{(9+1+16)/3} = \\sqrt{26/3} = \\sqrt{8.667} \\approx 2.944$. RMSE is larger because it squares the errors, giving the $-3$ and $4$ misses disproportionate weight. (b) $\\mathrm{MAE} = 5/3 \\approx 1.667$; $\\mathrm{RMSE} = \\sqrt{9/3} = \\sqrt{3} \\approx 1.732$ - still larger, but barely, because with no dominant outlier the two metrics converge."
+  },
+  "independentExercise": {
+    "prompt": "A cointegration spread took values $2.0, -1.5, 0.5, 1.0, -2.0$ over a lookback window. (a) Compute the mean and the sample standard deviation ($n-1$ convention). (b) Compute all five $z$-scores. (c) State, per the $|z| > 2$ rule, what a spread trader would do now, and name the regime-shift risk that makes the rule imperfect.",
+    "hints": [
+      "The mean is the sum of the five values divided by 5.",
+      "Squares of deviations: $4, 2.25, 0.25, 1.0, 4.0$.",
+      "Divide each deviation by the sample standard deviation."
+    ],
+    "solution": "(a) Mean $= 0/5 = 0.0$; sum of squared deviations $= 11.5$; sample variance $= 11.5/4 = 2.875$; $\\sigma_s = \\sqrt{2.875} \\approx 1.696$. (b) $z$-scores: $2.0/1.696 \\approx 1.18$, $-1.5/1.696 \\approx -0.88$, $0.5/1.696 \\approx 0.29$, $1.0/1.696 \\approx 0.59$, $-2.0/1.696 \\approx -1.18$. (c) All inside the $|z| = 2$ band, so the rule takes no position; the standing risk is that the equilibrium itself breaks (structural change), in which case the spread drifts rather than reverts and the rule bleeds."
+  },
+  "commonMistakes": [
+    "Trusting a high $R^2$ between two trending series without checking that the regression residuals are stationary.",
+    "Using ordinary $t$-table critical values for the ADF test on Engle-Granger residuals - the correct ones are the cointegration-specific tables.",
+    "Standardising a spread over a window that includes the regime you are about to trade into (look-ahead bias in the $z$-score).",
+    "Reporting only MAE when tail risk is the concern - RMSE exists because big misses matter disproportionately."
+  ],
+  "realWorldApplication": "Energy desks model the crack spread (crude vs refined products), rates desks model curve spreads, and retail analysts model brand vs index demand - all cointegration questions decided by residual ADF tests before anyone trades.",
+  "quantFinanceApplication": "Pairs and basket trades are cointegration bets: the spread $y - \\beta x$ is standardised to a $z$-score for entries and exits, and any accompanying forecast model must beat the random-walk benchmark out of sample to justify its complexity.",
+  "summary": [
+    "Regressing one unit-root series on another yields spurious fits: high $R^2$, significant $t$, no content - check the residuals' stationarity.",
+    "Cointegration means individually $I(1)$ series with a stationary linear combination; Engle-Granger tests that combination with cointegration-specific ADF critical values.",
+    "Spread trading standardises the stationary spread to $z = (s - \\bar{s})/\\sigma_s$ and trades reversion at $|z| > 2$ - valid only while the equilibrium mechanism survives regime shifts.",
+    "Forecasts are judged out of sample with MAE/RMSE/MAPE against naive benchmarks; RMSE punishes large misses, and Diebold-Mariano formalises model-vs-model comparisons."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "A regression of one random walk on an unrelated one shows $R^2 = 0.9$ and a highly significant slope. The correct diagnosis is:",
+      "options": [
+        "A strong economic relation was found",
+        "A spurious regression artefact of two trending series",
+        "The sample size is too small",
+        "The dependent variable was mis-scaled"
+      ],
+      "answerIndex": 1,
+      "explanation": "Two non-stationary series that both drift co-move in-sample by construction; the tell is non-stationary residuals. Re-run on a fresh window and the slope's sign can flip."
+    },
+    {
+      "id": "q2",
+      "type": "numeric",
+      "prompt": "Forecast errors $2, -1, 3$: what is the RMSE? (Two decimals.)",
+      "answer": 2.16,
+      "tolerance": 0.05,
+      "explanation": "Mean squared error $= (4 + 1 + 9)/3 = 14/3 \\approx 4.667$; $\\sqrt{4.667} \\approx 2.16$."
+    },
+    {
+      "id": "q3",
+      "type": "mcq",
+      "prompt": "In the Engle-Granger procedure, the ADF test is applied to:",
+      "options": [
+        "Each series' first differences only",
+        "The residuals of the OLS relation between the two levels",
+        "The squared residuals of the relation",
+        "The dependent variable's levels directly"
+      ],
+      "answerIndex": 1,
+      "explanation": "Cointegration is defined by the *residual spread* being stationary, so the ADF test (with cointegration critical values) runs on $s_t = y_t - \\hat{\\beta}x_t - \\hat{a}$."
+    },
+    {
+      "id": "q4",
+      "type": "short",
+      "prompt": "Define cointegration in one sentence using the terms $I(1)$ and stationary.",
+      "modelAnswer": "Two (or more) I(1) series are cointegrated if some linear combination of them - typically a spread with a fixed coefficient - is stationary, indicating an equilibrium relation that binds their paths together.",
+      "keywords": ["I(1)", "linear combination", "stationary"],
+      "explanation": "The definition is entirely about the combination: individually non-stationary, jointly tethered."
+    },
+    {
+      "id": "q5",
+      "type": "numeric",
+      "prompt": "A spread has mean $0.3$ and sample standard deviation $0.829$. What is the $z$-score of a spread value of $1.2$? (Two decimals.)",
+      "answer": 1.09,
+      "tolerance": 0.05,
+      "explanation": "$z = (1.2 - 0.3)/0.829 = 0.9/0.829 \\approx 1.086$ - inside the $|z| = 2$ entry band."
+    },
+    {
+      "id": "q6",
+      "type": "ms",
+      "prompt": "Which practices belong in honest forecast evaluation? Select all that apply.",
+      "options": [
+        "Evaluating only on the data used to fit the model",
+        "Comparing against a naive benchmark such as the random-walk forecast",
+        "Reporting RMSE alongside MAE so large misses are visible",
+        "Using a Diebold-Mariano test before claiming one model beats another"
+      ],
+      "answerIndices": [1, 2, 3],
+      "explanation": "In-sample evaluation proves nothing about forecasting; the naive benchmark sets the bar, RMSE exposes tail misses, and model-vs-model claims on one path need a significance test."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "Spurious regression",
+      "back": "Regressing one unit-root series on another produces high $R^2$ and significant slopes with no economic content; check residual stationarity before believing any fit."
+    },
+    {
+      "type": "definition",
+      "front": "Cointegration",
+      "back": "Individually $I(1)$ series whose linear combination (spread) is $I(0)$ - jointly tethered by an equilibrium relation."
+    },
+    {
+      "type": "concept",
+      "front": "Engle-Granger test",
+      "back": "Regress $y$ on $x$, then ADF-test the residual spread with cointegration-specific critical values; rejection means cointegration."
+    },
+    {
+      "type": "concept",
+      "front": "Spread z-score rule",
+      "back": "$z = (s - \\bar{s})/\\sigma_s$; enter near $|z| > 2$, exit near 0 - a bet that the cointegration mechanism survives."
+    }
+  ],
+  "references": [
+    {
+      "label": "Hyndman & Athanasopoulos, fpp3 - Evaluating forecast accuracy",
+      "url": "https://otexts.com/fpp3/accuracy.html"
+    },
+    {
+      "label": "statsmodels - cointegration and adfuller tools",
+      "url": "https://www.statsmodels.org/stable/tsa.html"
+    }
+  ],
+  "skills": ["time-series"]
+}

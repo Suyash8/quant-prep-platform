@@ -1,0 +1,253 @@
+{
+  "id": "swe-git",
+  "moduleId": "ph2-software-engineering",
+  "title": "Git, Branching and Code Review",
+  "estMinutes": 25,
+  "difficulty": "core",
+  "prereqs": [],
+  "objectives": [
+    "Describe the Git object model: commits as immutable snapshots, history as a DAG, branches and HEAD as pointers",
+    "Use the daily workflow (status, add, commit, log, diff) and write commit messages that explain why",
+    "Create and integrate feature branches with merge or rebase, and resolve a merge conflict correctly",
+    "Explain why shared history must never be rewritten and run a constructive code review on a small pull request"
+  ],
+  "motivation": "A trading firm's codebase changes hundreds of times a day across desks in several time zones - pricing tweaks, risk limits, exchange gateway fixes. When production PnL looks wrong, the first question is 'what changed, when, and by whom', and git history is the answer. Beyond history, branches isolate in-flight work and pull requests are where peers catch the bug before it costs money. Version control is not bureaucracy; it is the audit trail and the safety net for everything else you ship.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Commits are snapshots, not diffs"
+    },
+    {
+      "type": "p",
+      "md": "A **commit** stores a full snapshot of the tracked files plus metadata: author, timestamp, and a pointer to its parent commit (or two parents for a merge). History is therefore a **directed acyclic graph** - each commit points backwards to what came before. A **branch** is just a movable pointer to one commit, which is why creating a branch is instant and cheap. **HEAD** is the pointer to where you currently are; every commit you make advances HEAD and the branch it sits on. Understanding this model dissolves most beginner fear: `git switch` moves pointers, it does not copy files around."
+    },
+    {
+      "type": "code",
+      "lang": "text",
+      "code": "main:     A---B---C---F  (merge)\n                 \\     /\nfeature:          D---E\n\n# A, B: mainline work; C: branched from B; D, E: feature commits; F: merge of E into main",
+      "caption": "History as a DAG. A branch name is a label pinned to one commit; merging creates the two-parent commit F."
+    },
+    {
+      "type": "h2",
+      "text": "The daily workflow"
+    },
+    {
+      "type": "p",
+      "md": "Work moves through three areas: the **working directory** (your files), the **staging area** (what the next commit will contain), and the **repository** (committed history). `git status` shows the boundaries, `git add` stages, `git commit` records, `git diff` compares (working vs staged vs last commit with `--staged` and `HEAD`), `git log --oneline --graph` shows the story. Stage deliberately: two logical changes deserve two commits, because review, revert and `git blame` all work at commit granularity. Commit messages follow a convention worth copying: an imperative summary line under ~50 characters ('Fix half-even rounding in fee calculator'), then a blank line, then *why* the change was made - the diff already says what."
+    },
+    {
+      "type": "code",
+      "lang": "bash",
+      "code": "git status                      # what changed, what is staged\ngit diff                        # unstaged changes vs index\ngit add src/fees.cpp            # stage one file (or -p to stage hunks)\ngit commit -m \"Fix half-even rounding in fee calculator\"\ngit log --oneline --graph -10   # recent history as a graph",
+      "caption": "The five commands that cover 90% of a normal day."
+    },
+    {
+      "type": "h2",
+      "text": "Branching, merging, rebasing"
+    },
+    {
+      "type": "p",
+      "md": "Feature branches isolate risky work: branch from main, commit freely, integrate when it is ready. **Merging** creates a merge commit that combines both lines of history; a **fast-forward** merge happens when main has not moved, and the branch pointer simply slides forward. **Rebasing** replays your commits on top of the latest main, producing a linear history with no merge commit. Both are legitimate - the hard rule is that **rebase rewrites commit identity** (new SHAs), so it is only safe on commits that exist only on your machine. Never rebase or force-push a branch others build on."
+    },
+    {
+      "type": "table",
+      "headers": [
+        "",
+        "Merge",
+        "Rebase"
+      ],
+      "rows": [
+        [
+          "History shape",
+          "Preserves both lines + merge commit",
+          "Linear, one clean line"
+        ],
+        [
+          "Commit SHAs",
+          "Unchanged",
+          "Rewritten (new SHAs)"
+        ],
+        [
+          "Safe on shared branches",
+          "Yes",
+          "No - only on unpushed/local work"
+        ],
+        [
+          "Conflict resolution",
+          "Once, in the merge commit",
+          "Possibly per replayed commit"
+        ]
+      ]
+    },
+    {
+      "type": "p",
+      "md": "A **conflict** happens when two branches change the same lines. Git marks the file with `<<<<<<<`, the incoming change, and `>>>>>>>`; resolution is a human decision, not a mechanical one - you edit the region to what the code *should* say, delete the markers, `git add` the file, and continue the merge or rebase. Read both sides and, when unsure, ask the other author; silently picking one side is how duplicate risk limits end up in production."
+    },
+    {
+      "type": "h2",
+      "text": "Pull requests and review"
+    },
+    {
+      "type": "p",
+      "md": "A pull request (PR) proposes merging your branch, and review is where a team's standards are actually enforced. Small PRs - a few hundred lines at most - get real scrutiny; 2,000-line PRs get a resigned 'LGTM'. A good review checks behaviour first (does it do what it claims, are there tests), then error handling, naming, and blast radius (what else calls this). Comments address the code, not the author, and propose alternatives. Automate what machines check - formatting, tests, lint - in CI so human reviewers spend attention on logic. Protected branches and required reviews exist so that nobody's Friday-afternoon commit reaches production unreviewed."
+    },
+    {
+      "type": "callout",
+      "variant": "warn",
+      "title": "Force-push is a history eraser",
+      "md": "`git push --force` overwrites remote history; every colleague's clone now disagrees with origin, and anything that was only in the old remote commits is close to unrecoverable. Use `--force-with-lease` if you truly must (it refuses if someone pushed in the meantime), and on protected branches, don't - revert forward with a new commit instead."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "You are on a local branch `fix-fee-rounding` with three messy commits ('wip', 'wip2', 'actually fix'), none pushed. Clean this into ONE well-messaged commit on the same branch, then push it for review. Write the exact commands.",
+    "hints": [
+      "Unpushed commits can be safely rewritten - that is the precondition.",
+      "`git reset --soft <base>` moves the branch pointer back but keeps all changes staged.",
+      "Then one commit captures everything; push with -u the first time."
+    ],
+    "solution": "```bash\n# from fix-fee-rounding, with main as the base point\ngit reset --soft main          # branch rewinds; ALL three commits' changes now staged\ngit commit -m \"Fix half-even rounding in fee calculator\"\ngit push -u origin fix-fee-rounding\n```\n\n`reset --soft` is safe here because the commits were never pushed: rewriting them breaks nobody. The single commit has one logical change and a message that says why - exactly what a reviewer needs. An equivalent alternative is `git rebase -i main` and squashing the three entries into one."
+  },
+  "independentExercise": {
+    "prompt": "You and a colleague both edited the risk-limit line in `config.yaml`; your merge produces:\n\n```text\n<<<<<<< HEAD\nmax_position: 5000\n=======\nmax_position: 7500\n>>>>>>> feature-larger-limits\n```\n\nThe approved limit is 7,500. Walk through the resolution steps and the commands, and state what you must NOT do afterwards.",
+    "hints": [
+      "Edit the conflicted region to the intended final content and remove all three marker lines.",
+      "git add marks the file resolved; git commit finishes the merge.",
+      "Rewriting the shared branch afterwards is the forbidden move."
+    ],
+    "solution": "1. Open `config.yaml`, replace the whole marker block with the approved value `max_position: 7500` - a deliberate choice based on the decision, not a blind side-pick.\n2. `git add config.yaml` - this marks the conflict resolved.\n3. `git commit` - completes the merge (or `git rebase --continue` if the conflict arose mid-rebase).\n4. Run the config-parsing tests before pushing; config conflicts are exactly where 'it compiles' lies.\n5. `git push`.\n\nWhat NOT to do: `push --force` or a rebase of the shared branch afterwards - the merge commit is already shared history, and rewriting it would break every collaborator's clone."
+  },
+  "commonMistakes": [
+    "Committing everything in one giant 'end of day' commit - review, revert and blame all become useless.",
+    "Commit messages that restate the diff ('update files') instead of explaining the why.",
+    "Rebasing or force-pushing a branch other people have pulled, breaking their clones.",
+    "Resolving a conflict by keeping one side blindly without reading both changes.",
+    "Committing secrets or build artefacts - they live in history forever; use .gitignore and keep credentials out of the repo from the first commit."
+  ],
+  "realWorldApplication": "Regulated firms must answer 'who changed this risk limit, when, and with whose approval' - git history plus reviewed pull requests is that audit trail, and teams that keep it clean pass operational reviews that teams with tangled history fail.",
+  "quantFinanceApplication": "A one-line pricing change can move desk PnL by millions; on real desks the PR that touches pricing or risk code gets senior review and a link to the model-approval ticket, and git blame on the pricing function is usually the first forensic step when numbers drift.",
+  "summary": [
+    "Commits are immutable snapshots forming a DAG; branches and HEAD are cheap movable pointers.",
+    "Files move working directory -> staging area -> repository via git add and git commit; commit messages explain why.",
+    "Merge combines histories with a merge commit; rebase replays commits for a linear history but rewrites SHAs - only on unpushed work.",
+    "Conflicts are resolved by editing the marked region to the intended result, git add, then commit/continue.",
+    "Small, focused pull requests with tests and CI get real review; shared history is never rewritten."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "In Git's object model, what is a branch?",
+      "options": [
+        "A full copy of the repository's files",
+        "A movable pointer to a single commit",
+        "A patch file storing differences since main",
+        "A special commit with two parents"
+      ],
+      "answerIndex": 1,
+      "explanation": "A branch is a 41-byte file containing one commit SHA - that is why switching and creating branches is instantaneous. The two-parent commit is a merge, not a branch."
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "What does `git add src/fees.cpp` do?",
+      "options": [
+        "Commits the file directly to the current branch",
+        "Copies the file into the remote repository",
+        "Stages the file's current content for the next commit",
+        "Creates a new branch containing the file"
+      ],
+      "answerIndex": 2,
+      "explanation": "add moves content into the staging area (index); it is committed only when git commit runs."
+    },
+    {
+      "id": "q3",
+      "type": "short",
+      "prompt": "State the key difference between merge and rebase, and the safety rule attached to rebase.",
+      "modelAnswer": "Merge combines two histories and preserves existing SHAs via a merge commit; rebase replays your commits on a new base, producing linear history but rewriting commit SHAs - so it must only be used on commits that have not been pushed or shared.",
+      "keywords": [
+        "linear",
+        "rewrite",
+        "pushed"
+      ],
+      "explanation": "Rebasing shared history changes every commit's SHA, so collaborators' clones diverge from origin; that is why the rule is 'never rewrite shared history'."
+    },
+    {
+      "id": "q4",
+      "type": "ms",
+      "prompt": "Which practices make review and history actually useful?",
+      "options": [
+        "Small pull requests focused on one logical change",
+        "Commit messages explaining why a change was made",
+        "Tests included in the PR and run by CI",
+        "Force-pushing main to keep it tidy"
+      ],
+      "answerIndices": [
+        0,
+        1,
+        2
+      ],
+      "explanation": "Small PRs get real scrutiny, why-messages make blame and archaeology meaningful, CI offloads mechanical checks. Force-pushing main destroys shared history - the opposite of useful."
+    },
+    {
+      "id": "q5",
+      "type": "mcq",
+      "prompt": "A teammate runs `git push --force` on shared branch develop. What is the most likely consequence?",
+      "options": [
+        "The remote branches merge cleanly",
+        "Remote commits the team had pulled disappear from origin; clones now diverge from origin",
+        "Nothing - force only affects untracked files",
+        "Git automatically notifies everyone and keeps a backup branch"
+      ],
+      "answerIndex": 1,
+      "explanation": "Force-push replaces remote history; commits that existed only on origin are lost and every clone must be manually reconciled. That is why protected branches forbid it and --force-with-lease exists as a guard."
+    },
+    {
+      "id": "q6",
+      "type": "mcq",
+      "prompt": "During a merge you see `<<<<<<< HEAD ... ======= ... >>>>>>> feature`. The correct next action is:",
+      "options": [
+        "Delete your side (HEAD) so the incoming branch wins",
+        "Delete the incoming side so your version wins",
+        "Run git commit immediately; Git will resolve it",
+        "Edit the region to the intended final content, remove the markers, git add the file, then continue the merge"
+      ],
+      "answerIndex": 3,
+      "explanation": "Conflict markers are a question for a human, not a choice between sides. The resolution is whatever the code should actually be - then add to mark resolved and commit to finish."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "What does a Git commit contain?",
+      "back": "A full snapshot of tracked files plus metadata (author, timestamp, message) and pointer(s) to parent commit(s) - history is a DAG."
+    },
+    {
+      "type": "definition",
+      "front": "HEAD",
+      "back": "A pointer to the commit you currently have checked out (usually via the current branch); it advances when you commit."
+    },
+    {
+      "type": "concept",
+      "front": "Golden rule of rebase",
+      "back": "Rebase rewrites commit SHAs, so only rebase commits that have never been pushed or shared - never rewrite shared history."
+    },
+    {
+      "type": "definition",
+      "front": "Fast-forward merge",
+      "back": "When the target branch has no new commits since the branch point, merging just moves the branch pointer forward - no merge commit is created."
+    }
+  ],
+  "references": [
+    {
+      "label": "Pro Git book (free, official)",
+      "url": "https://git-scm.com/book/en/v2"
+    },
+    {
+      "label": "Conventional Commits - commit message convention",
+      "url": "https://www.conventionalcommits.org/"
+    }
+  ],
+  "skills": [
+    "software-engineering"
+  ]
+}

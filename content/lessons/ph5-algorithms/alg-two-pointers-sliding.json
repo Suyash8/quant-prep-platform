@@ -1,0 +1,222 @@
+{
+  "id": "alg-two-pointers-sliding",
+  "moduleId": "ph5-algorithms",
+  "title": "Two Pointers, Sliding Windows and Prefix Sums",
+  "estMinutes": 27,
+  "difficulty": "core",
+  "prereqs": ["alg-searching-sorting"],
+  "objectives": [
+    "Build a prefix-sum array and answer range-sum queries in O(1) after O(n) preprocessing",
+    "Apply converging two pointers to pair-finding problems on sorted data in O(n)",
+    "Maintain fixed-window aggregates (sum, VWAP, max) in O(1) amortised time per step",
+    "Recognise when a naive O(nk) recomputation can be replaced by an incremental update"
+  ],
+  "motivation": "A desk needs the 50-tick rolling VWAP of a futures contract recomputed on every trade, plus every pairwise lot match between buy and sell flow. Recomputing each window from scratch costs O(nk) per day and blows the latency budget; the techniques in this lesson make every step O(1) amortised. These three patterns - prefix sums, two pointers, sliding windows - are the bread and butter of time-series processing and of quant interviews.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Prefix sums: pay once, query free"
+    },
+    {
+      "type": "p",
+      "md": "A **prefix-sum** array stores running totals: $\\text{pref}[i]$ is the sum of the first $i$ elements, built in one $O(n)$ pass. Its superpower is that any contiguous range sum becomes a subtraction: $\\sum_{j=\\text{lo}}^{\\text{hi}-1} a_j = \\text{pref}[\\text{hi}] - \\text{pref}[\\text{lo}]$, answered in $O(1)$. Cumulative PnL, cumulative volume and cumulative return series are all prefix sums, and they set up both sliding windows and two-pointer tricks later in this lesson."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "prices = [8, 5, 12, 9]\npref = [0]\nfor p in prices:\n    pref.append(pref[-1] + p)\n# pref = [0, 8, 13, 25, 34]\n\ndef range_sum(lo, hi):          # sum of prices[lo:hi]\n    return pref[hi] - pref[lo]\n\nprint(range_sum(1, 3))          # 5 + 12 = 17\nprint(range_sum(0, 4))          # whole list = 34",
+      "caption": "One O(n) pass buys unlimited O(1) range-sum queries."
+    },
+    {
+      "type": "h2",
+      "text": "Two pointers: converging on a pair"
+    },
+    {
+      "type": "p",
+      "md": "On a **sorted** array, two indices that start at the ends and move inward solve pair-finding in $O(n)$: if the pair sum is too small, only advancing the left pointer can help; if too large, only retreating the right pointer can. Every step eliminates one element from consideration forever, so the total work is linear - a proof by the shrinking window, the same invariant discipline as binary search. The same idea powers slow/fast pointer cycles and merging sorted trade and quote streams by timestamp."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "# Count pairs of order sizes (lots) that sum to the target clip\ncount_pairs = 0\ntarget = 500\nsizes = [100, 150, 350, 400]    # already sorted\ni, j = 0, len(sizes) - 1\nwhile i < j:\n    s = sizes[i] + sizes[j]\n    if s == target:\n        count_pairs += 1\n        i += 1\n        j -= 1\n    elif s < target:\n        i += 1\n    else:\n        j -= 1\nprint(count_pairs)              # 2: (100,400) and (150,350)",
+      "caption": "Converging pointers: each step permanently retires one element."
+    },
+    {
+      "type": "h2",
+      "text": "Sliding windows: O(1) updates instead of O(k) recomputation"
+    },
+    {
+      "type": "p",
+      "md": "A **fixed-size sliding window** over a stream recomputes a statistic on every step. The naive way re-sums all $k$ entries per step, $O(nk)$ overall. But when the window slides by one, one element enters and one leaves, so sums, products and VWAP components can be updated incrementally in $O(1)$ per step, $O(n)$ overall. The **rolling VWAP** (volume-weighted average price) is the canonical trading example: keep the window's $\\sum p_i q_i$ and $\\sum q_i$ and divide on demand."
+    },
+    {
+      "type": "steps",
+      "title": "Worked example: rolling 2-tick VWAP",
+      "items": [
+        "Ticks: $t_1 = (100.0, 200)$, $t_2 = (101.0, 100)$, $t_3 = (99.5, 300)$ - (price, volume).",
+        "Window $\\{t_1, t_2\\}$: $\\sum pq = 100.0 \\times 200 + 101.0 \\times 100 = 20{,}000 + 10{,}100 = 30{,}100$; $\\sum q = 300$; VWAP $= 30{,}100 / 300 = 100.3333$.",
+        "Slide: add $t_3$, drop $t_1$. $\\sum pq = 30{,}100 - 20{,}000 + 29{,}850 = 39{,}950$; $\\sum q = 400$; VWAP $= 39{,}950 / 400 = 99.875$.",
+        "Two subtractions and two additions replaced a full re-sum: the O(1)-per-step idea."
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "from collections import deque\n\nticks = [(100.0, 200), (101.0, 100), (99.5, 300), (100.5, 100)]\nk = 2\nwindow = deque()\npv_sum = vol_sum = 0.0\nfor px, qty in ticks:\n    window.append((px, qty))\n    pv_sum += px * qty          # element enters\n    vol_sum += qty\n    if len(window) > k:         # element leaves\n        old_px, old_qty = window.popleft()\n        pv_sum -= old_px * old_qty\n        vol_sum -= old_qty\n    if len(window) == k:\n        print(round(pv_sum / vol_sum, 4))",
+      "caption": "Rolling VWAP: one enter, one leave, one division. Prints 100.3333, 99.875, 99.75."
+    },
+    {
+      "type": "p",
+      "md": "**Variable-size windows** grow the right end while a condition fails and shrink the left end while it holds - for example, the longest run of ticks whose cumulative return stays under a threshold. Each pointer only ever moves forward, so the amortised cost is $O(n)$ even though a single step may scan several elements. For window **maxima**, sums are not enough: a monotone deque keeps candidate indices in decreasing value order, giving $O(1)$ amortised updates - you will implement it as a drill in the quant-algorithms phase."
+    },
+    {
+      "type": "interactive",
+      "component": "RandomWalk",
+      "params": {
+        "steps": 60,
+        "drift": 0.0,
+        "volatility": 1.0,
+        "seed": 7
+      },
+      "caption": "A simulated price stream: imagine maintaining a rolling 20-tick VWAP over it, one enter and one leave per tick."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Numerical drift in long-running windows",
+      "md": "Incremental add/subtract accumulates floating-point rounding over millions of updates. Production rolling statistics periodically recompute the window aggregates from scratch (or use Kahan summation) to cap the drift - cheap insurance for a statistic that feeds execution decisions."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Using the ticks $t_1 = (100.0, 200)$, $t_2 = (101.0, 100)$, $t_3 = (99.5, 300)$, $t_4 = (100.5, 100)$, compute the rolling 2-tick VWAP for each of the three windows by hand, showing $\\sum pq$ and $\\sum q$ at each step.",
+    "hints": [
+      "Window 1 is $\\{t_1, t_2\\}$; window 2 is $\\{t_2, t_3\\}$; window 3 is $\\{t_3, t_4\\}$.",
+      "Update incrementally: subtract the departing tick's $p q$ and volume, add the arriving tick's."
+    ],
+    "solution": "Window $\\{t_1,t_2\\}$: $\\sum pq = 30{,}100$, $\\sum q = 300$, VWAP $= 100.3333$. Slide to $\\{t_2,t_3\\}$: $\\sum pq = 30{,}100 - 20{,}000 + 29{,}850 = 39{,}950$, $\\sum q = 400$, VWAP $= 99.875$. Slide to $\\{t_3,t_4\\}$: $\\sum pq = 39{,}950 - 29{,}850 + 10{,}050 = 39{,}900$, $\\sum q = 400$, VWAP $= 39{,}900/400 = 99.75$."
+  },
+  "independentExercise": {
+    "prompt": "(a) Trade volumes by minute are $[200, 100, 300, 100]$. Using a prefix-sum array, compute the total volume of minutes 2 through 4 (inclusive, 1-indexed) with a single subtraction. (b) Sorted order sizes $[100, 150, 350, 400]$ lots: how many pairs sum to exactly 500 lots? Trace the two-pointer method.",
+    "hints": [
+      "With 1-indexed positions $i..j$, the answer is $\\text{pref}[j] - \\text{pref}[i-1]$.",
+      "Start pointers at both ends; a sum of 500 records the pair and retires both ends."
+    ],
+    "solution": "(a) $\\text{pref} = [0, 200, 300, 600, 700]$; minutes 2..4 give $\\text{pref}[4] - \\text{pref}[1] = 700 - 200 = 500$ lots. (b) $i=0, j=3$: $100+400=500$ - count 1, advance both. $i=1, j=2$: $150+350=500$ - count 2, pointers cross. Answer: **2 pairs**, in 3 loop iterations."
+  },
+  "commonMistakes": [
+    "Recomputing the whole window each step ($O(nk)$) when an enter/leave update would do ($O(n)$).",
+    "Off-by-one in prefix sums: $\\sum_{j=\\text{lo}}^{\\text{hi}-1} a_j = \\text{pref}[\\text{hi}] - \\text{pref}[\\text{lo}]$, not $\\text{pref}[\\text{hi}+1] - \\text{pref}[\\text{lo}]$.",
+    "Using two pointers on an *unsorted* array for pair sums - the convergence argument needs sorted order.",
+    "Letting a fixed window's deque exceed length $k$ before popping, which leaves stale elements inflating the sums.",
+    "Dividing rolling VWAP by the wrong denominator: it is the window's $\\sum q_i$, not the window length."
+  ],
+  "realWorldApplication": "Analytics dashboards compute rolling averages, rolling volatility and moving ranges with exactly these incremental updates; database systems build prefix-sum (cumulative) columns for fast range reporting.",
+  "quantFinanceApplication": "Rolling VWAP and rolling windows of returns/volume are computed tick-by-tick in execution algorithms; the O(1) enter/leave update is what makes it feasible at tick rate.",
+  "summary": [
+    "Prefix sums cost $O(n)$ to build and make every range sum an $O(1)$ subtraction: $\\text{pref}[\\text{hi}] - \\text{pref}[\\text{lo}]$.",
+    "Two converging pointers on sorted data solve pair problems in $O(n)$ because each step permanently retires one element.",
+    "Fixed sliding windows update aggregates with one enter and one leave per step: $O(n)$ total instead of $O(nk)$.",
+    "Rolling VWAP maintains $\\sum p_iq_i$ and $\\sum q_i$ over the window and divides on demand.",
+    "Long-running incremental sums accumulate floating-point drift; periodic recomputation from scratch caps it."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "code-output",
+      "prompt": "What does this Python code print?",
+      "language": "python",
+      "code": "prices = [8, 5, 12, 9]\npref = [0]\nfor p in prices:\n    pref.append(pref[-1] + p)\n\ndef range_sum(lo, hi):\n    return pref[hi] - pref[lo]\n\nprint(range_sum(1, 3))\nprint(range_sum(0, 4))",
+      "answer": "17\n34",
+      "explanation": "$\\text{pref} = [0, 8, 13, 25, 34]$; $\\text{pref}[3]-\\text{pref}[1] = 25-8 = 17$ (elements 5+12) and $\\text{pref}[4]-\\text{pref}[0] = 34$."
+    },
+    {
+      "id": "q2",
+      "type": "numeric",
+      "prompt": "Ticks: $t_1 = (100.0, 200)$, $t_2 = (101.0, 100)$. What is the 2-tick rolling VWAP over this window, to 4 decimal places?",
+      "answer": 100.3333,
+      "tolerance": 0.001,
+      "unit": "price",
+      "explanation": "VWAP $= (100.0 \\times 200 + 101.0 \\times 100) / (200 + 100) = 30{,}100 / 300 = 100.3333$."
+    },
+    {
+      "id": "q3",
+      "type": "mcq",
+      "prompt": "Maintaining the maximum of a fixed window of size $k$ over $n$ ticks with a monotone deque costs, in total:",
+      "options": [
+        "$O(nk)$, because each maximum needs a fresh scan",
+        "$O(n \\log k)$, because the deque must stay sorted",
+        "$O(n)$ amortised, since each index is pushed and popped at most once",
+        "$O(1)$ total, independent of $n$"
+      ],
+      "answerIndex": 2,
+      "explanation": "Every index enters the deque once and leaves at most once, so the total work across all steps is $O(n)$, i.e. $O(1)$ amortised per tick."
+    },
+    {
+      "id": "q4",
+      "type": "code-output",
+      "prompt": "What does this two-pointer code print?",
+      "language": "python",
+      "code": "sizes = [100, 150, 350, 400]\ntarget = 500\ncount = 0\ni, j = 0, len(sizes) - 1\nwhile i < j:\n    s = sizes[i] + sizes[j]\n    if s == target:\n        count += 1\n        i += 1\n        j -= 1\n    elif s < target:\n        i += 1\n    else:\n        j -= 1\nprint(count)",
+      "answer": "2",
+      "explanation": "$100+400=500$ (count 1, both pointers move), then $150+350=500$ (count 2), then the pointers cross and the loop ends."
+    },
+    {
+      "id": "q5",
+      "type": "short",
+      "prompt": "In one or two sentences, why does a prefix-sum array allow O(1) range-sum queries?",
+      "modelAnswer": "Because sums are associative and additive, the sum of any contiguous range factors as the difference of two running totals: pref[hi] - pref[lo]. Building pref once in O(n) makes every later query a subtraction.",
+      "keywords": ["pref", "difference", "O(1)"],
+      "explanation": "Additivity of summation means the range sum telescopes into two prefix totals, so preprocessing buys constant-time queries."
+    },
+    {
+      "id": "q6",
+      "type": "ms",
+      "prompt": "Which of these tasks fit the sliding-window (incremental enter/leave) pattern?",
+      "options": [
+        "Maximum sum of $k$ consecutive returns",
+        "Rolling VWAP over the last $k$ ticks",
+        "All-pairs shortest paths in a graph",
+        "Counting pairs in a sorted array with converging pointers"
+      ],
+      "answerIndices": [0, 1, 3],
+      "explanation": "Fixed-window aggregates and sorted-array pair counting both retire one element and admit one per step. All-pairs shortest paths is a graph problem unrelated to windows."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "formula",
+      "front": "Range sum from a prefix-sum array",
+      "back": "$\\sum_{j=lo}^{hi-1} a_j = pref[hi] - pref[lo]$ - an O(1) query after an O(n) build."
+    },
+    {
+      "type": "concept",
+      "front": "Why do converging two pointers run in O(n)?",
+      "back": "Each step retires one element permanently (left advances or right retreats), so there are at most n steps in total."
+    },
+    {
+      "type": "formula",
+      "front": "Rolling VWAP update rule",
+      "back": "On slide: pv_sum += p_in * q_in - p_out * q_out; vol_sum += q_in - q_out; VWAP = pv_sum / vol_sum."
+    },
+    {
+      "type": "error-identification",
+      "front": "A rolling sum drifts after millions of updates. What is happening and what is the fix?",
+      "back": "Floating-point rounding accumulates across incremental add/subtract cycles. Periodically recompute the window aggregate from scratch (or use compensated/Kahan summation)."
+    }
+  ],
+  "references": [
+    {
+      "label": "Wikipedia - Prefix sum",
+      "url": "https://en.wikipedia.org/wiki/Prefix_sum"
+    },
+    {
+      "label": "GeeksforGeeks - Two Pointers Technique",
+      "url": "https://www.geeksforgeeks.org/two-pointers-technique/"
+    },
+    {
+      "label": "Investopedia - Volume-Weighted Average Price (VWAP)",
+      "url": "https://www.investopedia.com/terms/v/vwap.asp"
+    }
+  ],
+  "skills": ["algorithms"]
+}

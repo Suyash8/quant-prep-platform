@@ -1,0 +1,215 @@
+{
+  "id": "alg-greedy-backtracking",
+  "moduleId": "ph5-algorithms",
+  "title": "Greedy Algorithms and Backtracking",
+  "estMinutes": 27,
+  "difficulty": "core",
+  "prereqs": ["alg-two-pointers-sliding"],
+  "objectives": [
+    "Apply greedy algorithms to interval scheduling and justify the choice with an exchange argument",
+    "Identify when a greedy strategy provably fails, using the coin-change counterexample",
+    "Structure a backtracking search over a decision tree with correctness-first pruning",
+    "Choose between greedy, backtracking and dynamic programming for a given problem shape"
+  ],
+  "motivation": "An exchange's maintenance scheduler must pack as many non-overlapping maintenance windows into a weekend as possible, and a settlement pipeline must count every combination of legs that sums to a required notional. The first yields to a provably correct greedy; the second needs exhaustive search with pruning. Knowing which tool a problem admits - and being able to *prove* the greedy works or show it fails - is a daily judgement call and a top interview discriminator.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Greedy: best local move, never reconsidered"
+    },
+    {
+      "type": "p",
+      "md": "A **greedy algorithm** makes the locally best choice at each step and never revisits it. This is attractive - greedy solutions are usually one sort plus one pass, $O(n \\log n)$ - but it is only *correct* when the problem has the **greedy-choice property**: some optimal solution can be reshaped to begin with the greedy choice without loss. The standard proof pattern is the **exchange argument**: take any optimal solution, swap its early choices for the greedy ones, and show the result is still feasible and no worse. Without that argument, greedy is a hypothesis, not an algorithm."
+    },
+    {
+      "type": "steps",
+      "title": "Worked example: interval scheduling by earliest finish",
+      "items": [
+        "Windows: $[1,4]$, $[2,3]$, $[3,5]$, $[5,7]$, $[6,8]$, $[0,7]$. Goal: maximum count of non-overlapping intervals (touching endpoints allowed).",
+        "Sort by finishing time: $[2,3](3)$, $[1,4](4)$, $[3,5](5)$, $[5,7](7)$, $[0,7](7)$, $[6,8](8)$.",
+        "Take $[2,3]$ (finishes earliest at 3). Skip $[1,4]$ (starts 1 < 3). Take $[3,5]$ (starts exactly 3). Take $[5,7]$ (starts 5). Skip $[0,7]$ (starts 0) and $[6,8]$ (starts 6 < 7).",
+        "Chosen: $[2,3], [3,5], [5,7]$ - **3 intervals**. Exchange argument: swapping the first interval of any optimal schedule for the earliest-finishing one never breaks feasibility, so greedy is optimal."
+      ]
+    },
+    {
+      "type": "p",
+      "md": "The counterexample that keeps you honest is **coin change**. With the canonical US coin system $\\{25, 10, 5, 1\\}$ greedy is provably optimal. But with $\\{1, 3, 4\\}$ and amount 6, greedy takes $4+1+1$ - three coins - while the optimum is $3+3$: two coins. No exchange argument can rescue greedy here, because committing to the largest coin is simply wrong. This is exactly the shape of problem where dynamic programming (next lessons) earns its keep."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "def greedy_change(coins, amount):\n    count = 0\n    for c in sorted(coins, reverse=True):   # largest first\n        take = amount // c\n        count += take\n        amount -= take * c\n    return count if amount == 0 else -1\n\nprint(greedy_change([25, 10, 5, 1], 42))  # 5: 25+10+5+1+1 (optimal here)\nprint(greedy_change([1, 3, 4], 6))        # 3: 4+1+1 (optimal is 3+3 = 2)",
+      "caption": "Same greedy loop: optimal on one coin system, suboptimal on another."
+    },
+    {
+      "type": "h2",
+      "text": "Backtracking: exhaustive search with pruning"
+    },
+    {
+      "type": "p",
+      "md": "**Backtracking** is a depth-first walk over a tree of decisions - *take it or skip it*, for each item - that returns to the last branch point (backtracks) whenever a path cannot lead to a solution. Naively a take/skip tree over $n$ items has $2^n$ leaves; the win comes from **pruning**: cutting a branch the moment it violates a constraint or can no longer beat the best found. N-queens prunes any partial board with attacking queens; subset-sum prunes branches whose running total already exceeds the target. Worst-case complexity stays exponential, but real instances often finish dramatically faster."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "def count_subsets(items, target, i=0):\n    \"\"\"Count subsets of items[i:] summing exactly to target.\"\"\"\n    if i == len(items):\n        return 1 if target == 0 else 0\n    return (count_subsets(items, target - items[i], i + 1)   # take items[i]\n            + count_subsets(items, target, i + 1))           # skip items[i]\n\nprint(count_subsets([2, 4, 6, 10], 16))   # 2: {6, 10} and {2, 4, 10}",
+      "caption": "The take/skip template: two recursive calls, one per decision."
+    },
+    {
+      "type": "p",
+      "md": "A production-grade version adds a **feasibility prune**: if the remaining items cannot possibly close the gap to `target` - for instance, their total is less than it - return 0 immediately instead of walking the whole subtree. The structure is always the same: state, decisions, base case, prune, recurse, undo. That template solves permutations, sudoku, N-queens and constraint satisfaction, and it is the honest fallback whenever no greedy or dynamic-programming structure is visible."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Greedy without proof",
+      "md": "The most expensive mistake in this area is shipping a greedy solution that passes easy tests and fails on adversarial inputs - the coin system $\\{1,3,4\\}$ is a one-line counterexample. Before trusting greedy, either write the exchange argument or test it against brute-force backtracking on small random inputs."
+    },
+    {
+      "type": "interactive",
+      "component": "ComplexityCompare",
+      "params": {
+        "n": 30,
+        "operations": [
+          { "name": "greedy interval scheduling", "count": 120 },
+          { "name": "backtracking take/skip (no prune)", "count": 1073741824 }
+        ]
+      },
+      "caption": "At n = 30: one sort-plus-pass versus a billion leaves. Pruning is what keeps backtracking survivable."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Run the earliest-finish greedy on windows $[0,7]$, $[1,4]$, $[2,3]$, $[3,5]$, $[5,7]$, $[6,8]$, $[7,9]$. List the sort order, the accept/skip decision at each step, and the final schedule.",
+    "hints": [
+      "Sort by finishing time first; ties can be broken arbitrarily.",
+      "Accept an interval exactly when its start is at least the last accepted finish."
+    ],
+    "solution": "Sorted by finish: $[2,3](3), [1,4](4), [3,5](5), [0,7](7), [5,7](7), [6,8](8), [7,9](9)$. Accept $[2,3]$; skip $[1,4]$ (1<3); accept $[3,5]$ (3$\\ge$3); skip $[0,7]$ (0<5); accept $[5,7]$ (5$\\ge$5); skip $[6,8]$ (6<7); accept $[7,9]$ (7$\\ge$7). Schedule: $[2,3], [3,5], [5,7], [7,9]$ - **4 intervals**."
+  },
+  "independentExercise": {
+    "prompt": "A strategy can deploy at most one of the leg sizes $\\{2, 7, 6, 5, 4\\}$ (millions) per tranche and must fill a tranche of exactly 11. (a) Use backtracking to count how many subsets sum to exactly 11 - list them. (b) What does the greedy largest-first heuristic return for amount 11 with coins $\\{1,3,4\\}$, and what is the true optimum?",
+    "hints": [
+      "Enumerate take/skip over the five sizes with the decision tree; check pairs and triples systematically.",
+      "Greedy commits to 4 first; ask what residue remains."
+    ],
+    "solution": "(a) Subsets summing to 11: $\\{7,4\\} = 11$, $\\{6,5\\} = 11$, $\\{2,5,4\\} = 11$ - **3 subsets**. (b) Greedy on 6: $4+1+1$ = 3 coins (as in the lesson). Greedy on 11 with $\\{1,3,4\\}$: $4+4+3$ = 3 coins; the optimum here is also 3, but on amount 6 greedy's 3 coins lose to $3+3$ = 2 - the failure mode the counterexample demonstrates."
+  },
+  "commonMistakes": [
+    "Trusting greedy without an exchange argument - it fails on coin systems like $\\{1,3,4\\}$.",
+    "Sorting intervals by *start* time instead of *finish* time in interval scheduling, which misses optima.",
+    "Forgetting to restore mutable state (undo the take) when returning from a backtracking branch.",
+    "Pruning too late: checking constraints only at leaves instead of at every partial state.",
+    "Confusing backtracking (explore all, prune) with dynamic programming (memoise overlapping subproblems)."
+  ],
+  "realWorldApplication": "Schedulers pack non-overlapping maintenance or broadcast windows by earliest finish; configuration solvers, timetables and layout engines are backtracking search with constraint pruning.",
+  "quantFinanceApplication": "Exchange maintenance scheduling and leg combination problems mirror interval scheduling and subset enumeration; desks also brute-force small candidate sets (hedge leg combinations) with pruned backtracking before reaching for smarter methods.",
+  "summary": [
+    "Greedy = locally optimal, irrevocable choices; correctness requires the greedy-choice property, proven by an exchange argument.",
+    "Interval scheduling by earliest finish time is provably optimal; a sort plus a single pass.",
+    "Greedy coin change fails on arbitrary coin systems ($\\{1,3,4\\}$, amount 6: greedy 3 coins vs optimal 2).",
+    "Backtracking explores the take/skip decision tree depth-first and prunes branches that cannot succeed.",
+    "Pruning bounds the practical cost of exponential search; the template is state, decisions, base case, prune, recurse, undo."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "With the coin system $\\{1, 3, 4\\}$ and amount 6, how many coins does the greedy largest-first strategy use, and how many does the optimum use?",
+      "options": [
+        "Greedy 2, optimum 3",
+        "Greedy 3, optimum 2",
+        "Both 3",
+        "Both 2"
+      ],
+      "answerIndex": 1,
+      "explanation": "Greedy takes $4+1+1$ = 3 coins; the optimum is $3+3$ = 2 coins. Greedy's commitment to the largest coin is unrecoverable."
+    },
+    {
+      "id": "q2",
+      "type": "code-output",
+      "prompt": "What does this Python code print?",
+      "language": "python",
+      "code": "def greedy_change(coins, amount):\n    count = 0\n    for c in sorted(coins, reverse=True):\n        take = amount // c\n        count += take\n        amount -= take * c\n    return count if amount == 0 else -1\n\nprint(greedy_change([25, 10, 5, 1], 42))\nprint(greedy_change([1, 3, 4], 6))",
+      "answer": "5\n3",
+      "explanation": "42 = 25+10+5+1+1 gives 5 coins (optimal for the canonical system). For $\\{1,3,4\\}$, amount 6: greedy takes 4, then two 1s, printing 3 - the suboptimal case."
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "Using earliest-finish greedy, how many non-overlapping intervals can be selected from $[1,4]$, $[2,3]$, $[3,5]$, $[5,7]$, $[6,8]$ (touching endpoints allowed)?",
+      "answer": 3,
+      "explanation": "Sorted by finish: $[2,3],[1,4],[3,5],[5,7],[6,8]$. Accept $[2,3]$, skip $[1,4]$, accept $[3,5]$, accept $[5,7]$, skip $[6,8]$ - 3 intervals."
+    },
+    {
+      "id": "q4",
+      "type": "code-output",
+      "prompt": "What does this backtracking code print?",
+      "language": "python",
+      "code": "def count_subsets(items, target, i=0):\n    if i == len(items):\n        return 1 if target == 0 else 0\n    return (count_subsets(items, target - items[i], i + 1)\n            + count_subsets(items, target, i + 1))\n\nprint(count_subsets([2, 4, 6, 10], 16))",
+      "answer": "2",
+      "explanation": "Exactly two subsets of $\\{2,4,6,10\\}$ sum to 16: $\\{6,10\\}$ and $\\{2,4,10\\}$."
+    },
+    {
+      "id": "q5",
+      "type": "ms",
+      "prompt": "Which of these are classic backtracking problems?",
+      "options": [
+        "N-queens placement",
+        "Generating all permutations of a list",
+        "Single-source shortest paths with non-negative weights",
+        "Solving a sudoku grid"
+      ],
+      "answerIndices": [0, 1, 3],
+      "explanation": "N-queens, permutation generation and sudoku are take/skip decision-tree searches with pruning. Shortest paths with non-negative weights is Dijkstra's domain, not exhaustive search."
+    },
+    {
+      "id": "q6",
+      "type": "short",
+      "prompt": "In one or two sentences, state the exchange argument for why earliest-finish greedy is optimal for interval scheduling.",
+      "modelAnswer": "Take any optimal schedule and replace its first (earliest-finishing) interval with the globally earliest-finishing interval; the swap keeps everything feasible since the new interval finishes no later, and nothing is lost. Repeating this reshapes the optimal solution into the greedy one without changing its size.",
+      "keywords": ["earliest", "finish", "exchange"],
+      "explanation": "The greedy first choice never finishes later than any alternative's first choice, so replacing it preserves feasibility - the reshaped solution is still optimal and matches greedy."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "What is the greedy-choice property?",
+      "back": "A property guaranteeing that some optimal solution begins with the greedy local choice - provable via an exchange argument (swap greedy choices into any optimal solution without loss)."
+    },
+    {
+      "type": "error-identification",
+      "front": "Give a coin system where greedy change-making fails.",
+      "back": "{1, 3, 4} with amount 6: greedy takes 4+1+1 (3 coins) but 3+3 uses 2. No exchange argument exists, so greedy is not justified here."
+    },
+    {
+      "type": "concept",
+      "front": "Describe the backtracking template.",
+      "back": "Depth-first over a decision tree: state, enumerate decisions (take/skip), apply the decision, recurse, undo, and prune any partial state that violates constraints or cannot beat the best."
+    },
+    {
+      "type": "formula",
+      "front": "Size of the take/skip decision tree",
+      "back": "$2^n$ leaves for n binary decisions (worst case); pruning cuts whole subtrees but the worst case remains exponential."
+    }
+  ],
+  "references": [
+    {
+      "label": "Wikipedia - Greedy algorithm",
+      "url": "https://en.wikipedia.org/wiki/Greedy_algorithm"
+    },
+    {
+      "label": "Wikipedia - Interval scheduling (greedy optimality)",
+      "url": "https://en.wikipedia.org/wiki/Interval_scheduling"
+    },
+    {
+      "label": "Wikipedia - Backtracking",
+      "url": "https://en.wikipedia.org/wiki/Backtracking"
+    },
+    {
+      "label": "Wikipedia - Coin change / coin problem",
+      "url": "https://en.wikipedia.org/wiki/Change-making_problem"
+    }
+  ],
+  "skills": ["algorithms"]
+}

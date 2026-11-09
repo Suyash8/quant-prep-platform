@@ -1,0 +1,282 @@
+{
+  "id": "alg-shortest-paths-mst",
+  "moduleId": "ph5-algorithms",
+  "title": "Dijkstra, Bellman-Ford and Minimum Spanning Trees",
+  "estMinutes": 28,
+  "difficulty": "core",
+  "prereqs": [
+    "alg-graph-traversal"
+  ],
+  "objectives": [
+    "Trace Dijkstra's algorithm on a small weighted graph and state its non-negativity requirement",
+    "Explain why Bellman-Ford handles negative weights and detects negative cycles in O(VE)",
+    "Use the -log transform to convert arbitrage detection into negative-cycle detection",
+    "Run Kruskal's algorithm with union-find to build a minimum spanning tree"
+  ],
+  "motivation": "A payment router must send money along the cheapest chain of intermediaries, a risk engine must know whether a loop of currency conversions guarantees profit, and a network team must cable data centres with the least total fibre. These are shortest paths (with and without negative weights) and minimum spanning trees - and the arbitrage/negative-cycle connection is a classic quant interview question.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Dijkstra: settle the nearest node, relax its edges"
+    },
+    {
+      "type": "p",
+      "md": "**Dijkstra's algorithm** finds shortest paths from a source when all edge weights are **non-negative**. It keeps a best-known distance $d[v]$ for every node and repeatedly selects the unfinalised node with the smallest $d$, declaring it final - safe because any other route would have to pass through a node with a larger tentative distance, and extra hops can only add weight. It then *relaxes* the chosen node's outgoing edges: if $d[u] + w(u,v) < d[v]$, update $d[v]$. With a binary heap this costs $O(E \\log V)$."
+    },
+    {
+      "type": "steps",
+      "title": "Worked example: source S, edges S→A 7, S→B 2, B→A 3, B→C 5, A→C 1",
+      "items": [
+        "Initialise $d = \\{S:0, A:\\infty, B:\\infty, C:\\infty\\}$. Pop $S$ (0): relax A to 7, B to 2.",
+        "Pop $B$ (2): relax A: $2+3=5 < 7$, so $d[A]=5$; relax C: $2+5=7$, so $d[C]=7$.",
+        "Pop $A$ (5): relax C: $5+1=6 < 7$, so $d[C]=6$.",
+        "Pop $C$ (6). Final distances: $A=5$, $B=2$, $C=6$ - note the best route to C runs S→B→A→C, not the direct S→A first guess."
+      ]
+    },
+    {
+      "type": "p",
+      "md": "The non-negativity rule is structural: with a negative edge, a node declared final early could later be improved through a negative shortcut, breaking the 'settled means final' invariant. That is precisely the case **Bellman-Ford** covers - it relaxes *all* $E$ edges, $V-1$ times, guaranteeing convergence for $O(VE)$ work, and a $V$-th pass that still improves some distance proves a **negative-weight cycle** exists."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "INF = float(\"inf\")\nnodes = {0: 0, 1: INF, 2: INF}          # distances from node 0\nedges = [(0, 1, 4), (0, 2, 1), (2, 1, 2)]  # (u, v, w) directed\n\nfor _ in range(len(nodes) - 1):          # V-1 full passes\n    for u, v, w in edges:\n        if nodes[u] + w < nodes[v]:      # relax\n            nodes[v] = nodes[u] + w\n\nprint(nodes[1])                          # 3, via 0 -> 2 -> 1",
+      "caption": "Bellman-Ford: brute-force relaxation that tolerates negative weights. Prints 3."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Arbitrage is a negative cycle",
+      "md": "Take log-exchange-rates: an $n$-leg conversion multiplies rates, but $-\\ln(\\text{rate})$ turns multiplication into addition. A profitable loop (product of rates $> 1$) becomes a cycle of **negative** total weight in $w = -\\ln r$. Run Bellman-Ford over currencies: if the final pass still improves a distance, the cycle it points to is an arbitrage. This transform is the standard interview framing of the problem."
+    },
+    {
+      "type": "h2",
+      "text": "Minimum spanning trees: connect everything, pay least"
+    },
+    {
+      "type": "p",
+      "md": "A **minimum spanning tree** of a connected undirected graph is the subset of $V-1$ edges that keeps everything connected with minimum total weight. The **cut property** justifies the greedy approach: for any partition of the vertices, the lightest edge crossing the cut belongs to some MST. **Kruskal's algorithm** sorts edges by weight and scans them, adding an edge only when it joins two *different* components - a test done in near-$O(1)$ by the union-find (disjoint-set) structure. **Prim's algorithm** grows one tree outward from a seed using a priority queue, Dijkstra-style; both cost $O(E \\log V)$."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "edges = [(\"A\", \"B\", 1), (\"B\", \"C\", 2), (\"A\", \"C\", 3), (\"C\", \"D\", 4), (\"B\", \"D\", 5)]\nparent = {v: v for v in \"ABCD\"}\n\ndef find(x):\n    while parent[x] != x:\n        parent[x] = parent[parent[x]]    # path halving\n        x = parent[x]\n    return x\n\ntotal, picked = 0, []\nfor u, v, w in sorted(edges, key=lambda e: e[2]):\n    ru, rv = find(u), find(v)\n    if ru != rv:                          # different components: take the edge\n        parent[ru] = rv\n        total += w\n        picked.append(f\"{u}-{v}:{w}\")\n\nprint(total, picked)                      # 7 ['A-B:1', 'B-C:2', 'C-D:4']",
+      "caption": "Kruskal + union-find: cheap edges first, cycle edges skipped."
+    },
+    {
+      "type": "p",
+      "md": "Dijkstra's algorithm is greedy, and the reason the greed is *safe* is the heart of the lesson: when you pop the closest unfinalised vertex, no shorter path to it can exist, because any alternative would have to pass through an already-popped (closer) vertex first. Negative weights break exactly this argument — an unprocessed edge could still lower a cost — which is why Bellman-Ford exists: it trades Dijkstra's urgency for the willingness to re-relax edges, at $O(VE)$ instead of $O((V+E)\\log V)$."
+    },
+    {
+      "type": "steps",
+      "title": "Dijkstra, traced by hand on a settlement-network graph",
+      "items": [
+        "Edges: A→B (4), A→C (2), C→B (1), B→D (5), C→D (8). Start at A; distances $d = \\{A:0, B:\\infty, C:\\infty, D:\\infty\\}$.",
+        "Pop A (0). Relax its edges: $d(B) = \\min(\\infty, 4) = 4$, $d(C) = 2$. Frontier: C(2), B(4).",
+        "Pop C (2) — smallest tentative. Relax: $d(B) = \\min(4, 2+1) = 3$ (improved via C!), $d(D) = 2+8 = 10$. Frontier: B(3), D(10).",
+        "Pop B (3). Relax: $d(D) = \\min(10, 3+5) = 8$. Frontier: D(8).",
+        "Pop D (8). Done: $d = \\{A:0, B:3, C:2, D:8\\}$. The interesting step was 3→4: the greedy pop of C *before* B is what let the cheaper A→C→B route win. Note D's path uses B, not the direct C→D edge."
+      ]
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Algorithm",
+        "Handles negatives",
+        "Complexity",
+        "Finds",
+        "Classic use"
+      ],
+      "rows": [
+        [
+          "Dijkstra + heap",
+          "no",
+          "$O((V+E)\\log V)$",
+          "single-source shortest paths",
+          "network routing, latency maps"
+        ],
+        [
+          "Bellman-Ford",
+          "yes (detects cycles)",
+          "$O(VE)$",
+          "single-source + negative-cycle flag",
+          "arb constraints, currency graphs"
+        ],
+        [
+          "Floyd-Warshall",
+          "yes (no neg cycles)",
+          "$O(V^3)$",
+          "all pairs",
+          "small dense graphs"
+        ],
+        [
+          "Kruskal (MST)",
+          "n/a (undirected)",
+          "$O(E\\log E)$",
+          "minimum spanning tree",
+          "cheap connectivity"
+        ]
+      ]
+    },
+    {
+      "type": "p",
+      "md": "Kruskal's MST builds a tree by greedily taking the cheapest edge that connects two *different* components — union-find does the bookkeeping — and the same safety argument style applies: an edge between already-connected components would create a cycle, and some edge on that cycle is at least as expensive. MSTs show up in quant infrastructure exactly where cost matters and distance does not: cheapest network to connect venues, clustering correlations, or building a sparse approximation of a dense market graph."
+    },
+    {
+      "type": "interactive",
+      "component": "ComplexityCompare",
+      "params": {
+        "n": 1000,
+        "operations": [
+          {
+            "name": "Dijkstra with heap, E ~ 4V",
+            "count": 12000
+          },
+          {
+            "name": "Bellman-Ford",
+            "count": 4000000
+          },
+          {
+            "name": "Prim/Kruskal",
+            "count": 12000
+          }
+        ]
+      },
+      "caption": "For dense all-node queries Dijkstra/Prim are an order of magnitude lighter than Bellman-Ford - which you pay for only when negative weights matter."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Using the graph S→A 7, S→B 2, B→A 3, B→C 5, A→C 1, run Dijkstra from S to completion: after each extraction, write the node popped, the relaxations performed, and the distance table $d$.",
+    "hints": [
+      "Always pop the unfinalised node with the smallest tentative distance.",
+      "A relaxation only fires when the new candidate distance is strictly smaller."
+    ],
+    "solution": "Pop $S(0)$: $d = \\{S:0, A:7, B:2, C:\\infty\\}$. Pop $B(2)$: relax A to $2+3=5$, C to $2+5=7$: $\\{S:0, A:5, B:2, C:7\\}$. Pop $A(5)$: relax C to $5+1=6$: $\\{S:0, A:5, B:2, C:6\\}$. Pop $C(6)$: no outgoing relaxations. Final: $A=5, B=2, C=6$; the S→C path is S→B→A→C with weights $2+3+1=6$."
+  },
+  "independentExercise": {
+    "prompt": "(a) A currency loop offers USD→EUR 0.9, EUR→GBP 0.8, GBP→USD 1.4. Compute the product of the rates and the total weight of the loop under $w = -\\ln r$; state whether arbitrage exists and why Bellman-Ford would flag it. (b) For undirected edges A-B 2, B-C 2, C-D 2, A-D 10, A-C 5, run Kruskal and give the MST's total weight.",
+    "hints": [
+      "Multiply the rates; convert with $w = -\\ln r$ so a profitable loop is a negative sum.",
+      "Sort edges by weight and add each unless it closes a cycle."
+    ],
+    "solution": "(a) Product $= 0.9 \\times 0.8 \\times 1.4 = 1.008 > 1$. Total weight $= -(\\ln 0.9 + \\ln 0.8 + \\ln 1.4) = -\\ln 1.008 \\approx -0.008 < 0$: a negative cycle. Bellman-Ford's extra pass would still improve distances on this cycle, so it reports arbitrage. (b) Sorted: A-B 2, B-C 2, C-D 2, A-C 5, A-D 10. Take A-B (2), B-C (2), C-D (2); A-C and A-D would close cycles. MST weight $= 2+2+2 = \\textbf{6}$."
+  },
+  "commonMistakes": [
+    "Running Dijkstra on graphs with negative edges - settled nodes can still be improvable, so answers may be wrong.",
+    "Stopping Bellman-Ford after $V-1$ passes and forgetting the $V$-th pass that detects negative cycles.",
+    "Mixing up relaxation direction: compare $d[u] + w$ against $d[v]$, updating only when strictly smaller.",
+    "In Kruskal, adding an edge whose endpoints already share a component (must union-check first).",
+    "Assuming the MST is unique - it can tie; distinct edge weights guarantee uniqueness."
+  ],
+  "realWorldApplication": "Network routing protocols and logistics cost models use shortest paths; utility and network cabling, circuit design and cluster analysis use MSTs; union-find also powers connectivity queries in compilers and social networks.",
+  "quantFinanceApplication": "Currency arbitrage detection via the $-\\ln$ transform and negative-cycle detection is a canonical quant interview problem; payment routing across intermediaries minimises fees with Dijkstra-style shortest paths.",
+  "summary": [
+    "Dijkstra extracts the nearest unfinalised node and relaxes its edges; $O(E \\log V)$ with a heap, valid only for non-negative weights.",
+    "Bellman-Ford relaxes every edge $V-1$ times ($O(VE)$), tolerates negative weights, and detects negative cycles on a final pass.",
+    "Arbitrage: with $w = -\\ln(\\text{rate})$, a profitable conversion loop is exactly a negative-weight cycle.",
+    "MSTs connect all $V$ vertices with $V-1$ edges at minimum total weight; the cut property justifies greedy selection.",
+    "Kruskal sorts edges and unions components with union-find; Prim grows a tree with a priority queue."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "code-output",
+      "prompt": "What does this Bellman-Ford implementation print?",
+      "language": "python",
+      "code": "INF = float(\"inf\")\nnodes = {0: 0, 1: INF, 2: INF}\nedges = [(0, 1, 4), (0, 2, 1), (2, 1, 2)]\n\nfor _ in range(len(nodes) - 1):\n    for u, v, w in edges:\n        if nodes[u] + w < nodes[v]:\n            nodes[v] = nodes[u] + w\n\nprint(nodes[1])",
+      "answer": "3",
+      "explanation": "First pass: edge (0,1,4) sets $d[1]=4$; (0,2,1) sets $d[2]=1$; (2,1,2) improves $d[1]$ to $1+2=3$. Later passes change nothing: the shortest path 0→2→1 costs 3."
+    },
+    {
+      "id": "q2",
+      "type": "numeric",
+      "prompt": "In the graph S→A 7, S→B 2, B→A 3, B→C 5, A→C 1, what is the shortest distance from S to C?",
+      "answer": 6,
+      "explanation": "S→B→A→C costs $2+3+1=6$, beating S→B→C (7) and S→A→C (8)."
+    },
+    {
+      "id": "q3",
+      "type": "mcq",
+      "prompt": "Why does Dijkstra's algorithm fail when edge weights may be negative?",
+      "options": [
+        "The priority queue cannot store negative keys",
+        "A node declared final early might later be improved through a negative shortcut",
+        "Relaxation becomes undefined for negative weights",
+        "It only fails when the graph has cycles"
+      ],
+      "answerIndex": 1,
+      "explanation": "Dijkstra's correctness rests on 'the smallest tentative distance is final', which negative edges can invalidate. Bellman-Ford exists precisely to handle this case."
+    },
+    {
+      "id": "q4",
+      "type": "code-output",
+      "prompt": "What does this Kruskal implementation print?",
+      "language": "python",
+      "code": "edges = [(\"A\", \"B\", 1), (\"B\", \"C\", 2), (\"A\", \"C\", 3), (\"C\", \"D\", 4), (\"B\", \"D\", 5)]\nparent = {v: v for v in \"ABCD\"}\n\ndef find(x):\n    while parent[x] != x:\n        parent[x] = parent[parent[x]]\n        x = parent[x]\n    return x\n\ntotal, picked = 0, []\nfor u, v, w in sorted(edges, key=lambda e: e[2]):\n    ru, rv = find(u), find(v)\n    if ru != rv:\n        parent[ru] = rv\n        total += w\n        picked.append(f\"{u}-{v}:{w}\")\n\nprint(total, picked)",
+      "answer": "7 ['A-B:1', 'B-C:2', 'C-D:4']",
+      "explanation": "Edges are taken in weight order: A-B (1), B-C (2), A-C skipped (cycle), C-D (4), B-D skipped (cycle). Total $1+2+4=7$."
+    },
+    {
+      "id": "q5",
+      "type": "numeric",
+      "prompt": "Undirected edges: A-B 2, B-C 2, C-D 2, A-D 10, A-C 5. What is the total weight of the minimum spanning tree?",
+      "answer": 6,
+      "explanation": "Kruskal takes A-B, B-C and C-D (2 each, $=6$); the heavier A-C and A-D would create cycles and are skipped."
+    },
+    {
+      "id": "q6",
+      "type": "short",
+      "prompt": "Explain in one or two sentences how the -log transform converts currency arbitrage detection into a shortest-path problem.",
+      "modelAnswer": "Multiply the rates around a loop; taking w = -ln(rate) turns that product into a sum of weights. A profitable loop (product > 1) then has negative total weight, so Bellman-Ford's negative-cycle detection flags it as arbitrage.",
+      "keywords": [
+        "log",
+        "cycle",
+        "negative"
+      ],
+      "explanation": "Logs convert multiplication of rates into addition of weights; profit (product > 1) maps to a negative cycle, which Bellman-Ford is built to detect."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "formula",
+      "front": "Dijkstra relaxation rule",
+      "back": "If $d[u] + w(u,v) < d[v]$ then set $d[v] = d[u] + w(u,v)$ - applied to the nearest unfinalised node's edges. Requires non-negative weights."
+    },
+    {
+      "type": "concept",
+      "front": "Arbitrage as a graph property",
+      "back": "With w = -ln(exchange rate), a conversion loop with product of rates > 1 becomes a negative-weight cycle, detectable by Bellman-Ford."
+    },
+    {
+      "type": "formula",
+      "front": "Bellman-Ford structure",
+      "back": "Relax all E edges, V-1 times: O(VE). A V-th pass that still improves any distance proves a negative cycle."
+    },
+    {
+      "type": "definition",
+      "front": "Cut property of MSTs",
+      "back": "For any partition (cut) of the vertices, the lightest edge crossing it belongs to some minimum spanning tree - the licence for Kruskal's and Prim's greedy choices."
+    }
+  ],
+  "references": [
+    {
+      "label": "Wikipedia - Dijkstra's algorithm",
+      "url": "https://en.wikipedia.org/wiki/Dijkstra%27s_algorithm"
+    },
+    {
+      "label": "Wikipedia - Bellman-Ford algorithm",
+      "url": "https://en.wikipedia.org/wiki/Bellman%E2%80%93Ford_algorithm"
+    },
+    {
+      "label": "Wikipedia - Kruskal's algorithm",
+      "url": "https://en.wikipedia.org/wiki/Kruskal%27s_algorithm"
+    },
+    {
+      "label": "cp-algorithms - Negative cycle / arbitrage detection",
+      "url": "https://cp-algorithms.com/graph/finding-negative-cycle-in-graph.html"
+    }
+  ],
+  "skills": [
+    "algorithms"
+  ]
+}

@@ -1,0 +1,264 @@
+{
+  "id": "disc-modular-recurrences",
+  "moduleId": "ph1-discrete",
+  "title": "Modular Arithmetic and Recurrence Relations",
+  "estMinutes": 25,
+  "difficulty": "core",
+  "prereqs": [
+    "disc-graphs-trees"
+  ],
+  "objectives": [
+    "Compute $a \\bmod n$ and use the sum/product reduction rules to keep intermediate values small",
+    "Explain how hash bucketing uses modulo arithmetic and why collisions are unavoidable",
+    "Solve arithmetic and geometric recurrences in closed form and verify by substitution",
+    "Unroll the divide-and-conquer recurrence $T(n) = 2T(n/2) + n$ to $\\Theta(n \\log n)$"
+  ],
+  "motivation": "Where does instrument 4821 land in a 16-bucket order-book table? Is day 100 after Wednesday a trading day? How much capital after 8 quarters of 2% growth - and why does merge sort survive on millions of ticks when insertion sort would not? Both answers come from two small ideas: arithmetic that wraps around a fixed modulus, and recurrences that define each term from the previous ones. They are also the tools that turn 'runs forever' into 'runs in milliseconds' on a trading desk.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Clockwork: arithmetic mod n"
+    },
+    {
+      "type": "p",
+      "md": "Modular arithmetic keeps only the remainder. $a \\bmod n$ is what is left after dividing $a$ by $n$: $27 \\bmod 5 = 2$, because $27 = 5 \\times 5 + 2$. Think of a clock: 5 hours after 10 o'clock is 3, because $(10 + 5) \\bmod 12 = 3$. Calendar math works the same way - number the days Sunday $= 0$ through Saturday $= 6$; 100 days after Wednesday (day 3) lands on day $(3 + 100) \\bmod 7 = 103 \\bmod 7 = 5$, which is **Friday**. The remainder carries all the information the cycle needs, and everything outside it is discarded."
+    },
+    {
+      "type": "p",
+      "md": "Two reduction rules make big computations tractable, because you may reduce **before** combining as well as after:"
+    },
+    {
+      "type": "math",
+      "tex": "(a + b) \\bmod n = \\big((a \\bmod n) + (b \\bmod n)\\big) \\bmod n, \\qquad (a \\cdot b) \\bmod n = \\big((a \\bmod n) \\cdot (b \\bmod n)\\big) \\bmod n",
+      "caption": "Reduce early, reduce often - the numbers never grow beyond $n$ per factor."
+    },
+    {
+      "type": "p",
+      "md": "Check the product rule with $13 \\times 17 = 221$: reducing first, $(3 \\times 7) \\bmod 10 = 21 \\bmod 10 = 1$, and indeed $221 \\bmod 10 = 1$. This 'reduce as you go' discipline is exactly how fast modular exponentiation computes $2^{1000} \\bmod p$ without ever materialising a 302-digit number - the engine inside cryptographic signatures and prime-field math."
+    },
+    {
+      "type": "h2",
+      "text": "Modulo in the machine: hashing"
+    },
+    {
+      "type": "p",
+      "md": "Hash tables - the default dictionary structure in Python, C++ `unordered_map`, Java `HashMap` - place key $k$ into bucket $k \\bmod m$ of an $m$-slot array. Instrument id 4821 into 16 buckets: $4821 = 16 \\times 301 + 5$, so bucket 5. The **pigeonhole principle** guarantees collisions: more possible keys than buckets means some bucket gets several, and the table must chain or probe. Choosing $m$ as a prime (or at least a power of two with well-mixed keys) spreads residues so clusters in raw keys do not cluster the buckets."
+    },
+    {
+      "type": "interactive",
+      "component": "HashTableVisual",
+      "params": {
+        "buckets": 8,
+        "keys": [
+          12,
+          27,
+          34,
+          5,
+          19
+        ]
+      },
+      "caption": "Bucket = key mod 8. Watch 27 and 19 collide on bucket 3 - pigeonhole says collisions are a when, not an if."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Negative operands: Python is not C",
+      "md": "Python defines $-7 \\bmod 3 = 2$ (result takes the **divisor's** sign); C, C++ and Java give $-1$ (result takes the **dividend's** sign, truncating toward zero). Both satisfy $a = qn + r$ with their own quotient conventions, so a hash or index computed in one language can go negative in another. In C++ guard with `((a % n) + n) % n` before indexing."
+    },
+    {
+      "type": "h2",
+      "text": "Recurrences: the future defined from the past"
+    },
+    {
+      "type": "p",
+      "md": "A **recurrence relation** defines each term of a sequence from earlier terms plus a **base case** - the mathematical shape of a loop. Two patterns cover a huge share of applications. **Arithmetic** growth (add $d$ each step): $a_n = a_{n-1} + d$ unrolls to $a_n = a_0 + n \\cdot d$ - simple interest, fixed daily additions. **Geometric** growth (multiply by $r$ each step): $a_n = r \\cdot a_{n-1}$ unrolls to $a_n = a_0 \\cdot r^n$ - compounding, and why exponential processes surprise linear intuitions."
+    },
+    {
+      "type": "steps",
+      "title": "Worked example: quarterly compounding as a recurrence",
+      "items": [
+        "Capital follows $P_t = 1.02 \\, P_{t-1}$ with $P_0 = 100{,}000$ - a geometric recurrence with $r = 1.02$.",
+        "Unroll twice to see the pattern: $P_1 = 1.02 \\times 100{,}000$; $P_2 = 1.02 \\times 1.02 \\times 100{,}000$ - each step multiplies one more factor.",
+        "Closed form: $P_t = 100{,}000 \\times 1.02^t$.",
+        "After 8 quarters: $1.02^8 \\approx 1.1716594$, so $P_8 \\approx $117{,}165.94$.",
+        "Verify by substitution: $P_8 = 1.02 \\times (100{,}000 \\times 1.02^7)$ - the closed form satisfies the recurrence and the base case $P_0 = 100{,}000 \\times 1.02^0$."
+      ]
+    },
+    {
+      "type": "p",
+      "md": "Non-geometric recurrences are solved by the same game: **unroll, spot the pattern, prove by substitution**. The Fibonacci recurrence $F_n = F_{n-1} + F_{n-2}$ ($F_0 = 0, F_1 = 1$) yields $0, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55$ - so $F_{10} = 55$ - and famously has the closed form $F_n = \\frac{\\varphi^n - \\psi^n}{\\sqrt{5}}$ with $\\varphi = \\frac{1+\\sqrt5}{2}$. A humbler gem: $T(n) = T(n-1) + (2n - 1)$ with $T(1) = 1$ adds the odd numbers $1 + 3 + 5 + \\cdots + (2n-1)$, which unrolls exactly to $n^2$ - verify: $(n-1)^2 + (2n-1) = n^2 - 2n + 1 + 2n - 1 = n^2$."
+    },
+    {
+      "type": "p",
+      "md": "Divide-and-conquer algorithms produce recurrences too. Merge sort splits into 2 halves of size $n/2$ and pays $n$ work to merge:"
+    },
+    {
+      "type": "math",
+      "tex": "T(n) = 2\\,T\\!\\left(\\tfrac{n}{2}\\right) + n",
+      "caption": "Two subproblems of half size, plus linear merge work."
+    },
+    {
+      "type": "steps",
+      "title": "Unrolling the recursion tree",
+      "items": [
+        "Level 0 costs $n$ (the top merge). Level 1: two merges of $n/2$ - still $n$ total. Level 2: four of $n/4$ - still $n$ total.",
+        "Every level costs $n$, and halving until size 1 takes $\\log_2 n$ levels.",
+        "Total: $T(n) = n \\log_2 n + n$, i.e. $\\Theta(n \\log n)$.",
+        "Sanity-check with $n = 8$: $T(2) = 2 \\times 1 + 2 = 4$, $T(4) = 2 \\times 4 + 4 = 12$, $T(8) = 2 \\times 12 + 8 = 32$, and $8 \\times 3 + 8 = 32$ exactly."
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "def fib(n):\n    a, b = 0, 1\n    for _ in range(n):\n        a, b = b, a + b\n    return a\n\nprint(fib(10))              # 55 - F_10 from the recurrence\nprint(4821 % 16)            # 5  - hash bucket for 16 slots\nprint(-7 % 3)               # 2  - Python keeps the divisor's sign\nprint((100 + 37) % 8, (100 % 8 + 37 % 8) % 8)  # 1 1 - sum rule",
+      "caption": "Every line is a lesson claim, machine-checked."
+    },
+    {
+      "type": "interactive",
+      "component": "ComplexityCompare",
+      "params": {
+        "functions": [
+          "n",
+          "n log n",
+          "n^2"
+        ],
+        "maxN": 128
+      },
+      "caption": "The gap the recurrence analysis buys: at a million ticks, $n \\log n$ work and $n^2$ work differ by a factor of about 50,000."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Where a desk uses this hourly",
+      "md": "Order books index instruments by key mod bucket-count; rebalancing schedules trigger when $\\text{day} \\bmod k = 0$; compounding PnL projections are the geometric recurrence; and the $\\Theta(n \\log n)$ result is why sorting a day of ticks before analysis costs milliseconds while an $n^2$ pairwise pass would cost hours."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "The recurrence $T(n) = T(n-1) + (2n - 1)$ with $T(1) = 1$ counts cumulative work when each new stage adds the next odd number. (1) Compute $T(2), T(3), T(4)$ by direct iteration. (2) Conjecture a closed form and prove it by substitution. (3) Use it to state $T(12)$ without iterating.",
+    "hints": [
+      "$T(2) = T(1) + (2 \\times 2 - 1)$ - keep going one stage at a time.",
+      "Compare your values against perfect squares.",
+      "A substitution proof must check the base case AND the inductive step."
+    ],
+    "solution": "(1) $T(2) = 1 + 3 = 4$, $T(3) = 4 + 5 = 9$, $T(4) = 9 + 7 = 16$. (2) Conjecture $T(n) = n^2$. Base: $T(1) = 1 = 1^2$. Step: assume $T(n-1) = (n-1)^2$; then $T(n) = (n-1)^2 + (2n-1) = n^2 - 2n + 1 + 2n - 1 = n^2$. Proved. (3) $T(12) = 144$."
+  },
+  "independentExercise": {
+    "prompt": "(1) A strategy starts with \\$50,000 and gains 1.5% per week, so $P_t = 1.015 \\, P_{t-1}$. Write the closed form and compute $P_{10}$ to the nearest cent. (2) Compute $2^{10} \\bmod 1000$ two ways: directly, and via the product rule using $2^5 \\bmod 1000$ first - confirm both give 24. (3) A table has 32 buckets. Which bucket receives key 9283, and why must some other key collide with one of the 32 buckets if more than 32 keys are ever inserted?",
+    "hints": [
+      "Geometric: each week multiplies by 1.015, so $t$ weeks is a power.",
+      "$2^5 = 32$; square that residue and reduce again.",
+      "$9283 = 32 \\times 290 + \\text{remainder}$; pigeonhole needs no calculation."
+    ],
+    "solution": "(1) $P_t = 50{,}000 \\times 1.015^t$; $1.015^{10} \\approx 1.1605408$, so $P_{10} \\approx $58{,}027.04$. (2) Directly: $2^{10} = 1024$, $1024 \\bmod 1000 = 24$. Via the rule: $2^5 \\bmod 1000 = 32$; $(32 \\times 32) \\bmod 1000 = 1024 \\bmod 1000 = 24$ - identical, as the product rule guarantees. (3) $9283 \\bmod 32 = 3$ (since $32 \\times 290 = 9280$). With 32 buckets and more than 32 distinct keys, pigeonhole forces two keys into the same bucket - collisions are structural, not a design flaw."
+  },
+  "commonMistakes": [
+    "Applying C-style modulo in your head when reasoning about Python (or vice versa): $-7 \\bmod 3$ is $2$ in Python, $-1$ in C/C++/Java.",
+    "Trusting a closed form without checking the base case and one substitution step - off-by-one errors survive any amount of pattern-spotting.",
+    "Reading $a_n = a_0 r^n$ as linear growth: geometric sequences explode; 2% per quarter is not 'a bit more' than 8% per year in intuition terms.",
+    "Forgetting the final $\\bmod\\, n$ after applying the sum/product rules - the reduction rules need one last wrap-up reduce to be equalities."
+  ],
+  "realWorldApplication": "Hash tables in every language runtime, cyclic scheduling (weekly cron jobs, day-of-week logic), random-number generators, checksums and cryptographic primitives are all modular arithmetic; recurrence analysis sets the runtime bar for every divide-and-conquer library you call.",
+  "quantFinanceApplication": "Order-book symbol tables hash instrument ids into buckets; calendar rebalancing is a modulo trigger; capital projections are the geometric recurrence $P_t = r P_{t-1}$; and the $n \\log n$ sorting bound is what makes end-of-day analytics over millions of ticks finish before the next session opens.",
+  "summary": [
+    "$a \\bmod n$ is the remainder; you may reduce before or after adding and multiplying, provided you reduce once more at the end.",
+    "Hashing places key $k$ in bucket $k \\bmod m$; pigeonhole makes collisions inevitable, so $m$ and key mixing matter.",
+    "Arithmetic recurrences unroll to $a_0 + nd$, geometric to $a_0 r^n$; always verify a closed form against the base case and by substitution.",
+    "$T(n) = 2T(n/2) + n$ unrolls level by level, each level costing $n$ across $\\log_2 n$ levels: $\\Theta(n \\log n)$, the signature of merge sort."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "numeric",
+      "prompt": "Compute $17 \\bmod 5$.",
+      "answer": 2,
+      "explanation": "$17 = 5 \\times 3 + 2$, so the remainder is 2."
+    },
+    {
+      "id": "q2",
+      "type": "numeric",
+      "prompt": "In Python, what is $-7 \\;\\%\\; 3$?",
+      "answer": 2,
+      "explanation": "Python's remainder takes the divisor's sign: $-7 = 3 \\times (-3) + 2$, so the result is 2. C/C++/Java would answer $-1$ by truncating toward zero."
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "A hash table has 32 buckets and indexes keys by $k \\bmod 32$. Which bucket receives key 9283?",
+      "answer": 3,
+      "explanation": "$32 \\times 290 = 9280$, so $9283 \\bmod 32 = 3$."
+    },
+    {
+      "id": "q4",
+      "type": "code-output",
+      "prompt": "What does this Python code print?",
+      "language": "python",
+      "code": "a, b = 0, 1\nfor _ in range(5):\n    a, b = b, a + b\nprint(a)\nprint(1000 % 7)",
+      "answer": "5\n6",
+      "explanation": "The loop steps the Fibonacci recurrence five times, leaving $a = F_5 = 5$. And $1000 = 7 \\times 142 + 6$, so $1000 \\bmod 7 = 6$."
+    },
+    {
+      "id": "q5",
+      "type": "mcq",
+      "prompt": "The recurrence $a_n = 3\\,a_{n-1}$ with $a_0 = 2$ has which closed form?",
+      "options": [
+        "$2 \\cdot 3^n$",
+        "$3 \\cdot 2^n$",
+        "$2 + 3n$",
+        "$3^n - 1$"
+      ],
+      "answerIndex": 0,
+      "explanation": "Each step multiplies by 3, so after $n$ steps $a_n = 2 \\times 3^n$. Check: $a_1 = 6 = 2 \\cdot 3^1$, $a_2 = 18 = 2 \\cdot 3^2$ - and the base case $a_0 = 2 \\cdot 3^0 = 2$ holds."
+    },
+    {
+      "id": "q6",
+      "type": "numeric",
+      "prompt": "For $T(n) = 2T(n/2) + n$ with $T(1) = 1$, compute $T(8)$ exactly.",
+      "answer": 32,
+      "explanation": "$T(2) = 2 + 2 = 4$, $T(4) = 2 \\times 4 + 4 = 12$, $T(8) = 2 \\times 12 + 8 = 32$ - matching the closed form $n \\log_2 n + n = 8 \\times 3 + 8 = 32$."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "formula",
+      "front": "Modular sum and product rules",
+      "back": "$(a+b) \\bmod n = ((a \\bmod n) + (b \\bmod n)) \\bmod n$ and likewise for products - reduce early, reduce again at the end."
+    },
+    {
+      "type": "concept",
+      "front": "Negative modulo: Python vs C",
+      "back": "Python: $-7 \\bmod 3 = 2$ (sign of divisor). C/C++/Java: $-1$ (sign of dividend, truncation). Guard C++ indexing with $((a \\bmod n) + n) \\bmod n$."
+    },
+    {
+      "type": "formula",
+      "front": "Geometric recurrence closed form",
+      "back": "$a_n = r\\,a_{n-1}$, $a_0$ given $\\Rightarrow a_n = a_0 r^n$ - the compounding formula; verify the base case $a_0 r^0 = a_0$."
+    },
+    {
+      "type": "concept",
+      "front": "Why does $T(n) = 2T(n/2) + n$ give $n \\log n$?",
+      "back": "The recursion tree has $\\log_2 n$ levels and each level totals $n$ merge work, so $T(n) = n \\log_2 n + n = \\Theta(n \\log n)$."
+    },
+    {
+      "type": "code-output",
+      "front": "What is Python's 4821 % 16?",
+      "back": "5 - because $4821 = 16 \\times 301 + 5$; this is the hash bucket for a 16-slot table."
+    }
+  ],
+  "references": [
+    {
+      "label": "MIT 6.042J - Modular arithmetic and recurrences",
+      "url": "https://ocw.mit.edu/courses/6-042j-mathematics-for-computer-science-spring-2015/"
+    },
+    {
+      "label": "Python Language Reference - modulo of negative numbers",
+      "url": "https://docs.python.org/3/reference/expressions.html#numeric-conversions-and-syntax"
+    },
+    {
+      "label": "MIT OCW 6.006 - Divide and conquer recurrences",
+      "url": "https://ocw.mit.edu/courses/6-006-introduction-to-algorithms-spring-2020/"
+    }
+  ],
+  "skills": [
+    "discrete-math"
+  ]
+}

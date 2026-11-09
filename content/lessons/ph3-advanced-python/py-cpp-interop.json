@@ -1,0 +1,385 @@
+{
+  "id": "py-cpp-interop",
+  "moduleId": "ph3-advanced-python",
+  "title": "C Extensions and pybind11",
+  "estMinutes": 27,
+  "difficulty": "advanced",
+  "prereqs": [
+    "py-profiling"
+  ],
+  "objectives": [
+    "Decide when a compiled extension is justified, given profiling data and the alternatives ladder (algorithm fix, numpy, compile)",
+    "Read and write a minimal pybind11 module: PYBIND11_MODULE, m.def, build with a single c++ command",
+    "Explain the cost of pybind11 STL type conversions (copies) and use py::array_t to borrow numpy buffers without copying",
+    "Manage the GIL across long C++ calls with py::call_guard<py::gil_scoped_release> and state what becomes illegal after release",
+    "Choose among ctypes, the CPython C-API, Cython and pybind11 for a given integration problem"
+  ],
+  "motivation": "The profile is unambiguous: 90% of runtime sits in one pure-Python inner loop that numpy cannot express - a sequential order-book match or an online estimator. A 40-line C++ function bound with pybind11 can make it 50x faster while Python keeps doing orchestration. This lesson covers when dropping to C++ pays, how a binding actually works, and the traps - silent copies, the GIL, build pipelines - that turn a speed win into a maintenance sink.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "When Python is the wrong material"
+    },
+    {
+      "type": "p",
+      "md": "NumPy vectorisation fixes elementwise loops; but some algorithms are inherently **sequential and stateful** - matching an order book tick by tick, updating an online covariance, walking a tree. They cannot be expressed as whole-array operations. The escalation ladder, in order: (1) fix the algorithm (the profiling lesson's heap example - usually the biggest win), (2) express it with numpy/scipy primitives, (3) compile it (Cython, pybind11, C-API), (4) parallelise across processes. Each rung costs build complexity and maintenance; a profile showing time concentrated in one pure-Python hot spot is the entry ticket for rung 3."
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Tool",
+        "Style",
+        "Boilerplate",
+        "Best for"
+      ],
+      "rows": [
+        [
+          "ctypes",
+          "call a .so from Python, declare C signatures by hand",
+          "none to build; lots of glue",
+          "calling an existing C library"
+        ],
+        [
+          "CPython C-API",
+          "C with manual refcounting",
+          "very high",
+          "embedding, interpreter-level work"
+        ],
+        [
+          "Cython",
+          "Python-like source with type annotations, compiled",
+          "medium",
+          "numeric kernels, incremental typing"
+        ],
+        [
+          "pybind11",
+          "modern C++, header-only",
+          "low",
+          "exposing C++ code and classes to Python"
+        ]
+      ]
+    },
+    {
+      "type": "h2",
+      "text": "A pybind11 module end to end"
+    },
+    {
+      "type": "p",
+      "md": "pybind11 is a header-only C++ library that exposes C++ functions and classes as a Python extension module. You write the function, register it inside the `PYBIND11_MODULE` block, and compile to a `.so` that Python imports like any module. No boilerplate about reference counting - pybind11 manages it for you."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <pybind11/pybind11.h>\n#include <vector>\n\ndouble compound(const std::vector<double>& r) {\n    double v = 1.0;\n    for (double x : r) {\n        v *= (1.0 + x);\n    }\n    return v;\n}\n\nnamespace py = pybind11;\nPYBIND11_MODULE(fastmath, m) {\n    m.def(\"compound\", &compound, \"Compound a vector of simple returns\");\n}",
+      "caption": "fastmath.cpp - a sequential accumulation bound in a dozen lines."
+    },
+    {
+      "type": "code",
+      "lang": "bash",
+      "code": "c++ -O3 -shared -std=c++17 -fPIC fastmath.cpp \\\n    -I\"$(python3 -c 'import sysconfig; print(sysconfig.get_paths()[\"include\"])')\" \\\n    -o fastmath\"$(python3-config --extension-suffix)\"",
+      "caption": "One command builds the module; the suffix makes the filename importable on your interpreter (e.g. fastmath.cpython-312-x86_64-linux-gnu.so)."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import fastmath\nfrom functools import reduce\n\nr = [0.1, -0.1, 0.05]\nprint(round(fastmath.compound(r), 4))                      # 1.0395\nprint(round(reduce(lambda v, x: v * (1 + x), r, 1.0), 4))  # 1.0395",
+      "caption": "Same answer, different cost profile: the C++ loop runs compiled instructions; the reduce runs interpreted bytecodes. On large inputs the gap is 10-100x."
+    },
+    {
+      "type": "h2",
+      "text": "Conversion costs and the GIL"
+    },
+    {
+      "type": "p",
+      "md": "The binding has two hidden costs. First, **type conversion**: with `#include <pybind11/stl.h>`, the Python list argument is converted to a `std::vector<double>` by *copying* every element - an O(n) allocation per call. For a function called 10,000 times per second with 100k-element arrays, conversion can cost more than the maths. Second, the **GIL**: every pybind11 call holds the Global Interpreter Lock, so a 2-second C++ computation blocks every other Python thread. Release it for the duration of pure-C++ work:"
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <pybind11/pybind11.h>\n#include <pybind11/numpy.h>\n\ndouble slow_sum(py::array_t<double> arr) {   // borrows the numpy buffer\n    auto buf = arr.request();\n    double* p = static_cast<double*>(buf.ptr);\n    double s = 0.0;\n    for (py::ssize_t i = 0; i < buf.size; ++i) {\n        s += p[i];\n    }\n    return s;\n}\n\nPYBIND11_MODULE(fastmath, m) {\n    m.def(\"slow_sum\", &slow_sum,\n          py::call_guard<py::gil_scoped_release>(),\n          \"Sums a float64 array without holding the GIL\");\n}",
+      "caption": "py::array_t borrows the buffer (no copy) and call_guard releases the GIL for the duration of the call, so other Python threads keep running."
+    },
+    {
+      "type": "p",
+      "md": "The two-language stack is not an admission of weakness on either side — it is a deliberate division of labour. Python is where research lives: flexible, readable, immediate. C++ is where production lives: fast, deterministic, type-checked at compile time. The interop layer is where a quant shop's architecture is really decided, because whatever crosses the boundary pays a *crossing cost* — nanoseconds to microseconds per call, plus the cognitive cost of maintaining two type systems and two build systems."
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Binding",
+        "Call overhead (order of magnitude)",
+        "Build complexity",
+        "When it wins"
+      ],
+      "rows": [
+        [
+          "ctypes (C ABI)",
+          "~1 µs",
+          "low (extern \"C\", no wrappers)",
+          "one-off calls to a compiled kernel"
+        ],
+        [
+          "pybind11 (C++ → Python)",
+          "~0.3–1 µs",
+          "moderate (headers + CMake)",
+          "rich C++ APIs with STL types"
+        ],
+        [
+          "Cython (Python-like → C)",
+          "~0.1–0.3 µs",
+          "moderate (.pyx + setup)",
+          "hot numeric kernels in Python syntax"
+        ],
+        [
+          "NumPy array buffers",
+          "per-transfer, not per-call",
+          "part of the above",
+          "the answer to almost everything: batch, don't call"
+        ]
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "// pricer.cpp - the C++ side of a pybind11 binding\n#include <pybind11/pybind11.h>\n#include <pybind11/numpy.h>\n#include <cmath>\nnamespace py = pybind11;\n\n// Takes NumPy arrays in, returns a new NumPy array: ONE boundary crossing for N options\npy::array_t<double> price_calls(py::array_t<double> S, py::array_t<double> K,\n                                 double r, double sigma, double T) {\n    auto Sb = S.unchecked<1>(), Kb = K.unchecked<1>();\n    const size_t n = Sb.size();\n    py::array_t<double> out(n);\n    auto ob = out.mutable_unchecked<1>();\n    const double sqrtT = std::sqrt(T);\n    for (size_t i = 0; i < n; ++i) {\n        const double d1 = (std::log(Sb(i)/Kb(i)) + (r + 0.5*sigma*sigma)*T) / (sigma*sqrtT);\n        const double d2 = d1 - sigma*sqrtT;\n        // erf-based N(d) (see the numerical lesson for why this form)\n        auto N = [](double x){ return 0.5*std::erfc(-x / std::sqrt(2.0)); };\n        ob(i) = Sb(i)*N(d1) - Kb(i)*std::exp(-r*T)*N(d2);\n    }\n    return out;\n}\n\nPYBIND11_MODULE(pricer, m) {\n    m.def(\"price_calls\", &price_calls, \"Batch Black-Scholes calls\");\n}",
+      "caption": "One crossing for the whole batch — the cardinal rule of interop performance."
+    },
+    {
+      "type": "p",
+      "md": "The two-language stack is not an admission of weakness on either side — it is a deliberate division of labour. Python is where research lives: flexible, readable, immediate. C++ is where production lives: fast, deterministic, type-checked at compile time. The interop layer is where a quant shop's architecture is really decided, because whatever crosses the boundary pays a *crossing cost* — nanoseconds to microseconds per call, plus the cognitive cost of maintaining two type systems and two build systems."
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Binding",
+        "Call overhead (order of magnitude)",
+        "Build complexity",
+        "When it wins"
+      ],
+      "rows": [
+        [
+          "ctypes (C ABI)",
+          "~1 µs",
+          "low (extern \"C\", no wrappers)",
+          "one-off calls to a compiled kernel"
+        ],
+        [
+          "pybind11 (C++ → Python)",
+          "~0.3–1 µs",
+          "moderate (headers + CMake)",
+          "rich C++ APIs with STL types"
+        ],
+        [
+          "Cython (Python-like → C)",
+          "~0.1–0.3 µs",
+          "moderate (.pyx + setup)",
+          "hot numeric kernels in Python syntax"
+        ],
+        [
+          "NumPy array buffers",
+          "per-transfer, not per-call",
+          "part of the above",
+          "the answer to almost everything: batch, don't call"
+        ]
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "// pricer.cpp - the C++ side of a pybind11 binding\n#include <pybind11/pybind11.h>\n#include <pybind11/numpy.h>\n#include <cmath>\nnamespace py = pybind11;\n\n// Takes NumPy arrays in, returns a new NumPy array: ONE boundary crossing for N options\npy::array_t<double> price_calls(py::array_t<double> S, py::array_t<double> K,\n                                 double r, double sigma, double T) {\n    auto Sb = S.unchecked<1>(), Kb = K.unchecked<1>();\n    const size_t n = Sb.size();\n    py::array_t<double> out(n);\n    auto ob = out.mutable_unchecked<1>();\n    const double sqrtT = std::sqrt(T);\n    for (size_t i = 0; i < n; ++i) {\n        const double d1 = (std::log(Sb(i)/Kb(i)) + (r + 0.5*sigma*sigma)*T) / (sigma*sqrtT);\n        const double d2 = d1 - sigma*sqrtT;\n        // erf-based N(d) (see the numerical lesson for why this form)\n        auto N = [](double x){ return 0.5*std::erfc(-x / std::sqrt(2.0)); };\n        ob(i) = Sb(i)*N(d1) - Kb(i)*std::exp(-r*T)*N(d2);\n    }\n    return out;\n}\n\nPYBIND11_MODULE(pricer, m) {\n    m.def(\"price_calls\", &price_calls, \"Batch Black-Scholes calls\");\n}",
+      "caption": "One crossing for the whole batch — the cardinal rule of interop performance."
+    },
+    {
+      "type": "p",
+      "md": "The performance law that governs all of this: **cross the boundary once per batch, never once per item**. A pybind11 call that receives a NumPy array, does all the work in C++, and returns one array, has effectively zero per-element overhead. The same functions exposed element-at-a-time (or called in a Python loop) pay the crossing cost n times and can end up slower than pure NumPy. When you profile a mixed Python/C++ system, the flame graph almost always shows the boundary as a fat bar — the fix is raising the granularity, not tuning the binding."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "GIL, releases and object lifetimes",
+      "md": "Three recurring failure modes: (1) pybind11 holds the GIL during your C++ by default — release it with `py::gil_scoped_release` for long computations or you serialise every Python thread waiting on you; (2) returning raw pointers to Python-managed memory is a lifetime bug — arrays own data, borrowed references do not; (3) exceptions must cross the boundary as Python exceptions (pybind11 translates automatically; hand-rolled C ABI does not and will segfault instead)."
+    },
+    {
+      "type": "p",
+      "md": "The performance law that governs all of this: **cross the boundary once per batch, never once per item**. A pybind11 call that receives a NumPy array, does all the work in C++, and returns one array, has effectively zero per-element overhead. The same functions exposed element-at-a-time (or called in a Python loop) pay the crossing cost n times and can end up slower than pure NumPy. When you profile a mixed Python/C++ system, the flame graph almost always shows the boundary as a fat bar — the fix is raising the granularity, not tuning the binding."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "GIL, releases and object lifetimes",
+      "md": "Three recurring failure modes: (1) pybind11 holds the GIL during your C++ by default — release it with `py::gil_scoped_release` for long computations or you serialise every Python thread waiting on you; (2) returning raw pointers to Python-managed memory is a lifetime bug — arrays own data, borrowed references do not; (3) exceptions must cross the boundary as Python exceptions (pybind11 translates automatically; hand-rolled C ABI does not and will segfault instead)."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "After gil_scoped_release, you are not allowed to touch Python",
+      "md": "With the GIL released, any interaction with Python objects - printing via py::print, constructing py::object, raising pybind11 exceptions - races the interpreter and can crash it. If the C++ code must call back into Python, it must first re-acquire with `py::gil_scoped_acquire`. Keep released sections purely C++."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "The desk pattern",
+      "md": "A common production layout: Python owns strategy and I/O; C++ owns the tick-by-tick matching loop, invoked via a bound function taking a `py::array_t` of order updates and returning fills as numpy arrays - zero-copy in, zero-copy out, GIL released during matching. Python-side code stays auditable; the hot loop gets compiled speed."
+    },
+    {
+      "type": "h2",
+      "text": "Verification discipline"
+    },
+    {
+      "type": "p",
+      "md": "Treat the binding as an untrusted reimplementation: unit-test it from Python against a reference implementation on identical inputs (including empty arrays, NaNs, single elements), and measure the speedup with the profiling lesson's harness. If the measured speedup is under ~2x, the build pipeline, version pinning and cross-platform compilation you just adopted are probably not worth it - ship the numpy version instead."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Python calls `fastmath.compound([0.1, -0.1, 0.05])` (the stl.h version). Walk the call: (a) what happens to the list argument as it crosses into C++? (b) what runs inside C++? (c) what happens to the return value? (d) where is the O(n) cost, and how would you remove it if the input were a numpy array?",
+    "hints": [
+      "stl.h converts between Python containers and C++ STL containers.",
+      "A Python float is itself a boxed object; a C++ double is raw."
+    ],
+    "solution": "(a) pybind11's stl conversion builds a `std::vector<double>` by copying each element out of the Python list - each element is unboxed from a PyObject float to a raw C double. (b) The compiled loop multiplies `(1 + x)` into `v` - machine-speed. (c) The returned double is boxed into a Python float object. (d) The O(n) argument copy. With numpy input, take `py::array_t<double>` and `request()` the buffer: the function reads the caller's memory directly - zero copy - and (as in the lesson) release the GIL while it runs."
+  },
+  "independentExercise": {
+    "prompt": "Implement max drawdown as a pybind11 function `max_drawdown(const std::vector<double>& equity)`: single pass, maintain a running peak and the worst value of `equity[i]/peak - 1`. Write the C++ body, the `m.def` registration, the one-line build command, and verify against the numpy reference `(eq / np.maximum.accumulate(eq) - 1).min()` on `[100, 120, 90, 110]` (expected: -0.25). State the time and space complexity of your C++ version.",
+    "hints": [
+      "Initialise peak with equity[0] and worst with 0.0 (drawdowns are <= 0).",
+      "One loop, two variables - no arrays allocated.",
+      "Compare floating-point results with a tolerance, not exact equality."
+    ],
+    "solution": "```cpp\ndouble max_drawdown(const std::vector<double>& equity) {\n    double peak = equity.empty() ? 0.0 : equity[0];\n    double worst = 0.0;\n    for (double px : equity) {\n        if (px > peak) peak = px;\n        double dd = px / peak - 1.0;\n        if (dd < worst) worst = dd;\n    }\n    return worst;\n}\n\nPYBIND11_MODULE(fastmath, m) {\n    m.def(\"max_drawdown\", &max_drawdown, \"Worst peak-to-trough drawdown\");\n}\n```\nBuild: `c++ -O3 -shared -std=c++17 -fPIC fastmath.cpp -I$(python3 -c 'import sysconfig; print(sysconfig.get_paths()[\"include\"])') -o fastmath$(python3-config --extension-suffix)`. Verify: `fastmath.max_drawdown([100, 120, 90, 110])` returns $-0.25$ (the trough 90 against the peak 120), matching the numpy reference. Complexity: $O(n)$ time, $O(1)$ extra space."
+  },
+  "commonMistakes": [
+    "Writing a C extension before profiling - binding the wrong 5% of the code buys nothing.",
+    "Passing big numpy arrays to functions taking std::vector via stl.h: every call silently copies the data; use py::array_t to borrow.",
+    "Doing long C++ computations while holding the GIL - all Python threads freeze; wrap with py::call_guard<py::gil_scoped_release>.",
+    "Touching Python objects (py::print, py::object) after releasing the GIL - undefined behaviour; re-acquire first.",
+    "Shipping bindings without differential tests against a Python reference, or without pinning the pybind11/compiler versions."
+  ],
+  "realWorldApplication": "pandas, numpy and scikit-learn are themselves compiled extensions bound to Python; the same techniques scale down to a single hot function. Any Python system with a measured hot spot that numpy cannot express is a candidate for Cython/pybind11.",
+  "quantFinanceApplication": "Trading systems commonly bind the order-book matching engine, options pricers or streaming risk kernels in C++ and keep the strategy layer in Python - pybind11 with array_t zero-copy buffers and GIL release around the tick loop is the standard recipe.",
+  "summary": [
+    "Escalate performance work in order: algorithm fix, numpy/scipy, compiled extension, multiprocessing - and only enter rung 3 with a profile in hand.",
+    "A pybind11 module: include pybind11.h, write the function, register with m.def inside PYBIND11_MODULE, compile once with c++ -O3 -shared -std=c++17.",
+    "stl.h conversions copy Python containers into C++ containers (O(n) per call); py::array_t borrows a numpy buffer with zero copy.",
+    "Long pure-C++ calls should release the GIL (py::call_guard<py::gil_scoped_release>); while released, no Python API calls are legal.",
+    "Differential-test bindings against a Python reference and demand a measured >2x speedup before accepting the build complexity."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "You need to call an existing C shared library from Python with the smallest possible build effort. Which tool fits best?",
+      "options": [
+        "CPython C-API",
+        "ctypes",
+        "Cython",
+        "Rewriting the library in Python"
+      ],
+      "answerIndex": 1,
+      "explanation": "ctypes loads a compiled .so/.dll at runtime and calls it with hand-declared signatures - no compilation step of your own. Cython and pybind11 need a build; the C-API is maximal boilerplate."
+    },
+    {
+      "id": "q2",
+      "type": "code-output",
+      "prompt": "What does this print?",
+      "language": "python",
+      "code": "from functools import reduce\nr = [0.1, -0.1, 0.05]\nprint(round(reduce(lambda v, x: v * (1 + x), r, 1.0), 4))",
+      "answer": "1.0395",
+      "explanation": "Compounding: $1.1 \\times 0.9 = 0.99$, then $0.99 \\times 1.05 = 1.0395$. This is the reference implementation the C++ binding must match exactly."
+    },
+    {
+      "id": "q3",
+      "type": "mcq",
+      "prompt": "A pybind11 function declared to take `std::vector<double>` (with stl.h) receives a 1,000,000-element Python list on every call. What is the main per-call cost?",
+      "options": [
+        "The GIL is acquired 1,000,000 times",
+        "An O(n) copy that converts every element from a boxed PyObject float to a raw C double",
+        "Nothing - std::vector borrows the list's memory",
+        "A JIT compilation of the loop"
+      ],
+      "answerIndex": 1,
+      "explanation": "stl.h performs a value conversion: it allocates a vector and copies/converts each element. For large arrays called often, use py::array_t to borrow the numpy buffer with zero copy."
+    },
+    {
+      "id": "q4",
+      "type": "ms",
+      "prompt": "Which are good reasons NOT to write a C++ extension? Select all that apply.",
+      "options": [
+        "The hot loop can already be expressed as a couple of numpy whole-array operations",
+        "The measured speedup of the prototype binding is only 1.5x",
+        "The algorithm is inherently sequential and numpy cannot express it",
+        "The team has no experience maintaining compiled C++ build pipelines"
+      ],
+      "answerIndices": [
+        0,
+        1,
+        3
+      ],
+      "explanation": "numpy already gives compiled speed for vectorisable work; sub-2x speedups rarely justify build complexity and version pinning; maintenance capability matters. The one legitimate trigger - a sequential numpy-inexpressible hot spot - is deliberately NOT a reason to skip."
+    },
+    {
+      "id": "q5",
+      "type": "mcq",
+      "prompt": "What does py::call_guard<py::gil_scoped_release>() on an m.def registration do?",
+      "options": [
+        "Makes the function release the GIL for the duration of the call, letting other Python threads run",
+        "Disables the GIL permanently while the module is loaded",
+        "Pickles the arguments so the call can run in a subprocess",
+        "Converts the function to a coroutine"
+      ],
+      "answerIndex": 0,
+      "explanation": "The guard releases the Global Interpreter Lock on entry and re-acquires it on exit, so a long C++ computation no longer blocks every other Python thread. While released, the code must not touch the Python API."
+    },
+    {
+      "id": "q6",
+      "type": "numeric",
+      "prompt": "How many bytes does a numpy array of 1,000,000 float64 elements occupy for its data (header aside)?",
+      "answer": 8000000,
+      "explanation": "float64 = 8 bytes per element, contiguous: $10^6 \\times 8 = 8{,}000{,}000$ bytes. Compare with a Python list of a million boxed floats: ~8 MB of pointers + ~24 MB of float objects."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "definition",
+      "front": "pybind11",
+      "back": "Header-only C++ library that exposes C++ functions/classes as Python extension modules: PYBIND11_MODULE + m.def, compiled with c++ -O3 -shared -std=c++17 into an importable .so."
+    },
+    {
+      "type": "concept",
+      "front": "stl.h vs py::array_t costs",
+      "back": "stl.h converts Python list <-> std::vector by copying every element (O(n) per call). py::array_t<double> + request() borrows the numpy buffer with zero copy - the choice for large arrays."
+    },
+    {
+      "type": "error-identification",
+      "front": "Spot the bug: m.def(\"f\", &f, py::call_guard<py::gil_scoped_release>()); and f calls py::print(...) mid-computation",
+      "back": "With the GIL released, touching Python objects races the interpreter - crashes or corruption. Re-acquire with py::gil_scoped_acquire before any Python API call, or keep the released section pure C++."
+    },
+    {
+      "type": "code-output",
+      "front": "fastmath.compound([0.1, -0.1, 0.05]) returns what (2 dp)?",
+      "back": "1.04 - precisely 1.0395: (1.1)(0.9)(1.05). The binding must match a Python reference implementation exactly."
+    },
+    {
+      "type": "concept",
+      "front": "The escalation ladder before binding C++",
+      "back": "1) Fix the algorithm. 2) numpy/scipy primitives. 3) Compile (Cython/pybind11/C-API). 4) Multiprocessing. A profile with time concentrated in one pure-Python hot spot is the ticket to step 3."
+    }
+  ],
+  "references": [
+    {
+      "label": "pybind11 documentation",
+      "url": "https://pybind11.readthedocs.io/en/stable/"
+    },
+    {
+      "label": "pybind11 - NumPy support (py::array_t)",
+      "url": "https://pybind11.readthedocs.io/en/stable/advanced/pycpp/numpy.html"
+    },
+    {
+      "label": "Python docs - ctypes",
+      "url": "https://docs.python.org/3/library/ctypes.html"
+    }
+  ],
+  "skills": [
+    "python",
+    "cpp-engineering"
+  ]
+}

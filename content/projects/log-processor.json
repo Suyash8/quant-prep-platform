@@ -1,0 +1,171 @@
+{
+  "slug": "log-processor",
+  "order": 3,
+  "title": "High-Throughput Streaming Log Processor",
+  "language": "cpp",
+  "difficulty": "advanced",
+  "prereqLessons": [
+    "qalg-streaming",
+    "numa-floating-point",
+    "cpp-benchmarking-profiling",
+    "cpp-stl-iterators-algorithms",
+    "cx-big-o",
+    "linux-pipes-scripting",
+    "cpp-cache-locality"
+  ],
+  "context": "Trading infrastructure talks in logs: every order gateway, matching engine and market-data feed writes millions of CSV lines a day, and the on-call engineer needs answers from them in seconds — not from a Hadoop job. The classic first assignment on an exchange-technology team is exactly this: a single-pass streaming processor that eats a huge log on stdin and emits per-service latency statistics plus anomaly flags, fast enough to run in a pipeline.\n\nThe constraints that make it interesting are real: you may not buffer the input, you must survive malformed lines without dying, and throughput is a graded feature — the difference between 200k and 2M lines/sec is the difference between a tool people use and a tool people route around.",
+  "problem": "Build a C++17 command-line tool `logproc` that reads a CSV log stream on stdin with lines of the form `timestamp_ms,service,value` (value = response time in ms), maintains rolling per-service statistics with Welford's algorithm, flags anomalies, and writes a summary to stdout.\n\n- **Aggregates per service**: count, mean, population stddev, min, max — printed after EOF as CSV.\n- **Flags anomalies**: any observation whose z-score against the *running* mean/stddev exceeds 3 in absolute value after a warm-up of at least 30 observations for that service; anomaly lines are written to stderr in stream order with timestamp, service, value and z-score.\n- **Robustness**: blank lines skipped, malformed lines counted and reported in the summary, no crashes on huge or truncated final lines.\n- **Performance**: sustained throughput of at least 1M lines/sec on a reference laptop for plain CSV; you must measure and report throughput (lines/sec and MB/s) and explain where the time goes.",
+  "requirements": [
+    "Single-pass streaming: memory per service is O(1) (a Welford accumulator plus counters); the tool never buffers the stream or the output.",
+    "Parsing: manual field splitting with `std::from_chars` for integers/doubles (or `strtod`); no iostream extraction (`>>`) in the hot path; a malformed-line counter is included in the summary output.",
+    "Correct statistics: Welford mean and *population* stddev per service plus min/max; a documented cross-check against a Python reference implementation on at least 10k lines agrees to 1e-9 relative.",
+    "Anomaly detection: |z| > 3 using running statistics with warm-up of at least 30 observations per service; anomalies streamed to stderr in order; the warm-up rule and running-stats semantics are documented (they differ from a two-pass z-score).",
+    "Throughput: measured with a generator script over at least 10M lines; report lines/sec and MB/s; stdin is read in large blocks (>= 64 KB) rather than line-by-line `std::getline` on `std::cin`.",
+    "Robust I/O: handles EOF without a trailing newline, extremely long lines, and empty input (empty input produces a valid empty summary and exit code 0).",
+    "Unit tests for the accumulator and parser (assert-based or CTest) plus one end-to-end test on a fixture file with known expected summary values."
+  ],
+  "milestones": [
+    {
+      "title": "I/O plumbing and parsing",
+      "detail": "Block-read stdin, split fields, from_chars parsing, malformed-line accounting; fixture unit tests for the parser.",
+      "estHours": 7
+    },
+    {
+      "title": "Streaming statistics core",
+      "detail": "Welford accumulator (starter provided) wired per service; min/max; summary CSV at EOF; Python reference cross-check.",
+      "estHours": 6
+    },
+    {
+      "title": "Anomaly detection",
+      "detail": "Running z-score with warm-up, stderr anomaly stream, tests with planted anomalies of known z.",
+      "estHours": 5
+    },
+    {
+      "title": "Throughput benchmark and optimisation",
+      "detail": "Generator + timing harness, profile the hot path, block buffering, measurable before/after; 1M+ lines/sec documented.",
+      "estHours": 6
+    },
+    {
+      "title": "Robustness pass and documentation",
+      "detail": "EOF/long-line/empty-input cases, exit codes, README with usage, format contract and benchmark table.",
+      "estHours": 4
+    }
+  ],
+  "designGuidance": [
+    {
+      "type": "h2",
+      "text": "Read the stream in blocks, not lines"
+    },
+    {
+      "type": "p",
+      "md": "Per-line `std::getline` on `std::cin` synchronises with C stdio and copies repeatedly. The standard fast pattern: `fread` into a 64–256 KB buffer, scan for newlines, and handle the tail that straddles buffer boundaries by carrying the partial line to the front. This one change typically moves a CSV reader from ~300k to several million lines/sec."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "// Block-reading loop sketch (hot path: no allocations, no iostreams).\nchar buf[1 << 18];\nstd::size_t len = 0;                       // bytes of the pending partial line\nwhile (true) {\n    std::size_t got = std::fread(buf + len, 1, sizeof(buf) - len, stdin);\n    if (got == 0) {\n        if (len > 0) processLine(buf, len);   // final line without '\\n'\n        break;\n    }\n    std::size_t start = 0;\n    for (std::size_t i = 0; i < len + got; ++i) {\n        if (buf[i] == '\\n') { processLine(buf + start, i - start); start = i + 1; }\n    }\n    len = len + got - start;\n    std::memmove(buf, buf + start, len);      // carry partial line to front\n}",
+      "caption": "Carry the partial line across buffer boundaries"
+    },
+    {
+      "type": "callout",
+      "variant": "warn",
+      "title": "Running z-scores are not two-pass z-scores",
+      "md": "With running statistics, an early outlier inflates the variance and *hides* later anomalies; with two-pass statistics you cannot stream. This project deliberately picks the streaming semantics — document that choice and the warm-up window, because the anomaly list changes with it. There is no 'correct' answer; there is a defensible, stated one."
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Approach",
+        "Memory",
+        "Accuracy",
+        "Notes"
+      ],
+      "rows": [
+        [
+          "naive sum, sum of squares",
+          "O(1)",
+          "poor for large mean, small variance",
+          "catastrophic cancellation; do not ship"
+        ],
+        [
+          "Welford (one pass)",
+          "O(1)",
+          "excellent",
+          "the required approach"
+        ],
+        [
+          "two-pass over buffered data",
+          "O(n)",
+          "excellent",
+          "violates the streaming constraint"
+        ]
+      ]
+    },
+    {
+      "type": "h2",
+      "text": "Where the time goes"
+    },
+    {
+      "type": "list",
+      "ordered": false,
+      "items": [
+        "**Parsing** dominates once I/O is buffered: `from_chars` for doubles is 3-10x faster than `strtod` and far faster than `std::istringstream`.",
+        "**Avoid allocations per line**: split fields with index arithmetic into string_view spans; never construct `std::string` per field in the hot loop.",
+        "**Branch predictability**: order checks cheapest-first (field count, then numeric parse); malformed lines should not slow the happy path.",
+        "**Measure before optimising**: generate a fixed 10M-line file, time end-to-end, then change one thing at a time."
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "bash",
+      "code": "./logproc < requests.log 2> anomalies.csv > summary.csv",
+      "caption": "Pipeline usage: summary on stdout, anomaly stream on stderr"
+    }
+  ],
+  "starterFiles": [
+    {
+      "path": "include/logproc/welford.hpp",
+      "content": "#pragma once\n// Numerically stable online statistics (Welford's algorithm).\n// Single pass, O(1) memory: suitable for unbounded log streams.\n\n#include <cmath>\n#include <cstddef>\n\nnamespace logproc {\n\nclass Welford {\npublic:\n    void add(double x) {\n        if (n_ == 0) {\n            min_ = x;\n            max_ = x;\n        } else {\n            if (x < min_) min_ = x;\n            if (x > max_) max_ = x;\n        }\n        ++n_;\n        const double delta = x - mean_;\n        mean_ += delta / static_cast<double>(n_);\n        m2_ += delta * (x - mean_);\n    }\n\n    std::size_t count() const { return n_; }\n    double mean() const { return mean_; }\n\n    // Population variance of the values seen so far (divide by N).\n    double variance() const {\n        return n_ > 0 ? m2_ / static_cast<double>(n_) : 0.0;\n    }\n    double stddev() const { return std::sqrt(variance()); }\n\n    double min() const { return min_; }\n    double max() const { return max_; }\n\nprivate:\n    std::size_t n_ = 0;\n    double mean_ = 0.0;\n    double m2_ = 0.0;\n    double min_ = 0.0;\n    double max_ = 0.0;\n};\n\n}  // namespace logproc\n"
+    },
+    {
+      "path": "src/main.cpp",
+      "content": "// logproc: high-throughput streaming log processor.\n// TODO(project): implement the full pipeline described in the project brief.\n//   1) read stdin in large blocks (fread), split into lines;\n//   2) parse \"timestamp_ms,service,value\" with std::from_chars (no iostreams in the hot path);\n//   3) feed each value into the per-service Welford accumulator (include/logproc/welford.hpp);\n//   4) at EOF print per-service summary to stdout and anomalies to stderr.\n// The starter below only counts lines to verify the build and I/O plumbing.\n\n#include <cstdio>\n\n#include \"logproc/welford.hpp\"  // prove the include path resolves\n\nint main() {\n    char buf[1 << 16];\n    unsigned long long lines = 0;\n    while (std::fgets(buf, sizeof buf, stdin) != nullptr) {\n        ++lines;\n    }\n    std::printf(\"lines=%llu\\n\", lines);\n    return 0;\n}\n"
+    },
+    {
+      "path": "CMakeLists.txt",
+      "content": "cmake_minimum_required(VERSION 3.16)\nproject(logproc CXX)\n\nset(CMAKE_CXX_STANDARD 17)\nset(CMAKE_CXX_STANDARD_REQUIRED ON)\n\nadd_executable(logproc src/main.cpp)\ntarget_include_directories(logproc PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)\ntarget_compile_options(logproc PRIVATE -Wall -Wextra -O2)\n"
+    }
+  ],
+  "evaluationCriteria": [
+    {
+      "criterion": "Statistical correctness (Welford aggregation, min/max, summary fields) verified by cross-check",
+      "weight": 30
+    },
+    {
+      "criterion": "Anomaly detection semantics: documented choice, warm-up behaviour, planted-anomaly tests",
+      "weight": 15
+    },
+    {
+      "criterion": "Throughput: measurement methodology, achieved lines/sec, and honest accounting of the hot path",
+      "weight": 25
+    },
+    {
+      "criterion": "Robustness: malformed input, EOF, empty stream, long lines; no crashes or leaks",
+      "weight": 20
+    },
+    {
+      "criterion": "Documentation: usage, format contract, benchmark table with hardware",
+      "weight": 10
+    }
+  ],
+  "documentationRequirements": [
+    "README.md: build, usage examples (stdin pipeline and file redirect), exact input/output format contracts including the anomaly stream.",
+    "A short DESIGN.md explaining the streaming-semantics choice for anomalies and the warm-up rule.",
+    "Benchmark section: generator description, machine, compiler flags, lines/sec and MB/s, plus a note on what limited throughput."
+  ],
+  "extensionChallenges": [
+    "Add a second aggregation dimension (per-service-per-minute buckets) without breaking O(1) memory per key — this needs an eviction policy; document it.",
+    "Replace the parser with a SIMD-assisted number scanner (or benchmark `from_chars` vs `strtod` at `-O3`) and quantify the gain.",
+    "Parallelise with N reader threads feeding shard-partitioned accumulators; prove the result equals the serial run on a fixed input."
+  ]
+}

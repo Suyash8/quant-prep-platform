@@ -1,0 +1,230 @@
+{
+  "id": "cx-amortised",
+  "moduleId": "ph5-complexity",
+  "title": "Amortised Analysis and Best/Worst Cases",
+  "estMinutes": 25,
+  "difficulty": "core",
+  "prereqs": ["cx-big-o"],
+  "objectives": [
+    "Distinguish best-case, worst-case and average-case running times for a given algorithm",
+    "Explain what an amortised bound promises and what it does not",
+    "Work out the total copying cost of dynamic-array doubling and show appends are amortised O(1)",
+    "Predict the capacity-growth schedule of a doubling array and count element writes exactly",
+    "Identify operations whose naive implementations are accidentally quadratic, such as repeated string concatenation"
+  ],
+  "motivation": "A backtester appends every fill to a results vector and someone measures 'append is O(1), so a million fills is fine' - yet the run stalls for seconds at unpredictable moments. The stalls are the occasional doublings: most appends are cheap, a few are expensive, and the honest cost statement is about the whole sequence, not one call. Amortised analysis is the tool that turns that pattern into a guarantee, and it is also the exact argument interviewers expect when you say a hash table insert is O(1).",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Best, worst and average: three different questions"
+    },
+    {
+      "type": "p",
+      "md": "For the same input size $n$, an algorithm can behave very differently depending on the data. **Best case** is the luckiest possible arrangement, **worst case** the unluckiest, and **average case** the expectation over some assumed distribution of inputs. Sorting an already-sorted array with a scan-and-swap sort is a best case; a reversed array is the worst. These are statements about *individual inputs*. Amortised analysis answers a different question again: over a **sequence** of operations starting from an empty structure, what is the average cost per operation, regardless of luck? The sequence can contain arbitrarily bad operations - the bound still holds because the expensive ones are provably rare."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Quoting the best case",
+      "md": "Marketing an algorithm by its best case is a classic trap: a linear scan finds a present key in 1 step at best, but the guarantee you must design for is $n$ steps at worst. Interviews and code reviews expect worst-case (or explicitly amortised) numbers, best-case only when the good case is the realistic one."
+    },
+    {
+      "type": "h2",
+      "text": "Dynamic arrays: cheap almost always, expensive rarely"
+    },
+    {
+      "type": "p",
+      "md": "A dynamic array (Python `list`, C++ `std::vector`, Java `ArrayList`) keeps a fixed-capacity block of memory plus a size counter. Appending is trivial until size hits capacity; then the array **allocates a bigger block (usually twice the size) and copies every element across**. That single append costs $O(n)$ - yet the *sequence* of appends is provably cheap, because doublings become exponentially rarer."
+    },
+    {
+      "type": "steps",
+      "title": "Worked out: 16 appends with doubling from capacity 1",
+      "items": [
+        "Start with capacity 1, size 0. Appends 1 is free of copying (capacity 1).",
+        "Append 2 fills the array, so resize to capacity 2 and **copy 1 element**.",
+        "Append 3 triggers resize to capacity 4, **copy 2**; append 5 triggers capacity 8, **copy 4**; append 9 triggers capacity 16, **copy 8**.",
+        "Total copies for 16 appends: $1 + 2 + 4 + 8 = 15$. Total element writes: $16 + 15 = 31$.",
+        "Generalising: for $n$ appends the copy total is $1 + 2 + 4 + \\dots + 2^k < 2n$ (a geometric series, dominated by its last term), so the whole sequence does at most $n + 2n = 3n$ writes.",
+        "Amortised cost per append: $3n / n = 3$ writes - a **constant**, no matter how large $n$ grows. That is the amortised $O(1)$ guarantee."
+      ]
+    },
+    {
+      "type": "interactive",
+      "component": "ComplexityCompare",
+      "params": {
+        "series": [
+          { "name": "worst-case single append", "points": [[8, 8], [16, 16], [32, 32], [64, 64]] },
+          { "name": "amortised cost per append", "points": [[8, 3], [16, 3], [32, 3], [64, 3]] }
+        ]
+      },
+      "caption": "The worst-case cost of one append spikes exactly at powers of two, but averaged over the whole sequence each append costs about 3 element writes regardless of size - the amortised bound."
+    },
+    {
+      "type": "p",
+      "md": "The same conclusion follows from the **aggregate method** (divide total sequence cost by the number of operations), the **accounting method** (charge every append 3 credits: 1 for the write, 2 stored to pay for its eventual copying) or the **potential method** (charge against a potential function proportional to size). All three formalise one intuition: geometric growth makes expensive events exponentially rare, so their total cost is bounded by a constant times the number of operations."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "cap, size, copies = 1, 0, 0\nfor _ in range(64):                 # 64 appends, doubling from capacity 1\n    if size == cap:                 # full -> allocate double, copy everything\n        copies += size\n        cap *= 2\n    size += 1\nprint(copies)                       # 63 = 1+2+4+8+16+32\nprint(cap)                          # 64\n\n# Python's list does this for you - and resize events are visible:\nimport sys\na = []\nsizes = [sys.getsizeof(a)]\nfor i in range(64):\n    a.append(i)\nsizes.append(sys.getsizeof(a))      # capacity grew in a few doublings",
+      "caption": "Counting the copies exactly: 64 appends trigger 63 copied elements, so total writes are 64 + 63 = 127."
+    },
+    {
+      "type": "table",
+      "headers": ["Python list operation", "Cost", "Why"],
+      "rows": [
+        ["append(x)", "amortised O(1)", "occasional doubling, geometric total"],
+        ["pop() (from end)", "O(1)", "no shifting; shrinking is also managed"],
+        ["insert(0, x)", "O(n)", "every element shifts right by one"],
+        ["pop(0)", "O(n)", "every element shifts left by one"],
+        ["a[i]", "O(1)", "contiguous memory, address arithmetic"]
+      ]
+    },
+    {
+      "type": "h2",
+      "text": "The accidentally-quadratic family"
+    },
+    {
+      "type": "p",
+      "md": "Amortised thinking pays off because so many innocent-looking patterns are quadratic in disguise. Building a string with `s = s + ch` copies the whole string every time: the total is $0 + 1 + 2 + \\dots + (n-1) = \\tfrac{n(n-1)}{2}$ character copies - for $n = 10{,}000$ that is $49{,}995{,}000$ copies, versus $10{,}000$ for a single `\"\".join(parts)`. The same trap exists as `insert(0, x)` in a loop ($O(n)$ per call, $O(n^2)$ total) and as growing a `std::vector` without `reserve()` in a tight loop. The fix is always the same: pick the operation whose *sequence* cost is linear, not just whose single call looks cheap."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Preallocation as a latency tool",
+      "md": "Desks pre-size buffers before the market opens: `vector.reserve(expected_ticks)` or a preallocated NumPy array means no reallocation copies land in the middle of the trading session, when a 10 ms stall is a real cost. Amortised analysis tells you the *average* is fine; production judgment tells you when the spikes are unacceptable anyway."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "A dynamic array starts at capacity 1 and doubles when full. You append 100 elements. (a) List every resize that happens (new capacity and number of elements copied). (b) What is the total number of element writes (appends plus copies)? (c) What is the amortised writes per append?",
+    "hints": [
+      "Resizes happen when size reaches capacity: which append numbers trigger them?",
+      "The copy totals form the geometric series 1 + 2 + 4 + ... up to the last doubling.",
+      "Amortised cost = total writes / 100."
+    ],
+    "solution": "(a) Resizes at appends 2, 3, 5, 9, 17, 33, 65: new capacities $2, 4, 8, 16, 32, 64, 128$ with copies $1, 2, 4, 8, 16, 32, 64$ respectively. (b) Copies total $1+2+4+8+16+32+64 = 127$; total writes $= 100 + 127 = 227$. (c) $227 / 100 = 2.27$ writes per append - a small constant, which is exactly the amortised $O(1)$ claim (the general bound is at most 3 writes per append since copies $< 2n$)."
+  },
+  "independentExercise": {
+    "prompt": "A researcher builds a 10,000-character string one character at a time. Version A: `s = s + ch` inside the loop (each concatenation copies the current string). Version B: append characters to a list and call `\"\".join(parts)` once at the end. (a) Count the total character copies in version A. (b) Count them in version B. (c) If a copy costs 1 ns, how many seconds does each version take? (d) State the complexity of building the string in each version.",
+    "hints": [
+      "Version A copies the string of length k when adding character k+1 - sum those lengths.",
+      "Use n(n-1)/2 for the sum 0 + 1 + ... + (n-1).",
+      "Version B writes each character once during appends and once during the join."
+    ],
+    "solution": "(a) $\\sum_{k=0}^{9999} k = \\tfrac{9999 \\times 10000}{2} = 49{,}995{,}000$ copies. (b) $10{,}000$ appends + $10{,}000$ join writes $= 20{,}000$. (c) A: $4.9995 \\times 10^7$ ns $\\approx 0.05$ s; B: $2 \\times 10^4$ ns $= 0.00002$ s - about 2,500x faster. (d) A is $O(n^2)$ total (each call is $O(k)$, the calls grow), B is $O(n)$ total: the amortised view of the *sequence* is what matters, not the appearance of a single line of code."
+  },
+  "commonMistakes": [
+    "Claiming 'append is always O(1)' - a single append that triggers a doubling is O(n); only the amortised cost over the sequence is O(1).",
+    "Confusing amortised analysis with average-case analysis: amortised bounds hold for every sequence without any probabilistic assumption about inputs.",
+    "Quoting best-case timings as the algorithm's performance.",
+    "Shrinking an array to half as soon as it is half-empty - alternating push/pop then resizes on every operation; production implementations wait until the array is a quarter full.",
+    "Building strings or lists with repeated concatenation or insert(0, x) in loops."
+  ],
+  "realWorldApplication": "Every dynamic array, hash table and log-structured storage engine ships with an amortised guarantee; capacity planners and latency-sensitive systems read the worst-case spikes (resize pauses) separately from the amortised throughput.",
+  "quantFinanceApplication": "Market-data handlers preallocate tick buffers to keep resize pauses out of the session (amortised fine, spike unacceptable), and message-queue libraries use the same doubling analysis to promise O(1) amortised enqueues at millions of messages per second.",
+  "summary": [
+    "Best, worst and average cases describe individual inputs; amortised analysis bounds the average cost per operation over any sequence of operations.",
+    "Dynamic-array doubling gives amortised O(1) appends: total copies form a geometric series bounded by 2n, so the whole sequence costs at most 3n element writes.",
+    "The aggregate, accounting and potential methods are three formal routes to the same geometric-growth intuition.",
+    "Repeated concatenation, insert at the front and unreserved vector growth are accidentally quadratic; the fix is choosing operations with linear sequence cost."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "What does it mean for an operation to be amortised O(1)?",
+      "options": [
+        "Every single call takes constant time.",
+        "Averaged over any sequence of operations, the cost per operation is constant.",
+        "The operation is O(1) on average over a random input distribution.",
+        "The operation is O(1) in the best case."
+      ],
+      "answerIndex": 1,
+      "explanation": "Amortised bounds are statements about sequences: individual calls may be expensive (a doubling append is O(n)), but the total cost of any sequence is bounded by a constant per operation. No randomness or distribution is assumed - that would be average-case analysis."
+    },
+    {
+      "id": "q2",
+      "type": "numeric",
+      "prompt": "A dynamic array starts at capacity 1 and doubles when full. How many elements get copied in total during 64 appends?",
+      "answer": 63,
+      "tolerance": 0.5,
+      "explanation": "Resizes copy $1 + 2 + 4 + 8 + 16 + 32 = 63$ elements (the geometric series up to the last doubling below 64). Total writes are $64 + 63 = 127$, so the amortised cost is just under 2 writes per append."
+    },
+    {
+      "id": "q3",
+      "type": "code-output",
+      "prompt": "What does this Python code print?",
+      "language": "python",
+      "code": "cap, size, copies = 1, 0, 0\nfor _ in range(8):\n    if size == cap:\n        copies += size\n        cap *= 2\n    size += 1\nprint(copies, cap)",
+      "answer": "7 8",
+      "explanation": "The 8 appends trigger resizes at appends 2, 3 and 5: copies $1 + 2 + 4 = 7$, capacity doubled three times from 1 to 8. The last append leaves size 8 with capacity 8 (full, but no resize until the next append)."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "What is the cost of `lst.insert(0, x)` on a Python list of length n, and the total cost of doing it n times?",
+      "options": [
+        "O(1) per call, O(n) total",
+        "O(log n) per call, O(n log n) total",
+        "O(n) per call, O(n^2) total",
+        "O(n) per call, O(n) total"
+      ],
+      "answerIndex": 2,
+      "explanation": "Inserting at the front shifts all n existing elements right, so each call is O(n); doing it n times copies $0 + 1 + 2 + \\dots$ elements for $\\tfrac{n(n-1)}{2}$ total - accidentally quadratic. Use `collections.deque` with `appendleft`, which is O(1)."
+    },
+    {
+      "id": "q5",
+      "type": "ms",
+      "prompt": "Select every true statement about dynamic arrays.",
+      "options": [
+        "Doubling gives amortised O(1) appends because the total copy cost is bounded by a constant times n.",
+        "A growth factor of 1.5 instead of 2 still gives amortised O(1) appends.",
+        "Shrinking to half the moment the array becomes half full can cause a resize on every operation under alternating push/pop.",
+        "A single append is guaranteed to be O(1) in every implementation that doubles."
+      ],
+      "answerIndices": [0, 1, 2],
+      "explanation": "Any constant growth factor > 1 makes resizes geometrically rare, so both 1.5 and 2 work (option 1 and 2 true). Shrinking eagerly at half-full lets alternating push/pop flip-flop the capacity on every operation - real implementations shrink only at 25% occupancy. A single append that triggers a resize is O(n), so option 4 is false."
+    },
+    {
+      "id": "q6",
+      "type": "short",
+      "prompt": "In one or two sentences: why does doubling the capacity make the total copy cost linear in n?",
+      "modelAnswer": "Because copies happen at sizes 1, 2, 4, 8, ... and the geometric series 1+2+4+...+2^k sums to less than twice its last term, so total copies stay below 2n - dominated by the final, largest doubling.",
+      "keywords": ["geometric", "dominated", "last"],
+      "explanation": "The key is that a geometric series is dominated by its largest term: whatever n is, all previous copies together cost less than the final doubling alone. Linear total cost spread over n operations gives a constant amortised cost."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "definition",
+      "front": "Amortised analysis",
+      "back": "Bounding the average cost per operation over any sequence of operations, regardless of individual expensive calls - no probabilistic assumptions, unlike average-case analysis."
+    },
+    {
+      "type": "formula",
+      "front": "Total copies for n appends with doubling",
+      "back": "1 + 2 + 4 + ... + 2^k < 2n (geometric series), so total writes <= 3n and amortised cost per append is at most 3 writes = O(1)."
+    },
+    {
+      "type": "concept",
+      "front": "Aggregate vs accounting vs potential method",
+      "back": "Three formal proofs of the same bound: divide total sequence cost by op count (aggregate); overcharge cheap ops to bank credits for expensive ones (accounting); charge against a potential function of the data structure state (potential)."
+    },
+    {
+      "type": "code-output",
+      "front": "Python: cost of list.insert(0, x) vs deque.appendleft(x)?",
+      "back": "list.insert(0, x) is O(n) (shifts everything); deque.appendleft(x) is O(1) - deque is a block-linked structure, not one contiguous array."
+    }
+  ],
+  "references": [
+    {
+      "label": "Wikipedia — Amortized analysis",
+      "url": "https://en.wikipedia.org/wiki/Amortized_analysis"
+    },
+    {
+      "label": "Python Wiki — TimeComplexity (list operation costs)",
+      "url": "https://wiki.python.org/moin/TimeComplexity"
+    }
+  ],
+  "skills": ["complexity"]
+}

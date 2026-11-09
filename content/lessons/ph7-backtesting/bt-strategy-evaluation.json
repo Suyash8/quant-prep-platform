@@ -1,0 +1,324 @@
+{
+  "id": "bt-strategy-evaluation",
+  "moduleId": "ph7-backtesting",
+  "title": "Strategy Evaluation and Risk-Adjusted Performance",
+  "estMinutes": 26,
+  "difficulty": "advanced",
+  "prereqs": [
+    "bt-overfitting-validation"
+  ],
+  "objectives": [
+    "Compute Sharpe ratio, maximum drawdown, Calmar ratio, win rate and profit factor from a return series",
+    "Interpret the metric set jointly rather than one number at a time",
+    "Compute annualised return from a multi-period equity curve",
+    "Design an evaluation checklist that distinguishes tradeable strategies from statistical flukes"
+  ],
+  "motivation": "After all the biases are removed and costs are charged, one question remains: is the strategy good? Answering honestly needs a panel of metrics - risk-adjusted return, tail behaviour, path risk - read together, because each metric can be gamed individually. This lesson computes the full dashboard on one small return series and shows how professionals combine it with process checks to make a decision.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "The test series"
+    },
+    {
+      "type": "p",
+      "md": "Eight clearly-hypothetical monthly returns in %: $[2,\\ -1,\\ 3,\\ 0,\\ 4,\\ -2,\\ 1,\\ 1]$. Sum $= 8$, so the mean return is $\\bar{R} = 1.0\\%$ per month. Assume a risk-free rate of $0\\%$ for the arithmetic (state whatever convention you use)."
+    },
+    {
+      "type": "steps",
+      "title": "Volatility, Sharpe and annualised numbers",
+      "items": [
+        "Deviations from the mean: $[1, -2, 2, -1, 3, -3, 0, 0]$; squared deviations sum to $1+4+4+1+9+9+0+0 = 28$.",
+        "Sample variance $= 28/7 = 4.0$, so monthly volatility $\\sigma = 2.0\\%$.",
+        "Monthly Sharpe $= 1.0/2.0 = 0.50$; **annualised Sharpe** $= 0.50 \\times \\sqrt{12} \\approx 1.73$.",
+        "Cumulative growth: $(1.02)(0.99)(1.03)(1.00)(1.04)(0.98)(1.01)(1.01) = 1.0814$, i.e. $+8.14\\%$ over 8 months.",
+        "Annualised (geometric, compounding at the same pace): $(1.0814)^{12/8} - 1 = (1.0814)^{1.5} - 1 \\approx 12.4\\%$ per year."
+      ]
+    },
+    {
+      "type": "h2",
+      "text": "Path risk: drawdown and Calmar"
+    },
+    {
+      "type": "p",
+      "md": "A backtest that ends with \"+12.7%\" has told you almost nothing. The same equity curve can be a smooth, repeatable strategy or a lucky streak riding one trade — and the difference lives in a handful of computed statistics, not the total return. This lesson works through the standard evaluation battery on one concrete strategy so each number has a face attached."
+    },
+    {
+      "type": "steps",
+      "title": "The evaluation battery, on one real (illustrative) track record",
+      "items": [
+        "Take 12 months of hypothetical strategy returns: $[3.1, -1.2, 2.4, 1.8, -2.8, 4.1, 0.9, -0.6, 2.2, 1.5, -1.9, 2.8]\\%$. Compounding gives a total return of $12.73\\%$ and a monthly mean of $1.03\\%$.",
+        "Volatility: the monthly standard deviation is $2.17\\%$. Annualised Sharpe (assuming zero risk-free for the illustration) $= \\frac{1.03}{2.17}\\sqrt{12} \\approx 1.64$. Above 1 is interesting; above 2 with realistic costs deserves attention.",
+        "Downside: only 4 months were negative. The downside deviation (root-mean-square of negative months only) is $1.06\\%$, giving a Sortino of $\\frac{1.03}{1.06}\\sqrt{12} \\approx 3.38$ — the strategy's pain is concentrated and small.",
+        "Drawdown: the equity curve peaks mid-month-5, then falls $2.80\\%$ before recovering. Calmar $= \\frac{12.73}{2.80} \\approx 4.55$ — total return over worst drawdown.",
+        "Trade quality: 8 wins of 12 months is a $67\\%$ hit rate; gains sum to $16.0\\%$ against losses of $6.5\\%$, a profit factor of $2.89$."
+      ]
+    },
+    {
+      "type": "p",
+      "md": "Now the part every statistic hides: **what would have to be true for these numbers to survive live trading**. The Sharpe of 1.64 assumes fills at the backtest price. If the strategy trades $2\\%$ of ADV, impact costs can plausibly consume 30–50% of the excess return — the Sharpe drops toward 1.0 before you have paid a cent of fees. Evaluation is where the assumptions you baked into the backtest get their bill."
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Metric",
+        "Value",
+        "Reads on",
+        "Fails when"
+      ],
+      "rows": [
+        [
+          "Total return",
+          "12.73%",
+          "Raw outcome over the window",
+          "always quoted alone"
+        ],
+        [
+          "Sharpe",
+          "1.64",
+          "Reward per unit of total volatility",
+          "returns are not i.i.d. / serial correlation"
+        ],
+        [
+          "Sortino",
+          "3.38",
+          "Reward per unit of downside",
+          "few negative months (small sample)"
+        ],
+        [
+          "Max drawdown",
+          "2.80%",
+          "Worst peak-to-trough loss",
+          "single-window; regime change resets it"
+        ],
+        [
+          "Calmar",
+          "4.55",
+          "Return per unit of worst pain",
+          "short history inflates it"
+        ],
+        [
+          "Profit factor",
+          "2.89",
+          "Gross wins / gross losses",
+          "one outlier month dominates"
+        ],
+        [
+          "Hit rate + payoff",
+          "67% at 2.5:1",
+          "Joint edge structure",
+          "quoted without the other half"
+        ]
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "The statistics are downstream of the sample",
+      "md": "Twelve monthly observations give you a Sharpe estimate with a standard error of roughly $\\sqrt{(1+\\text{SR}^2/2)/12} \\approx 0.34$ — the confidence interval around 1.64 comfortably includes 1.0. A Sharpe from a short track record is a hypothesis, not a measurement. This is why funds quote multi-year Sharpe and why you should distrust anything computed on fewer than ~36 observations."
+    },
+    {
+      "type": "p",
+      "md": "The professional habit: evaluate a strategy on the **rectangle** of evidence — return, risk, drawdown, trade-level statistics, cost sensitivity and stability across sub-periods — and only then decide whether it earns a live allocation. Any single number, quoted alone, is marketing."
+    },
+    {
+      "type": "steps",
+      "title": "Equity curve, running peaks and max drawdown",
+      "items": [
+        "Equity values (start 100): $102.00,\\ 100.98,\\ 104.01,\\ 104.01,\\ 108.17,\\ 106.01,\\ 107.07,\\ 108.14$.",
+        "Running peaks: $100,\\ 102,\\ 102,\\ 104.01,\\ 104.01,\\ 108.17,\\ 108.17,\\ 108.17$.",
+        "Drawdowns: $0,\\ -1.0\\%,\\ +2\\%$ above old peak (retraced), $0,\\ 0,\\ -2.0\\%,\\ -1.0\\%,\\ 0$.",
+        "**Max drawdown = $-2.0\\%$**: the $108.17 \\to 106.01$ dip ($\\times 0.98$ exactly).",
+        "**Calmar ratio** = annualised return / max drawdown $= 12.4/2.0 \\approx 6.2$ - generous here because the sample is short and tame; Calmar on one year of data flatters almost anything."
+      ]
+    },
+    {
+      "type": "h2",
+      "text": "Trade-level metrics"
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Metric",
+        "Definition",
+        "This series"
+      ],
+      "rows": [
+        [
+          "Win rate",
+          "Fraction of positive periods",
+          "$5/8 = 62.5\\%$"
+        ],
+        [
+          "Profit factor",
+          "Gross wins / gross losses",
+          "$(2+3+4+1+1)/(1+2) = 11/3 \\approx 3.7$"
+        ],
+        [
+          "Average win / loss",
+          "Mean positive / mean negative return",
+          "$11/5 = 2.2\\%$ vs $1.5\\%$"
+        ],
+        [
+          "Best / worst month",
+          "Extremes",
+          "$+4\\%$ / $-2\\%$"
+        ]
+      ]
+    },
+    {
+      "type": "p",
+      "md": "Read them jointly: a high win rate with a poor profit factor signals many tiny wins funding rare large losses (short-volatility shape); a low win rate with a high profit factor is trend-following shape. Win rate alone is nearly meaningless - a coin that wins \\$1 or loses \\$100 can win 99% of the time and still go bankrupt."
+    },
+    {
+      "type": "h2",
+      "text": "The evaluation checklist"
+    },
+    {
+      "type": "list",
+      "items": [
+        "**Statistical**: annualised Sharpe with standard error (8 months cannot support a precise estimate - the standard error of a Sharpe estimate is roughly $\\sqrt{(1 + S^2/2)/n_{years}}$, so short samples are almost uninformative); deflated for the number of trials tried (previous lesson).",
+        "**Path**: max drawdown and time-underwater against the fund's tolerance; Calmar as the summary.",
+        "**Shape**: win rate vs profit factor for tail asymmetry; skewness of the return distribution.",
+        "**Robustness**: performance across parameter neighbourhoods, not just the chosen point; consistency across regime subsets.",
+        "**Economic**: a one-sentence reason the edge should exist and who is on the other side of the trade."
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Metric gaming, in one line each",
+      "md": "Sharpe can be inflated by smooth-but-toxic return shapes; max drawdown depends on the window chosen; win rate ignores trade sizes; profit factor ignores frequency; Calmar explodes on short samples. Any single number can be optimised by a curve fit - the dashboard exists so that gaming one metric shows up in the others."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Short samples support almost no conclusion",
+      "md": "Eight monthly observations is eight draws from a noisy distribution: the annualised Sharpe's standard error here is of the same order as the estimate itself. The discipline from the previous lesson applies to *evaluation* too - a strategy panel this small is a demo of arithmetic, not evidence of edge. Demand multi-year, multi-regime histories before believing any of it."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "A strategy returns monthly $[1,\\ 2,\\ -1,\\ 2]\\%$ with risk-free rate $0\\%$. Compute the mean, sample volatility, monthly Sharpe, and the profit factor and win rate.",
+    "hints": [
+      "Mean $= 4/4$; deviations are easy here.",
+      "Profit factor divides gross wins by gross losses."
+    ],
+    "solution": "Mean $= 1.0\\%$. Deviations: $[0, 1, -2, 1]$; squared sum $= 0+1+4+1 = 6$; sample variance $= 6/3 = 2.0$, volatility $= \\sqrt{2} \\approx 1.414\\%$. Monthly Sharpe $= 1/1.414 \\approx 0.71$. Win rate $= 3/4 = 75\\%$; profit factor $= (1+2+2)/1 = 5.0$ - high, driven by a single small losing month; with four observations, none of this is statistically meaningful."
+  },
+  "independentExercise": {
+    "prompt": "Monthly returns $[3,\\ -2,\\ 4,\\ -1]\\%$. (a) Mean and sample volatility. (b) Monthly Sharpe (risk-free 0). (c) Annualised Sharpe. (d) Build the equity curve from 100 and compute max drawdown. (e) Profit factor.",
+    "hints": [
+      "Squares of deviations: 4, 9, 9, 4.",
+      "Equity: 103, 100.94, 104.98, 103.93 - verify and find the running peaks."
+    ],
+    "solution": "(a) Mean $= 4/4 = 1.0\\%$; squared deviations sum $= 26$; variance $= 26/3 \\approx 8.667$; volatility $\\approx 2.944\\%$. (b) Sharpe $= 1/2.944 \\approx 0.34$. (c) $0.34 \\times \\sqrt{12} \\approx 1.18$. (d) Equity: $103.00, 100.94, 104.98, 103.93$; running peaks $100, 103, 103, 104.98, 104.98$; drawdowns: $0, -2.0\\%$ (100.94 vs 103), $0, -1.0\\%$ (103.93 vs 104.98). MaxDD $= -2.0\\%$. (e) Profit factor $= (3+4)/(2+1) = 7/3 \\approx 2.3$."
+  },
+  "commonMistakes": [
+    "Reporting an annualised Sharpe from a handful of months without acknowledging its huge standard error.",
+    "Judging by win rate alone - trade sizes matter as much as frequency.",
+    "Computing drawdown against the initial value instead of the running peak.",
+    "Annualising arithmetic (sum) returns instead of geometric (compounded) returns over the period."
+  ],
+  "realWorldApplication": "Allocators review exactly this dashboard in due diligence, usually demanding multi-year Sharpe, drawdown within tolerance and profit factor consistent with the stated strategy type; the same panel drives live risk reviews and strategy termination decisions.",
+  "quantFinanceApplication": "Performance engines compute this metric set on rolling windows for every production strategy, with alert thresholds on Sharpe decay, drawdown breach and profit-factor drift - the automated version of the checklist above.",
+  "summary": [
+    "Sharpe $=$ mean excess return over volatility, annualised with $\\sqrt{f}$; report its uncertainty, which is huge on short samples.",
+    "Max drawdown measures deepest peak-to-trough loss; Calmar divides annualised return by it.",
+    "Win rate and profit factor together reveal the shape of a strategy's edge - and neither is meaningful alone.",
+    "Evaluate the full dashboard plus robustness and economic rationale; any single metric can be gamed by curve fitting."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "numeric",
+      "prompt": "Monthly returns $[2, -1, 3, 0, 4, -2, 1, 1]\\%$ (risk-free 0). Annualised Sharpe to 2 decimals.",
+      "answer": 1.73,
+      "tolerance": 0.03,
+      "explanation": "Mean $1\\%$, sample volatility $2\\%$, monthly Sharpe $0.5$, annualised $0.5 \\times \\sqrt{12} \\approx 1.732$."
+    },
+    {
+      "id": "q2",
+      "type": "numeric",
+      "prompt": "Same series: maximum drawdown in % (equity curve from 100).",
+      "answer": -2,
+      "tolerance": 0.1,
+      "explanation": "The $108.17 \\to 106.01$ step multiplies equity by exactly $0.98$: a $-2.0\\%$ drawdown, the deepest in the series."
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "Same series: profit factor (gross wins / gross losses) to 2 decimals.",
+      "answer": 3.67,
+      "tolerance": 0.05,
+      "explanation": "Wins $= 2+3+4+1+1 = 11$; losses $= 1+2 = 3$; $11/3 \\approx 3.67$."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "A strategy wins 95% of its trades but its profit factor is below 1. The diagnosis is:",
+      "options": [
+        "Excellent - high win rate dominates",
+        "Many small wins funding occasional large losses; net unprofitable",
+        "The profit factor must be miscalculated",
+        "Win rate and profit factor are unrelated"
+      ],
+      "answerIndex": 1,
+      "explanation": "Profit factor below 1 means gross losses exceed gross wins regardless of frequency - the short-volatility shape where rare disasters pay for all the small gains."
+    },
+    {
+      "id": "q5",
+      "type": "numeric",
+      "prompt": "Annualised return 12.4%, max drawdown 2.0%. Calmar ratio to 1 decimal.",
+      "answer": 6.2,
+      "tolerance": 0.15,
+      "explanation": "$12.4/2.0 = 6.2$ - high because the drawdown is tiny on a short, tame sample; Calmar flatters short histories."
+    },
+    {
+      "id": "q6",
+      "type": "short",
+      "prompt": "Give one example of how a single metric can be gamed, and name the metric that catches it.",
+      "modelAnswer": "Sharpe can be inflated by steady gains with rare huge losses (short-volatility shape); the drawdown/tail metrics - or profit factor and skewness - expose the toxic tail that the Sharpe smooths over.",
+      "keywords": [
+        "drawdown",
+        "skew",
+        "profit factor"
+      ],
+      "explanation": "Every univariate metric has a degenerate shape that optimises it; the dashboard is designed so the degenerate shapes fail elsewhere."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "formula",
+      "front": "Calmar ratio",
+      "back": "Annualised return / maximum drawdown - rewards strategies that avoid deep equity holes."
+    },
+    {
+      "type": "formula",
+      "front": "Profit factor",
+      "back": "Gross winning returns / gross losing returns; below 1 means net unprofitable regardless of win rate."
+    },
+    {
+      "type": "concept",
+      "front": "Why is win rate nearly meaningless alone?",
+      "back": "It ignores trade size: 95% tiny wins can fund 5% catastrophic losses; pair it with profit factor or average win/loss."
+    },
+    {
+      "type": "concept",
+      "front": "Key caveat on short-sample metrics",
+      "back": "With few observations the standard error of Sharpe (and everything derived from it) rivals the estimate itself - demand multi-year evidence."
+    }
+  ],
+  "references": [
+    {
+      "label": "Bailey & Lopez de Prado - The Sharpe ratio efficient frontier",
+      "url": "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=1821643"
+    },
+    {
+      "label": "Investopedia - Calmar Ratio",
+      "url": "https://www.investopedia.com/terms/c/calmarratio.asp"
+    }
+  ],
+  "skills": [
+    "backtesting",
+    "portfolio"
+  ]
+}

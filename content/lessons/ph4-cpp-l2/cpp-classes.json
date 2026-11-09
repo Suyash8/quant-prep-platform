@@ -1,0 +1,246 @@
+{
+  "id": "cpp-classes",
+  "moduleId": "ph4-cpp-l2",
+  "title": "Classes, Encapsulation and Constructors",
+  "estMinutes": 27,
+  "difficulty": "core",
+  "prereqs": [
+    "cpp-structs-enums-namespaces"
+  ],
+  "objectives": [
+    "Define a class with private data and public member functions, and explain what invariant-enforcing encapsulation buys",
+    "Write constructors using member initializer lists and predict initialization order from member declarations",
+    "Use delegating constructors, in-class default initializers and explicit to keep validation in one place",
+    "Write const-correct accessors and compute derived values on demand instead of storing them"
+  ],
+  "motivation": "A trading system cannot let every caller poke raw fields inside an Order: one misplaced sign in a quantity and the desk risk figures are quietly wrong. Classes exist to put a wall around state and give a single, tested set of functions custody of it. This lesson turns the structs you already know into classes with enforced invariants, constructors that make invalid objects impossible to create, and const-correct accessors - the vocabulary every later C++ lesson in this track uses.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "From struct to class: the invariant boundary"
+    },
+    {
+      "type": "p",
+      "md": "Mechanically, a C++ `struct` and a `class` are nearly identical - the only default difference is access: struct members are public by default, class members private by default. What changes is the discipline. When data is private, the class can guarantee facts that are always true, called **invariants**: an Order always holds a positive quantity, a limit price is never negative. If any caller could write `o.qty_ = -5` directly, every function touching Order would have to re-check the field before trusting it. With encapsulation the checks live in exactly one place - the constructor and the mutators - and every other function can rely on them. That single-source-of-truth property is what keeps a position keeper consistent when many developers and strategies feed it."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <iostream>\n#include <stdexcept>\n#include <string>\n#include <utility>\n\nclass Order {\npublic:\n    Order(std::string symbol, int qty, double limitPrice)\n        : symbol_{std::move(symbol)}, qty_{qty}, limitPrice_{limitPrice} {\n        if (qty_ <= 0) throw std::invalid_argument(\"qty must be positive\");\n        if (limitPrice_ <= 0.0) throw std::invalid_argument(\"price must be positive\");\n    }\n\n    const std::string& symbol() const { return symbol_; }\n    int qty() const { return qty_; }\n    double limitPrice() const { return limitPrice_; }\n    double notional() const { return qty_ * limitPrice_; }   // computed, never stored\n\n    void reduce(int shares) {                                // the only mutator\n        if (shares <= 0 || shares > qty_) throw std::invalid_argument(\"bad fill\");\n        qty_ -= shares;\n    }\n\nprivate:\n    std::string symbol_;\n    int qty_;\n    double limitPrice_;\n};\n\nint main() {\n    Order o{\"ESZ5\", 10, 5312.25};\n    std::cout << o.symbol() << \" x \" << o.qty() << \" = \" << o.notional() << '\\n';\n    o.reduce(4);\n    std::cout << o.qty() << \" remaining\\n\";\n}",
+      "caption": "Everything that could invalidate an Order goes through a function that validates first. Output: ESZ5 x 10 = 53122.5, then 6 remaining."
+    },
+    {
+      "type": "p",
+      "md": "Read the class from the outside in. `symbol()`, `qty()`, `limitPrice()` and `notional()` are marked `const`, promising not to modify the object - which is why they can be called through a `const Order&`, and why the compiler rejects accidental mutation. `notional()` is computed on demand rather than stored: storing a derived quantity invites stale data, because nothing forces every future mutation to keep the copy in sync."
+    },
+    {
+      "type": "h2",
+      "text": "Member initializer lists"
+    },
+    {
+      "type": "p",
+      "md": "The constructor must bring every member into a valid state before the body runs. Assigning in the body is not initialization: by the time the body executes, every member has already been default-constructed, then assigned again - wasted work for a std::string, and flat-out impossible for `const` members or reference members, which **must** be initialized in the member initializer list. Write `: symbol_{symbol}, qty_{qty}` and leave the body for validation that needs statements."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Initialization follows declaration order",
+      "md": "Members are initialized in the order they are **declared in the class**, never the order they appear in the initializer list. If the list mentions px_ before qty_ but the declarations put qty_ first, qty_ is still built first. Keep the declaration order and the list order identical so readers never have to wonder."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <iostream>\n\nstruct Leg {\n    explicit Leg(const char* name) { std::cout << name << ' '; }\n};\n\nclass Order {\n    Leg qty_;   // declared FIRST\n    Leg px_;    // declared SECOND\npublic:\n    Order() : px_{\"px\"}, qty_{\"qty\"} {}   // still constructs qty_ then px_\n};\n\nint main() { Order o; std::cout << '\\n'; }",
+      "caption": "Prints 'qty px': declaration order wins over list order."
+    },
+    {
+      "type": "interactive",
+      "component": "MemoryLayout",
+      "params": {
+        "segments": [
+          "std::string symbol_ (32 B)",
+          "int qty_ (4 B)",
+          "padding (4 B)",
+          "double limitPrice_ (8 B)"
+        ]
+      },
+      "caption": "On a typical 64-bit toolchain sizeof(Order) is 48 bytes, not the 44 you get from adding members: the compiler pads after the int so the double can start on an 8-byte boundary. Alignment returns in the C++ internals module."
+    },
+    {
+      "type": "h2",
+      "text": "Delegating constructors, defaults and explicit"
+    },
+    {
+      "type": "p",
+      "md": "Classes often need several constructors, and duplicating validation in each is how invariants leak. A **delegating constructor** hands off to another constructor of the same class: the target runs to completion first, then the delegating body. In-class default initializers such as `double realized_ = 0.0;` give every constructor a sane starting point with zero duplication. Together they mean the validating constructor is written exactly once."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "class Spread {\npublic:\n    Spread(double bid, double ask) : bid_{bid}, ask_{ask} {\n        if (bid_ < 0.0 || ask_ < 0.0) bid_ = ask_ = 0.0;   // clamp in ONE place\n    }\n    Spread() : Spread{0.0, 0.0} {}      // delegating constructor\n\nprivate:\n    double bid_, ask_;\n};\n\nint main() { Spread s; return 0; }",
+      "caption": "The default constructor inherits the validation by delegation."
+    },
+    {
+      "type": "p",
+      "md": "One-argument constructors also participate in **implicit conversions**: without `explicit`, `printQty(7)` would silently build a Quantity out of a bare int. That is occasionally convenient and usually dangerous in financial code, where types encode units - lots versus shares versus dollars. Mark single-argument constructors `explicit` unless you genuinely want the conversion; explicit only restricts copy-initialization, so `Quantity{7}` keeps working."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <iostream>\n\nclass Quantity {\npublic:\n    explicit Quantity(int lots) : lots_{lots} {}\n    int lots() const { return lots_; }\nprivate:\n    int lots_;\n};\n\nvoid printQty(Quantity q) { std::cout << q.lots() << \" lots\\n\"; }\n\nint main() {\n    Quantity q{7};\n    // printQty(7);          // compile error: explicit forbids int -> Quantity\n    printQty(Quantity{7});   // the intent is visible at the call site\n}",
+      "caption": "Output: 7 lots."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Types are your units",
+      "md": "When Quantity, Price and Money are distinct classes, `price * quantity` is the only expression that compiles - adding a price to a quantity is a compile error, not a reconciliation headache. Encapsulation plus explicit constructors is the cheapest unit-checking framework available: the type system runs it on every build."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Write a `PnLCalculator` class that accumulates realized PnL. Requirements: a private `double realized_` starting at 0.0 (use an in-class default initializer), `addTrade(int qty, double entryPx, double exitPx)` that adds `qty * (exitPx - entryPx)`, a `realized()` accessor marked `const`, and `reset()`. In `main`, record a buy of 100 at \\$42.10 sold at \\$42.75, then a buy of 50 at \\$41.50 sold at \\$41.20, and print the total.",
+    "hints": [
+      "Realized PnL per round trip is qty x (exit - entry); the sign does the bookkeeping for you.",
+      "Accessors that only read state should be const so they work through const references."
+    ],
+    "solution": "The two trades contribute $100 \\times (42.75 - 42.10) = +65.00$ and $50 \\times (41.20 - 41.50) = -15.00$, so the program prints `50`.\n\n```cpp\n#include <iostream>\n\nclass PnLCalculator {\npublic:\n    void addTrade(int qty, double entryPx, double exitPx) {\n        realized_ += qty * (exitPx - entryPx);\n    }\n    double realized() const { return realized_; }\n    void reset() { realized_ = 0.0; }\nprivate:\n    double realized_ = 0.0;   // in-class default: starts clean for every ctor\n};\n\nint main() {\n    PnLCalculator pnl;\n    pnl.addTrade(100, 42.10, 42.75);   // +65.00\n    pnl.addTrade(50, 41.50, 41.20);    // -15.00\n    std::cout << pnl.realized() << '\\n';   // 50\n}\n```"
+  },
+  "independentExercise": {
+    "prompt": "Write an `Instrument` class with private `std::string symbol_`, `double tickSize_` and `double price_`. The constructor takes a symbol and a tick size and throws `std::invalid_argument` for a non-positive tick size. Provide const accessors `symbol()` and `price()`, plus `setPrice(double)` that throws `std::invalid_argument` when the price is not a whole multiple of the tick size - use a tolerance of $10^{-9}$ ticks, because ticks like 0.01 are not exact in binary. Demonstrate with tick size 0.25 and price 5300.5 (accepted), with a comment showing 5300.52 being rejected.",
+    "hints": [
+      "`p / tickSize_` should land on an integer; compare with std::round and allow a tiny tolerance.",
+      "A throw in the constructor means an Instrument that fails validation never exists at all."
+    ],
+    "solution": "`5300.5 / 0.25 = 21202` exactly, so it passes; `5300.52 / 0.25 = 21202.08` is 0.08 ticks from an integer and throws.\n\n```cpp\n#include <cmath>\n#include <iostream>\n#include <stdexcept>\n#include <string>\n#include <utility>\n\nclass Instrument {\npublic:\n    Instrument(std::string symbol, double tickSize)\n        : symbol_{std::move(symbol)}, tickSize_{tickSize}, price_{0.0} {\n        if (tickSize_ <= 0.0) throw std::invalid_argument(\"tick size must be positive\");\n    }\n    const std::string& symbol() const { return symbol_; }\n    double price() const { return price_; }\n    void setPrice(double p) {\n        double ticks = p / tickSize_;\n        if (std::abs(ticks - std::round(ticks)) > 1e-9)\n            throw std::invalid_argument(\"price off tick grid\");\n        price_ = p;\n    }\nprivate:\n    std::string symbol_;\n    double tickSize_;\n    double price_;\n};\n\nint main() {\n    Instrument i{\"NQZ5\", 0.25};\n    i.setPrice(5300.5);          // on-tick: accepted\n    // i.setPrice(5300.52);      // throws: 0.08 ticks off the grid\n    std::cout << i.symbol() << \" @ \" << i.price() << '\\n';   // NQZ5 @ 5300.5\n}\n```"
+  },
+  "commonMistakes": [
+    "Assigning members in the constructor body and calling it initialization - for const or reference members this does not even compile.",
+    "Writing the initializer list in a different order than the member declarations, then being surprised by the construction order.",
+    "Leaving data members public \"for convenience\" and losing the single place invariants are enforced.",
+    "Forgetting const on accessors, so they cannot be called through const references.",
+    "Storing derived values such as notional and forgetting to update them on every mutation."
+  ],
+  "realWorldApplication": "Position keepers, order managers and risk engines are built from classes whose constructors validate market-facing inputs once; every downstream component then trusts that quantities are positive and prices on-tick without re-checking.",
+  "quantFinanceApplication": "The Order class here mirrors real front-office code: quantity and limit price guarded by invariants, notional computed on demand, and money-like types kept distinct so the compiler enforces the units.",
+  "summary": [
+    "A class is a struct with discipline: private data plus a public set of functions that enforce invariants in exactly one place.",
+    "Members are initialized by the member initializer list in declaration order; const and reference members must use the list.",
+    "Delegating constructors and in-class default initializers keep validation and defaults in one place.",
+    "Mark single-argument constructors explicit to stop silent unit-destroying conversions, and mark read-only member functions const."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "An `Order` object reaches a function as `const Order& o`. Which call is legal inside that function?",
+      "options": [
+        "o.reduce(4)",
+        "o.notional()",
+        "o.qty_ = 6",
+        "o.qty_ = o.qty_ + 1"
+      ],
+      "answerIndex": 1,
+      "explanation": "A const reference permits only const member functions: notional() is const, reduce() is not. The data members are private, so no outside function could touch them anyway."
+    },
+    {
+      "id": "q2",
+      "type": "code-output",
+      "prompt": "What does this program print?",
+      "language": "cpp",
+      "code": "#include <iostream>\n\nstruct Leg {\n    explicit Leg(const char* name) { std::cout << name << ' '; }\n};\n\nclass Order {\n    Leg qty_;   // declared FIRST\n    Leg px_;    // declared SECOND\npublic:\n    Order() : px_{\"px\"}, qty_{\"qty\"} {}\n};\n\nint main() { Order o; std::cout << '\\n'; }",
+      "answer": "qty px",
+      "explanation": "Members initialize in declaration order, not initializer-list order: qty_ (\"qty\") is constructed first, then px_ (\"px\")."
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "Using the lesson Order class: an order of 10 lots at limit \\$5312.25 has reduce(4) called. What does notional() return, in dollars?",
+      "answer": 31873.5,
+      "tolerance": 0.01,
+      "unit": "USD",
+      "explanation": "reduce(4) leaves 6 lots; notional() is computed as $6 \\times 5312.25 = 31873.50$. Nothing was stored, so it can never be stale."
+    },
+    {
+      "id": "q4",
+      "type": "ms",
+      "prompt": "Which members MUST be initialized in the member initializer list rather than in the constructor body?",
+      "options": [
+        "A const data member",
+        "A reference data member",
+        "A plain int data member",
+        "A std::string data member"
+      ],
+      "answerIndices": [
+        0,
+        1
+      ],
+      "explanation": "const and reference members can never be assigned after default-initialization, so the initializer list is their only chance. Plain ints and strings can be assigned in the body, though the list is still preferred. (Members of types without default constructors also require the list.)"
+    },
+    {
+      "id": "q5",
+      "type": "mcq",
+      "prompt": "What does marking a constructor `explicit` achieve?",
+      "options": [
+        "It makes the constructor run faster",
+        "It prevents implicit conversions such as printQty(7)",
+        "It allows the class to declare two constructors",
+        "It marks the class as abstract"
+      ],
+      "answerIndex": 1,
+      "explanation": "explicit blocks copy-initialization conversions like `Quantity q = 7;` or passing a bare int where a Quantity is expected. Direct-initialization (Quantity{7}) still works."
+    },
+    {
+      "id": "q6",
+      "type": "short",
+      "prompt": "Why should notional() be a computed const member function rather than a stored member updated on every fill?",
+      "modelAnswer": "Because notional is derived from qty and limitPrice; storing it would create a second copy of the truth that every mutation must remember to refresh.",
+      "keywords": [
+        "derived",
+        "stale",
+        "invariant",
+        "truth"
+      ],
+      "explanation": "A stored derived value is a duplicate of state that can go stale after any mutation. Computing it from the private members guarantees consistency - the class keeps a single source of truth and the invariant holds by construction."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "definition",
+      "front": "What is an invariant, and where is it enforced in a well-designed class?",
+      "back": "A fact true for every object at every observable moment (e.g. qty > 0). Enforced in the constructor and mutators so all other code can rely on it."
+    },
+    {
+      "type": "concept",
+      "front": "Member initializer list vs constructor body",
+      "back": "The list initializes members directly (mandatory for const and reference members); body statements only assign after default-initialization. Initialization order = declaration order."
+    },
+    {
+      "type": "code-output",
+      "front": "struct Leg prints its name in its ctor. class Order { Leg qty_; Leg px_; public: Order() : px_{\"px\"}, qty_{\"qty\"} {} }; - what does constructing an Order print?",
+      "back": "qty px - members initialize in declaration order, not list order."
+    },
+    {
+      "type": "error-identification",
+      "front": "class Quantity { public: Quantity(int lots) : lots_{lots} {} }; void f(Quantity); and a caller writes f(7); and it compiles. What is the fix if the conversion is unwanted?",
+      "back": "Mark the constructor explicit; then only f(Quantity{7}) compiles and silent int-to-Quantity conversions are impossible."
+    }
+  ],
+  "references": [
+    {
+      "label": "cppreference — Classes",
+      "url": "https://en.cppreference.com/w/cpp/language/classes"
+    },
+    {
+      "label": "cppreference — Constructors and member initializer lists",
+      "url": "https://en.cppreference.com/w/cpp/language/constructor"
+    },
+    {
+      "label": "cppreference — explicit specifier",
+      "url": "https://en.cppreference.com/w/cpp/language/explicit"
+    }
+  ],
+  "skills": [
+    "cpp",
+    "cpp-memory"
+  ]
+}

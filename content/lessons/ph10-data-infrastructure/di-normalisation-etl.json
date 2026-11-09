@@ -1,0 +1,279 @@
+{
+  "id": "di-normalisation-etl",
+  "moduleId": "ph10-data-infrastructure",
+  "title": "Market-Data Normalisation, Validation and ETL",
+  "estMinutes": 26,
+  "difficulty": "advanced",
+  "prereqs": [
+    "di-tick-storage"
+  ],
+  "objectives": [
+    "Map vendor-specific symbols (ticker, RIC, ISIN) to one internal identifier and explain why joins must use the mapped key",
+    "Apply split and dividend adjustments and compute returns on adjusted series",
+    "Detect gaps and outages using cadence checks, sequence numbers and venue reconciliation counts",
+    "Specify the fields of a data-lineage record and explain how lineage bounds the blast radius of a bad transform"
+  ],
+  "motivation": "The same share of Apple arrives from three vendors as AAPL, AAPL.O and US0378331005, and yesterday's prices quietly changed overnight because of a dividend. Raw vendor data cannot be joined, backtested or reconciled until it is normalised - and every misstep here is silent: a wrong symbol mapping double-counts a position, an unadjusted split looks like a -49% crash, and a missing hour of ticks simply never shows up unless you go looking for it.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Symbol mapping: one instrument, many names"
+    },
+    {
+      "type": "p",
+      "md": "Each data vendor invents its own identifier and each has a different lifecycle. The exchange tape uses the ticker (AAPL); a Reuters-style RIC adds a suffix (AAPL.O); Bloomberg-style tickers append country codes; the **ISIN** (US0378331005) is venue-agnostic but changes on corporate restructurings and is not unique across share classes in some markets. None of these is the *instrument* - they are labels."
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Source",
+        "Identifier for Apple common stock",
+        "Property"
+      ],
+      "rows": [
+        [
+          "Exchange tape",
+          "AAPL",
+          "venue-specific, reusable over time"
+        ],
+        [
+          "Reuters-style RIC",
+          "AAPL.O",
+          "vendor-specific suffix conventions"
+        ],
+        [
+          "ISIN (ISO 6166)",
+          "US0378331005",
+          "venue-agnostic; changes on restructuring"
+        ],
+        [
+          "Internal master id",
+          "EQ-US-0378331005",
+          "one per instrument, versioned mapping"
+        ]
+      ]
+    },
+    {
+      "type": "p",
+      "md": "The failure modes are concrete. A naive string join on \"AAPL\" collides across venues and misses \"AAPL.O\"; prefix or fuzzy matching silently joins the wrong instrument; a ticker reused years later (as exchange tickers often are) attaches old history to a new company. The cure is a **symbol map**: resolve every incoming label to one internal id at ingest, then join everything downstream on the internal id - exactly, never approximately."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Never join on vendor strings",
+      "md": "The symbol map is data, versioned and reviewed like code. Hard-coding \"AAPL.O means AAPL\" in a query works until a vendor changes conventions, a listing moves venue, or a dual-listed name appears - and then the join is wrong in a way nobody notices until PnL or volume totals disagree across vendors."
+    },
+    {
+      "type": "h2",
+      "text": "Corporate actions: why yesterday's prices moved overnight"
+    },
+    {
+      "type": "p",
+      "md": "Raw prices are not comparable across a **split** or **ex-dividend date**. A 2-for-1 split doubles shares and halves the price; a cash dividend removes value on the ex-date. Back-adjustment rescales all history *before* the action so the series looks continuous, using a multiplicative factor. For a dividend $D$ against a cum-dividend close $P$: $f = (P - D)/P$."
+    },
+    {
+      "type": "steps",
+      "title": "Worked example: a 2:1 split seen two ways",
+      "items": [
+        "Day 1 close is \\$118.50 (pre-split). Overnight the company executes a 2:1 split. Day 2 close is \\$60.40.",
+        "Naive daily return: $60.40 / 118.50 - 1 \\approx -49.0\\%$ - an imaginary crash.",
+        "Back-adjust day 1: $118.50 / 2 = 59.25$. True return: $60.40 / 59.25 - 1 = +1.94\\%$.",
+        "Sanity check with position value: 400 shares worth $400 \\times 118.50 = 47{,}400$ became $800 \\times 60.40 = 48{,}320$, a gain of 920 on 47,400 $= +1.94\\%$. Adjusted series and money agree."
+      ]
+    },
+    {
+      "type": "p",
+      "md": "Two consequences matter operationally. First, adjustments compound: after several actions, history is the product of many factors, so always store the **raw** series plus the action events, and re-derive adjusted prices on demand. Second, back-adjustment is not stable - the whole adjusted series changes every time a new action occurs, which is why derived datasets must record how they were built (lineage, below)."
+    },
+    {
+      "type": "h2",
+      "text": "Validation and gap detection"
+    },
+    {
+      "type": "p",
+      "md": "Validation runs on ingest, in layers. **Sanity rules** reject the impossible: price must be positive and inside a plausible band (for example within $\\pm 20\\%$ of the last seen price, else flagged); size must be non-negative; timestamps must be monotonic within a stream. **Cadence checks** catch silence: a symbol that normally prints ~2,400 updates per minute printing zero for three minutes is an outage, not a quiet market - no trades for 180 seconds on a liquid name is a data incident."
+    },
+    {
+      "type": "p",
+      "md": "**Reconciliation** closes the loop against the source. The venue's end-of-day summary reports 1,482,610 trades; your capture holds 1,482,015 - so 595 are missing, and sequence numbers locate them exactly:"
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "seqs = [101, 102, 103, 106, 107]  # venue sequence numbers received\ngaps = [(seqs[i-1] + 1, seqs[i] - 1)\n        for i in range(1, len(seqs)) if seqs[i] - seqs[i-1] > 1]\nprint(gaps)  # [(104, 105)] -> request a replay of exactly these\n",
+      "caption": "Sequence-number gap detection turns 'some data is missing' into 'messages 104-105 are missing'."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Why reconciliation catches what validation cannot",
+      "md": "Validation sees only what arrived; reconciliation compares what arrived against what *should* have arrived (venue counts, sequence continuity, cross-vendor volume). A capture layer that drops 0.05% of ticks passes every per-record sanity check and still corrupts every statistic computed on the series - the discrepancy is only visible from outside the dataset."
+    },
+    {
+      "type": "h2",
+      "text": "Data lineage: knowing where every number came from"
+    },
+    {
+      "type": "p",
+      "md": "Every derived dataset - normalised ticks, adjusted daily bars, consolidated books - carries a lineage record: source feed and vendor, ingestion window, the transform and its version (a git hash), input dataset ids, output id, record counts in and out, and a checksum. Lineage is what makes a discovered bug *bounded*: if transform v2.3 mishandled dividends for three weeks, you replay exactly the affected partitions with v2.4 and prove the counts match - instead of distrusting three years of research."
+    },
+    {
+      "type": "interactive",
+      "component": "HashTableVisual",
+      "params": {
+        "capacity": 8,
+        "keys": [
+          11021,
+          11022,
+          11025,
+          41007,
+          99001
+        ],
+        "query": 11025
+      },
+      "caption": "The symbol map behaves like a hash table: vendor labels resolve to one internal id in O(1) at ingest, and every downstream join uses that key - never the raw string."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "A stock's cum-dividend close is $100.00 and it pays a cash dividend of \\$4.00. (a) Compute the back-adjustment factor $f = (P - D)/P$. (b) A raw price of \\$82.50 from before the ex-date needs adjusting - what is its adjusted value? (c) A raw close of \\$98.50 from two days before the ex-date adjusts to what value, and if the post-ex close is \\$99.10, what is the adjusted return over that span?",
+    "hints": [
+      "The factor applies multiplicatively to every price before the ex-date.",
+      "The post-ex price needs no adjustment - it is already 'post'."
+    ],
+    "solution": "(a) $f = (100 - 4)/100 = 0.96$. (b) $82.50 \\times 0.96 = 79.20$. (c) Adjusted pre-ex price $= 98.50 \\times 0.96 = 94.56$; adjusted return $= 99.10 / 94.56 - 1 = 0.04801 \\approx \\textbf{+4.80\\%}$. The naive raw return $99.10/98.50 - 1 = +0.61\\%$ hides the dividend."
+  },
+  "independentExercise": {
+    "prompt": "A stock executes a 3-for-1 split. The pre-split close is \\$357.00 and the post-split close is \\$121.80. (a) What daily return would an unadjusted series show? (b) What is the back-adjusted pre-split close and the true return? (c) Verify with position value: you hold 400 shares pre-split. What are your share count and position value before and after, and is the percentage gain consistent with (b)?",
+    "hints": [
+      "After an N-for-1 split, divide pre-split prices by N to back-adjust.",
+      "Position value = shares $\\times$ price on both sides of the split."
+    ],
+    "solution": "(a) Naive: $121.80 / 357.00 - 1 = -65.88\\%$ - an artifact. (b) Adjusted pre close $= 357 / 3 = 119.00$; true return $= 121.80 / 119.00 - 1 = +2.35\\%$. (c) Before: 400 shares $\\times$ $; after: 1,200 shares $\\times$ $; gain $= 3{,}360 / 142{,}800 = +2.35\\%$ - consistent with (b)."
+  },
+  "commonMistakes": [
+    "Joining feeds on vendor ticker strings instead of a mapped internal id - collisions, missed suffix variants, and reused tickers silently corrupt the result.",
+    "Multiplying post-split prices instead of back-adjusting history: an N-for-1 split means divide *older* prices by N.",
+    "Storing only adjusted prices: every new dividend or split rewrites all history, so the raw series plus action events must be preserved and adjusted series re-derived.",
+    "Treating a venue outage as 'the market was quiet' - zero ticks on a liquid symbol is a capture incident to reconcile and replay, not an observation.",
+    "Shipping derived datasets without lineage: when a transform bug surfaces, there is no way to know which outputs to rebuild."
+  ],
+  "realWorldApplication": "Market-data teams at banks and funds spend a large share of their time on exactly this pipeline: symbol master maintenance, corporate-action processing, gap replay from vendor retransmission, and lineage tracking for audit.",
+  "quantFinanceApplication": "An unadjusted split turning into a -65.9% fake crash is not hypothetical - it happens to anyone who backtests on raw vendor prices. Reconciliation against venue counts is the control that detects silent capture loss before it reaches a model.",
+  "summary": [
+    "Vendors label instruments differently (ticker, RIC, ISIN); resolve everything to one internal id at ingest and join only on that key.",
+    "Corporate actions require back-adjustment: a 2:1 split makes $-49.0\\%$ naive into $+1.94\\%$ real; keep raw series plus actions and re-derive adjusted prices.",
+    "Validation catches impossible records, but only reconciliation (venue counts, sequence continuity) detects *missing* data - the most dangerous failure mode.",
+    "Lineage (source, transform version, counts, checksum) bounds the blast radius of a bad transform and makes replay targeted instead of a full distrust."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "Which identifier is venue-agnostic (same value regardless of where the instrument trades)?",
+      "options": [
+        "The exchange ticker",
+        "The Reuters-style RIC",
+        "The ISIN",
+        "The Bloomberg-style ticker"
+      ],
+      "answerIndex": 2,
+      "explanation": "The ISIN (ISO 6166) encodes country + security number and does not depend on the trading venue. Tickers and RICs are venue- or vendor-specific labels, though even ISINs change on corporate restructurings."
+    },
+    {
+      "id": "q2",
+      "type": "numeric",
+      "prompt": "A raw price of \\$212.50 was recorded before a 2-for-1 split. What is its back-adjusted value in dollars?",
+      "answer": 106.25,
+      "tolerance": 0.01,
+      "explanation": "Back-adjustment divides pre-split prices by the split ratio: $212.50 / 2 = 106.25$."
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "A stock's pre-split close is \\$357.00 and post-split close is \\$121.80 (3-for-1 split). What daily return does the *unadjusted* series show, in percent? (Round to two decimals; include the minus sign.)",
+      "answer": -65.88,
+      "tolerance": 0.05,
+      "explanation": "$121.80 / 357.00 - 1 = -0.6588 \\approx -65.88\\%$ - an artifact of the split. The adjusted series gives $121.80 / 119.00 - 1 = +2.35\\%$."
+    },
+    {
+      "id": "q4",
+      "type": "code-output",
+      "prompt": "What does this Python code print?",
+      "language": "python",
+      "code": "seqs = [101, 102, 103, 106, 107]\ngaps = [(seqs[i-1] + 1, seqs[i] - 1)\n        for i in range(1, len(seqs)) if seqs[i] - seqs[i-1] > 1]\nprint(gaps)",
+      "answer": "[(104, 105)]",
+      "explanation": "The jump $103 \\to 106$ leaves messages 104 and 105 missing, printed as a list containing one tuple: `[(104, 105)]`."
+    },
+    {
+      "id": "q5",
+      "type": "ms",
+      "prompt": "Which fields belong in a data-lineage record for a derived dataset?",
+      "options": [
+        "The transform and its version (e.g. git hash)",
+        "The source dataset identifiers and vendor feed",
+        "Record counts in and out, plus a checksum",
+        "The analyst's opinion of data quality that week",
+        "The forecast of next quarter's data volumes"
+      ],
+      "answerIndices": [
+        0,
+        1,
+        2
+      ],
+      "explanation": "Lineage answers 'how was this produced and can it be reproduced': source, transform version, inputs, counts, checksum. Opinions and forecasts are not reproducible facts."
+    },
+    {
+      "id": "q6",
+      "type": "short",
+      "prompt": "In one or two sentences: why must downstream joins use the internal instrument id rather than the vendor ticker?",
+      "modelAnswer": "Vendor tickers collide across venues and vendors, change over time, and get reused; the internal id is mapped once at ingest from a versioned symbol map, so joins are exact and consistent across all sources.",
+      "keywords": [
+        "collide",
+        "map",
+        "exact",
+        "venue"
+      ],
+      "explanation": "The symbol map centralises a messy, changing reality into one stable key; joins on raw strings are wrong in ways that only surface in cross-vendor totals or after a ticker reuse."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "definition",
+      "front": "What is an ISIN?",
+      "back": "An ISO 6166 identifier (e.g. US0378331005) that is venue-agnostic, unlike tickers and vendor RICs - but it can still change on corporate restructuring."
+    },
+    {
+      "type": "formula",
+      "front": "Dividend back-adjustment factor",
+      "back": "$f = (P_{cum} - D) / P_{cum}$. A $4.00 dividend on a \\$100.00 cum-dividend close gives $f = 0.96$; multiply all pre-ex-date prices by $f$."
+    },
+    {
+      "type": "concept",
+      "front": "Back-adjustment direction for splits",
+      "back": "For an N-for-1 split, divide prices *before* the split by N (never multiply post-split prices). The adjusted series must reproduce the true return, e.g. $+2.35\\%$ not $-65.88\\%$."
+    },
+    {
+      "type": "concept",
+      "front": "What reconciliation adds beyond validation",
+      "back": "Validation checks records that arrived; reconciliation compares counts and sequence continuity against the source, detecting *missing* data (gaps, outages) that per-record checks cannot see."
+    }
+  ],
+  "references": [
+    {
+      "label": "ISO 6166 / ISIN - overview",
+      "url": "https://en.wikipedia.org/wiki/International_Securities_Identification_Number"
+    },
+    {
+      "label": "OpenFIGI - instrument identifier standards",
+      "url": "https://www.openfigi.com/about/figi"
+    },
+    {
+      "label": "Wikipedia - Corporate action (splits and dividends)",
+      "url": "https://en.wikipedia.org/wiki/Corporate_action"
+    }
+  ],
+  "skills": [
+    "data-infrastructure",
+    "distributed-systems"
+  ]
+}

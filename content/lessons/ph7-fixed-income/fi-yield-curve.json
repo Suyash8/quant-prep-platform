@@ -1,0 +1,238 @@
+{
+  "id": "fi-yield-curve",
+  "moduleId": "ph7-fixed-income",
+  "title": "Yield Curves, Spot and Forward Rates",
+  "estMinutes": 27,
+  "difficulty": "core",
+  "prereqs": ["fi-duration-convexity"],
+  "objectives": [
+    "Distinguish par yields, spot rates and forward rates and state when they coincide",
+    "Bootstrap a spot curve from par bond yields on a small worked example",
+    "Compute forward rates from spot rates via the no-arbitrage linkage",
+    "Explain what forward rates do and do not tell you about future spot rates"
+  ],
+  "motivation": "A bank funds itself with 3-month deposits and lends for 5 years; a pension fund must discount liabilities 20 years out. One yield number cannot serve both, because markets price different maturities at different rates. This lesson separates the par yields you see quoted from the spot rates that actually discount cash flows, bootstraps a spot curve from three par bonds, and derives the forward rates hiding between curve points - the machinery behind every swap and curve trade.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Three curves hiding in one word: yield"
+    },
+    {
+      "type": "p",
+      "md": "Draw the quoted yields of government bonds against maturity and you have a **par yield curve**: each point is the coupon rate a bond needs to trade exactly at par for that maturity. But pricing cash flows requires **spot rates** - the yields of zero-coupon bonds, one per maturity, because each future dollar must be discounted at the rate for *its own* date. Finally, **forward rates** are the rates for future periods implied by the spot curve: the 1-year rate, two years from now, that makes lending long equivalent to rolling short. On a flat curve all three coincide; on any real curve they differ, and the differences are the raw material of curve trading."
+    },
+    {
+      "type": "math",
+      "tex": "100c\\,\\sum_{t=1}^{n} (1+s_t)^{-t} \\;+\\; 100\\,(1+s_n)^{-n} \\;=\\; 100",
+      "caption": "Par condition: a bond with coupon $c$ priced off spot rates $s_1, \\dots, s_n$ is worth exactly face."
+    },
+    {
+      "type": "p",
+      "md": "The spot curve is not quoted directly - zeros are thin - so desks **bootstrap** it from liquid par bonds: the shortest par bond gives $s_1$ directly; the next par bond's coupons are discounted with the spots already known, and the one unknown spot solves a single equation. One maturity at a time, the curve unzips."
+    },
+    {
+      "type": "steps",
+      "title": "Bootstrap s1, s2, s3 from par yields 4.00%, 4.50%, 5.00% (annual coupons, face 100)",
+      "items": [
+        "1 year: a par bond and a zero both pay once, so $s_1 = 4.00\\%$.",
+        "2-year par bond (4.5% coupon): $100 = 4.5/1.04 + 104.5/(1+s_2)^2$. First coupon PV: $4.5/1.04 = 4.3269$. So $104.5/(1+s_2)^2 = 95.6731$, giving $(1+s_2)^2 = 104.5/95.6731 = 1.092261$, hence $s_2 = 1.092261^{1/2} - 1 = 4.51\\%$.",
+        "3-year par bond (5% coupon): $100 = 5/1.04 + 5/1.092261 + 105/(1+s_3)^3$. Coupon PVs: $4.8077 + 4.5777 = 9.3853$. So $105/(1+s_3)^3 = 90.6147$, $(1+s_3)^3 = 1.158753$, and $s_3 = 1.158753^{1/3} - 1 = 5.03\\%$."
+      ]
+    },
+    {
+      "type": "table",
+      "headers": ["Maturity", "Par yield", "Bootstrapped spot"],
+      "rows": [
+        ["1y", "4.00%", "4.00%"],
+        ["2y", "4.50%", "4.51%"],
+        ["3y", "5.00%", "5.03%"]
+      ]
+    },
+    {
+      "type": "p",
+      "md": "On an upward-sloping curve the spots pull above the par yields: a par bond's early coupons are discounted at *low* short spots, so the final discount rate must overcompensate. The gap is small here (5.03% vs 5.00%) but it compounds into real money on long-dated books."
+    },
+    {
+      "type": "h2",
+      "text": "Forward rates: the curve's hidden interior"
+    },
+    {
+      "type": "math",
+      "tex": "1 + f_{t,T} \\;=\\; \\frac{(1+s_T)^{T}}{(1+s_t)^{t}}",
+      "caption": "The annualized forward rate for the period between years $t$ and $T$, implied by today's spot curve."
+    },
+    {
+      "type": "steps",
+      "title": "Forward rates from our bootstrapped curve",
+      "items": [
+        "$f(1,2)$: $(1.092261)/1.04 - 1 = 5.03\\%$ - the 1-year rate, one year forward.",
+        "$f(2,3)$: $1.158753/1.092261 - 1 = 6.09\\%$ - the 1-year rate, two years forward.",
+        "Consistency check: $1.04 \\times 1.050251 \\times 1.060875 = 1.158753 = (1+s_3)^3$ - the long spot is exactly the compounded chain of short forwards."
+      ]
+    },
+    {
+      "type": "p",
+      "md": "Why can we call $f(2,3)$ a *rate* at all? Because it can be locked in today with zero risk: buy one 3-year zero and short the right quantity of 2-year zeros, and the year-3 payoff is fixed at $1.158753/1.092261$ per dollar invested. Any deviation from that number would let a trader construct a free lunch, so arbitrage pins the forward to the spot pair. Whether forwards *forecast* future spots is a different question: the expectations hypothesis says $f(2,3)$ approximates the market's expected 1-year rate in two years, but empirical forward curves embed a risk premium too, which is why the far forward curve usually slopes more steeply than realized short rates ever deliver."
+    },
+    {
+      "type": "interactive",
+      "component": "YieldCurveLab",
+      "params": {
+        "maturities": [1, 2, 3],
+        "parYields": [0.04, 0.045, 0.05],
+        "spotRates": [0.04, 0.0451, 0.0503],
+        "forwards": [0.0503, 0.0609]
+      },
+      "caption": "The bootstrapped curve: par yields, spots and forwards plotted together. Flatten the par curve and watch the spots and forwards converge onto it."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Where the market's forwards come from",
+      "md": "Traders read forward rates directly from futures on short-term rates (SOFR/Eurodollar futures strip) and from swap curves. A desk quoting a 3s9s forward swap is doing exactly the algebra above, at scale, with interpolation between quoted maturities."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Never discount with the par yield",
+      "md": "A 3-year par yield of 5% is a coupon rate that makes a 3-year bond price at par - it is not the discount rate for a single 3-year cash flow. Use the bootstrapped spot (5.03% here). Discounting with par yields on a sloped curve misprices zeros, swaps and any structured cash flow schedule."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "# annual-coupon par bonds, face 100, bootstrapping by hand\npar = {1: 0.04, 2: 0.045, 3: 0.05}\nspot = {1: par[1]}                                   # 1y: zero rate = par yield\nspot[2] = (104.5 / (100 - 4.5 / 1.04)) ** 0.5 - 1\nspot[3] = (105 / (100 - 5 / 1.04 - 5 / (1 + spot[2]) ** 2)) ** (1 / 3) - 1\nf12 = (1 + spot[2]) ** 2 / (1 + spot[1]) - 1\nf23 = (1 + spot[3]) ** 3 / (1 + spot[2]) ** 2 - 1\nprint(round(spot[2] * 100, 2), round(spot[3] * 100, 2))   # 4.51 5.03\nprint(round(f12 * 100, 2), round(f23 * 100, 2))           # 5.03 6.09",
+      "caption": "The bootstrap in four lines: each step discounts known coupons with known spots and solves for one unknown."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Par yields are 3.00% for 1 year and 4.00% for 2 years (annual coupons, face 100). Bootstrap the 2-year spot rate $s_2$.",
+    "hints": [
+      "Write the par condition: 100 = 4/1.03 + 104/(1+s2)^2.",
+      "Discount the first coupon with s1 = 3%, then solve for the remaining discount factor."
+    ],
+    "solution": "First coupon PV: $4/1.03 = 3.8835$. So $104/(1+s_2)^2 = 100 - 3.8835 = 96.1165$, giving $(1+s_2)^2 = 104/96.1165 = 1.082020$ and $s_2 = 1.082020^{1/2} - 1 = 4.02\\%$. Note the spot exceeds the 4.00% par yield - the signature of an upward-sloping curve."
+  },
+  "independentExercise": {
+    "prompt": "Given $s_1 = 5\\%$ and $s_2 = 5.5\\%$ (annual compounding): (a) compute the 1-year forward rate $f(1,2)$; (b) price 100 face of a 2-year zero-coupon bond.",
+    "hints": [
+      "Forward formula: $(1+s_2)^2/(1+s_1) - 1$.",
+      "A zero is priced by discounting once: $100/(1+s_2)^2$."
+    ],
+    "solution": "(a) $(1.055)^2/1.05 - 1 = 1.113025/1.05 - 1 = 6.00\\%$. (b) $100/1.113025 = 89.85$. Cross-check: $89.85 \\times 1.05 \\times 1.060024 = 100.00$ - investing at the 1-year spot and locking the forward reproduces the 2-year spot, which is the no-arbitrage content of the forward formula."
+  },
+  "commonMistakes": [
+    "Discounting cash flows with par yields instead of bootstrapped spot rates.",
+    "Averaging spot rates arithmetically instead of geometrically: $(1+s_3)^3$ chains, it does not average.",
+    "Treating forwards as guaranteed forecasts of future spot rates - they are breakevens set by arbitrage today, plus risk premium.",
+    "Interpolating bootstrapped spots linearly between quoted maturities without saying so."
+  ],
+  "realWorldApplication": "Swap desks, mortgage hedgers and corporate treasurers all price against bootstrapped spot curves; the SOFR futures strip and swap curve are the market's live versions of the three-point curve built here.",
+  "quantFinanceApplication": "Bootstrapping is the canonical example of a sequential calibration: fix short maturities first, then solve each longer maturity given the earlier ones - the same pattern later used to calibrate volatility surfaces and default-intensity curves.",
+  "summary": [
+    "Par yield = coupon that prices a bond at par; spot = zero-coupon yield to one maturity; forward = today's implied rate for a future period.",
+    "Bootstrapping strips coupons with known short spots and solves one unknown spot per maturity: $s_1 = 4.00\\%$, $s_2 = 4.51\\%$, $s_3 = 5.03\\%$ from pars 4.00/4.50/5.00%.",
+    "Forwards come from the no-arbitrage chain: $(1+s_T)^T = (1+s_t)^t(1+f_{t,T})$; here $f(1,2) = 5.03\\%$, $f(2,3) = 6.09\\%$.",
+    "On an upward-sloping par curve, spots sit above par yields at the long end and forwards sit above spots.",
+    "Forwards are locked-in breakevens, not forecasts; they mix expectations with risk premium."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "numeric",
+      "prompt": "With $s_1 = 3\\%$ and $s_2 = 4\\%$ (annual compounding), what is the 1-year forward rate $f(1,2)$ in percent? (Two decimals.)",
+      "answer": 5.01,
+      "tolerance": 0.05,
+      "unit": "%",
+      "explanation": "$(1.04)^2/1.03 - 1 = 1.0816/1.03 - 1 = 0.050097 = 5.01\\%$. The forward sits above the 2-year spot on a rising curve."
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "The 3-year spot rate is best described as:",
+      "options": [
+        "The yield on a zero-coupon bond maturing in 3 years",
+        "The coupon rate a 3-year par bond pays",
+        "The average of 1-year yields over the next 3 years",
+        "The rate on a 3-year bank deposit"
+      ],
+      "answerIndex": 0,
+      "explanation": "Spot = zero-coupon yield to that maturity. The par bond coupon (option 2) is the par yield, a different object; spots are what actually discount cash flows."
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "Par yields: 1y = 3.00%, 2y = 4.50% (annual coupons, face 100). Bootstrap $s_2$ in percent. (Two decimals.)",
+      "answer": 4.53,
+      "tolerance": 0.05,
+      "unit": "%",
+      "explanation": "$4.5/1.03 = 4.3689$; $104/(1+s_2)^2 = 95.6311$; $(1+s_2)^2 = 104/95.6311 = 1.092745$; $s_2 = 4.53\\%$."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "On an upward-sloping par curve, the 3-year spot rate relative to the 3-year par yield is:",
+      "options": [
+        "Above it, because low short spots discount the par bond's early coupons",
+        "Below it, always",
+        "Equal to it, by definition",
+        "Unrelated - they are independent quantities"
+      ],
+      "answerIndex": 0,
+      "explanation": "Early coupons of the par bond are discounted at cheap short spots, so the last discount factor must be richer than the par yield to still price at par. In our example 5.03% vs 5.00%."
+    },
+    {
+      "id": "q5",
+      "type": "ms",
+      "prompt": "Which statements about forwards are correct?",
+      "options": [
+        "A forward rate is fixed today by arbitrage between spot instruments",
+        "The forward rate equals the guaranteed future spot rate",
+        "Long spot is the geometric chain of the short forwards",
+        "Forwards can be read from short-rate futures strips in practice"
+      ],
+      "answerIndices": [0, 2, 3],
+      "explanation": "Forwards are breakevens set today (0) and chain into spots (2), and desks read them from futures (3). They are not guaranteed forecasts - risk premium means forward curves typically overshoot realized rates (1 is wrong)."
+    },
+    {
+      "id": "q6",
+      "type": "short",
+      "prompt": "Explain in one or two sentences why the forward rate $f(2,3)$ can be considered a rate you can lock in today, without waiting two years.",
+      "modelAnswer": "Buy a 3-year zero-coupon bond and short an appropriate quantity of 2-year zeros: the year-3 payoff per dollar is fixed today, and no-arbitrage forces it to equal $(1+s_3)^3/(1+s_2)^2$.",
+      "keywords": ["zero", "arbitrage", "today", "3-year"],
+      "explanation": "The long/short zero package fixes the year-3 cash flow now; arbitrage ties the package's rate to the spot pair, which is the forward formula."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "definition",
+      "front": "Spot rate",
+      "back": "The yield on a zero-coupon bond maturing at that date - the rate that actually discounts a cash flow for its own time."
+    },
+    {
+      "type": "formula",
+      "front": "Forward rate from spots",
+      "back": "$1 + f_{t,T} = (1+s_T)^T / (1+s_t)^t$ - the implied rate between years $t$ and $T$."
+    },
+    {
+      "type": "concept",
+      "front": "Bootstrapping",
+      "back": "Recover spot rates sequentially from par bonds: discount known coupons with known short spots, solve one unknown spot per maturity."
+    },
+    {
+      "type": "concept",
+      "front": "Par vs spot on a sloped curve",
+      "back": "Upward-sloping par curve => spots above par yields at the long end (and forwards above spots); flat curve => all three coincide."
+    }
+  ],
+  "references": [
+    {
+      "label": "Investopedia - Bootstrapping the Yield Curve",
+      "url": "https://www.investopedia.com/terms/b/bootstrapping.asp"
+    },
+    {
+      "label": "Hull, Options, Futures and Other Derivatives - Interest Rate Derivatives (chapter resources)",
+      "url": "https://www.pearson.com/en-us/subject-catalog/p/options-futures-and-other-derivatives/P200000003504"
+    }
+  ],
+  "skills": ["fixed-income"]
+}

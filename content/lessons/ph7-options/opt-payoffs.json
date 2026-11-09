@@ -1,0 +1,275 @@
+{
+  "id": "opt-payoffs",
+  "moduleId": "ph7-options",
+  "title": "Calls, Puts and Payoff Diagrams",
+  "estMinutes": 26,
+  "difficulty": "core",
+  "prereqs": [
+    "inst-futures-forwards"
+  ],
+  "objectives": [
+    "State the expiry payoffs of long and short calls and puts and compute them in any scenario",
+    "Separate payoff from profit-and-loss by tracking the option premium",
+    "Identify breakevens, maximum gains and maximum losses for basic positions",
+    "Assemble protective puts, covered calls and straddles and read their payoff diagrams"
+  ],
+  "motivation": "A trader offers you the right to buy a stock at \\$100 any time in the next year. What is that right worth before any model is discussed? Options are contracts first and formulas second: mastering payoffs - who pays what in which state of the world - is the foundation every pricing model later refines. Internalizing the asymmetry of option payoffs is what separates people who understand derivatives from people who only recognize formulas.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "The two basic contracts"
+    },
+    {
+      "type": "p",
+      "md": "A **call option** gives its buyer the right - not the obligation - to buy the underlying at the **strike price** $K$; a **put option** gives the right to sell at $K$. The buyer pays a **premium** upfront; the seller (writer) collects it and takes on the obligation. European options can be exercised only at expiry, American ones any time before - a distinction that matters for valuation but not for expiry payoffs. Moneyness labels the relationship between spot and strike: in the money if exercise would profit, at the money if $S = K$, out of the money otherwise."
+    },
+    {
+      "type": "math",
+      "tex": "C_T = \\max(S_T - K,\\,0) \\qquad P_T = \\max(K - S_T,\\,0)",
+      "caption": "Expiry payoffs per share. For the writers the signs flip: they pay these amounts."
+    },
+    {
+      "type": "p",
+      "md": "**Payoff is not PnL.** The long call holder paid the premium, so profit is payoff minus what was spent; the writer's PnL is the premium minus the payoff. Every payoff diagram you draw should say immediately which curve is gross and which is net."
+    },
+    {
+      "type": "steps",
+      "title": "Long call, K = 100, premium \\$4.20",
+      "items": [
+        "$S_T = 90$: payoff $\\max(90-100,0) = 0$; PnL $= 0 - 4.20 = -\\$.",
+        "$S_T = 100$: payoff 0; PnL $= -\\$4.20$ - the stock arriving exactly at the strike is still worthless to the buyer.",
+        "$S_T = 104.20$: payoff 4.20; PnL $= 0$ - the **breakeven** is strike plus premium.",
+        "$S_T = 110$: payoff 10; PnL $= +\\$.",
+        "$S_T = 120$: payoff 20; PnL $= +\\$. Maximum loss is capped at the premium; upside is unlimited."
+      ]
+    },
+    {
+      "type": "table",
+      "headers": [
+        "$S_T$",
+        "Call payoff",
+        "Long call PnL",
+        "Short call PnL"
+      ],
+      "rows": [
+        [
+          "90",
+          "0",
+          "-4.20",
+          "+4.20"
+        ],
+        [
+          "100",
+          "0",
+          "-4.20",
+          "+4.20"
+        ],
+        [
+          "110",
+          "+10.00",
+          "+5.80",
+          "-5.80"
+        ],
+        [
+          "120",
+          "+20.00",
+          "+15.80",
+          "-15.80"
+        ]
+      ]
+    },
+    {
+      "type": "p",
+      "md": "The long **put** mirrors it: with $K = 100$ and premium \\$3.10, a drop to $S_T = 90$ pays $\\max(100-90,0) = 10$ for a PnL of $+\\$; breakeven sits at strike minus premium, $96.90$; and the maximum gain is $K$ minus premium, $\\$, reached as the stock goes to zero. The short put writer's best case is keeping \\$3.10 and the worst case is paying out nearly the whole strike."
+    },
+    {
+      "type": "interactive",
+      "component": "PayoffDiagram",
+      "params": {
+        "spot": 100,
+        "positions": [
+          {
+            "type": "call",
+            "side": "long",
+            "strike": 100,
+            "premium": 4.2
+          },
+          {
+            "type": "call",
+            "side": "short",
+            "strike": 100,
+            "premium": 4.2
+          }
+        ],
+        "range": [
+          70,
+          130
+        ]
+      },
+      "caption": "The call at expiry: gross payoff is a hockey stick, net PnL shifts by the premium. Flip the sign and you see the writer's mirror-image risk."
+    },
+    {
+      "type": "h2",
+      "text": "Building blocks: combinations"
+    },
+    {
+      "type": "p",
+      "md": "Payoff diagrams are additive, which turns options into construction blocks. A **protective put** - long stock plus a long put - is insurance: downside floored near $-\\text{premium}$, upside intact less the premium. A **covered call** - long stock plus a short call - sells away the top: income of the premium in exchange for upside capped at strike. A **straddle** - long call and long put at the same strike - profits from movement in either direction and loses the combined premium if nothing happens. Every structured payoff you will ever see decomposes into these pieces, which is why desks read positions as strike-by-strike diagrams rather than lists of contracts."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Options trade convexity",
+      "md": "The long option's payoff curve bends away from zero loss - that curvature is the product. Sellers take limited premium against unbounded (short call) or near-strike-sized (short put) exposure, which is why option writing is a tail-risk business and why margins are charged on short positions."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Payoff vs PnL, and whose obligation",
+      "md": "Examiners and interviewers love asking for the *profit* diagram: forgetting to subtract (or add) the premium is the classic error. Second classic: forgetting that the option writer has obligations, not rights - the short call's loss is unbounded as the stock rises."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "def call_pnl(s, k, prem):\n    return max(s - k, 0) - prem\n\ndef put_pnl(s, k, prem):\n    return max(k - s, 0) - prem\n\nprint(round(call_pnl(120, 100, 4.2), 2))   # 15.8\nprint(round(put_pnl(90, 100, 3.1), 2))     # 6.9\nprint(round(call_pnl(104.2, 100, 4.2), 2)) # 0.0 - breakeven",
+      "caption": "Payoff functions are one max() away from the whole subject."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "You buy one share at $100 and one put with strike 100 for a premium of \\$3.10 (a protective put). Compute the position PnL at $S_T = 85$ and $S_T = 110$, and state the worst-case PnL of the structure.",
+    "hints": [
+      "Add the stock PnL ($S_T - 100$) to the put PnL ($\\max(100 - S_T, 0) - 3.10$).",
+      "Below the strike, every extra dollar of stock loss is offset by a dollar of put payoff."
+    ],
+    "solution": "$S_T = 85$: stock $-15.00$, put $+15.00 - 3.10 = +11.90$; total $-$: stock $+10.00$, put $0 - 3.10 = -3.10$; total $+\\$. Worst case anywhere below the strike is $-\\$: the put converts all further downside into a fixed insurance cost."
+  },
+  "independentExercise": {
+    "prompt": "Construct a collar: long stock bought at $100, long put strike 95 premium $1.80, short call strike 105 premium \\$1.20. Compute the net premium and the position PnL at $S_T = 90$, 100 and 110, then state the floor and cap of the structure.",
+    "hints": [
+      "Net premium = 1.20 received minus 1.80 paid.",
+      "Evaluate the three legs separately at each $S_T$, then add."
+    ],
+    "solution": "Net premium $= 1.20 - 1.80 = -0.60$ (you pay \\$0.60). $S_T = 90$: stock $-10$, put $+5$, call $0$, premium $-0.60$: PnL $= -\\$5.60$. $S_T = 100$: $0 + 0 + 0 - 0.60 = -\\$0.60$. $S_T = 110$: $+10 + 0 - 5 - 0.60 = +\\$4.40$. Floor $-\\$5.60$ (put strike 95 protects below it), cap $+\\$4.40$ (call strike 105 sells everything above it): a zero-ish-cost range you have given away both tails to keep."
+  },
+  "commonMistakes": [
+    "Reading the payoff diagram as PnL - the premium must be subtracted for buyers and added for sellers.",
+    "Saying the long call's maximum loss is the strike: it is the premium.",
+    "Forgetting the breakevens: strike + premium for calls, strike - premium for puts.",
+    "Treating the short call as bounded risk - its loss is unbounded as the underlying rises."
+  ],
+  "realWorldApplication": "Employee stock options, convertible bonds and structured notes all embed these payoffs; collars are the standard retail hedge, and covered-call writing is one of the largest systematic strategies in listed options.",
+  "quantFinanceApplication": "Payoff functions $\\max(S_T - K, 0)$ are the boundary conditions that drive every pricing model: binomial trees and Black-Scholes both solve for the price of exactly the contract defined here.",
+  "summary": [
+    "Call payoff $\\max(S_T - K, 0)$; put payoff $\\max(K - S_T, 0)$; writers carry the opposite sign.",
+    "PnL = payoff minus premium for buyers (plus for sellers); breakevens are strike $\\pm$ premium.",
+    "Long calls: capped loss (premium), unlimited upside. Long puts: capped loss, upside up to strike.",
+    "Combinations are additive: protective put floors the downside, covered call caps the upside, straddles trade on movement itself.",
+    "The traded product is convexity: sellers take limited premium against tail-shaped exposure."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "numeric",
+      "prompt": "You hold a long put with strike 50, premium \\$1.80. At expiry the stock is at 44. What is your PnL per share?",
+      "answer": 4.2,
+      "tolerance": 0.01,
+      "unit": "\\$",
+      "explanation": "Payoff $= 50 - 44 = 6$; PnL $= 6 - 1.80 = 4.20$."
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "The maximum loss of a long call position is:",
+      "options": [
+        "The premium paid",
+        "The strike price",
+        "Unlimited",
+        "Strike minus premium"
+      ],
+      "answerIndex": 0,
+      "explanation": "Below the strike the call expires worthless; you have lost exactly the premium and never more."
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "A long call has strike 100 and premium \\$4.20. At what expiry price does the position break even?",
+      "answer": 104.2,
+      "tolerance": 0.01,
+      "unit": "\\$",
+      "explanation": "Breakeven = strike + premium = 104.20: the payoff must first repay the premium."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "You buy stock at 100 and sell a call with strike 100 for a \\$4.20 premium (covered call). What is the maximum PnL of the position?",
+      "options": [
+        "+\\$4.20",
+        "Unlimited",
+        "+\\$10.00",
+        "-\\$4.20"
+      ],
+      "answerIndex": 0,
+      "explanation": "Above the strike every extra dollar of stock gain is given away to the call buyer, so the position tops out at the premium: +4.20."
+    },
+    {
+      "id": "q5",
+      "type": "ms",
+      "prompt": "Which positions profit from a large move in either direction?",
+      "options": [
+        "Long straddle (long call + long put, same strike)",
+        "Long strangle (long OTM call + long OTM put)",
+        "Short straddle",
+        "Covered call"
+      ],
+      "answerIndices": [
+        0,
+        1
+      ],
+      "explanation": "Both long-wing structures gain when the underlying moves far enough to outgrow the combined premium. Short straddle and covered call both *lose* on large moves."
+    },
+    {
+      "id": "q6",
+      "type": "code-output",
+      "prompt": "What does this Python code print?",
+      "language": "python",
+      "code": "def pnl(s, k, prem):\n    return max(s - k, 0) - prem\n\nprint(pnl(90, 100, 4))\nprint(pnl(110, 100, 4))\nprint(pnl(120, 100, 4) - pnl(110, 100, 4))",
+      "answer": "-4\n6\n10",
+      "explanation": "Payoff 0 minus 4 = -4; payoff 10 minus 4 = 6; and the marginal PnL between 110 and 120 is 10 - the delta-1 region above the strike where PnL moves dollar for dollar with the stock."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "formula",
+      "front": "Call and put expiry payoffs",
+      "back": "Call: $\\max(S_T - K, 0)$. Put: $\\max(K - S_T, 0)$. Writers carry the negative."
+    },
+    {
+      "type": "concept",
+      "front": "Payoff vs PnL",
+      "back": "PnL = payoff minus premium for longs, premium minus payoff for shorts. Breakeven = K + premium (call) or K - premium (put)."
+    },
+    {
+      "type": "concept",
+      "front": "Protective put / covered call",
+      "back": "Protective put = stock + long put: floored downside. Covered call = stock + short call: capped upside plus premium income."
+    },
+    {
+      "type": "concept",
+      "front": "What is actually traded",
+      "back": "Convexity: long options have capped loss and leveraged upside; short options collect premium against tail risk."
+    }
+  ],
+  "references": [
+    {
+      "label": "CBOE Education - Options Basics",
+      "url": "https://www.cboe.com/education/"
+    },
+    {
+      "label": "OCC - Options Playbook (payoff diagrams)",
+      "url": "https://www.theocc.com/learning/options-basics"
+    }
+  ],
+  "skills": [
+    "options"
+  ]
+}

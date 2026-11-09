@@ -1,0 +1,233 @@
+{
+  "id": "risk-var",
+  "moduleId": "ph7-risk",
+  "title": "Value at Risk: Historical, Parametric and Monte Carlo",
+  "estMinutes": 28,
+  "difficulty": "core",
+  "prereqs": [
+    "risk-taxonomy"
+  ],
+  "objectives": [
+    "State the VaR definition precisely, including confidence level and horizon",
+    "Compute historical VaR from a short return series",
+    "Compute parametric VaR from a mean, a volatility and a normal quantile",
+    "Explain how Monte Carlo VaR works and why its result approximates the parametric one for normal simulations"
+  ],
+  "motivation": "Ask a desk head 'how bad can tomorrow get?' and 'worst case' is useless - the true worst case is losing everything. Value at Risk replaces the unanswerable question with a precise one: what loss level will 95% of days stay above? This lesson computes that number three different ways on the *same* ten-day dataset so you can see exactly where the methods agree and disagree.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "The dataset and the definition"
+    },
+    {
+      "type": "p",
+      "md": "Portfolio value: \\$1,000,000. Ten clearly-hypothetical daily returns in %: $[0.8,\\ -0.5,\\ 1.6,\\ -1.2,\\ 0.4,\\ -2.2,\\ 1.0,\\ -0.8,\\ 1.4,\\ -2.0]$."
+    },
+    {
+      "type": "p",
+      "md": "**VaR definition**: the 95% one-day VaR is the loss $L$ such that the probability of losing more than $L$ tomorrow is 5%. It is a quantile of tomorrow's P&L distribution - not the maximum loss, not the expected loss."
+    },
+    {
+      "type": "h2",
+      "text": "Method 1: historical simulation"
+    },
+    {
+      "type": "p",
+      "md": "Historical VaR treats the past ten days as ten equally likely scenarios for tomorrow. Sorted ascending: $[-2.2, -2.0, -1.2, -0.8, -0.5, 0.4, 0.8, 1.0, 1.4, 1.6]$. With 10 observations, the worst 5% is a half observation - an awkward fractional rank. The standard practical fix: take the average of the two worst outcomes as the 5% quantile:"
+    },
+    {
+      "type": "steps",
+      "title": "Historical 95% one-day VaR",
+      "items": [
+        "Two worst returns: $-2.2\\%$ and $-2.0\\%$.",
+        "Quantile estimate: $(-2.2 - 2.0)/2 = -2.1\\%$.",
+        "Convert to dollars: $2.1\\% \\times $1{,}000{,}000 = \\textbf{\\$21,000}$."
+      ]
+    },
+    {
+      "type": "p",
+      "md": "Strengths: no distribution assumption, captures fat tails and non-normality actually present in data. Weaknesses: with few observations the tail is estimated from one or two points; and it assumes the future resembles the observed window - a calm window hides crashes that never happened *in* the window."
+    },
+    {
+      "type": "h2",
+      "text": "Method 2: parametric (variance-covariance) VaR"
+    },
+    {
+      "type": "p",
+      "md": "Assume returns are normal, then the 5% quantile is $\\mu - 1.645\\sigma$ (1.645 is the standard normal z-score with 5% of the distribution below it). First estimate $\\mu$ and $\\sigma$ from the same ten returns:"
+    },
+    {
+      "type": "steps",
+      "title": "Estimation and VaR computation",
+      "items": [
+        "Mean: the returns sum to $-1.5$, so $\\mu = -1.5/10 = -0.15\\%$.",
+        "Deviations from the mean: $[0.95, -0.35, 1.75, -1.05, 0.55, -2.05, 1.15, -0.65, 1.55, -1.85]$.",
+        "Sum of squared deviations: $0.9025 + 0.1225 + 3.0625 + 1.1025 + 0.3025 + 4.2025 + 1.3225 + 0.4225 + 2.4025 + 3.4225 = 17.265$.",
+        "Sample variance $= 17.265/9 = 1.9183$, so $\\sigma = \\sqrt{1.9183} \\approx 1.385\\%$.",
+        "5% quantile: $\\mu - 1.645\\sigma = -0.15 - 1.645 \\times 1.385 = -0.15 - 2.278 = -2.428\\%$.",
+        "VaR is the loss magnitude: $2.428\\% \\times $1{,}000{,}000 \\approx \\textbf{\\$24,284}$."
+      ]
+    },
+    {
+      "type": "p",
+      "md": "The parametric number ($24,284) exceeds the historical one (\\$21,000) here because the normal tail at 1.645$\\sigma$ is fatter than what these ten particular days happened to show. In many real books the ranking reverses - the empirical tail is fatter than normal. The message: **the method is a modelling choice, and the choice changes the number**. Many desks additionally report a mean-zero version, $1.645\\sigma \\approx 2.28\\% \\Rightarrow $22{,}784$, arguing a day's mean is unobservable noise."
+    },
+    {
+      "type": "h2",
+      "text": "Method 3: Monte Carlo VaR"
+    },
+    {
+      "type": "p",
+      "md": "Monte Carlo generalises historical simulation: instead of replaying the ten observed days, simulate thousands of tomorrow's returns from a chosen distribution - here $N(\\mu, \\sigma)$ with the estimates above - and read the 5th percentile off the simulated sample. The estimator's standard error shrinks like $1/\\sqrt{N}$, so more paths mean a stabler quantile. Its power is flexibility: the same machinery prices a portfolio of options by simulating their underlying risks jointly, with correlations chosen freely - something the parametric formula cannot do."
+    },
+    {
+      "type": "interactive",
+      "component": "MonteCarloPi",
+      "params": {
+        "samples": 5000
+      },
+      "caption": "The same engine that estimates $\\pi$ estimates VaR: simulate many random scenarios, then read a quantile off the empirical distribution. As samples grow, the estimate settles - the $1/\\sqrt{N}$ convergence."
+    },
+    {
+      "type": "callout",
+      "variant": "info",
+      "title": "Expected agreement",
+      "md": "If you simulate from exactly the normal distribution you fitted, Monte Carlo VaR converges to the parametric answer (\\$24,284 here) as $N \\to \\infty$; a finite run might give, say, \\$24{,}100 - the gap is pure sampling noise. If instead you simulate from a fat-tailed distribution, Monte Carlo deliberately diverges from the parametric result. The simulation reproduces your *assumptions*, not reality."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "VaR says nothing about the tail beyond it",
+      "md": "Two books can share a \\$21,000 95% VaR while one loses \\$30,000 on bad days and the other \\$300,000. VaR is a quantile, not a tail summary - which is exactly why expected shortfall exists and is the subject of the next lesson."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Using the same dataset, compute the parametric 95% one-day VaR in dollars assuming $\\mu = 0$ (mean-zero convention) and the sample volatility $\\sigma = 1.385\\%$.",
+    "hints": [
+      "With $\\mu = 0$ the quantile is simply $-1.645\\sigma$.",
+      "Multiply the loss percentage by the \\$1,000,000 portfolio."
+    ],
+    "solution": "$1.645 \\times 1.385 = 2.278\\%$, so VaR $= 2.278\\% \\times 1{,}000{,}000 = \\textbf{\\$22,782}$ (about \\$22,800). Dropping the $-0.15\\%$ mean moved the estimate by about \\$1,500 - a reminder that the mean of daily returns is estimated with huge noise, which is why the mean-zero convention exists."
+  },
+  "independentExercise": {
+    "prompt": "A \\$2,000,000 book has daily returns with $\\mu = 0.05\\%$ and $\\sigma = 1.2\\%$ (sample estimates). (a) Compute the parametric 95% one-day VaR in dollars (including the mean). (b) Recompute at 99% confidence, where the z-score is $2.326$. (c) State in one line why the 99% number is larger.",
+    "hints": [
+      "Quantile $= \\mu - z\\sigma$; VaR is its absolute value in dollars.",
+      "(b) only changes $z$."
+    ],
+    "solution": "(a) Quantile $= 0.05 - 1.645 \\times 1.2 = 0.05 - 1.974 = -1.924\\%$; VaR $= 1.924\\% \\times 2{,}000{,}000 = \\$. (b) $0.05 - 2.326 \\times 1.2 = 0.05 - 2.791 = -2.741\\%$; VaR $= \\$. (c) Higher confidence means cutting deeper into the left tail, and the normal tail keeps extending: more of the distribution must be excluded, so the quantile loss grows."
+  },
+  "commonMistakes": [
+    "Reporting VaR as a maximum possible loss - it is a quantile; losses beyond it are expected 5% (or 1%) of the time.",
+    "Using a sample volatility with $n-1$ in one method and population $n$ in another, then comparing the results as if comparable.",
+    "Forgetting the sign convention: the quantile is negative (a return), VaR is reported as a positive loss magnitude.",
+    "Treating Monte Carlo output as more accurate than its inputs - simulation reproduces the assumed distribution, errors included."
+  ],
+  "realWorldApplication": "Banks report daily 1-day 99% VaR to regulators and use 10-day horizons for capital; trading desks get VaR limits checked intraday, and any breach triggers an escalation within minutes.",
+  "quantFinanceApplication": "A risk engine computes all three methods in parallel: replaying the historical window, running the covariance-based formula, and launching Monte Carlo paths for books with options; differences between methods are themselves monitored as a model-risk indicator.",
+  "summary": [
+    "VaR at confidence $c$ is the loss level that is exceeded with probability $1 - c$ over the stated horizon.",
+    "Historical VaR reads the quantile off past returns - assumption-free but tail-starved with short windows.",
+    "Parametric VaR $= z\\sigma - \\mu$ under normality; $z = 1.645$ at 95%, $2.326$ at 99%.",
+    "Monte Carlo VaR simulates thousands of scenarios and reads the quantile; it converges to the parametric answer when it simulates that same normal model."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "The 95% one-day VaR of a portfolio is \\$21,000. This means:",
+      "options": [
+        "The portfolio cannot lose more than \\$21,000 tomorrow",
+        "The portfolio loses more than \\$21,000 on about 5% of days",
+        "The expected loss tomorrow is \\$21,000",
+        "The worst day in history lost \\$21,000"
+      ],
+      "answerIndex": 1,
+      "explanation": "VaR is a quantile: losses exceed it with probability 5%. It is neither a cap, nor an expectation, nor a historical maximum."
+    },
+    {
+      "id": "q2",
+      "type": "numeric",
+      "prompt": "Using the lesson's data: $\\mu = -0.15\\%$, $\\sigma = 1.385\\%$, \\$1,000,000 portfolio. Parametric 95% one-day VaR in dollars, to the nearest hundred?",
+      "answer": 24300,
+      "tolerance": 100,
+      "explanation": "Quantile $= -0.15 - 1.645 \\times 1.385 = -2.428\\%$; loss $= 2.428\\% \\times 1{,}000{,}000 \\approx $24,284 \\approx \\$."
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "From the same dataset, the historical 95% one-day VaR in dollars (average of the two worst returns, \\$1m portfolio)?",
+      "answer": 21000,
+      "tolerance": 50,
+      "explanation": "Two worst returns are $-2.2\\%$ and $-2.0\\%$; their average is $-2.1\\%$, i.e. a loss of \\$21,000 on a \\$1m portfolio."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "Why can parametric VaR exceed historical VaR on the same data?",
+      "options": [
+        "Parametric always overestimates",
+        "The assumed normal tail can be fatter than the empirical tail actually observed in the window",
+        "Historical simulation uses more data",
+        "Parametric VaR ignores volatility"
+      ],
+      "answerIndex": 1,
+      "explanation": "The parametric method imposes a normal shape on the data. Here the normal quantile at 1.645 sigma sits deeper in the tail than the ten observed days happened to reach, so the parametric number comes out higher. In fat-tailed markets the ranking often reverses - the shape assumption drives the answer."
+    },
+    {
+      "id": "q5",
+      "type": "numeric",
+      "prompt": "$\\sigma = 1.2\\%$ daily, mean assumed zero, 99% confidence ($z = 2.326$). VaR in % of portfolio value?",
+      "answer": 2.79,
+      "tolerance": 0.02,
+      "explanation": "$2.326 \\times 1.2 = 2.791\\%$."
+    },
+    {
+      "id": "q6",
+      "type": "short",
+      "prompt": "If Monte Carlo VaR simulates from the same fitted normal distribution, what should its answer converge to as the number of paths grows, and what does any remaining gap at finite paths represent?",
+      "modelAnswer": "It converges to the parametric (variance-covariance) VaR; the remaining difference is Monte Carlo sampling error, shrinking like 1/sqrt(N).",
+      "keywords": [
+        "parametric",
+        "sampling"
+      ],
+      "explanation": "Simulation reproduces the assumed normal model, so its quantile estimate approaches the analytic one; finite-path gaps are estimator noise, not model discovery."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "definition",
+      "front": "Value at Risk (VaR)",
+      "back": "The loss level exceeded with probability $1-c$ over a given horizon; a quantile of the P&L distribution, not a maximum loss."
+    },
+    {
+      "type": "formula",
+      "front": "Parametric VaR",
+      "back": "$\\text{VaR}_{c} = z_c\\sigma - \\mu$; $z = 1.645$ at 95%, $z = 2.326$ at 99% (normal). Mean-zero variant: $z_c\\sigma$."
+    },
+    {
+      "type": "concept",
+      "front": "Historical simulation trade-off",
+      "back": "No distribution assumptions and picks up real fat tails, but the tail estimate relies on very few observations and assumes the window represents tomorrow."
+    },
+    {
+      "type": "concept",
+      "front": "Monte Carlo VaR's real advantage",
+      "back": "Flexibility: simulate complex books (options, correlations, fat tails) that have no closed-form quantile - but it inherits every assumption you feed it."
+    }
+  ],
+  "references": [
+    {
+      "label": "Jorion - Value at Risk (overview)",
+      "url": "https://www.jorion.com/"
+    },
+    {
+      "label": "BIS Basel Framework - Market risk (VaR standards)",
+      "url": "https://www.bis.org/basel_framework/chapter/MAR/"
+    }
+  ],
+  "skills": [
+    "risk",
+    "statistics"
+  ]
+}

@@ -1,0 +1,214 @@
+{
+  "id": "ds-hash-tables",
+  "moduleId": "ph5-data-structures",
+  "title": "Hash Tables and Hash Maps",
+  "estMinutes": 27,
+  "difficulty": "core",
+  "prereqs": ["ds-stacks-queues"],
+  "objectives": [
+    "Explain how a hash function plus an array turns key lookup into near-constant time",
+    "Compute bucket indices with a modular hash and trace collisions in chaining and open addressing",
+    "Compare collision resolution strategies: separate chaining vs open addressing (linear probing)",
+    "Compute load factor and explain why resizing keeps expected lookup cost bounded",
+    "State the worst-case and expected complexities of hash table operations and when each applies"
+  ],
+  "motivation": "Every trading system answers the same question millions of times per second: what is the current state of instrument X? A linear scan over 10,000 instruments is 5,000 comparisons on average; a hash table answers in about one. Python's dict, C++'s unordered_map, Redis, and every memoization cache are this one idea - and interviews drill collisions, load factor and resizing precisely because the O(1) claim needs its conditions stated honestly.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "The lookup problem and the hashing idea"
+    },
+    {
+      "type": "p",
+      "md": "Sorted arrays give $O(\\log n)$ search and unsorted arrays $O(n)$ - but we want closer to $O(1)$. A **hash table** gets there by computing where to look instead of searching: a **hash function** $h$ maps each key to an integer, and $h(k) \\bmod m$ (for $m$ buckets) picks an array slot directly. Store the value in that slot and a lookup is: hash the key, index the array, compare - a fixed number of steps. The whole design hinges on $h$ being **deterministic** (same key, same slot, every time), **fast**, and **uniform** (spreading keys evenly so slots fill evenly). Python's `hash()` on integers is identity-like; strings get a randomized variant so attackers cannot engineer collisions."
+    },
+    {
+      "type": "interactive",
+      "component": "HashTableVisual",
+      "params": {
+        "capacity": 8,
+        "keys": [17, 24, 8, 31, 3]
+      },
+      "caption": "Five keys hashed into 8 buckets with h(k) = k mod 8: 17 lands in bucket 1, 24 and 8 both land in bucket 0 - a collision the table must resolve."
+    },
+    {
+      "type": "h2",
+      "text": "Collisions are guaranteed: pigeonhole principle"
+    },
+    {
+      "type": "p",
+      "md": "There are more possible keys than slots - with $m$ buckets, any $m+1$ distinct keys must share a bucket somewhere. Two management strategies dominate. **Separate chaining** stores a linked list in each bucket: colliding entries simply append to the list. Lookup hashes to the bucket and scans the (usually tiny) chain; deletion is easy; the table can even exceed capacity without breaking. **Open addressing** keeps everything in the slot array itself: on a collision, probe onward - linear probing tries slot $h(k), h(k)+1, h(k)+2, \\dots$ (wrapping); quadratic probing and double hashing vary the step to reduce clustering. No pointers means better cache behaviour, but the table can never exceed capacity (load factor must stay below 1) and deletion needs tombstones so later probe chains do not break."
+    },
+    {
+      "type": "table",
+      "headers": ["Property", "Separate chaining", "Open addressing (linear probing)"],
+      "rows": [
+        ["Collision handling", "linked list per bucket", "probe the next slots in sequence"],
+        ["Load factor limit", "can exceed 1 (chains grow)", "must stay below 1 (typically resized at 0.7)"],
+        ["Lookup cost, expected", "1 + alpha/2 probes", "about 1 / (1 - alpha) probes"],
+        ["Lookup cost, worst case", "O(n) - all keys in one chain", "O(n) - one long probe run"],
+        ["Memory layout", "pointers per entry", "contiguous slots, cache-friendly"],
+        ["Deletion", "unlink from chain", "tombstone marker required"]
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Clustering is the open-addressing tax",
+      "md": "Linear probing creates **primary clustering**: a collision extends a run of occupied slots, and each new key landing near the run extends it further - the probability that the next key lands in the run grows with its length. Quadratic probing and double hashing break up the runs at the cost of worse locality. Either way, the advertised O(1) assumes a *low load factor and a uniform hash*; at alpha = 0.9, linear probing averages about 1/(1-0.9) = 10 probes per unsuccessful lookup."
+    },
+    {
+      "type": "h2",
+      "text": "Load factor and resizing"
+    },
+    {
+      "type": "p",
+      "md": "The **load factor** is $\\alpha = n/m$ - entries over buckets. It is the single number that predicts performance: expected chain length is $\\alpha$ under uniform hashing, and open-addressing probe counts blow up as $\\alpha \\to 1$. Production tables therefore **resize**: when $\\alpha$ crosses a threshold (Python's dict resizes when two-thirds full; C++ `unordered_map` defaults to `max_load_factor = 1.0`), allocate roughly $2m$ buckets and rehash every entry - because bucket indices depend on $m$, every stored key must be re-slotted. Resizing costs $O(n)$ but happens after $\\Theta(m)$ insertions, so like dynamic-array doubling the **amortised** cost per insertion is $O(1)$ - the geometric-growth argument transfers directly."
+    },
+    {
+      "type": "math",
+      "tex": "\\alpha = \\frac{n}{m}, \\qquad \\mathbb{E}[\\text{chain length}] = \\alpha, \\qquad \\text{resize when } \\alpha > \\alpha_{\\max} \\approx 0.7",
+      "caption": "Load factor: the number that links table fullness to expected lookup cost."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "class ChainHashMap:\n    def __init__(self, capacity=8):\n        self.m = capacity\n        self.buckets = [[] for _ in range(self.m)]\n        self.n = 0\n\n    def _idx(self, key):\n        return hash(key) % self.m\n\n    def put(self, key, value):\n        b = self.buckets[self._idx(key)]\n        for pair in b:                    # update in place if key exists\n            if pair[0] == key:\n                pair[1] = value\n                return\n        b.append([key, value])            # append handles collisions\n        self.n += 1\n        if self.n / self.m > 0.75:        # load factor budget\n            self._resize(2 * self.m)\n\n    def get(self, key, default=None):\n        for pair in self.buckets[self._idx(key)]:\n            if pair[0] == key:\n                return pair[1]\n        return default\n\n    def _resize(self, m):\n        old = self.buckets\n        self.m, self.n = m, 0\n        self.buckets = [[] for _ in range(m)]\n        for b in old:\n            for k, v in b:\n                self.put(k, v)            # rehash everything",
+      "caption": "A complete chained hash map: hash, index, scan a short chain, and rehash on resize."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <unordered_map>\n\n// C++: closed hashing under the hood (libstdc++ uses chaining with a prime bucket count).\nstd::unordered_map<std::string, double> book;\nbook[\"AAPL\"] = 191.2;              // operator[] inserts or overwrites - O(1) expected\nauto it = book.find(\"MSFT\");        // iterator or end() - O(1) expected\nbook.max_load_factor(0.7);          // tune the resize threshold\n// Beware: operator[] default-constructs a missing key; use find()/at() for pure lookups.",
+      "caption": "C++ signatures: unordered_map is the direct analogue of Python's dict."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Instrument caches in production",
+      "md": "A desk cache mapping 10,000 instrument IDs to live quotes with capacity 16,384 runs at $\\alpha \\approx 0.61$: expected chain length about 1, so lookups cost ~1 hash + ~1 comparison - versus a linear scan's 5,000 comparisons on average. The same table also underpins deduplication of order IDs and memoization in calibration loops. The failure mode is equally real: a bad hash that dumps all keys into one bucket silently degrades the cache to a linked list at $O(n)$ per lookup."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "A chained hash table has capacity $m = 7$ and uses $h(k) = k \\bmod 7$. Insert the keys 14, 21, 8, 3, 30 in that order (values irrelevant). (a) Which bucket does each key land in? (b) Draw the final bucket chains. (c) Compute the load factor. (d) How many comparisons does a successful lookup of 21 take, and what is the worst case over these keys?",
+    "hints": [
+      "Compute k mod 7 for each key individually.",
+      "Colliding keys append to the same chain in insertion order.",
+      "Load factor = number of entries / number of buckets."
+    ],
+    "solution": "(a) $14 \\bmod 7 = 0$, $21 \\bmod 7 = 0$, $8 \\bmod 7 = 1$, $3 \\bmod 7 = 3$, $30 \\bmod 7 = 2$. (b) Bucket 0: 14 -> 21; bucket 1: 8; bucket 2: 30; bucket 3: 3; buckets 4-6 empty. (c) $\\alpha = 5/7 \\approx 0.714$ - near the typical 0.75 resize threshold, so the table is due to grow soon. (d) Looking up 21: hash to bucket 0, compare against 14 (miss), then 21 (hit) - 2 comparisons. Worst case here is also 2 (key 21); with one long chain the worst case would be the chain length, which is why the expected case (~1.2 comparisons at this alpha) and the worst case (n) are quoted separately."
+  },
+  "independentExercise": {
+    "prompt": "You cache quotes for 10,000 instruments in a hash table with capacity $m = 16{,}384$ ($2^{14}$). (a) Compute the load factor exactly. (b) Under uniform hashing, what is the expected chain length and roughly how many comparisons does a successful lookup take? (c) Compare that with a linear scan over the 10,000 instruments (average 5,000 comparisons): how many times more comparisons does the scan do? (d) The table grows to 13,000 entries - what happens now, and at what entry count should the next resize fire at a 0.75 threshold?",
+    "hints": [
+      "alpha = n/m - both numbers are given.",
+      "Expected chain length under uniform hashing equals alpha.",
+      "At the resize threshold, n/m > 0.75 - solve for n."
+    ],
+    "solution": "(a) $\\alpha = 10{,}000 / 16{,}384 \\approx 0.610$. (b) Expected chain length $\\approx 0.61$, so a successful lookup takes about $1 + \\alpha/2 \\approx 1.3$ comparisons plus the hash computation - effectively constant. (c) $5{,}000 / 1.3 \\approx 3{,}800$x more comparisons for the scan; at cache-line costs that is the difference between microseconds and a stall. (d) At 13,000 entries $\\alpha = 13{,}000/16{,}384 \\approx 0.794 > 0.75$, so the table should already have resized to 32,768 buckets (rehashing all 13,000 entries once, $O(n)$, keeping the amortised insertion cost O(1)); the threshold is crossed at entry $\\lceil 0.75 \\times 16{,}384 \\rceil = 12{,}289$."
+  },
+  "commonMistakes": [
+    "Quoting hash table operations as O(1) without the conditions: it is O(1) expected under uniform hashing and a bounded load factor; the worst case is O(n).",
+    "Forgetting that keys must be hashable and immutable - a list key raises TypeError in Python, and mutating a stored key corrupts its bucket.",
+    "Using a hash with visible patterns (e.g. h(k) = k mod m with regular k) that clusters keys into a few buckets.",
+    "Assuming open-addressing tables can hold more entries than slots - they cannot; load factor must stay below 1.",
+    "Deleting from an open-addressing table by emptying the slot - probe chains break; use tombstones or rehash."
+  ],
+  "realWorldApplication": "Deduplication caches, database indexes (hash joins), network routers (flow tables), language runtimes (symbol tables, Python dict, JS objects) and key-value stores like Redis are hash tables; their tuning knobs - load factor, hash function, resize policy - are exactly this lesson's parameters.",
+  "quantFinanceApplication": "Quote caches keyed by instrument ID, order-ID deduplication at the gateway and memoized calibration parameters all run on hash maps; a desk-level cache typically holds ~10^4-10^6 keys at load factor near 0.6, giving single-probe lookups on the hot path where every 100 ns is counted.",
+  "summary": [
+    "A hash table computes bucket = h(key) mod m to reach data in one step: expected O(1) lookup under uniform hashing and bounded load factor.",
+    "Collisions are unavoidable (pigeonhole); chaining stores lists per bucket while open addressing probes slots and needs tombstones for deletion.",
+    "Load factor alpha = n/m predicts performance: expected chain length alpha for chaining, about 1/(1-alpha) probes for linear probing.",
+    "Resizing at a threshold (~0.7-0.75) rehashes everything in O(n) but geometric growth keeps insertion amortised O(1)."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "numeric",
+      "prompt": "A hash table has 12 entries in 16 buckets. What is the load factor?",
+      "answer": 0.75,
+      "tolerance": 0.005,
+      "explanation": "alpha = n/m = 12/16 = 0.75. That is exactly the resize threshold in many implementations - under uniform hashing, expected chain length is 0.75 and most lookups cost 1-2 comparisons."
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "What is the worst-case lookup complexity of a hash table using separate chaining?",
+      "options": ["$O(1)$", "$O(\\log n)$", "$O(n)$", "$O(n \\log n)$"],
+      "answerIndex": 2,
+      "explanation": "If every key collides into one bucket (bad hash, adversarial keys, or plain bad luck), the chain holds all n entries and lookup scans it: O(n). The O(1) claim is an expected-case statement under uniform hashing, never a worst-case guarantee."
+    },
+    {
+      "id": "q3",
+      "type": "code-output",
+      "prompt": "What does this Python code print?",
+      "language": "python",
+      "code": "d = {}\nd[\"AAPL\"] = 190.5\nd[\"MSFT\"] = 420.1\nd[\"AAPL\"] = 191.2\nprint(len(d))\nprint(d[\"AAPL\"])",
+      "answer": "2\n191.2",
+      "explanation": "Assigning an existing key overwrites its value without adding a new entry, so len(d) is 2 and the AAPL value is the latest, 191.2. Hash maps are keyed sets of pairs, not append-only logs."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "Which is a genuine advantage of open addressing over separate chaining?",
+      "options": [
+        "It tolerates load factors above 1.",
+        "Entries live contiguously in the slot array, so probes are cache-friendly with no pointer chasing.",
+        "Deletion is simpler because slots can just be emptied.",
+        "It guarantees O(1) worst-case lookup."
+      ],
+      "answerIndex": 1,
+      "explanation": "Open addressing stores entries directly in the array - no pointers, better cache behaviour, which is why high-performance tables prefer it. But load factor must stay below 1, deletion needs tombstones (emptying a slot breaks probe chains), and worst-case probes are still O(n)."
+    },
+    {
+      "id": "q5",
+      "type": "numeric",
+      "prompt": "A table has capacity 16, a max load factor of 0.75, and currently 12 entries. Inserting which entry (1st, 2nd, ... counting the next insert as 13th) triggers the resize?",
+      "answer": 13,
+      "tolerance": 0.5,
+      "explanation": "12/16 = 0.75 is allowed; the 13th entry would push alpha to 13/16 = 0.8125 > 0.75, so the resize fires on the 13th insert, doubling capacity to 32 and rehashing all entries."
+    },
+    {
+      "id": "q6",
+      "type": "short",
+      "prompt": "Name two properties a good hash function must have, and say what breaks if one is missing.",
+      "modelAnswer": "Deterministic (same key always hashes to the same slot) and uniform (spreads keys evenly across buckets); it must also be fast. A non-deterministic hash loses stored entries; a non-uniform hash clusters keys so chains/probe runs grow and lookups degrade toward O(n).",
+      "keywords": ["deterministic", "uniform"],
+      "explanation": "Determinism is what makes storage and lookup agree on a slot; uniformity is what keeps the expected O(1) honest by bounding chain lengths near alpha. Speed matters because the hash runs on every operation."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "formula",
+      "front": "Load factor and its meaning",
+      "back": "alpha = n/m (entries/buckets). Expected chain length = alpha under uniform hashing; linear probing unsuccessful search costs about 1/(1-alpha) probes. Resize when alpha exceeds ~0.7-0.75."
+    },
+    {
+      "type": "concept",
+      "front": "Chaining vs open addressing",
+      "back": "Chaining: linked list per bucket, alpha can exceed 1, easy deletion. Open addressing: all entries in the slot array, cache-friendly, alpha < 1 required, deletion via tombstones."
+    },
+    {
+      "type": "concept",
+      "front": "Why is hash table lookup only *expected* O(1)?",
+      "back": "The guarantee assumes uniform hashing and a bounded load factor; a clustered hash or full table produces O(n) chains/probe runs - and adversarial keys can force it deliberately."
+    },
+    {
+      "type": "code-output",
+      "front": "Python: what happens on d[existing_key] = new_value?",
+      "back": "The value is overwritten in place - no new entry, len(d) unchanged; insert-or-overwrite is the semantics of dict assignment."
+    }
+  ],
+  "references": [
+    {
+      "label": "Python docs — dict and hashing",
+      "url": "https://docs.python.org/3/tutorial/datastructures.html#dictionaries"
+    },
+    {
+      "label": "cppreference — std::unordered_map",
+      "url": "https://en.cppreference.com/w/cpp/container/unordered_map"
+    }
+  ],
+  "skills": ["dsa"]
+}

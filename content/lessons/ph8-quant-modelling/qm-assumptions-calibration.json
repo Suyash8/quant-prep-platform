@@ -1,0 +1,264 @@
+{
+  "id": "qm-assumptions-calibration",
+  "moduleId": "ph8-quant-modelling",
+  "title": "Model Assumptions, Calibration and Parameter Estimation",
+  "estMinutes": 26,
+  "difficulty": "advanced",
+  "prereqs": [
+    "opt-black-scholes"
+  ],
+  "objectives": [
+    "State the Black-Scholes model's assumptions explicitly and identify which one fails first in practice",
+    "Estimate model parameters from data via method of moments and MLE, including annualisation arithmetic",
+    "Formulate calibration as a weighted least-squares problem against market prices and compute a simple pricing-error metric",
+    "Explain identifiability, parameter uncertainty, and the stability-versus-freshness trade-off in recalibration"
+  ],
+  "motivation": "Every model - Black-Scholes most famously - is a bundle of claims about how the world works, and production systems fail at the claims, not at the algebra. This lesson makes the claims explicit, then covers the two disciplines that keep a model anchored to reality: estimating parameters honestly from data, and calibrating to market prices without fooling yourself with an over-flexible fit.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Every model is a set of claims"
+    },
+    {
+      "type": "p",
+      "md": "The Black-Scholes framework you already know algebraically rests on assumptions worth restating bluntly, because each one is a place the model can break in production:"
+    },
+    {
+      "type": "list",
+      "ordered": false,
+      "items": [
+        "**Distributional**: log returns are i.i.d. normal with constant volatility $\\sigma$ - the single most violated claim; real volatility clusters (see the GARCH lesson).",
+        "**Market structure**: frictionless trading, constant risk-free rate, no dividends, no transaction costs.",
+        "**Mechanism**: continuous hedging is possible at zero cost - the argument that produces the price *requires* it; gaps and liquidity droughts break the replication.",
+        "**Statistical**: parameters are stable over the pricing horizon, so one calibration describes the future."
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Name the claim that dies first",
+      "md": "Mature desks write down, per model, which assumption is expected to fail first and what the PnL consequence is. For Black-Scholes on equities it is usually constant volatility plus the crash gap risk - which is why the market's answer, the implied volatility surface, is treated as data rather than as output of the formula."
+    },
+    {
+      "type": "h2",
+      "text": "Parameter estimation from historical data"
+    },
+    {
+      "type": "p",
+      "md": "Two classical routes connect data to parameters. **Maximum likelihood** (from the MLE lesson) maximises the probability of the observed data under the model; for normal returns it gives $\\hat{\\mu} = \\bar{x}$ and $\\hat{\\sigma}^2 = \\tfrac{1}{n}\\sum (x_i - \\bar{x})^2$. **Method of moments** matches sample moments to theoretical ones - for normal returns it lands on the same answers, which is why the two agree here. The practical skill is the calendar arithmetic:"
+    },
+    {
+      "type": "math",
+      "tex": "\\mu_{\\text{annual}} = 252\\,\\mu_{\\text{daily}}, \\qquad \\sigma_{\\text{annual}} = \\sqrt{252}\\,\\sigma_{\\text{daily}}",
+      "caption": "Annualisation: means scale with time, standard deviations with the square root of time"
+    },
+    {
+      "type": "p",
+      "md": "Worked numbers: a daily mean return of $0.05\\%$ annualises to $0.0005 \\times 252 = 0.126$; a daily standard deviation of $1\\%$ annualises to $0.01 \\times \\sqrt{252} \\approx 0.01 \\times 15.875 \\approx 0.159$. Every estimate also carries a standard error from sampling noise (the descriptive-statistics lesson), so a 'calibrated volatility of $15.9\\%$' from one year of daily data is a point on a distribution, not a fact."
+    },
+    {
+      "type": "h2",
+      "text": "Calibration to market prices"
+    },
+    {
+      "type": "p",
+      "md": "Historical estimation uses the past; **calibration** uses the present - choosing parameters so model prices match observed market prices. For Black-Scholes the market's implied volatilities already encode a smile and term structure that a single constant $\\sigma$ cannot reproduce, so calibration becomes optimisation: pick $\\theta$ to minimise weighted pricing errors,"
+    },
+    {
+      "type": "math",
+      "tex": "\\theta^{*} = \\arg\\min_{\\theta} \\sum_i w_i \\big( V_{\\text{model}}(\\theta;\\, K_i, T_i) - V_{\\text{market}}(K_i, T_i) \\big)^2",
+      "caption": "Calibration objective: weighted squared pricing errors across strikes and maturities"
+    },
+    {
+      "type": "p",
+      "md": "The weights are not decoration: liquid at-the-money quotes deserve more weight than stale deep-out-of-the-money ones, and vega-weighting equalises each instrument's pull on the fit. Two failure modes deserve names. **Non-identifiability**: multiple parameter sets fit the prices equally well (e.g. adding a jump intensity that trades off against volatility) - the optimum is a valley, not a point, and reported parameters become arbitrary within it. **Instability**: re-calibrating daily against a noisy surface makes parameters jitter; regularising toward yesterday's parameters trades a little fit for a lot of stability."
+    },
+    {
+      "type": "steps",
+      "title": "Scoring a calibration run",
+      "items": [
+        "Three instruments, pricing errors in volatility terms: $+0.01$, $-0.005$, $+0.02$.",
+        "Squared: $0.0001$, $0.000025$, $0.0004$; sum $= 0.000525$; mean $= 0.000175$.",
+        "RMSE $= \\sqrt{0.000175} \\approx 0.0132$ - about $1.3$ volatility points.",
+        "Interpretation: whether $1.3$ points is acceptable depends on the desk's use - hedging tolerates more than exotics pricing does."
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import math\n\ndef norm_cdf(x):\n    return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))\n\ndef bs_call(S, K, r, sigma, T):\n    d1 = (math.log(S / K) + (r + sigma**2 / 2) * T) / (sigma * math.sqrt(T))\n    d2 = d1 - sigma * math.sqrt(T)\n    return S * norm_cdf(d1) - K * math.exp(-r * T) * norm_cdf(d2)\n\ndef implied_vol_call(price, S, K, r, T, lo=1e-4, hi=3.0):\n    for _ in range(100):                    # bisection: robust, monotone in sigma\n        mid = (lo + hi) / 2\n        if bs_call(S, K, r, mid, T) > price:\n            hi = mid\n        else:\n            lo = mid\n    return (lo + hi) / 2\n\nprint(round(implied_vol_call(5.00, 100, 100, 0.0, 1.0), 4))   # ~0.1254\nprint(round(bs_call(100, 100, 0.0, 0.15, 1.0), 3))            # ~5.979 at sigma=15%",
+      "caption": "Implied volatility via bisection: the market price is inverted through the model to recover the parameter the market is using."
+    },
+    {
+      "type": "interactive",
+      "component": "VolatilitySmile",
+      "params": {
+        "spot": 100,
+        "strikes": [
+          80,
+          90,
+          100,
+          110,
+          120
+        ],
+        "impliedVols": [
+          0.22,
+          0.2,
+          0.19,
+          0.2,
+          0.22
+        ]
+      },
+      "caption": "The smile is the market's summary of which BS assumptions fail: one constant $\\sigma$ cannot reproduce this curve, so calibration fits richer models to it."
+    },
+    {
+      "type": "h2",
+      "text": "Reporting calibrated parameters honestly"
+    },
+    {
+      "type": "p",
+      "md": "A calibrated parameter set is an estimate with uncertainty and a scope. State: the estimation window and weights, the standard errors or a parameter-confidence region where identifiable, the residual pricing error by instrument, and the recalibration frequency. A model description that omits these is not calibrated - it is decorated."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "An at-the-money call on a non-dividend stock has $S = K = 100$, $r = 0$, $T = 1$ year, and trades at a market price of $\\$. Using the BS formula: (a) compute the model price at $\\sigma = 0.10$ and at $\\sigma = 0.20$; (b) verify the price at $\\sigma = 0.15$; (c) conclude roughly what the implied volatility is, using the bisection step shown in the lesson code.",
+    "hints": [
+      "With $S = K$ and $r = 0$: $d_1 = (\\sigma^2/2)/\\sigma = \\sigma/2$, $d_2 = -\\sigma/2$.",
+      "$N(0.05) \\approx 0.5200$, $N(0.15) \\approx 0.5597$ (check $N(0.075) \\approx 0.5300$ for the midpoint).",
+      "The price is increasing in $\\sigma$, so bracket and bisect."
+    ],
+    "solution": "(a) At $\\sigma = 0.10$: $d_1 = 0.05$, $d_2 = -0.05$; $C = 100(N(0.05) - N(-0.05)) \\approx 100 \\times 0.0399 = \\$3.99$. At $\\sigma = 0.20$: $d_1 = 0.1$, $d_2 = -0.1$; $C \\approx 100 \\times 0.0797 = \\$7.97$. (b) At $\\sigma = 0.15$: $d_1 = 0.075$, $d_2 = -0.075$; $C \\approx 100 \\times 2 \\times 0.0299 = \\$5.98$. (c) The target \\$5.00 lies between the $\\sigma = 0.10$ and $\\sigma = 0.15$ prices; bisecting to $\\sigma = 0.125$ gives $d_1 = 0.0625$ and $C \\approx \\$4.98$, so the implied volatility sits just above $0.125$ - about $12.5\\%$."
+  },
+  "independentExercise": {
+    "prompt": "Four daily log returns: $0.02, -0.01, 0.005, 0.015$. (a) Estimate $\\mu$ by method of moments. (b) Estimate the daily variance by the normal MLE ($1/n$ convention) and the daily standard deviation. (c) Annualise the standard deviation. (d) Name one assumption this estimation silently makes and its most likely first failure.",
+    "hints": [
+      "Mean: sum divided by 4.",
+      "Deviations: $0.0125, -0.0175, -0.0025, 0.0075$.",
+      "Annualisation multiplies the daily SD by $\\sqrt{252} \\approx 15.875$."
+    ],
+    "solution": "(a) $\\mu = 0.03/4 = 0.0075$ per day. (b) Squared deviations: $0.00015625, 0.00030625, 0.00000625, 0.00005625$; sum $= 0.000525$; MLE variance $= 0.000525/4 = 0.00013125$, so $\\sigma_{\\text{daily}} \\approx 0.01146$. (c) $0.01146 \\times 15.875 \\approx 0.182$, i.e. about $18.2\\%$ annualised. (d) It assumes returns are i.i.d. normal with constant variance - in practice volatility clusters (GARCH effects), so a four-day window's estimate is noisy and time-varying."
+  },
+  "commonMistakes": [
+    "Annualising volatility by multiplying by 252 instead of $\\sqrt{252}$ - a $1587\\%$ inflation error.",
+    "Treating calibrated parameters as exact constants rather than noisy estimates with standard errors.",
+    "Calibrating an over-parameterised model until it fits everything, then reading the arbitrary parameters as economic truth (non-identifiability).",
+    "Recalibrating daily with no stability term and reporting parameter values that jump by $20\\%$ a day as if they were real changes."
+  ],
+  "realWorldApplication": "Yield-curve models are calibrated daily to liquid bond quotes, credit models to CDS spreads, and demand-forecast models to recent sales - all instances of the same weighted-fit-with-stability discipline.",
+  "quantFinanceApplication": "The bisection-to-implied-volatility routine and the weighted smile calibration shown here are standard desk tooling; the constant-vol assumption's failure is precisely what the smile encodes.",
+  "summary": [
+    "Models are bundles of claims (distributional, market-structure, mechanism, stability); name which fails first and what it costs.",
+    "MLE and method of moments coincide for normal returns; means annualise with $\\times 252$, standard deviations with $\\times \\sqrt{252}$.",
+    "Calibration minimises weighted pricing errors against market quotes, with weights reflecting liquidity and vega.",
+    "Identifiability and stability decide whether calibrated parameters mean anything: fit + uncertainty + recalibration policy is the honest report."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "Which of the following is NOT an assumption of the Black-Scholes model?",
+      "options": [
+        "Constant volatility over the life of the option",
+        "Log returns are normally distributed",
+        "Volatility follows a GARCH process",
+        "Continuous, frictionless hedging is possible"
+      ],
+      "answerIndex": 2,
+      "explanation": "BS assumes constant volatility; GARCH-style time-varying volatility is precisely one of the extensions practitioners add when that assumption fails."
+    },
+    {
+      "id": "q2",
+      "type": "numeric",
+      "prompt": "A daily standard deviation of $1\\%$ annualises to what (decimal, three decimals)?",
+      "answer": 0.159,
+      "tolerance": 0.002,
+      "explanation": "$\\sigma_{\\text{annual}} = \\sigma_{\\text{daily}} \\times \\sqrt{252} = 0.01 \\times 15.875 \\approx 0.159$."
+    },
+    {
+      "id": "q3",
+      "type": "mcq",
+      "prompt": "In a calibration objective $\\sum_i w_i (V_{\\text{model}} - V_{\\text{market}})^2$, the weights $w_i$ exist primarily to:",
+      "options": [
+        "Make the sum converge faster",
+        "Reflect differing liquidity and vega of the calibration instruments",
+        "Force all parameters positive",
+        "Convert prices into volatilities"
+      ],
+      "answerIndex": 1,
+      "explanation": "Weights encode trust: liquid, high-vega quotes should dominate the fit; stale or illiquid quotes should not drag parameters around."
+    },
+    {
+      "id": "q4",
+      "type": "numeric",
+      "prompt": "Calibration pricing errors in vol terms are $+0.01$, $-0.005$, $+0.02$. What is the RMSE in volatility points (e.g. 1.3 means 1.3 points)?",
+      "answer": 1.32,
+      "tolerance": 0.05,
+      "explanation": "Mean squared error $= 0.000525/3 = 0.000175$; $\\sqrt{0.000175} \\approx 0.0132$, i.e. about $1.3$ vol points."
+    },
+    {
+      "id": "q5",
+      "type": "short",
+      "prompt": "Explain in one or two sentences what non-identifiability means for a calibrated model and why it matters.",
+      "modelAnswer": "Non-identifiability means multiple distinct parameter sets fit the market data equally well, so the reported parameters are arbitrary within that set and cannot be interpreted as economic values - forecasts may still fit, but parameter-level conclusions are meaningless.",
+      "keywords": [
+        "multiple",
+        "parameter",
+        "equally",
+        "fit"
+      ],
+      "explanation": "With a valley-shaped objective, the optimiser's starting point decides the answer; only the fit quality, not the parameters, is trustworthy."
+    },
+    {
+      "id": "q6",
+      "type": "ms",
+      "prompt": "Which are good calibration hygiene? Select all that apply.",
+      "options": [
+        "Checking fit out of sample or on a holdout of quotes",
+        "Regularising parameters toward the previous day's values for stability",
+        "Adding parameters until the fit is perfect",
+        "Reporting residual pricing errors by instrument"
+      ],
+      "answerIndices": [
+        0,
+        1,
+        3
+      ],
+      "explanation": "Out-of-sample checks, stability regularisation and per-instrument error reporting are standard; 'fit until perfect' is the overfitting path that destroys interpretability."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "definition",
+      "front": "Black-Scholes key assumptions",
+      "back": "Constant volatility, lognormal returns, frictionless continuous trading, constant rate - the claims production breaks before the algebra does."
+    },
+    {
+      "type": "formula",
+      "front": "Annualisation rules",
+      "back": "$\\mu_{\\text{ann}} = 252\\,\\mu_{\\text{daily}}$; $\\sigma_{\\text{ann}} = \\sqrt{252}\\,\\sigma_{\\text{daily}}$."
+    },
+    {
+      "type": "formula",
+      "front": "Calibration objective",
+      "back": "$\\theta^* = \\arg\\min \\sum_i w_i (V_{\\text{model}} - V_{\\text{market}})^2$, weighted by liquidity/vega."
+    },
+    {
+      "type": "concept",
+      "front": "Non-identifiability",
+      "back": "Many parameter sets fit equally well, so parameters are arbitrary within the set - only fit quality is interpretable."
+    }
+  ],
+  "references": [
+    {
+      "label": "Hull, Options, Futures and Other Derivatives - Volatility estimation chapters (companion site)",
+      "url": "https://www.pearson.com/en-us/subject-catalog/p/options-futures-and-other-derivatives/P200000003460"
+    },
+    {
+      "label": "QuantLib - calibration examples",
+      "url": "https://www.quantlib.org/"
+    }
+  ],
+  "skills": [
+    "quant-modelling"
+  ]
+}

@@ -1,0 +1,274 @@
+{
+  "id": "cpp-futures-async",
+  "moduleId": "ph4-cpp-l7",
+  "title": "Futures, Promises, Async and Thread Pools",
+  "estMinutes": 27,
+  "difficulty": "advanced",
+  "prereqs": [
+    "cpp-mutexes"
+  ],
+  "objectives": [
+    "Carry a value or an exception from one thread to another with std::promise/std::future, and explain why future::get() consumes the state",
+    "Wrap callables with std::packaged_task and choose std::async launch policies deliberately (async vs deferred)",
+    "Explain the std::async destructor gotcha and why the default launch policy is a portability trap",
+    "Design a minimal thread pool: task queue + condition variable + packaged_task-backed submit() returning futures"
+  ],
+  "motivation": "Threads give you parallelism, but returning a result by hand - shared slots, flags, condition variables - is plumbing you will get wrong under deadline pressure. Futures are the standard plumbing: a one-shot channel that carries a value or an exception from producer to consumer, with blocking get() as the rendezvous. Pricing a book of a thousand instruments across cores is exactly this pattern at scale, and a thread pool is how you stop paying thread-creation costs on every tick while bounding parallelism.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "promise and future: a one-shot channel"
+    },
+    {
+      "type": "p",
+      "md": "A `std::promise<T>` is the write end of a single-use channel; `future<T>` (from `get_future()`) is the read end. The producer calls `set_value()` (or `set_exception()`); the consumer calls `get()`, which **blocks until the value or exception arrives**, then returns the value - or rethrows the exception, in the consumer's thread. `get()` **consumes** the future: call it twice and you get `std::future_error`. This channel is *one-shot*; for repeated communication use the queues of the previous lesson."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <future>\n#include <iostream>\n#include <thread>\n\nint main() {\n    std::promise<int> p;\n    std::future<int> f = p.get_future();\n    std::thread worker([pp = std::move(p)]() mutable {\n        pp.set_value(6 * 7);              // exceptions here would surface at get()\n    });\n    std::cout << f.get() << '\\n';         // blocks until the value arrives: 42\n    worker.join();\n    return 0;\n}",
+      "caption": "The promise is moved into the worker; the future stays with main. get() is the synchronisation point - the output is deterministic: 42."
+    },
+    {
+      "type": "p",
+      "md": "The channel also transports **exceptions**: if the worker throws before `set_value()`, the exception object is stored in the shared state and `get()` rethrows it in the consuming thread - so failure travels the same pipe as success, and the consumer decides the policy. If you need many readers of one result, call `fut.share()` to get a `std::shared_future`, which can be `get()`-ed by every holder. And keep the direction honest: a future is not a queue, it is a single rendezvous - reusable channels back to the mutex-and-condition-variable tools of the previous lesson."
+    },
+    {
+      "type": "h2",
+      "text": "packaged_task and std::async"
+    },
+    {
+      "type": "p",
+      "md": "`std::packaged_task<R(Args...)>` wraps any callable and, when invoked, stores the result (or the thrown exception) into a future from `get_future()`. It is the bridge between \"a function I want to run\" and \"a value I want to await\" - which is why thread pools are built on it. `std::async` is the convenience wrapper: give it a callable and it manages the thread and the future for you. What it does *not* do is promise a thread - that depends on the launch policy."
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Launch policy",
+        "Where the callable runs",
+        "When you must care"
+      ],
+      "rows": [
+        [
+          "std::launch::async",
+          "A new thread, started immediately",
+          "True parallelism; future's destructor blocks until done"
+        ],
+        [
+          "std::launch::deferred",
+          "Nowhere yet - runs on get()/wait(), in the calling thread",
+          "Lazy evaluation; never parallel"
+        ],
+        [
+          "default (no policy)",
+          "Implementation chooses async or deferred per call",
+          "Portability trap: \"parallel\" code may silently run serially"
+        ]
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "The std::async destructor gotcha",
+      "md": "The future returned by `std::async` with `launch::async` **waits for the task to finish in its destructor** - unique among futures. A temporary future (e.g. `std::async(std::launch::async, work);` as a statement) therefore runs synchronously. Meanwhile the default policy may pick `deferred`, so \"async\" code can run on one thread at a time. Production rule: pass an explicit `std::launch::async` and keep the future alive until you need the result."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <future>\n#include <iostream>\n\nint price_leg(int id) { return id * 100; }   // stand-in for a slow model\n\nint main() {\n    std::future<int> f1 = std::async(std::launch::async, price_leg, 1);\n    std::future<int> f2 = std::async(std::launch::async, price_leg, 2);\n    std::cout << f1.get() + f2.get() << '\\n';   // 300, whatever the scheduling\n    return 0;\n}",
+      "caption": "Fan-out: two legs priced concurrently, joined at get(). Deterministic output because futures carry values, not shared mutable state."
+    },
+    {
+      "type": "h2",
+      "text": "A minimal thread pool"
+    },
+    {
+      "type": "p",
+      "md": "Why pool at all? Creating and destroying a thread costs tens of microseconds plus scheduler churn; market-data tasks are often shorter than that. A pool also **bounds parallelism** - 8 workers on 8 cores, not 200 threads fighting the cache. The design is the previous lesson's primitives assembled once: N worker threads, a shared task queue guarded by a mutex, a condition variable, and a `submit()` that wraps your callable in a `packaged_task` and hands back its future."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <condition_variable>\n#include <functional>\n#include <future>\n#include <memory>\n#include <mutex>\n#include <queue>\n#include <thread>\n#include <vector>\n\nclass ThreadPool {\n    std::vector<std::thread> workers_;\n    std::queue<std::function<void()>> tasks_;\n    std::mutex m_;\n    std::condition_variable cv_;\n    bool stop_ = false;\npublic:\n    explicit ThreadPool(unsigned n) {\n        for (unsigned i = 0; i < n; ++i)\n            workers_.emplace_back([this] {\n                for (;;) {\n                    std::function<void()> task;\n                    {\n                        std::unique_lock<std::mutex> lk(m_);\n                        cv_.wait(lk, [this] { return stop_ || !tasks_.empty(); });\n                        if (stop_ && tasks_.empty()) return;\n                        task = std::move(tasks_.front());\n                        tasks_.pop();\n                    }\n                    task();                          // run OUTSIDE the lock\n                }\n            });\n    }\n    ~ThreadPool() {\n        {   std::unique_lock<std::mutex> lk(m_);\n            stop_ = true;\n        }\n        cv_.notify_all();\n        for (auto& t : workers_) t.join();\n    }\n    template <class F>\n    auto submit(F f) -> std::future<decltype(f())> {\n        using R = decltype(f());\n        // packaged_task is move-only, but std::function requires copyable:\n        // wrap in shared_ptr so the lambda copied into the queue is copyable.\n        auto pt = std::make_shared<std::packaged_task<R()>>(std::move(f));\n        std::future<R> fut = pt->get_future();\n        {   std::unique_lock<std::mutex> lk(m_);\n            tasks_.emplace([pt] { (*pt)(); });\n        }\n        cv_.notify_one();\n        return fut;\n    }\n};\n\nint main() {\n    ThreadPool pool(4);\n    auto f = pool.submit([] { return 2 + 2; });\n    std::cout << f.get() << '\\n';                    // 4\n    return 0;\n}",
+      "caption": "Every piece is from lessons 1-2: RAII threads, a mutex protecting the queue, a while-pattern wait (via wait(lk, pred)), and packaged_task for the result channel. Note the task runs outside the lock."
+    },
+    {
+      "type": "p",
+      "md": "Futures are promises with a receipt: `std::future<T>` is the handle for a value that does not exist yet, `std::promise`/`std::packaged_task` is the writing end, and the thread pool is the machinery deciding when the promise gets fulfilled. Their whole point is to decouple *expressing* parallelism (\"these three computations are independent\") from *managing* it (thread lifetimes, join points, exception transport) — the management being exactly the part everyone gets wrong when they write raw `std::thread` code."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <future>\n#include <vector>\n#include <numeric>\n#include <cstdio>\n\n// Price three books concurrently, sum the results.\n// The pool is implicit (std::async with the launch policy), the join is the .get()s.\ndouble total_pnl(std::vector<double> book_a,\n                 std::vector<double> book_b,\n                 std::vector<double> book_c) {\n    auto sum = [](std::vector<double> v) {\n        return std::accumulate(v.begin(), v.end(), 0.0);\n    };\n    auto fa = std::async(std::launch::async, sum, std::move(book_a));\n    auto fb = std::async(std::launch::async, sum, std::move(book_b));\n    double c = sum(book_c);                      // do one on this thread\n    return fa.get() + fb.get() + c;              // .get() joins + rethrows\n}\n\nint main() {\n    printf(\"%.2f\\n\", total_pnl({1,2,3}, {4,5}, {-2}));   // 13.00\n}",
+      "caption": "Three independent sums, two helper threads, one join — exceptions travel through .get()."
+    },
+    {
+      "type": "p",
+      "md": "The details that futures quietly get right, and that hand-rolled threading gets wrong: **exception transport** — an exception in the worker is captured and rethrown at `.get()`, so errors are not silently swallowed; **join-on-destruction** — a `std::future` from `std::async` blocks in its destructor, eliminating the \"forgot to join\" class of bugs; and **one-shot semantics** — `get()` invalidates the future, which matches how results are actually consumed and prevents accidental double-reads. The remaining footgun is the launch policy: `std::launch::deferred` (the fallback when you do not specify) runs the work lazily *on the calling thread at get()* — parallelism that silently never happened. Say `std::launch::async` out loud or do not expect concurrency."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Thread pools, tasks and the futures they break",
+      "md": "A real pool (or `std::async` on a loaded runtime) executes tasks on threads you do not own — which breaks code that assumes the executing thread (thread-local caches, affinity-pinned hot paths, lock hierarchies by thread id). Additionally, futures are one-shot and their `get()` blocks; when you need composable pipelines (continue-when-ready, not wait-until-done), you leave std::future for continuation-style libraries ( folly::Future, std::experimental ) or coroutines — the design lesson being: the standard future is a fine receipt and a poor dataflow engine."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Fan-out pricing on the pool",
+      "md": "Per tick: submit one task per instrument, collect `future<Price>` objects, then `get()` them and combine. Results are deterministic regardless of scheduling because each result travels through its own future - no shared mutable state. The pool bounds the parallelism to core count, keeping tail latencies stable; a real pool adds priorities so a hedge-recalc task cannot queue behind a report."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Using the ThreadPool above, write a `fanout_pnl(const std::vector<double>& legs)` that submits one task per leg, collects all futures, and returns the sum of the legs' absolute contributions after they complete. Legs are `+120.50, -80.25, +15.75, -5.00`. Then answer: (a) why is it safe to `get()` the futures in any order, and (b) why must you keep every future alive rather than calling `pool.submit(...)` as a bare statement?",
+    "hints": [
+      "Each submit returns its own future<R>; store them in a vector before submitting the next.",
+      "futures are independent channels - get() on one does not touch another.",
+      "A discarded future from submit() is harmless, but discipline matters when you switch to std::async, whose future blocks in its destructor."
+    ],
+    "solution": "```cpp\n#include <vector>\n\ndouble fanout_pnl(const std::vector<double>& legs) {\n    ThreadPool pool(4);\n    std::vector<std::future<double>> futs;\n    futs.reserve(legs.size());\n    for (double leg : legs)\n        futs.push_back(pool.submit([leg] { return leg; }));\n    double total = 0;\n    for (auto& f : futs) total += f.get();   // blocks per leg until done\n    return total;\n}\n// fanout_pnl({120.50, -80.25, 15.75, -5.00}) == 51.00\n```\n**(a)** Each future is a private one-shot channel for one task; `get()` consumes only that channel, so order is irrelevant to correctness (only to when you block). **(b)** For `submit()` the future holds the packaged_task's shared state - discarding it loses the result silently. For `std::async(std::launch::async, ...)` the discarded future **blocks in its destructor** until the task finishes, silently serialising your code. The habit of keeping futures alive and getting them explicitly keeps both paths correct.\nArithmetic check: 120.50 - 80.25 = 40.25; 40.25 + 15.75 = 56.00; 56.00 - 5.00 = **51.00**."
+  },
+  "independentExercise": {
+    "prompt": "You must price 12 independent legs, each taking 10 ms of pure CPU, on a machine with 4 cores. (1) Using a 4-worker thread pool, compute the best-case makespan. (2) Compare with launching 12 `std::thread`s and with `std::async(std::launch::deferred, ...)` on all 12. (3) A colleague writes `auto f = std::async(price_leg, 1);` with no explicit policy and calls it 'parallel'. What is wrong with the claim, and what is the one-character-class fix?",
+    "hints": [
+      "With 4 workers, tasks run in waves of 4 - count the waves.",
+      "deferred means the work happens at get(), one at a time, in the calling thread.",
+      "The default launch policy lets the implementation choose deferred - so 'parallel' is an implementation detail, not a guarantee."
+    ],
+    "solution": "**(1) Pool of 4:** 12 tasks / 4 workers = 3 full waves x 10 ms = **30 ms** best case (assuming perfect balance and no overhead). **(2) 12 threads:** also ~30 ms of compute if 4 run concurrently and the OS schedules the rest - but you pay ~12 thread creations and oversubscribe the cores, which adds jitter. **Deferred:** all 12 run at `get()` time in one thread: 12 x 10 ms = **120 ms** - zero parallelism. **(3)** The claim is not guaranteed: the default policy permits the implementation to run the task deferred, i.e. serially at get(). The fix is to write `std::async(std::launch::async, price_leg, 1)` - an explicit policy turns 'maybe parallel' into 'parallel', and you should also keep `f` alive until you call `get()` because an async-policy future blocks in its destructor."
+  },
+  "commonMistakes": [
+    "Calling future::get() twice - the first call consumes the shared state; the second throws std::future_error.",
+    "Using the default std::async policy and assuming parallelism - it may choose deferred, running tasks serially at get().",
+    "Discarding the future from std::async(std::launch::async, ...): it blocks in its destructor, turning your 'async' call into a synchronous one.",
+    "Running the dequeued task while still holding the pool's queue mutex - serialises all workers and kills the pool's throughput.",
+    "Queueing a move-only callable directly into std::function<void()> - packaged_task is move-only, hence the shared_ptr wrapper in submit()."
+  ],
+  "realWorldApplication": "Thread pools with future-returning submit() are the standard execution layer of servers, backtesters and market-data pipelines; every job system from database engines to build tools uses exactly the queue + workers + packaged-task shape shown here.",
+  "quantFinanceApplication": "Tick-time pricing fans out one task per instrument and folds the futures into a portfolio number; the pool bounds parallelism so a burst of ticks cannot spawn hundreds of threads. The exercise's 12-legs-on-4-cores arithmetic is the desk's core-count budgeting question.",
+  "summary": [
+    "promise/future is a one-shot channel carrying a value or an exception; get() blocks, delivers, and consumes the state.",
+    "packaged_task turns any callable into a future-producing job - the glue thread pools are built on.",
+    "std::async needs an explicit std::launch::async for guaranteed parallelism; deferred runs at get() in the calling thread, and the default policy may silently pick it.",
+    "The future returned by async (async policy) waits for task completion in its destructor - a unique, easy-to-miss behaviour.",
+    "A minimal pool = worker threads + mutex-guarded task queue + condition variable + packaged_task-backed submit(); run tasks outside the lock."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "With std::async(std::launch::deferred, f), when does f actually execute?",
+      "options": [
+        "On a new thread, immediately when async is called",
+        "When get() or wait() is called, in the calling thread",
+        "When the future is destroyed",
+        "It never executes unless get() throws"
+      ],
+      "answerIndex": 1,
+      "explanation": "Deferred tasks are lazy: they run lazily at get()/wait() in the thread that calls it - useful for lazy evaluation, useless for parallelism."
+    },
+    {
+      "id": "q2",
+      "type": "code-output",
+      "prompt": "What does this program print?",
+      "language": "cpp",
+      "code": "#include <future>\n#include <iostream>\n\nint main() {\n    std::promise<int> p;\n    std::future<int> f = p.get_future();\n    p.set_value(10);\n    std::cout << f.get() + 5 << '\\n';\n    try { f.get(); } catch (...) { std::cout << \"gone\\n\"; }\n    return 0;\n}",
+      "answer": "15\ngone",
+      "explanation": "The first get() returns 10 (so 10+5=15) and consumes the shared state. The second get() on the now-invalid future throws std::future_error, which the catch prints as \"gone\"."
+    },
+    {
+      "id": "q3",
+      "type": "mcq",
+      "prompt": "What is unusual about the future returned by std::async with the async policy?",
+      "options": [
+        "It can be copied to share the result",
+        "Its destructor waits for the task to finish",
+        "It ignores launch policies",
+        "It throws if the task has not started"
+      ],
+      "answerIndex": 1,
+      "explanation": "Unique among futures, an async-policy future's destructor blocks until the task completes - which is why discarding it (e.g. as a temporary) silently serialises your code."
+    },
+    {
+      "id": "q4",
+      "type": "ms",
+      "prompt": "Which statements about std::packaged_task are true?",
+      "options": [
+        "It wraps a callable and stores the invocation's result into a future",
+        "get_future() can be called only once per task",
+        "The result (or exception) is stored when the task is invoked, not when it is created",
+        "It is copyable, so it can be stored directly in std::function"
+      ],
+      "answerIndices": [
+        0,
+        1,
+        2
+      ],
+      "explanation": "packaged_task is move-only (option 4 is false) - which is exactly why the pool's submit() wraps it in a shared_ptr before putting it in a std::function queue."
+    },
+    {
+      "id": "q5",
+      "type": "numeric",
+      "prompt": "A 4-worker thread pool processes 12 independent 10 ms CPU-bound tasks. What is the best-case makespan in milliseconds (ignore overheads)?",
+      "answer": 30,
+      "tolerance": 0.001,
+      "explanation": "12 tasks in waves of 4 = 3 waves x 10 ms = 30 ms. With more tasks than workers, makespan is ceil(tasks/workers) x task time - the reason pool sizing is a latency decision."
+    },
+    {
+      "id": "q6",
+      "type": "short",
+      "prompt": "Give two concrete reasons a server uses a fixed thread pool instead of creating a thread per task.",
+      "modelAnswer": "Thread creation and destruction cost tens of microseconds, which dwarfs short tasks and adds tail latency; a fixed pool also bounds parallelism to the core count, avoiding oversubscription, cache thrashing and scheduler jitter.",
+      "keywords": [
+        "creation",
+        "overhead",
+        "bound",
+        "parallelism"
+      ],
+      "explanation": "The two levers are per-task setup cost (latency) and controlling concurrency (stability). Pools trade a little queueing for predictable tail behaviour - the same argument as connection pooling."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "What does future::get() do, exactly?",
+      "back": "Blocks until the shared state is ready, returns the value (or rethrows the stored exception) in the caller, and CONSUMES the state - a second get() throws std::future_error."
+    },
+    {
+      "type": "concept",
+      "front": "std::launch::async vs std::launch::deferred",
+      "back": "async: run on a new thread now; its future blocks in its destructor. deferred: run at get()/wait() in the calling thread - lazy, never parallel. Default policy: implementation may pick either per call."
+    },
+    {
+      "type": "concept",
+      "front": "Role of packaged_task in a thread pool",
+      "back": "It wraps the user's callable, exposes get_future(), and stores the result/exception when invoked - the mechanism that lets submit() return a future."
+    },
+    {
+      "type": "code-output",
+      "front": "promise set_value(10); cout << f.get() + 5; then a second f.get() - what happens?",
+      "back": "Prints 15; the second get() throws std::future_error because get() consumed the shared state."
+    }
+  ],
+  "references": [
+    {
+      "label": "cppreference - std::future",
+      "url": "https://en.cppreference.com/w/cpp/thread/future"
+    },
+    {
+      "label": "cppreference - std::packaged_task",
+      "url": "https://en.cppreference.com/w/cpp/thread/packaged_task"
+    },
+    {
+      "label": "cppreference - std::async / launch policies",
+      "url": "https://en.cppreference.com/w/cpp/thread/async"
+    },
+    {
+      "label": "Herb Sutter - The rest of the story (async/destructor semantics)",
+      "url": "https://herbsutter.com/2012/04/26/the-rest-of-the-story-or-async-tasks-you-can-await/"
+    }
+  ],
+  "skills": [
+    "concurrency"
+  ]
+}

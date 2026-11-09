@@ -1,0 +1,224 @@
+{
+  "id": "qalg-randomized",
+  "moduleId": "ph5-quant-algorithms",
+  "title": "Randomised Algorithms and Reservoir Sampling",
+  "estMinutes": 26,
+  "difficulty": "advanced",
+  "prereqs": ["qalg-simulation"],
+  "objectives": [
+    "Explain what randomisation buys: expected-case guarantees against adversarial inputs",
+    "Execute reservoir sampling (algorithm R) step by step, including the replacement rule",
+    "Prove via a telescoping product that every stream item ends in the reservoir with probability k/n",
+    "Verify the uniformity claim on a concrete stream by computing each item's selection and survival probabilities"
+  ],
+  "motivation": "A surveillance process must hold a fair random sample of the day's order-flow for compliance review - but the day's length is unknown when it starts, and memory is capped at k records. Re-scanning at close is impossible at tick rate. Reservoir sampling solves this in one pass with a two-line update rule, and its proof - a telescoping product ending at exactly k/n - is a beautiful, interview-favourite piece of algorithmic reasoning.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "What randomisation buys"
+    },
+    {
+      "type": "p",
+      "md": "A **randomised algorithm** flips coins during execution, so its behaviour is described by *expected* running time or error probability rather than a worst case over inputs. The payoff: no input can force the bad case. Quicksort with a random pivot runs in expected $O(n \\log n)$ on *every* input, including the sorted arrays that wreck the fixed-pivot version; hashing with a random seed defeats adversaries who craft colliding keys. The previous lesson's Monte Carlo is randomisation too - samples bought accuracy at variance cost. Here we study the streaming sampling pattern that quant data pipelines reach for daily."
+    },
+    {
+      "type": "h2",
+      "text": "Reservoir sampling (algorithm R)"
+    },
+    {
+      "type": "p",
+      "md": "**Problem**: keep a uniform random sample of $k$ items from a stream of unknown length $n$, in one pass, with $O(k)$ memory. You cannot pre-draw indices (you do not know $n$), and you cannot store the stream (tick rate). **Algorithm R**: fill the reservoir with the first $k$ items; thereafter, when item $i$ (0-based) arrives, draw $j$ uniform on $\\{0, \\dots, i\\}$ - the code does this as $j = \\lfloor u \\cdot (i{+}1) \\rfloor$ with $u$ uniform on $[0,1)$ - and if $j < k$, the new item **evicts** reservoir slot $j$. That is the entire algorithm; the magic is that every item, from any position in the stream, ends in the reservoir with the same probability $k/n$."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "stream = [\"a\", \"b\", \"c\", \"d\"]\nk = 2\nu = {\"c\": 0.4, \"d\": 0.8}          # pre-drawn uniforms for the late items\n\nreservoir = []\nfor i, item in enumerate(stream):\n    if i < k:\n        reservoir.append(item)          # first k items fill the reservoir\n    else:\n        j = int(u[item] * (i + 1))      # uniform on {0, ..., i}\n        if j < k:\n            reservoir[j] = item         # item evicts slot j\nprint(reservoir)",
+      "caption": "Trace: c draws j = int(0.4 x 3) = 1, evicts b; d draws j = int(0.8 x 4) = 3, outside the reservoir, ignored. Prints ['a', 'c']."
+    },
+    {
+      "type": "steps",
+      "title": "Proof sketch: why every item lands in the reservoir with probability k/n",
+      "items": [
+        "An item at position $i > k$ (1-based) is *selected* at its own step with probability $k/i$: of the $i$ possible slots, exactly $k$ are reservoir slots.",
+        "Once selected, it *survives* a later step $j$ with probability $(j-1)/j$: step $j$ picks one of $j$ slots uniformly, so each reservoir slot is hit with probability $1/j$.",
+        "Multiply selection and survival: $\\dfrac{k}{i} \\times \\dfrac{i}{i+1} \\times \\dfrac{i+1}{i+2} \\times \\cdots \\times \\dfrac{n-1}{n}$ - the product **telescopes** to $\\dfrac{k}{n}$.",
+        "A first-$k$ item survives every step $k+1, \\dots, n$: $\\dfrac{k}{k+1} \\times \\dfrac{k+1}{k+2} \\times \\cdots \\times \\dfrac{n-1}{n} = \\dfrac{k}{n}$ - same answer.",
+        "Every item carries probability $k/n$, independent of when it arrived: uniformity proven, not assumed."
+      ]
+    },
+    {
+      "type": "math",
+      "tex": "\\Pr(i \\text{ sampled}) = \\frac{k}{i} \\prod_{j=i+1}^{n} \\frac{j-1}{j} = \\frac{k}{i} \\cdot \\frac{i}{n} = \\frac{k}{n}",
+      "caption": "The telescoping survival product - the heart of the algorithm's correctness."
+    },
+    {
+      "type": "steps",
+      "title": "Verified concrete check: k = 2, stream of 4 items",
+      "items": [
+        "Item c (position 3): selected with probability $k/i = 2/3$; survives step 4 with probability $(4-1)/4 = 3/4$. Total $2/3 \\times 3/4 = 1/2 = k/n$.",
+        "Item d (position 4): selected with probability $2/4 = 1/2$; no later steps. Total $1/2$.",
+        "Item a (slot 0): survives steps 3 and 4 with probabilities $2/3$ and $3/4$: $2/3 \\times 3/4 = 1/2$. Same for item b in slot 1.",
+        "All four items: probability $1/2 = 2/4$ - uniformity holds position by position, as the telescoping promised."
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "The two classic implementation bugs",
+      "md": "Drawing $j$ from $\\{0, \\dots, i{-}1\\}$ instead of $\\{0, \\dots, i\\}$ biases the sample against late arrivals; and using `int(u * k)` for the slot decision confuses the *eviction slot* range with the *selection* range. The selection probability must be $k/i$ (or $k/(i{+}1)$ 0-based), never a fixed fraction - the stream length is unknown."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Where desks actually use it",
+      "md": "Compliance sampling of order flow, downsampling tick archives to a fixed-size research dataset, fair A/B assignment of venue probes, and holdout sets built while training data streams past - all reservoir sampling, because the total count is unknown until the stream ends."
+    },
+    {
+      "type": "interactive",
+      "component": "ProbabilitySimulator",
+      "params": {
+        "experiment": "reservoir-sampling",
+        "k": 2,
+        "streamLength": 4,
+        "trials": 10000
+      },
+      "caption": "Run algorithm R 10,000 times on a 4-item stream with k = 2: each item's empirical frequency converges to k/n = 0.5."
+    },
+    {
+      "type": "p",
+      "md": "Two extensions round out the toolkit. **Weighted reservoir sampling (A-Res)** biases selection by a key per item - useful when sampling should favour large orders - by drawing $u^{1/w_i}$ and keeping the $k$ largest keys. And **reservoirs over windows** (sliding reservoirs) combine the previous lesson's window discipline with sampling for 'a fair sample of the last hour'. Both inherit the same uniformity logic you just proved."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Run algorithm R with $k = 2$ on the stream a, b, c, d where item c draws $u = 0.2$ and item d draws $u = 0.5$ (so $j = \\lfloor u \\cdot (i{+}1) \\rfloor$). Give the reservoir after each step, then compute the final probability that item c is in the reservoir - exactly, via selection and survival probabilities.",
+    "hints": [
+      "For c (0-based index 2) the range is $\\{0, 1, 2\\}$; for d it is $\\{0, 1, 2, 3\\}$.",
+      "Selection probability is $k/i$ (1-based position); survival at a later step $j$ is $(j-1)/j$."
+    ],
+    "solution": "c: $j = \\lfloor 0.2 \\times 3 \\rfloor = 0 < 2$, evicts slot 0: reservoir $= [c, b]$. d: $j = \\lfloor 0.5 \\times 4 \\rfloor = 2$, not a reservoir slot: reservoir stays $[c, b]$. Probability for c: selected at step 3 with probability $k/i = 2/3$; survived step 4 with probability $(4-1)/4 = 3/4$; total $2/3 \\times 3/4 = \\textbf{1/2} = k/n$, as the telescoping product guarantees."
+  },
+  "independentExercise": {
+    "prompt": "(a) With $k = 2$ and a stream that turns out to have $n = 5$ items, what is the probability that the very first item is in the final reservoir? Compute the survival product explicitly. (b) Re-run the lesson's trace where item c draws $u = 0.9$ and item d draws $u = 0.3$: what is the final reservoir? (c) Why can you not simply pre-draw random indices at the start of the stream?",
+    "hints": [
+      "The first item must survive steps 3, 4 and 5.",
+      "Compute each $j$ from the uniforms; remember the range grows with $i$.",
+      "The reservoir's whole point is that $n$ is unknown during the pass."
+    ],
+    "solution": "(a) The first item survives each step $m$ with probability $(m-1)/m$: $\\frac{2}{3} \\times \\frac{3}{4} \\times \\frac{4}{5} = \\frac{2}{5} = 0.4 = k/n$. (b) c: $j = \\lfloor 0.9 \\times 3 \\rfloor = 2$, no eviction. d: $j = \\lfloor 0.3 \\times 4 \\rfloor = 1 < 2$, evicts slot 1: reservoir $= \\textbf{[a, d]}$. (c) Because $n$ is unknown while streaming - you cannot size the index range $\\{1..n\\}$ without buffering or re-reading the stream, which violates the one-pass, $O(k)$-memory contract."
+  },
+  "commonMistakes": [
+    "Drawing $j$ from $\\{0, \\dots, i-1\\}$ instead of $\\{0, \\dots, i\\}$, biasing against late-arriving items.",
+    "Trying to sample 'each item with probability $k/n$' on the fly - impossible without knowing $n$ in advance.",
+    "Confusing the eviction-slot draw with the acceptance decision; the slot is uniform over $\\{0..i\\}$, acceptance is $j < k$.",
+    "Resetting or re-seeding the random source mid-stream, which destroys independence across steps.",
+    "Claiming the reservoir is uniform 'on average' without the telescoping proof - uniformity is per-item, exactly $k/n$."
+  ],
+  "realWorldApplication": "Audit and compliance sampling from unlimited logs, A/B testing with unknown population sizes, and downsampling telemetry streams all run reservoir sampling in production streaming systems.",
+  "quantFinanceApplication": "Desks build fixed-size research datasets from unbounded tick archives and compliance samples of order flow with reservoir sampling; weighted variants bias sampling toward economically significant orders while staying one-pass.",
+  "summary": [
+    "Randomisation converts worst-case guarantees into expected-case ones no input can defeat.",
+    "Algorithm R: fill the first $k$ slots, then item $i$ evicts slot $j$ with $j$ uniform on $\\{0..i\\}$ iff $j < k$.",
+    "Correctness: selection $k/i$ times survival $(j-1)/j$ telescopes to $k/n$ for every item, first or last.",
+    "The sample is exactly uniform per item even though the stream length is never known during the pass.",
+    "Weighted and windowed reservoir variants extend the same telescoping logic to biased and rolling sampling."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "code-output",
+      "prompt": "What does this reservoir-sampling trace print?",
+      "language": "python",
+      "code": "stream = [\"a\", \"b\", \"c\", \"d\"]\nk = 2\nu = {\"c\": 0.4, \"d\": 0.8}\n\nreservoir = []\nfor i, item in enumerate(stream):\n    if i < k:\n        reservoir.append(item)\n    else:\n        j = int(u[item] * (i + 1))\n        if j < k:\n            reservoir[j] = item\nprint(reservoir)",
+      "answer": "['a', 'c']",
+      "explanation": "c draws $j = \\lfloor 0.4 \\times 3 \\rfloor = 1$ and evicts b; d draws $j = \\lfloor 0.8 \\times 4 \\rfloor = 3$, outside the reservoir, so nothing changes: [a, c]."
+    },
+    {
+      "id": "q2",
+      "type": "numeric",
+      "prompt": "With k = 2, what is the probability that the first item of a 5-item stream is in the final reservoir?",
+      "answer": 0.4,
+      "tolerance": 0.001,
+      "explanation": "It must survive steps 3, 4, 5: $\\frac{2}{3} \\times \\frac{3}{4} \\times \\frac{4}{5} = \\frac{2}{5} = 0.4 = k/n$."
+    },
+    {
+      "id": "q3",
+      "type": "mcq",
+      "prompt": "Why can't a one-pass sampler just accept each arriving item with probability k/n?",
+      "options": [
+        "Because k and n must be coprime",
+        "Because n is unknown until the stream ends",
+        "Because it would be O(n^2) per item",
+        "Because uniform sampling requires sorting"
+      ],
+      "answerIndex": 1,
+      "explanation": "The stream length is unknown during the pass, so the per-item probability k/n cannot be evaluated - algorithm R's adaptive rule is what removes the dependence on n."
+    },
+    {
+      "id": "q4",
+      "type": "code-output",
+      "prompt": "Same trace, new uniforms: c draws u = 0.9, d draws u = 0.3. What prints?",
+      "language": "python",
+      "code": "stream = [\"a\", \"b\", \"c\", \"d\"]\nk = 2\nu = {\"c\": 0.9, \"d\": 0.3}\n\nreservoir = []\nfor i, item in enumerate(stream):\n    if i < k:\n        reservoir.append(item)\n    else:\n        j = int(u[item] * (i + 1))\n        if j < k:\n            reservoir[j] = item\nprint(reservoir)",
+      "answer": "['a', 'd']",
+      "explanation": "c draws $j = \\lfloor 0.9 \\times 3 \\rfloor = 2$ (no eviction); d draws $j = \\lfloor 0.3 \\times 4 \\rfloor = 1 < 2$ and evicts slot 1: [a, d]."
+    },
+    {
+      "id": "q5",
+      "type": "ms",
+      "prompt": "Which properties does algorithm R have?",
+      "options": [
+        "One pass over the stream",
+        "O(k) memory, independent of stream length",
+        "Requires the stream length n upfront",
+        "Every item ends in the reservoir with probability exactly k/n"
+      ],
+      "answerIndices": [0, 1, 3],
+      "explanation": "The whole point is one pass and O(k) memory with n unknown; the telescoping product proves per-item uniformity k/n."
+    },
+    {
+      "id": "q6",
+      "type": "short",
+      "prompt": "In one or two sentences, why does the survival probability telescope to k/n for a late-arriving item?",
+      "modelAnswer": "The item is selected at its own step with probability k/i and then survives each later step j with probability (j-1)/j; the product k/i x i/(i+1) x ... x (n-1)/n cancels every intermediate numerator and denominator, leaving exactly k/n.",
+      "keywords": ["telescoping", "k/n", "survival"],
+      "explanation": "Each survival fraction cancels the previous step's denominator, so only k and n remain - uniformity for any arrival position."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "formula",
+      "front": "Reservoir sampling uniformity",
+      "back": "$\\Pr(\\text{item sampled}) = \\frac{k}{i} \\prod_{j=i+1}^{n} \\frac{j-1}{j} = \\frac{k}{n}$ for every item, regardless of arrival position."
+    },
+    {
+      "type": "concept",
+      "front": "Algorithm R update rule",
+      "back": "First k items fill the reservoir. Item i (0-based) draws j uniform on {0..i} (j = floor(u*(i+1))); if j < k it evicts reservoir slot j."
+    },
+    {
+      "type": "probability",
+      "front": "k = 2, n = 4: probability each of the four items is in the final reservoir?",
+      "back": "1/2 for every item - first-k items survive as (2/3)(3/4) = 1/2, late items as k/i x (i-1)/... telescoping to k/n = 2/4."
+    },
+    {
+      "type": "error-identification",
+      "front": "A reservoir implementation draws j from {0, ..., i-1}. What goes wrong?",
+      "back": "Late items are selected with probability k/i using the wrong range - the sample over-weights early arrivals and is no longer uniform. j must be uniform on {0, ..., i} (i+1 outcomes)."
+    }
+  ],
+  "references": [
+    {
+      "label": "Wikipedia - Reservoir sampling (algorithm R and proofs)",
+      "url": "https://en.wikipedia.org/wiki/Reservoir_sampling"
+    },
+    {
+      "label": "Wikipedia - Randomised algorithm",
+      "url": "https://en.wikipedia.org/wiki/Randomized_algorithm"
+    },
+    {
+      "label": "Wikipedia - Weighted reservoir sampling (A-Res)",
+      "url": "https://en.wikipedia.org/wiki/Reservoir_sampling#Weighted_reservoir_sampling"
+    }
+  ],
+  "skills": ["algorithms", "probability"]
+}

@@ -1,0 +1,295 @@
+{
+  "id": "prc-monte-carlo-engine",
+  "moduleId": "ph9-pricing",
+  "title": "Monte Carlo Pricing and Variance Reduction",
+  "estMinutes": 30,
+  "difficulty": "specialist",
+  "prereqs": [
+    "stp-brownian-motion"
+  ],
+  "objectives": [
+    "Simulate geometric Brownian motion under the risk-neutral measure and price a European call from sampled payoffs",
+    "Quantify the $O(1/\\sqrt{N})$ convergence of the Monte Carlo standard error from a seeded run",
+    "Implement antithetic and control-variate estimators and measure their variance reduction factors",
+    "Judge when variance reduction helps, when it fails, and how to report results honestly with confidence intervals"
+  ],
+  "motivation": "Exotic payoffs - Asians, barriers, autocallables - rarely have closed-form prices, so the desk falls back to simulating the underlying and averaging payoffs. The catch: a raw Monte Carlo price is a random number with a standard error, and at $O(1/\\sqrt{N})$ convergence, buying precision is brutally expensive. This lesson builds a reproducible, seeded simulator and then buys variance down by a factor of 5 with two standard tricks instead of by brute force.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "From the SDE to an estimator"
+    },
+    {
+      "type": "p",
+      "md": "Under the risk-neutral measure the spot follows GBM, $dS = r S\\,dt + \\sigma S\\,dW$. Its exact solution lets us jump straight to maturity - no time-stepping needed for European payoffs:"
+    },
+    {
+      "type": "math",
+      "tex": "S_T = S_0 \\exp\\left((r - \\tfrac{1}{2}\\sigma^2)T + \\sigma\\sqrt{T}\\,Z\\right), \\quad Z \\sim \\mathcal{N}(0,1)",
+      "caption": "One normal draw per path."
+    },
+    {
+      "type": "p",
+      "md": "The price estimator is the discounted average payoff $\\hat{C} = e^{-rT}\\,\\frac{1}{N}\\sum_i \\max(S_T^{(i)} - K, 0)$. It is unbiased, and its standard error is $\\mathrm{SE} = e^{-rT}\\, s/\\sqrt{N}$ with $s$ the sample standard deviation of the discounted payoffs. Because the error shrinks like $1/\\sqrt{N}$: **halving the error costs $4\\times$ the paths; ten times the accuracy costs $100\\times$**. That scalping of precision by randomness is what variance reduction attacks."
+    },
+    {
+      "type": "interactive",
+      "component": "MonteCarloPi",
+      "params": {
+        "samples": 5000
+      },
+      "caption": "Estimating $\\pi$ by dart-throwing shows the same law: the error band tightens as $1/\\sqrt{N}$ - more samples, diminishing returns."
+    },
+    {
+      "type": "h2",
+      "text": "A seeded, reproducible run"
+    },
+    {
+      "type": "p",
+      "md": "Methodology matters: we use numpy's PCG64 generator via `default_rng(7)`, and **each estimator is re-seeded independently**, so every row of the table below is reproducible on its own. The Black-Scholes reference price for this call ($S=100$, $K=105$, $r=5\\%$, $\\sigma=25\\%$, $T=1$) is $10.0022$."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import numpy as np\n\nS, K, r, sigma, T = 100.0, 105.0, 0.05, 0.25, 1.0\ndisc = np.exp(-r * T)\n\ndef payoff(ST):\n    return disc * np.maximum(ST - K, 0.0)\n\ndef plain(n, seed=7):\n    rng = np.random.default_rng(seed)\n    Z = rng.standard_normal(n)\n    ST = S * np.exp((r - 0.5 * sigma**2) * T + sigma * np.sqrt(T) * Z)\n    X = payoff(ST)\n    return X.mean(), X.std(ddof=1) / np.sqrt(n)\n\ndef antithetic(n_pairs, seed=7):\n    rng = np.random.default_rng(seed)\n    Z = rng.standard_normal(n_pairs)\n    drift, v = (r - 0.5 * sigma**2) * T, sigma * np.sqrt(T)\n    X = 0.5 * (payoff(S * np.exp(drift + v * Z)) + payoff(S * np.exp(drift - v * Z)))\n    return X.mean(), X.std(ddof=1) / np.sqrt(n_pairs)\n\ndef control(n, seed=7):\n    rng = np.random.default_rng(seed)\n    Z = rng.standard_normal(n)\n    ST = S * np.exp((r - 0.5 * sigma**2) * T + sigma * np.sqrt(T) * Z)\n    X, Y = payoff(ST), disc * ST                # E[Y] = S is known in closed form\n    beta = np.cov(X, Y, ddof=1)[0, 1] / np.var(Y, ddof=1)\n    Xc = X - beta * (Y - S)\n    return Xc.mean(), Xc.std(ddof=1) / np.sqrt(n), beta, np.var(X, ddof=1) / np.var(Xc, ddof=1)\n\nm, se = plain(400_000)\nm1, se1 = plain(100_000)\nm2, se2 = plain(1_600_000)\nma, sea = antithetic(200_000)\nmc, sec, beta, vr = control(400_000)\nprint(f\"plain      100k: {m1:.4f}  se {se1:.4f}\")\nprint(f\"plain      400k: {m:.4f}  se {se:.4f}   (se ratio 100k->400k: {se1/se:.2f})\")\nprint(f\"plain      1.6M: {m2:.4f}  se {se2:.4f}   (se ratio 400k->1.6M: {se/se2:.2f})\")\nprint(f\"antithetic 400k: {ma:.4f}  se {sea:.4f}   VR {se**2/sea**2:.2f}\")\nprint(f\"control    400k: {mc:.4f}  se {sec:.4f}   VR {vr:.2f}  beta {beta:.3f}\")",
+      "caption": "Verified output of the seeded run (seed 7, numpy default_rng): plain 100k: 9.9515 se 0.0534; plain 400k: 9.9924 se 0.0268 (ratio 1.99); plain 1.6M: 9.9894 se 0.0134 (ratio 2.00); antithetic 400k: 9.9848 se 0.0217 VR 1.53; control 400k: 9.9889 se 0.0118 VR 5.18 beta 0.601."
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Estimator",
+        "Paths",
+        "Price",
+        "SE",
+        "VR vs plain 400k"
+      ],
+      "rows": [
+        [
+          "plain",
+          "100,000",
+          "9.9515",
+          "0.0534",
+          "-"
+        ],
+        [
+          "plain",
+          "400,000",
+          "9.9924",
+          "0.0268",
+          "1.00"
+        ],
+        [
+          "plain",
+          "1,600,000",
+          "9.9894",
+          "0.0134",
+          "4.00"
+        ],
+        [
+          "antithetic",
+          "400,000",
+          "9.9848",
+          "0.0217",
+          "1.53"
+        ],
+        [
+          "control variate",
+          "400,000",
+          "9.9889",
+          "0.0118",
+          "5.18"
+        ]
+      ]
+    },
+    {
+      "type": "p",
+      "md": "Three readings. **First**, the SE ratios between successive rows are $1.99$ and $2.00$ for $4\\times$ the paths - the $1/\\sqrt{N}$ law, measured. **Second**, every price lies within about $2$ SE of the true $10.0022$ (the 400k run's 95% interval is $9.9924 \\pm 1.96 \\times 0.0268 = [9.9399,\\ 10.0449]$, which contains the reference). **Third**, at identical path counts the control variate buys a $5.18\\times$ variance reduction - equivalent to $5.18 \\times 400{,}000 \\approx 2.1$ million plain paths."
+    },
+    {
+      "type": "h2",
+      "text": "Why the two tricks work"
+    },
+    {
+      "type": "steps",
+      "title": "Antithetic variates",
+      "items": [
+        "For each draw $Z$, also evaluate the mirrored path with $-Z$: the two terminal prices bracket $S_0 e^{(r - \\sigma^2/2)T}$.",
+        "Payoffs are monotone in $Z$, so a large payoff tends to pair with a small one and the pair mean $\\frac{1}{2}(X(Z) + X(-Z))$ has less spread than a single $X$.",
+        "Pairs are still iid, so the SE formula is unchanged - compute it over the $n$ **pair means**, never over the $2n$ paths.",
+        "This run: VR $= 1.53$. Modest, because the call payoff is kinked at $K$ - half the distribution pays zero, which weakens the monotone coupling."
+      ]
+    },
+    {
+      "type": "steps",
+      "title": "Control variates",
+      "items": [
+        "Find a proxy $Y$ whose expectation is known in closed form: here $Y = e^{-rT} S_T$ with $E[Y] = S_0$ exactly.",
+        "Replace $X$ by $X_c = X - \\beta(Y - E[Y])$ with $\\beta = \\mathrm{Cov}(X, Y)/\\mathrm{Var}(Y)$ - this run $\\beta = 0.601$.",
+        "The known expectation of $Y$ absorbs the sampling noise shared by $X$ and $Y$: $\\mathrm{Var}(X_c) = \\mathrm{Var}(X)(1 - \\rho^2)$.",
+        "Gain depends on correlation $\\rho$: this run kills about $81\\%$ of the variance ($1 - 1/5.18 = 0.807$). Classic application: geometric Asian as control for arithmetic Asian."
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Variance reduction can backfire",
+      "md": "Antithetic pairing degrades for path-dependent payoffs whose logic is not monotone - a barrier option's antithetic twin may fail to touch the same barrier, so the pair shares little variance and can even add cost. A control variate with $\\beta$ estimated from too few paths inflates variance; the guard is $\\mathrm{Var}(X_c) < \\mathrm{Var}(X)$, checked on out-of-sample paths."
+    },
+    {
+      "type": "h2",
+      "text": "The same engine in C++"
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <cmath>\n#include <cstdio>\n#include <random>\n#include <algorithm>\n\n// Monte Carlo European call: plain vs antithetic, one seeded run (mt19937_64, seed 42).\nint main() {\n    const double S = 100.0, K = 105.0, r = 0.05, sigma = 0.25, T = 1.0;\n    const long m = 200000;                       // pairs -> 400k paths total\n    const double disc   = std::exp(-r * T);\n    const double drift  = (r - 0.5 * sigma * sigma) * T;\n    const double vol    = sigma * std::sqrt(T);\n\n    std::mt19937_64 rng(42);\n    std::normal_distribution<double> z(0.0, 1.0);\n\n    double sx = 0.0, sx2 = 0.0, sp = 0.0, sp2 = 0.0;   // sums and sums of squares\n    long n = 0, np = 0;\n    for (long i = 0; i < m; ++i) {\n        const double w   = z(rng);\n        const double xu  = disc * std::max(S * std::exp(drift + vol * w) - K, 0.0);\n        const double xd  = disc * std::max(S * std::exp(drift - vol * w) - K, 0.0);\n        sx += xu + xd;  sx2 += xu * xu + xd * xd;  n += 2;      // plain: both legs count\n        const double pair = 0.5 * (xu + xd);\n        sp += pair;  sp2 += pair * pair;  ++np;                 // antithetic: pair means\n    }\n    auto se = [](double s, double s2, long n) {\n        return std::sqrt(std::max((s2 - s * s / n) / (n - 1), 0.0) / n);\n    };\n    const double vPlain = se(sx, sx2, n), vAnti = se(sp, sp2, np);\n    std::printf(\"plain      price=%.6f  se=%.6f\\n\", sx / n, vPlain);\n    std::printf(\"antithetic price=%.6f  se=%.6f  VR=%.2f\\n\", sp / np, vAnti, (vPlain / vAnti) * (vPlain / vAnti));\n    return 0;\n}",
+      "caption": "Verified output (mt19937_64, seed 42): plain price=10.027210 se=0.026950; antithetic price=10.027210 se=0.021793 VR=1.53. Different RNG stream than numpy, so point estimates differ - but the antithetic VR of 1.53 reproduces almost exactly."
+    },
+    {
+      "type": "p",
+      "md": "Two subtleties worth naming. The plain and antithetic point estimates coincide here because averaging pair means over the same paths preserves the overall mean - the win is purely in the standard error. And note the C++ stream gives $10.0272$ while numpy's seed-7 stream gives $9.9924$ for the same contract: both are honest draws from the same distribution of estimators, which is exactly why a price is always quoted **with** its SE."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Report precision you actually have",
+      "md": "Printing a Monte Carlo price to six decimals when SE = 0.03 is a lie told with significant figures. Quote the price at 4 decimals or fewer, always with the SE or a 95% interval, and pin the seed in the config file so the number can be regenerated."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Using the verified 400k plain run (price $9.9924$, SE $0.0268$, reference $10.0022$): (a) construct the 95% confidence interval and state whether it covers the reference; (b) compute how many paths would be needed to push the SE down to $0.01$; (c) at \\$0.50 of compute per 400k-path batch (illustrative), what does that cost?",
+    "hints": [
+      "95% interval: price $\\pm 1.96 \\times$ SE.",
+      "SE scales as $1/\\sqrt{N}$: paths needed $= 400{,}000 \\times (0.0268/0.01)^2$.",
+      "Compare with the measured 1.6M row before trusting your scaling arithmetic."
+    ],
+    "solution": "(a) $9.9924 \\pm 1.96 \\times 0.0268 = 9.9924 \\pm 0.0525$, i.e. $[9.9399,\\ 10.0449]$ - the reference $10.0022$ lies inside, so the run is statistically consistent with theory. (b) $400{,}000 \\times (2.68)^2 = 400{,}000 \\times 7.1824 \\approx 2.87$ million paths (consistent with the measured 1.6M row: $0.0268 \\times \\sqrt{400/1600} = 0.0134$). (c) $2.87$M paths is about $7.2$ batches of 400k, i.e. roughly **seven times the compute of one batch** for one extra decimal digit of accuracy - which is precisely why variance reduction dominates brute force: with the control variate's VR of $5.18$, the same SE $0.01$ needs only $2.87\\text{M}/5.18 \\approx 554$k control-variate paths - about $1.4$ batches - roughly a fifth of the compute."
+  },
+  "independentExercise": {
+    "prompt": "Reconstruct the control-variate variance arithmetic by hand from this run's sample statistics: $\\mathrm{Var}(X) = 288.4$ (discounted payoffs), $\\mathrm{Var}(Y) = 644.9$ (discounted terminal prices), $\\mathrm{Cov}(X, Y) = 387.7$. Compute $\\beta$, $\\mathrm{Var}(X_c)$ using $\\mathrm{Var}(X_c) = \\mathrm{Var}(X) - \\beta^2\\mathrm{Var}(Y)$, and the variance reduction factor. Check that $\\mathrm{Var}(X_c) < \\mathrm{Var}(X)$ before you would ship the estimator.",
+    "hints": [
+      "$\\beta = \\mathrm{Cov}/\\mathrm{Var}_Y$; the theory says $\\beta = 0.6012$ for these parameters.",
+      "Plug $\\beta$ back in and compare with the measured $\\mathrm{Var}(X_c) \\approx 55.7$.",
+      "VR = $\\mathrm{Var}(X)/\\mathrm{Var}(X_c)$; the run measured $5.18$."
+    ],
+    "solution": "$\\beta = 387.7/644.9 = 0.6012$. $\\beta^2 \\mathrm{Var}(Y) = 0.6012^2 \\times 644.9 = 0.36144 \\times 644.9 = 233.1$, so $\\mathrm{Var}(X_c) = 288.4 - 233.1 = 55.3$ - matches the measured $\\approx 55.7$ up to rounding of the statistics. VR $= 288.4/55.3 = 5.2$, consistent with the run's $5.18$. The guard passes: $55.3 < 288.4$, so the control variate ships. (Equivalent statement: $\\rho^2 = 233.1/288.4 = 0.81$, $\\rho \\approx 0.90$.)"
+  },
+  "commonMistakes": [
+    "Simulating with the real-world drift $\\mu$ instead of the risk-free rate $r$ - risk-neutral pricing requires $r$ in the drift and the discount factor.",
+    "Computing the antithetic SE over $2n$ paths instead of $n$ pair means - the mirrored paths are perfectly dependent, so this understates the error.",
+    "Forgetting the discount factor $e^{-rT}$ on payoffs, or discounting with $e^{-r}$ regardless of $T$.",
+    "Reporting a price without its standard error, or quoting digits beyond the SE's support.",
+    "Estimating $\\beta$ on the same small sample you price on, without checking $\\mathrm{Var}(X_c) < \\mathrm{Var}(X)$."
+  ],
+  "realWorldApplication": "Exotic derivatives desks run Monte Carlo grids over millions of paths per day; antithetic pairing and control variates are switched on per product after measuring VR on validation runs, because the wrong pairing silently doubles compute.",
+  "quantFinanceApplication": "The seeded estimator design shown here - one seed per estimator, SE printed beside every price, VR measured against a plain baseline - is the standard layout of a production pricer's regression harness.",
+  "summary": [
+    "GBM's exact solution gives terminal prices from one normal draw per path; the estimator is the discounted mean payoff with SE $= e^{-rT} s/\\sqrt{N}$.",
+    "Seeded run (seed 7): SE ratios $1.99$ and $2.00$ for $4\\times$ paths verify $O(1/\\sqrt{N})$; halving error costs $4\\times$ paths.",
+    "Antithetic pairing (VR $1.53$ here) exploits payoff monotonicity in $Z$; control variate against $e^{-rT}S_T$ with $\\beta = 0.601$ achieves VR $5.18$ - the equivalent of 2.1M plain paths.",
+    "Antithetic SE is computed over pair means; variance reduction is only adopted after checking it actually shrinks variance out of sample."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "numeric",
+      "prompt": "A plain Monte Carlo run with 400,000 paths has SE $= 0.0268$. Roughly how many paths are needed to reach SE $= 0.0067$ (a quarter of the error)?",
+      "answer": 6400000,
+      "tolerance": 200000,
+      "unit": "paths",
+      "explanation": "Error scales as $1/\\sqrt{N}$: reducing error by $4\\times$ needs $16\\times$ paths: $400{,}000 \\times 16 = 6.4$ million."
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "Why does the antithetic estimator compute its standard error over the $n$ pair means rather than the $2n$ path payoffs?",
+      "options": [
+        "Because the pair means are iid while the $2n$ payoffs are mutually dependent",
+        "Because pair means are normally distributed but single payoffs are not",
+        "Because payoffs can be negative while pair means cannot",
+        "It does not matter - both give the same SE"
+      ],
+      "answerIndex": 0,
+      "explanation": "Every path is correlated with its antithetic twin, so the $2n$ payoffs are not independent samples; the $n$ pair means are iid and the SE formula only applies to independent draws. The claim in option D is exactly the bug the lesson warns about."
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "In the control-variate estimator, $E[e^{-rT} S_T]$ equals what quantity (in dollars, for $S_0 = 100$)?",
+      "answer": 100,
+      "tolerance": 0.5,
+      "explanation": "Under the risk-neutral measure the discounted spot is a martingale: $E[e^{-rT}S_T] = S_0 = 100$. That closed-form mean is precisely what makes $S_T$ usable as a control."
+    },
+    {
+      "id": "q4",
+      "type": "short",
+      "prompt": "Give two reasons why antithetic variates may fail to help (or even hurt) for a barrier option, and name the check you would run before adopting any variance-reduction scheme.",
+      "modelAnswer": "The antithetic path may not hit the barrier when the original does (and vice versa), so the two payoffs share little variance and the pair mean may be noisier; more generally variance reduction helps only when the payoff is nearly monotone in the driving normal. Check: measure Var of the reduced estimator on a validation sample and confirm it is below the plain estimator's variance.",
+      "keywords": [
+        "barrier",
+        "monotone",
+        "variance",
+        "check"
+      ],
+      "explanation": "VR factors are empirical properties of the payoff, not free wins; the guard is a measured variance comparison out of sample."
+    },
+    {
+      "id": "q5",
+      "type": "code-output",
+      "prompt": "What does this Python code print?",
+      "language": "python",
+      "code": "import numpy as np\nrng = np.random.default_rng(1)\nx = rng.standard_normal(3)\nprint(np.round(0.5 * (x + (-x)), 1))",
+      "answer": "[0. 0. 0.]",
+      "explanation": "Each antithetic pair sums to zero by construction, so all pair means are exactly $0.0$ - numpy prints the array as `[0. 0. 0.]`. A reminder that antithetic mirroring is exact by construction, not an approximation."
+    },
+    {
+      "id": "q6",
+      "type": "mcq",
+      "prompt": "The seeded run prices the call at $9.9924 \\pm 0.0268$ (1 SE) while Black-Scholes says $10.0022$. What is the correct interpretation?",
+      "options": [
+        "The simulator has a bug because it underprices the option",
+        "The result is statistically consistent: the reference lies inside the 95% interval $[9.9399, 10.0449]$",
+        "The run must be repeated with a different seed until it matches Black-Scholes",
+        "The SE should be divided by $\\sqrt{2}$ before comparison"
+      ],
+      "answerIndex": 1,
+      "explanation": "The 95% interval $9.9924 \\pm 1.96 \\times 0.0268 = [9.9399, 10.0449]$ contains $10.0022$, so the deviation is ordinary sampling noise. Chasing seeds until the price matches (option C) is seed-hacking, not science."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "formula",
+      "front": "GBM terminal value (risk-neutral)",
+      "back": "$S_T = S_0 \\exp((r - \\sigma^2/2)T + \\sigma\\sqrt{T} Z)$, $Z \\sim N(0,1)$; drift uses $r$, never the real-world $\\mu$."
+    },
+    {
+      "type": "formula",
+      "front": "Monte Carlo standard error",
+      "back": "$\\mathrm{SE} = e^{-rT} s / \\sqrt{N}$; halving the error needs $4\\times$ paths ($O(1/\\sqrt{N})$)."
+    },
+    {
+      "type": "definition",
+      "front": "Control variate estimator",
+      "back": "$X_c = X - \\beta(Y - E[Y])$ with $\\beta = \\mathrm{Cov}(X,Y)/\\mathrm{Var}(Y)$; variance falls by $\\rho^2$. Requires a proxy with known expectation."
+    },
+    {
+      "type": "concept",
+      "front": "Antithetic variates",
+      "back": "Evaluate each path and its $-Z$ mirror, average in pairs; SE over pair means. Wins when payoff is monotone in $Z$; VR was $1.53$ for this lesson's call."
+    }
+  ],
+  "references": [
+    {
+      "label": "Glasserman - Monte Carlo Methods in Financial Engineering (Springer)",
+      "url": "https://link.springer.com/book/10.1007/978-3-662-10070-5"
+    },
+    {
+      "label": "NumPy - Random sampling (PCG64 / default_rng)",
+      "url": "https://numpy.org/doc/stable/reference/random/index.html"
+    }
+  ],
+  "skills": [
+    "pricing",
+    "numerical-finance"
+  ]
+}

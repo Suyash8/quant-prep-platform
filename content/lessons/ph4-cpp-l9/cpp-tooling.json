@@ -1,0 +1,338 @@
+{
+  "id": "cpp-tooling",
+  "moduleId": "ph4-cpp-l9",
+  "title": "Compilers, Build Tools and Static Analysis",
+  "estMinutes": 26,
+  "difficulty": "advanced",
+  "prereqs": [
+    "cpp-internals-abi"
+  ],
+  "objectives": [
+    "Select compiler flags for debug vs release builds and explain what each controls",
+    "Describe the role of Ninja and CMake in a build pipeline and how incremental builds work",
+    "Run clang-tidy with targeted checks and clang-format, and explain warnings-as-errors policy",
+    "Diagnose a common warning (signed/unsigned comparison) and fix it at the source"
+  ],
+  "motivation": "A new hire builds the pricing library with plain `g++ main.cpp`, runs it, and ships numbers that are wrong - because their signed loop variable compared against `vector.size()` never terminated the intended way, a warning that `-Wall -Werror` would have rejected at compile time. Tooling is not bureaucracy: flags, fast incremental builds and static analysis are the difference between bugs caught in seconds and bugs caught in production.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Compiler flags: two builds, two jobs"
+    },
+    {
+      "type": "p",
+      "md": "C++ has no single 'the' build - you maintain at least two. The **debug build** compiles fast, keeps every diagnostic on, and is shaped for humans: optimisation off (`-O0`) so the debugger's line-by-line view matches the source, debug symbols (`-g`) so GDB and perf can name things. The **release build** is shaped for the machine: `-O2`/`-O3` optimisation, `-DNDEBUG` to compile out asserts, and `-g` kept anyway so profilers still map addresses to lines - symbols cost disk, not runtime. Warnings come from `-Wall -Wextra -Wpedantic` (not literally 'all', but the high-signal set), and `-Werror` promotes any warning to a build failure so warnings cannot accumulate into wallpaper."
+    },
+    {
+      "type": "code",
+      "lang": "bash",
+      "code": "# Debug build: fast compile, full checks, debuggable\ng++ -std=c++20 -O0 -g -Wall -Wextra -Wpedantic -Werror \\\n    -fsanitize=address,undefined src/*.cpp -o app_debug\n\n# Release build: aggressive optimisation, symbols kept for profiling\ng++ -std=c++20 -O3 -g -march=native -DNDEBUG src/*.cpp -o app_release\n\n# -std=c++20 pins the language version (code must not depend on the\n# compiler's default). -march=native targets this CPU's ISA (SIMD lesson).\n# -DNDEBUG disables assert() in release - assertions are for debug runs.",
+      "caption": "Two commands, two contracts: debug finds bugs, release wins benchmarks."
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Flag",
+        "Controls",
+        "Why it matters"
+      ],
+      "rows": [
+        [
+          "-O0 / -O2 / -O3",
+          "Optimisation level",
+          "O0 for debuggability, O2/O3 for speed; never compare timings across levels"
+        ],
+        [
+          "-g",
+          "Debug symbols",
+          "Lets GDB/perf show source lines; harmless at runtime"
+        ],
+        [
+          "-Wall -Wextra -Wpedantic",
+          "Warning coverage",
+          "Catches signed/unsigned, unused values, shadowing, non-standard code"
+        ],
+        [
+          "-Werror",
+          "Warnings become errors",
+          "Keeps warnings from being ignored; standard in CI"
+        ],
+        [
+          "-DNDEBUG",
+          "Disables assert()",
+          "Release builds should not pay for debug assertions"
+        ],
+        [
+          "-march=native",
+          "Target ISA",
+          "Enables AVX2/AVX-512 codegen for this machine (portability trade-off)"
+        ],
+        [
+          "-fsanitize=...",
+          "Runtime checking",
+          "ASan/UBSan/TSan builds - correctness, never benchmarks"
+        ]
+      ]
+    },
+    {
+      "type": "h2",
+      "text": "CMake and Ninja: builds that scale"
+    },
+    {
+      "type": "p",
+      "md": "Typing compiler commands stops scaling at a handful of files. **CMake** describes the project (targets, dependencies, options) and *generates* build files for a chosen backend; **Ninja** is the backend built for speed - it evaluates a dependency graph and executes the minimum recompilation in parallel, one compiler process per core. Change one `.cpp` and Ninja rebuilds that file plus whatever links it; change a header and everything that includes it rebuilds. Compile-time is a feedback loop for correctness work like the warning discipline above, so fast incremental builds change behaviour, not just wall-clock."
+    },
+    {
+      "type": "code",
+      "lang": "bash",
+      "code": "cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release   # configure: generate build.ninja\ncmake --build build                                   # or: ninja -C build\nninja -C build                                        # incremental: rebuilds only what changed\n# Release/Debug build types set the flag sets shown above per configuration.",
+      "caption": "CMake generates; Ninja executes. The two-file change you made costs seconds, not minutes."
+    },
+    {
+      "type": "h2",
+      "text": "Static analysis: the reviewer that never gets tired"
+    },
+    {
+      "type": "p",
+      "md": "Compiler warnings catch what the compiler notices; dedicated static analysers go further. **clang-tidy** runs named checks over your code with full AST knowledge: `bugprone-*` (suspicious constructs), `performance-*` (inefficient patterns), `modernize-*` (pre-C++11 idioms to update), `clang-analyzer-*` (path-sensitive bug finding). **clang-format** ends style debates: a `.clang-format` file specifies formatting, and `clang-format -i` rewrites files to match - diffs stop containing whitespace noise. The pipeline standard: format check + `clang-tidy` + `-Werror` on every commit."
+    },
+    {
+      "type": "code",
+      "lang": "bash",
+      "code": "clang-tidy src/pricer.cpp -p build/ \\\n    -checks='-*,bugprone-*,performance-*,modernize-*'   # -p: use compile_commands.json\n\nclang-format -i src/pricer.cpp                          # rewrite in place to project style\n\n# .clang-format (project root):\n#   BasedOnStyle: Google\n#   IndentWidth: 4\n#   ColumnLimit: 100\n#   DerivePointerAlignment: false",
+      "caption": "Tidy finds logic-shape bugs; format enforces one style; both run mechanically."
+    },
+    {
+      "type": "p",
+      "md": "C++ tooling is a pipeline you must be able to reason about end-to-end, because the compiler is where half your performance comes from and all of your correctness guarantees originate. The pipeline: preprocessor → compiler proper (optimisation levels decide how hard it works) → linker (where the One-Definition Rule and visibility questions land) → and alongside it, the analysers: sanitisers and static analysis, which catch bug classes the compiler silently tolerates."
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Tool",
+        "Answers the question",
+        "Catches",
+        "Cost"
+      ],
+      "rows": [
+        [
+          "-Wall -Wextra",
+          "what looks suspicious?",
+          "unused, sign issues, shadowing",
+          "free — always on"
+        ],
+        [
+          "-fsanitize=address",
+          "where is the memory bug?",
+          "OOB, use-after-free, leaks",
+          "~2x slower, shadows"
+        ],
+        [
+          "-fsanitize=undefined",
+          "is UB actually happening?",
+          "signed overflow, misaligned loads",
+          "~1.5x slower"
+        ],
+        [
+          "clang-tidy",
+          "what does style + bugs look like?",
+          "bugprone patterns, modernize-*, performance-*",
+          "static, needs config"
+        ],
+        [
+          "gprof / perf",
+          "where does time go?",
+          "hot functions, cache misses",
+          "instrumentation/sampling"
+        ],
+        [
+          "-O2 vs -O0",
+          "how hard does the compiler try?",
+          "— (a choice, not a check)",
+          "compile time, debuggability"
+        ]
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "bash",
+      "code": "# The debugging loop that finds real bugs fast:\ng++ -std=c++20 -g -O1 -fsanitize=address,undefined -o pricer_asan pricer.cpp\n./pricer_asan input.csv          # ASan prints the exact allocation stack of any OOB\n\n# Then optimise and benchmark the FIXED code:\ng++ -std=c++20 -O2 -march=native -o pricer pricer.cpp\nperf stat -e task-clock,cache-misses ./pricer input.csv",
+      "caption": "Sanitise first, optimise second. Optimising buggy code optimises the bug."
+    },
+    {
+      "type": "p",
+      "md": "The ordering discipline matters more than any individual flag. Debug with sanitisers at `-O1` (fast enough to run, faithful enough to diagnose). Benchmark only at `-O2`/`-O3` with `-march=native` on the target hardware, after the sanitisers are clean — because UB that \"works\" at `-O0` becomes the miscompiled loop you ship at `-O2`. And treat warnings as errors from day one (`-Werror`): a warning you learn to scroll past is a bug you have scheduled for later."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "\"It works at -O0\" is a UB confession",
+      "md": "The single most diagnostic sentence in C++ debugging. Optimisation exposes undefined behaviour — the compiler assumes UB never happens and optimises accordingly (dead-code elimination, reordering, vectorisation). If behaviour changes between -O0 and -O2, you do not have a compiler bug; you have UB, and the sanitisers will name it."
+    },
+    {
+      "type": "steps",
+      "title": "Worked diagnosis: the signed/unsigned loop",
+      "items": [
+        "Code: `for (int i = 0; i < v.size(); ++i) { ... }` where `v.size()` is `std::size_t` (unsigned 64-bit).",
+        "`-Wall -Wextra` emits: *comparison of integer expressions of different signedness*.",
+        "Why it is a real bug class: when `i` is compared to an unsigned value it is converted to unsigned; if `v` is empty, `v.size()` is 0 and `0 - 1` in unsigned arithmetic is $2^{64} - 1$ - loops like `while (i <= v.size() - 1)` on empty vectors wrap and run off the end.",
+        "Fixes: use `std::size_t i`, or better `for (const auto& x : v)`, or `std::ssize(v)` (C++20) to keep signedness consistent.",
+        "With `-Werror` this never reaches review: the build fails and the author fixes it in seconds."
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Do not silence - understand",
+      "md": "The lazy fix for any warning is a cast or deleting the flag. Each warning suppresses a class of future bug detection too. The professional move: understand *why* the tool fired, fix the code, and only with a written justification (and a code comment or targeted check-disable) bypass anything."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "A teammate's build shows: `warning: comparison of integer expressions of different signedness: 'int' and 'std::vector<Quote>::size_type' {aka 'unsigned long'}` at `for (int i = 0; i < quotes.size() - 1; ++i)`. Explain the danger when `quotes` is empty, and give two idiomatic fixes.",
+    "hints": [
+      "What is the type of `quotes.size() - 1` when size() returns 0?",
+      "Range-for removes the index entirely; C++20 std::ssize keeps indices but fixes signedness."
+    ],
+    "solution": "`quotes.size()` is unsigned, so `size() - 1` with `size() == 0` wraps to $2^{64}-1$ (the largest unsigned long); the comparison converts `i` to unsigned, and the loop believes there are ~$1.8 \\times 10^{19}$ elements - it reads wildly out of bounds instead of skipping the loop. Fixes: (1) `for (std::size_t i = 0; i + 1 < quotes.size(); ++i)` - the `i + 1 <` form avoids the wrap because `i + 1` cannot underflow; (2) `for (const auto& q : quotes)` when the index is not needed, or `for (int i = 0; i < std::ssize(quotes) - 1; ++i)` in C++20 (signed `ssize`). With -Werror the original never compiles."
+  },
+  "independentExercise": {
+    "prompt": "Set up the build/check pipeline for a two-file project `pricer.cpp` and `book.cpp` (headers included). Write: (a) the CMake configure line choosing Ninja and the Release configuration; (b) the incremental build command after editing only `book.cpp`; (c) the clang-tidy command checking `bugprone-*`, `performance-*` and `modernize-*` with the compile database from the build directory; (d) the clang-format command to fix formatting across both files, and one sentence on why the format step belongs before code review rather than during it.",
+    "hints": [
+      "cmake -B <dir> -G <generator> -DCMAKE_BUILD_TYPE=<type>; building via cmake --build or ninja -C.",
+      "clang-tidy needs -p pointing at the directory with compile_commands.json (generate with CMAKE_EXPORT_COMPILE_COMMANDS)."
+    ],
+    "solution": "(a) `cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON`. (b) `ninja -C build` (or `cmake --build build`) - Ninja's dependency graph rebuilds only `book.o` and relinks. (c) `clang-tidy src/book.cpp src/pricer.cpp -p build/ -checks='-*,bugprone-*,performance-*,modernize-*'`. (d) `clang-format -i src/pricer.cpp src/book.cpp`; format before review so reviewers see semantic diffs only - whitespace churn in review wastes attention and hides real changes."
+  },
+  "commonMistakes": [
+    "Building release code without -g and then being unable to profile or get a readable crash backtrace.",
+    "Treating -Wall as 'all warnings' and skipping -Wextra -Wpedantic; the high-value signed/unsigned and shadowing warnings live in -Wextra.",
+    "Letting warnings accumulate (no -Werror) until the real signal drowns in wallpaper.",
+    "Committing formatting churn mixed with logic changes because clang-format was never run.",
+    "Using -march=native for binaries that must run on other machines - the release artefact then crashes with SIGILL on older CPUs."
+  ],
+  "realWorldApplication": "Every production C++ shop standardises on CMake+Ninja (or Bazel), warnings-as-errors in CI, clang-format enforced by a commit hook, and clang-tidy on changed lines - the pipeline is the codebase's immune system.",
+  "quantFinanceApplication": "Trading-firm codebases gate every commit on -Werror builds and sanitiser jobs so a signedness wrap in a position loop or a stray allocation in the hot path is caught before it can reach a live order stream.",
+  "summary": [
+    "Two builds by contract: -O0 -g with warnings+sanitisers for debugging; -O3 -DNDEBUG -g -march=native for performance.",
+    "-Wall -Wextra -Wpedantic -Werror converts the high-signal warning set into build failures, keeping signal high.",
+    "CMake generates the dependency graph, Ninja executes the minimum rebuild in parallel - fast feedback enables discipline.",
+    "clang-tidy (bugprone/performance/modernize checks) and clang-format (one style, zero whitespace debates) run mechanically on every change.",
+    "Signed/unsigned comparison is the canonical caught-by-tooling bug: unsigned wraparound on empty containers; fix with size_t/range-for/std::ssize."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "What does `-Werror` do?",
+      "options": [
+        "Enables extra warnings beyond -Wall",
+        "Turns compiler warnings into errors, failing the build",
+        "Suppresses warnings so output stays clean",
+        "Errors only on warnings involving UB"
+      ],
+      "answerIndex": 1,
+      "explanation": "-Werror changes the policy: any warning fails the build, which is why CI uses it - warnings cannot accumulate into ignored wallpaper."
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "Why do production release builds typically keep `-g` even though nothing is debugged at build time?",
+      "options": [
+        "-g makes the code run faster",
+        "Symbols let profilers, core dumps and crash reports map addresses to source lines, at no runtime cost",
+        "-g is required for -O3 to work",
+        "Without -g the linker strips the binary"
+      ],
+      "answerIndex": 1,
+      "explanation": "Debug symbols live in a table, not in the hot path: profiling, post-mortem debugging and symbolication all need them. (They do enlarge the binary - some shops ship them separately.)"
+    },
+    {
+      "id": "q3",
+      "type": "short",
+      "prompt": "In one sentence each: what do CMake and Ninja each contribute to a build pipeline?",
+      "modelAnswer": "CMake describes targets/dependencies and generates build files; Ninja executes the dependency graph, rebuilding only what changed in parallel.",
+      "keywords": [
+        "generat",
+        "ninja",
+        "dependen",
+        "parallel",
+        "incremental"
+      ],
+      "explanation": "CMake is the project description/generator (build.ninja via -G Ninja); Ninja is the fast parallel executor of the minimal incremental rebuild."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "`for (int i = 0; i < v.size() - 1; ++i)` with `v.size() == 0`. What happens at the first comparison and why?",
+      "options": [
+        "The loop body never runs because size() - 1 is -1",
+        "`size() - 1` wraps to a huge unsigned value, the comparison converts i to unsigned, and the loop runs far out of bounds",
+        "The compiler rejects it at -O2 only",
+        "It throws std::out_of_range"
+      ],
+      "answerIndex": 1,
+      "explanation": "size_t arithmetic: 0 - 1 = 2^64 - 1. The signed int i is converted to unsigned for the comparison, so the loop sees an enormous bound. This is exactly what -Wall's sign-compare warning flags."
+    },
+    {
+      "id": "q5",
+      "type": "mcq",
+      "prompt": "Which clang-tidy check family targets suspicious constructs likely to be bugs (rather than style or modernisation)?",
+      "options": [
+        "modernize-*",
+        "performance-*",
+        "bugprone-*",
+        "readability-*"
+      ],
+      "answerIndex": 2,
+      "explanation": "bugprone-* covers suspicious constructs; performance-* inefficiency; modernize-* legacy idioms; readability-* style. A typical run enables bugprone, performance and modernize together."
+    },
+    {
+      "id": "q6",
+      "type": "code-output",
+      "prompt": "You run: `ninja -C build` after editing exactly one .cpp file (no headers changed) in a 3-file project. Ninja prints one compile line and one link line. How many translation units are recompiled?",
+      "language": "text",
+      "code": "# build.ninja tracks dependencies from compile_commands/depfiles\n# project: pricer.cpp, book.cpp, main.cpp  -> app\n# you edited book.cpp only\n$ ninja -C build",
+      "answer": "1",
+      "explanation": "Ninja's dependency graph recompiles only book.cpp (one translation unit) and then relinks the app - that minimum-rebuild property is the point of the tool."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "definition",
+      "front": "-Werror policy",
+      "back": "All compiler warnings are build errors. Rationale: warnings encode real bug classes (sign-compare, shadowing, unused values); failing the build keeps signal high."
+    },
+    {
+      "type": "concept",
+      "front": "Debug vs release flag sets",
+      "back": "Debug: -O0 -g -Wall -Wextra -Wpedantic -Werror -fsanitize=... . Release: -O3 -DNDEBUG -g -march=native. First finds bugs, second produces numbers."
+    },
+    {
+      "type": "concept",
+      "front": "CMake vs Ninja roles",
+      "back": "CMake: describes targets, generates build files (build.ninja with -G Ninja). Ninja: executes the dependency graph with minimal, parallel, incremental rebuilds."
+    },
+    {
+      "type": "definition",
+      "front": "clang-tidy vs clang-format",
+      "back": "clang-tidy: AST-based static analysis with named check families (bugprone/performance/modernize). clang-format: mechanical formatting from .clang-format so style is never discussed in review."
+    }
+  ],
+  "references": [
+    {
+      "label": "GCC online docs — Invoking G++ (warnings)",
+      "url": "https://gcc.gnu.org/onlinedocs/gcc/Invoking-G_002b_002b.html"
+    },
+    {
+      "label": "clang-tidy — checks list",
+      "url": "https://clang.llvm.org/extra/clang-tidy/checks/list.html"
+    },
+    {
+      "label": "Ninja build system manual",
+      "url": "https://ninja-build.org/manual.html"
+    }
+  ],
+  "skills": [
+    "cpp-engineering"
+  ]
+}

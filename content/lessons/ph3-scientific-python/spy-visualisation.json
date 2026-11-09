@@ -1,0 +1,331 @@
+{
+  "id": "spy-visualisation",
+  "moduleId": "ph3-scientific-python",
+  "title": "Matplotlib, Jupyter and Communicating Results",
+  "estMinutes": 24,
+  "difficulty": "core",
+  "prereqs": [
+    "spy-scipy"
+  ],
+  "objectives": [
+    "Construct line, scatter and histogram plots in Matplotlib with labelled axes and titles",
+    "Choose a chart type that matches the question being asked, and defend the choice",
+    "Style plots for professional presentation: scales, gridlines, legends and colour discipline",
+    "Use Jupyter notebooks for exploratory work while keeping production logic in modules"
+  ],
+  "motivation": "An analysis that cannot be seen cannot be checked. A hidden outlier, a misleading y-axis or an unlabeled curve destroys trust in quantitative work faster than a wrong formula, because nobody notices the formula. Matplotlib and Jupyter are how quantitative developers explore data honestly and communicate results to people who will make decisions from them.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Why visualisation is an engineering skill"
+    },
+    {
+      "type": "p",
+      "md": "Numbers summarise; pictures reveal. A dataset with mean 0 and standard deviation 1 can contain a time bomb - a single extreme value, a bimodal split, a structural break - that summary statistics hide completely. Anscombe's quartet is the classic demonstration: four datasets with identical means, variances, correlations and regression lines that look nothing alike when plotted. **Plot first, compute second** is the honest workflow."
+    },
+    {
+      "type": "h2",
+      "text": "The Matplotlib mental model"
+    },
+    {
+      "type": "p",
+      "md": "Matplotlib is built around a **Figure** (the canvas) containing **Axes** (the actual plots). Most quantitative work uses the state-less object interface: create a figure and axes, then draw into them explicitly."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import matplotlib.pyplot as plt\nimport numpy as np\n\nrng = np.random.default_rng(7)\ndays = np.arange(60)\nprice = 100 * np.exp(np.cumsum(rng.normal(0.0005, 0.015, 60)))\n\nfig, ax = plt.subplots(figsize=(7, 3.5))\nax.plot(days, price, linewidth=1.2)\nax.set_title(\"Simulated price path (GBM, seed=7)\")\nax.set_xlabel(\"Day\")\nax.set_ylabel(\"Price\")\nax.grid(True, alpha=0.3)\nfig.tight_layout()\nfig.savefig(\"price.png\", dpi=150)",
+      "caption": "The object interface: figure → axes → artists. Every element is addressable."
+    },
+    {
+      "type": "p",
+      "md": "The four chart types cover most quantitative needs. **Line plots** for time series and functions. **Scatter plots** for relationships between two variables - always plot raw data before fitting anything. **Histograms** (or better, KDEs) for distributions - the eye catches fat tails that a table of moments misses. **Bar charts** only for comparing discrete categories, never for time series."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "The truncated axis lie",
+      "md": "A y-axis starting at 97 instead of 0 can make a 2% move look like a 10x explosion. Truncation is legitimate for tight data, but it must be **visible**: breaks, ticks and annotations that make the scale impossible to misread. In finance, log scale for prices and returns over long horizons is usually the honest choice - equal visual distances then mean equal percentage moves."
+    },
+    {
+      "type": "h2",
+      "text": "Jupyter: exploration vs production"
+    },
+    {
+      "type": "p",
+      "md": "Jupyter notebooks are superb for **exploration**: quick iteration, inline plots, narrative cells next to code. They are poor for **production**: hidden state, out-of-order execution and unversioned outputs break reproducibility. The professional split: explore in notebooks, then move stable logic into importable modules (`.py` files) the notebook calls - so the same backtest code that produced the chart runs identically in CI and in the live system."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "# In notebook: explore\nfrom portfolio.metrics import max_drawdown   # stable module\nreturns = df[\"ret\"].dropna()\nprint(f\"Max drawdown: {max_drawdown(returns):.2%}\")\n\n# In portfolio/metrics.py: the tested, versioned implementation",
+      "caption": "Notebooks import from modules - never the reverse."
+    },
+    {
+      "type": "p",
+      "md": "The purpose of a quant chart is not to look good — it is to make a *claim checkable*. Every mark on the paper asserts something about data (\"the distribution is skewed\", \"the drawdowns cluster\"), and the reader's job is to falsify it. That standard decides most design choices for you: axes that start at meaningful values, sample sizes shown, uncertainty drawn, and no dual axes hiding a scale change."
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Claim being checked",
+        "Chart that checks it",
+        "Common dishonest/frustrating variant"
+      ],
+      "rows": [
+        [
+          "Are these two return series related?",
+          "scatter with correlation + regression line",
+          "two lines on dual axes"
+        ],
+        [
+          "Is the distribution fat-tailed?",
+          "histogram with normal overlay (log-y)",
+          "raw histogram, linear axes"
+        ],
+        [
+          "Is the strategy's drawdown survivable?",
+          "equity curve with drawdown subplot",
+          "equity curve alone, log-scale hidden"
+        ],
+        [
+          "Is the fit overfit?",
+          "train/validation curves vs complexity",
+          "only the final fit shown"
+        ],
+        [
+          "Where does the time go?",
+          "horizontal bar, sorted",
+          "pie chart"
+        ],
+        [
+          "Latency distribution?",
+          "histogram/ECDF with p99 marked",
+          "bar of the mean"
+        ]
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import matplotlib.pyplot as plt\nimport numpy as np\n\n# the honest equity curve: performance + drawdown + stats, one figure\nrng = np.random.default_rng(7)\nrets = rng.normal(0.0004, 0.010, 500)\nequity = np.cumprod(1 + rets)\npeak = np.maximum.accumulate(equity)\ndd = equity / peak - 1\n\nfig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 6), sharex=True,\n                                height_ratios=[3, 1], constrained_layout=True)\nax1.plot(equity, lw=1.2)\nax1.set_title(f'n=500, total={(equity[-1]-1):.1%}, '\n              f'worst DD={dd.min():.1%}')\nax1.set_ylabel('equity (start = 1)')\nax2.fill_between(range(len(dd)), dd, 0, alpha=0.5)\nax2.set_ylabel('drawdown')\nax2.set_xlabel('trading day')",
+      "caption": "The two-panel equity/drawdown figure — the desk-standard view that answers the survivability question directly."
+    },
+    {
+      "type": "p",
+      "md": "The purpose of a quant chart is not to look good — it is to make a *claim checkable*. Every mark on the paper asserts something about data (\"the distribution is skewed\", \"the drawdowns cluster\"), and the reader's job is to falsify it. That standard decides most design choices for you: axes that start at meaningful values, sample sizes shown, uncertainty drawn, and no dual axes hiding a scale change."
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Claim being checked",
+        "Chart that checks it",
+        "Common dishonest/frustrating variant"
+      ],
+      "rows": [
+        [
+          "Are these two return series related?",
+          "scatter with correlation + regression line",
+          "two lines on dual axes"
+        ],
+        [
+          "Is the distribution fat-tailed?",
+          "histogram with normal overlay (log-y)",
+          "raw histogram, linear axes"
+        ],
+        [
+          "Is the strategy's drawdown survivable?",
+          "equity curve with drawdown subplot",
+          "equity curve alone, log-scale hidden"
+        ],
+        [
+          "Is the fit overfit?",
+          "train/validation curves vs complexity",
+          "only the final fit shown"
+        ],
+        [
+          "Where does the time go?",
+          "horizontal bar, sorted",
+          "pie chart"
+        ],
+        [
+          "Latency distribution?",
+          "histogram/ECDF with p99 marked",
+          "bar of the mean"
+        ]
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import matplotlib.pyplot as plt\nimport numpy as np\n\n# the honest equity curve: performance + drawdown + stats, one figure\nrng = np.random.default_rng(7)\nrets = rng.normal(0.0004, 0.010, 500)\nequity = np.cumprod(1 + rets)\npeak = np.maximum.accumulate(equity)\ndd = equity / peak - 1\n\nfig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 6), sharex=True,\n                                height_ratios=[3, 1], constrained_layout=True)\nax1.plot(equity, lw=1.2)\nax1.set_title(f'n=500, total={(equity[-1]-1):.1%}, '\n              f'worst DD={dd.min():.1%}')\nax1.set_ylabel('equity (start = 1)')\nax2.fill_between(range(len(dd)), dd, 0, alpha=0.5)\nax2.set_ylabel('drawdown')\nax2.set_xlabel('trading day')",
+      "caption": "The two-panel equity/drawdown figure — the desk-standard view that answers the survivability question directly."
+    },
+    {
+      "type": "p",
+      "md": "Jupyter habits that separate research artefacts from notebooks that rot: name and parameterise every figure (a chart you cannot regenerate is a rumour); keep the generation code next to the output; and when a chart drives a decision, freeze it with the data hash and the git commit. Six months later, the question is never \"was this chart pretty\" but \"exactly which data, which code, which assumptions produced this\" — and only the disciplined notebook can answer."
+    },
+    {
+      "type": "callout",
+      "variant": "info",
+      "title": "Defaults that mislead, and their one-line fixes",
+      "md": "Matplotlib defaults are honest but bland; three tweaks cover most quant needs: `constrained_layout=True` (no overlapping labels), log scales for anything multiplicative (equity curves, latencies — a straight line is then 'constant growth rate', which is the claim you care about), and marking the statistics you quote (the p99 line on the latency histogram) so the chart and the text can never silently diverge."
+    },
+    {
+      "type": "p",
+      "md": "Jupyter habits that separate research artefacts from notebooks that rot: name and parameterise every figure (a chart you cannot regenerate is a rumour); keep the generation code next to the output; and when a chart drives a decision, freeze it with the data hash and the git commit. Six months later, the question is never \"was this chart pretty\" but \"exactly which data, which code, which assumptions produced this\" — and only the disciplined notebook can answer."
+    },
+    {
+      "type": "callout",
+      "variant": "info",
+      "title": "Defaults that mislead, and their one-line fixes",
+      "md": "Matplotlib defaults are honest but bland; three tweaks cover most quant needs: `constrained_layout=True` (no overlapping labels), log scales for anything multiplicative (equity curves, latencies — a straight line is then 'constant growth rate', which is the claim you care about), and marking the statistics you quote (the p99 line on the latency histogram) so the chart and the text can never silently diverge."
+    },
+    {
+      "type": "h2",
+      "text": "Communicating results"
+    },
+    {
+      "type": "p",
+      "md": "A quantitative plot should answer one question and state it. Rules that survive review: label axes **with units**; put the takeaway in the title (\"Strategy A dominates B after costs\"), not a neutral description; use colour to encode meaning, not decoration (one accent colour, muted greys otherwise); show uncertainty where it exists - confidence bands, not just point estimates; and annotate the events that matter (rate decisions, crashes) directly on the chart."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "You must present annualised volatility of two strategies over 5 years. A colleague proposes a bar chart of the two numbers. Explain why a rolling 60-day volatility **line chart** is more honest, and what the bar chart hides.",
+    "hints": [
+      "Volatility is not constant - it clusters.",
+      "What question does a stakeholder actually ask about risk?"
+    ],
+    "solution": "A bar chart of final annualised volatilities implies each strategy had ONE volatility - hiding the path. Rolling 60-day volatility shows **when** each strategy was risky, regime changes, and whether one strategy's average hides dangerous spikes. Stakeholders ask \"how bad could it get and when\" - only the rolling chart answers that. Keep the bar chart as a summary only if the lines accompany it."
+  },
+  "independentExercise": {
+    "prompt": "Write a function `plot_returns_histogram(returns, bins=50)` that plots a histogram of daily returns with: titled takeaway, axis labels with units, a vertical line at the 5th percentile labelled \"VaR 95\", and a note of the number of observations. The function must work for any float series and raise ValueError on empty input.",
+    "hints": [
+      "Use ax.axvline for the percentile line.",
+      "Guard the empty-input case first."
+    ],
+    "solution": "```python\nimport numpy as np\nimport matplotlib.pyplot as plt\n\ndef plot_returns_histogram(returns, bins=50):\n    r = np.asarray(returns, dtype=float)\n    if r.size == 0:\n        raise ValueError(\"returns series is empty\")\n    var95 = np.percentile(r, 5)\n    fig, ax = plt.subplots(figsize=(7, 3.5))\n    ax.hist(r, bins=bins, color=\"#9aa5b1\", edgecolor=\"white\")\n    ax.axvline(var95, color=\"#b3372f\", linestyle=\"--\", linewidth=1.2)\n    ax.annotate(f\"VaR 95: {var95:.2%}\", xy=(var95, ax.get_ylim()[1]),\n                xytext=(6, -12), textcoords=\"offset points\", color=\"#b3372f\")\n    ax.set_title(f\"Distribution of daily returns (n={r.size})\")\n    ax.set_xlabel(\"Daily return\")\n    ax.set_ylabel(\"Frequency\")\n    fig.tight_layout()\n    return fig, ax\n```\nThe function is pure (no global state), returns the figure for further styling, and refuses silently-broken input."
+  },
+  "commonMistakes": [
+    "Plotting two series with wildly different scales on one linear axis - use twin axes or normalise.",
+    "Default rainbow colormaps that imply ordering in unordered categories.",
+    "Saving notebooks with outputs as the source of truth - outputs go stale and hide state.",
+    "Red-green only colour coding - inaccessible for colour-blind readers; pair colour with markers or linestyle.",
+    "Connecting scatter points with lines as if they were a time series."
+  ],
+  "realWorldApplication": "Research teams review notebooks the way developers review code: a chart without axis labels or a takeaway title is sent back. Dashboarding tools (Streamlit, Dash) embed the same Matplotlib/Plotly figures - the charting discipline transfers directly.",
+  "quantFinanceApplication": "Every artifact in this platform's projects - drawdown curves, rolling Sharpe ratios, implied-vol surfaces - is a Matplotlib figure. The histogram exercise above is literally the P&L distribution chart a risk committee expects to see, with the VaR line made explicit.",
+  "summary": [
+    "Plot before you compute: visual inspection catches structure that summary statistics hide.",
+    "Use the object interface (fig, ax) - every chart element becomes explicit and testable.",
+    "Truncated or linear axes can lie; log scale and visible breaks keep charts honest.",
+    "Explore in Jupyter, ship logic in modules: reproducibility lives in .py files under version control.",
+    "Every chart states its takeaway, labels its units, and shows uncertainty where it exists."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "Which chart type best reveals whether daily returns have fat tails?",
+      "options": [
+        "A bar chart of mean return per year",
+        "A histogram (or KDE) of the return distribution",
+        "A line plot of cumulative returns",
+        "A scatter of price vs volume"
+      ],
+      "answerIndex": 1,
+      "explanation": "Fat tails live in the shape of the distribution - a histogram or KDE shows them directly. Cumulative return lines hide the per-day distribution entirely."
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "Why is a notebook with all logic inside it a poor production artifact?",
+      "options": [
+        "Notebooks cannot run NumPy",
+        "Hidden state and out-of-order execution break reproducibility",
+        "Notebooks cannot draw charts",
+        "They are too slow for any computation"
+      ],
+      "answerIndex": 1,
+      "explanation": "Cell execution order and hidden state mean two 'runs' of the same notebook can produce different results. Stable logic belongs in imported, tested modules."
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "In the object interface, what does `fig, ax = plt.subplots(2, 3)` create? Give the number of axes.",
+      "answer": 6,
+      "explanation": "subplots(2, 3) creates a grid of 2 rows × 3 columns = 6 axes on one figure."
+    },
+    {
+      "id": "q4",
+      "type": "short",
+      "prompt": "Name two properties that make a financial line chart honest over long horizons (keywords: log, scale, label/units, annotate).",
+      "keywords": [
+        "log",
+        "scale",
+        "label",
+        "unit",
+        "annotat"
+      ],
+      "modelAnswer": "Use a log scale so equal distances mean equal percentage moves, label axes with units, and annotate key events.",
+      "explanation": "Log scale for multiplicative processes, explicit units, and event annotations are the three habits reviewers check first."
+    },
+    {
+      "id": "q5",
+      "type": "code-output",
+      "prompt": "What does this print?",
+      "language": "python",
+      "code": "import numpy as np\nr = np.array([0.01, -0.02, 0.03, 0.01])\nprint(f\"{np.percentile(r, 5):.3f}\")",
+      "answer": "-0.015",
+      "explanation": "With 4 points, numpy's linear interpolation at the 5th percentile: position = 0.05*(4-1) = 0.15, so 25% of the way from the smallest (-0.02) to second (-0.02→0.01): -0.02 + 0.15*(0.01-(-0.02)) = -0.02 + 0.0045 = -0.0155 → rounded to 3dp -0.015 (banker's rounding of ...55 half-even gives -0.015). Verify: format(-0.0155, '.3f') = '-0.015'."
+    },
+    {
+      "id": "q6",
+      "type": "mcq",
+      "prompt": "The most defensible way to show uncertainty around a rolling Sharpe estimate is:",
+      "options": [
+        "A thicker line",
+        "A confidence band from a bootstrap of the underlying returns",
+        "A pie chart of Sharpe contributions",
+        "Removing the axis scale"
+      ],
+      "answerIndex": 1,
+      "explanation": "Point estimates without uncertainty invite overconfidence. A bootstrap band shows the range consistent with the data."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "Figure vs Axes in Matplotlib?",
+      "back": "Figure is the canvas; Axes are the individual plots inside it. Draw with ax.plot(), configure with ax.set_*; save with fig.savefig()."
+    },
+    {
+      "type": "concept",
+      "front": "Why log scale for long price charts?",
+      "back": "Equal vertical distance then represents equal percentage change - the visual rate of growth matches the mathematical rate."
+    },
+    {
+      "type": "concept",
+      "front": "Notebook vs module: what goes where?",
+      "back": "Exploration and narrative in notebooks; stable, tested logic in importable .py modules that notebooks consume."
+    },
+    {
+      "type": "definition",
+      "front": "Anscombe's quartet demonstrates what?",
+      "back": "Datasets with identical summary statistics can have radically different distributions - plot before you trust summaries."
+    }
+  ],
+  "references": [
+    {
+      "label": "Matplotlib User Guide",
+      "url": "https://matplotlib.org/stable/users/index"
+    },
+    {
+      "label": "Jupyter documentation",
+      "url": "https://docs.jupyter.org/"
+    }
+  ],
+  "skills": [
+    "scientific-python"
+  ]
+}

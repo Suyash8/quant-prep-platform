@@ -1,0 +1,227 @@
+{
+  "id": "disc-graphs-trees",
+  "moduleId": "ph1-discrete",
+  "title": "Graph Theory and Trees",
+  "estMinutes": 26,
+  "difficulty": "core",
+  "prereqs": ["disc-counting"],
+  "objectives": [
+    "Model systems as graphs (vertices, edges, directed/weighted) and compute degrees using the handshake lemma",
+    "Choose between adjacency-list and adjacency-matrix representations by cost",
+    "Trace breadth-first and depth-first search by hand and state their complexity",
+    "Verify whether a graph is a tree and explain why DAGs admit a topological order while cyclic graphs do not"
+  ],
+  "motivation": "A pricing engine depends on a risk model that depends on a data feed - boot them in the wrong order and the desk starts the day dark. Currency pairs, order-book venues, service dependencies and payment networks are all graphs, and the two workhorse traversals (BFS, DFS) are how code moves through them. This lesson builds the vocabulary and the by-hand tracing skill that later algorithm lessons assume you already have.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Graphs: modelling relationships"
+    },
+    {
+      "type": "p",
+      "md": "A **graph** is a pair $(V, E)$: a set of **vertices** and a set of **edges** connecting pairs of them. Currencies with quoted pairs as edges ($\\text{USD} - \\text{EUR}$, $\\text{USD} - \\text{JPY}$), services with 'calls' arrows, institutions with settlement links - same abstract object, different drawing. Edges may be **undirected** (mutual) or **directed** (one-way, like dependencies: the gateway depends on the risk check, not the reverse), and may carry **weights** (latency, cost, exchange rate). The **degree** of a vertex counts its incident edges. The one universal identity about degrees is the **handshake lemma**: every edge touches exactly two endpoints, so"
+    },
+    {
+      "type": "math",
+      "tex": "\\sum_{v \\in V} \\deg(v) = 2\\,|E|",
+      "caption": "Degrees always sum to twice the number of edges - hence an odd number of odd-degree vertices is impossible."
+    },
+    {
+      "type": "p",
+      "md": "Mini-check: a triangle $A$-$B$-$C$ plus a pendant vertex $D$ attached only to $A$ has 4 edges and degrees $\\deg(A)=3, \\deg(B)=2, \\deg(C)=2, \\deg(D)=1$, summing to $8 = 2 \\times 4$. If you ever parse an edge list and the computed degree sum comes out odd, your parser lost or duplicated an endpoint - a free consistency check on data ingestion."
+    },
+    {
+      "type": "h2",
+      "text": "Representations and the two traversals"
+    },
+    {
+      "type": "table",
+      "headers": ["Property", "Adjacency list", "Adjacency matrix"],
+      "rows": [
+        ["Memory", "$O(V+E)$", "$O(V^2)$"],
+        ["List neighbours of $v$", "$O(\\deg v)$", "$O(V)$"],
+        ["Check 'is $(u,v)$ an edge?'", "$O(\\deg u)$", "$O(1)$"],
+        ["Best for", "sparse graphs (most real ones)", "dense graphs, fast edge lookups"]
+      ]
+    },
+    {
+      "type": "p",
+      "md": "**Breadth-first search (BFS)** explores in rings: start at a source, visit all its neighbours, then their neighbours, using a **queue**. It computes hop distances - fewest number of edges - which is why BFS finds shortest paths in unweighted graphs. **Depth-first search (DFS)** dives along one path until stuck, then backtracks, using a **stack** (or plain recursion). Both touch every vertex and edge once, so both run in $O(V + E)$ with adjacency lists. Trace BFS on the graph with edges 1-2, 1-3, 2-4, 3-4, 4-5:"
+    },
+    {
+      "type": "steps",
+      "title": "BFS from vertex 1, one queue snapshot per step",
+      "items": [
+        "Start: queue = [1], distances: 1 -> 0.",
+        "Dequeue 1; neighbours 2, 3 unseen: enqueue both. Queue = [2, 3]; distances 2 -> 1, 3 -> 1.",
+        "Dequeue 2; neighbour 4 unseen: enqueue 4 (neighbour 1 already seen). Queue = [3, 4]; distance 4 -> 2.",
+        "Dequeue 3; neighbours 1, 4 both seen: nothing enqueued. Queue = [4].",
+        "Dequeue 4; neighbour 5 unseen: enqueue 5. Queue = [5]; distance 5 -> 3.",
+        "Dequeue 5; nothing new. Done. Visit order: 1, 2, 3, 4, 5; hop distances 0, 1, 1, 2, 3."
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "from collections import deque\n\ngraph = {1: [2, 3], 2: [1, 4], 3: [1, 4], 4: [2, 3, 5], 5: [4]}\ndist = {1: 0}\nqueue = deque([1])\norder = []\nwhile queue:\n    node = queue.popleft()\n    order.append(node)\n    for nxt in graph[node]:\n        if nxt not in dist:\n            dist[nxt] = dist[node] + 1\n            queue.append(nxt)\nprint(order)  # [1, 2, 3, 4, 5]\nprint(dist)   # {1: 0, 2: 1, 3: 1, 4: 2, 5: 3}",
+      "caption": "BFS in nine lines: the queue enforces the ring-by-ring order."
+    },
+    {
+      "type": "interactive",
+      "component": "BSTVisual",
+      "params": {
+        "values": [50, 30, 70, 20, 40, 60, 80],
+        "target": 40
+      },
+      "caption": "A binary search tree is a graph that stays a tree: every search from the root walks a single path, touching $O(\\log n)$ nodes when balanced."
+    },
+    {
+      "type": "h2",
+      "text": "Trees, DAGs and topological order"
+    },
+    {
+      "type": "p",
+      "md": "A **tree** is a connected graph with no cycles - both conditions are load-bearing. A tree on $n$ vertices has **exactly $n-1$ edges**, and there is a **unique path** between any two vertices; add one more edge and you create a cycle, remove any edge and it splits into two components. A **forest** is a disjoint union of trees: $n$ vertices and $n - c$ edges for $c$ components. Trees are the backbone of file systems, DOM documents, and - with an ordering rule - the binary search trees you just explored."
+    },
+    {
+      "type": "p",
+      "md": "A **directed acyclic graph (DAG)** generalises a tree: shared dependencies are allowed, cycles are not. A **topological order** lists vertices so every arrow points from earlier to later - a legal boot sequence for services, or a build order for code. A DAG always has at least one source (no incoming edges) to start from; a **cycle** has none, because every vertex on it transitively depends on itself, so no legal first step exists - this is why dependency cycles deadlock. Directed graphs with **weights** hide deeper structure: in a currency graph where edge weights are $-\\log$ of exchange rates, a negative-weight cycle is exactly an arbitrage loop, detected by Bellman-Ford - a payoff you will cash in the algorithms phase."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Dependency graphs run the desk",
+      "md": "market data -> signal computation -> risk check -> order gateway is a DAG, and topological sorting it gives the safe start-up order. Deploy scripts that ignore edge direction start the gateway before its risk check is warm - and the first order of the morning fails. The same structure governs build systems, job schedulers and backtest pipelines."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "$n-1$ edges alone do not make a tree",
+      "md": "A triangle (3 vertices, 3 edges) plus a separate lone edge (2 vertices, 1 edge) has $5$ vertices and $4 = n-1$ edges yet contains a cycle and is disconnected. Verify **connected AND acyclic** - or equivalently connected with exactly $n-1$ edges - never the edge count alone."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Take the graph from the lesson: edges 1-2, 1-3, 2-4, 3-4, 4-5. (1) Compute every degree and verify the handshake lemma. (2) Is this graph a tree? Justify using both required properties. (3) Trace BFS starting from vertex 4: give the visit order and hop distances.",
+    "hints": [
+      "Degrees: count each vertex's incident edges; then check the sum against $2|E|$.",
+      "Compare $|E|$ with $n - 1$, and hunt for a closed walk that never repeats a vertex.",
+      "BFS from 4: first ring is everything 4 touches directly."
+    ],
+    "solution": "(1) Degrees: $\\deg(1)=2$, $\\deg(2)=2$, $\\deg(3)=2$, $\\deg(4)=3$, $\\deg(5)=1$; sum $= 10 = 2 \\times 5$ edges. (2) No: $|E| = 5$ but $n - 1 = 4$, and the cycle 1-2-4-3-1 exists - it fails both 'acyclic' and the edge count for a tree. (3) From 4: dequeue 4, enqueue 2, 3, 5 (ring 1); dequeue 2, enqueue 1 (the only unseen neighbour); dequeue 3 (1 already queued), dequeue 5, dequeue 1. Visit order: 4, 2, 3, 5, 1; distances: 4 -> 0, 2/3/5 -> 1, 1 -> 2."
+  },
+  "independentExercise": {
+    "prompt": "(1) A settlement network connects 12 institutions, each linked to exactly 3 others (a 3-regular graph). How many edges does it have? (2) A forest has 25 vertices and 18 edges. How many connected components (trees) does it contain? (3) A build pipeline is a directed graph where 'A depends on B' is an arrow B -> A. Engineers added: A depends on B, B depends on C, C depends on A. Why can no build order exist, in terms of topological sorting?",
+    "hints": [
+      "Handshake lemma: the sum of degrees is fixed by the regularity.",
+      "For forests, every removed edge... or rather: relate edges to vertices minus components.",
+      "A cycle has no vertex with zero incoming arrows."
+    ],
+    "solution": "(1) Sum of degrees $= 12 \\times 3 = 36 = 2|E|$, so $|E| = 18$. (2) A forest with $c$ components has $n - c$ edges: $18 = 25 - c$ gives $c = 7$ trees. (3) The dependencies form the cycle A -> ... i.e. B -> A, C -> B, A -> C closes a directed cycle. Every vertex in the cycle has an incoming edge, so no source exists to start a topological order; each of A, B, C transitively waits on itself - the build deadlocks."
+  },
+  "commonMistakes": [
+    "Calling a graph a tree because it has $n-1$ edges without checking connectivity - a triangle plus a lone edge passes that test and is not a tree.",
+    "Using an adjacency matrix for a huge sparse graph: $O(V^2)$ memory explodes on 100k-vertex networks where adjacency lists hold only real edges.",
+    "Mixing up the containers: BFS uses a queue (ring order), DFS uses a stack/recursion (deep dive) - swapping them changes distances and visit order.",
+    "Forgetting each undirected edge appears twice in an adjacency-list dict, so the degree sum is the total list length divided by 2."
+  ],
+  "realWorldApplication": "Route planning, package dependency resolution, social-network analysis, circuit wiring and garbage-collection scans are graph traversals; BFS hop-distance alone underlies 'degrees of separation' and unweighted shortest-path features in production systems.",
+  "quantFinanceApplication": "Exchange connectivity maps, cross-currency arbitrage graphs (negative cycles = arbitrage) and service dependency DAGs for trading infrastructure are all modelled exactly as in this lesson; topological order is how deployment tooling boots a trading stack safely.",
+  "summary": [
+    "A graph is $(V, E)$; degrees obey $\\sum \\deg(v) = 2|E|$ - a free integrity check when parsing edge data.",
+    "Adjacency lists cost $O(V+E)$ memory and fit sparse graphs; matrices cost $O(V^2)$ and buy $O(1)$ edge checks.",
+    "BFS (queue) gives hop distances; DFS (stack) dives and backtracks; both run in $O(V+E)$.",
+    "Trees are connected and acyclic with exactly $n-1$ edges and unique paths; DAGs admit topological orders, cycles deadlock them."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "numeric",
+      "prompt": "The complete graph $K_6$ connects each of 6 vertices to every other. How many edges does it have?",
+      "answer": 15,
+      "explanation": "$\\binom{6}{2} = \\frac{6 \\times 5}{2} = 15$ - each unordered pair of vertices contributes one edge (handshake: $6 \\times 5$ degrees $= 2 \\times 15$)."
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "Which data structure turns a traversal into breadth-first search?",
+      "options": [
+        "A queue (FIFO) for the frontier",
+        "A stack (LIFO) for the frontier",
+        "A hash set of visited vertices, alone",
+        "A priority queue ordered by edge weight"
+      ],
+      "answerIndex": 0,
+      "explanation": "BFS expands in discovery order, which a queue enforces; a stack gives DFS. A visited set is bookkeeping, not the frontier discipline, and a weighted priority queue turns it into Dijkstra's algorithm."
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "A tree has 15 vertices. How many edges does it have?",
+      "answer": 14,
+      "explanation": "Every tree on $n$ vertices has exactly $n - 1$ edges: $15 - 1 = 14$."
+    },
+    {
+      "id": "q4",
+      "type": "code-output",
+      "prompt": "What does this Python code print?",
+      "language": "python",
+      "code": "g = {\"A\": [\"B\", \"C\"], \"B\": [\"A\", \"C\", \"D\"],\n     \"C\": [\"A\", \"B\", \"D\"], \"D\": [\"B\", \"C\"]}\nprint(sum(len(v) for v in g.values()) // 2)\nprint(len(g))",
+      "answer": "5\n4",
+      "explanation": "List lengths are 2+3+3+2 = 10; each undirected edge is stored twice, so $10 // 2 = 5$ edges. The dict has 4 keys, so $|V| = 4$ - and $\\sum \\deg = 10 = 2 \\times 5$ confirms the handshake lemma."
+    },
+    {
+      "id": "q5",
+      "type": "mcq",
+      "prompt": "Which statement is true for EVERY tree with $n \\ge 1$ vertices?",
+      "options": [
+        "It has exactly $n - 1$ edges and a unique path between any two vertices",
+        "Every vertex has degree at least 2",
+        "It contains exactly one cycle",
+        "It has $n^2$ possible adjacency entries in its list representation"
+      ],
+      "answerIndex": 0,
+      "explanation": "Trees are connected and acyclic, forcing $n-1$ edges and unique paths. Leaves have degree 1 (so option 2 fails), acyclic forbids cycles, and adjacency lists store $2(n-1)$ entries, not $n^2$."
+    },
+    {
+      "id": "q6",
+      "type": "short",
+      "prompt": "Explain, in terms of topological sorting, why a dependency cycle makes a valid build/boot order impossible.",
+      "modelAnswer": "A topological order needs a vertex with no incoming edges to place first, then removes it and repeats. In a cycle every vertex has an incoming edge and each vertex transitively depends on itself, so no source ever exists and no legal first step can be chosen - the order cannot even start.",
+      "keywords": ["incoming", "cycle", "source", "topological"],
+      "explanation": "The greedy construction (pick a source, delete it, repeat) fails immediately on a cycle: sources are exactly what cycles lack."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "formula",
+      "front": "Handshake lemma",
+      "back": "$\\sum_{v} \\deg(v) = 2|E|$ - every edge has two endpoints; an odd sum means the edge data is corrupt."
+    },
+    {
+      "type": "definition",
+      "front": "Tree",
+      "back": "A connected graph with no cycles: exactly $n-1$ edges and a unique path between any two vertices. A forest of $c$ trees has $n - c$ edges."
+    },
+    {
+      "type": "concept",
+      "front": "BFS vs DFS",
+      "back": "BFS uses a queue, explores ring by ring, and yields hop distances. DFS uses a stack/recursion, dives deep then backtracks. Both are $O(V+E)$ with adjacency lists."
+    },
+    {
+      "type": "concept",
+      "front": "Topological order and cycles",
+      "back": "A DAG can be listed so all arrows point forward; a cycle prevents it because no vertex in the cycle has zero incoming edges to start from."
+    }
+  ],
+  "references": [
+    {
+      "label": "Diestel, Graph Theory (free online edition)",
+      "url": "https://diestel-graph-theory.com/"
+    },
+    {
+      "label": "MIT 6.042J - Graphs and trees",
+      "url": "https://ocw.mit.edu/courses/6-042j-mathematics-for-computer-science-spring-2015/"
+    }
+  ],
+  "skills": ["discrete-math", "dsa"]
+}

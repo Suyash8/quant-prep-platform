@@ -1,0 +1,226 @@
+{
+  "id": "swe-testing",
+  "moduleId": "ph2-software-engineering",
+  "title": "Testing: Unit, Integration and TDD",
+  "estMinutes": 26,
+  "difficulty": "core",
+  "prereqs": [
+    "swe-git"
+  ],
+  "objectives": [
+    "Write pytest unit tests that follow the Arrange-Act-Assert pattern and cover normal, edge and error cases",
+    "Distinguish unit tests from integration tests and choose what to isolate with test doubles",
+    "Explain the red-green-refactor cycle of TDD and apply it to a new function",
+    "Keep tests deterministic and fast, and explain why coverage measures presence of tests, not their quality"
+  ],
+  "motivation": "A rounding function that is wrong by a fraction of a cent per fill, applied across a million fills a day, is a real PnL incident - and it is found either by a test you wrote in five minutes or by a reconciler three weeks later. Tests are executable proof that code does what it claims, a regression net for every future change, and, in the TDD form, a design tool. On teams that trade real money, 'it works' means 'the tests pass', full stop.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Unit tests: one behaviour, one function"
+    },
+    {
+      "type": "p",
+      "md": "A **unit test** exercises one unit of behaviour - a function or class - in isolation, with no database, network or filesystem in the way. Isolation buys the two properties that make tests worth running: **speed** (thousands of unit tests in seconds, so they run on every save) and **precision** (when a unit test fails, you know exactly where). The structure is Arrange-Act-Assert: build the inputs, call the code once, assert one outcome. Test the boundaries where financial code actually breaks: zero, negative, and the exact rounding boundary."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "# pricing.py\nfrom decimal import Decimal, ROUND_HALF_UP\n\ndef notional(price: Decimal, qty: int) -> Decimal:\n    \"\"\"Gross notional of a fill, rounded to cents, half up.\"\"\"\n    if qty < 0:\n        raise ValueError(\"quantity must be non-negative\")\n    return (price * qty).quantize(Decimal(\"0.01\"), rounding=ROUND_HALF_UP)\n\n# test_pricing.py\nimport pytest\nfrom decimal import Decimal\nfrom pricing import notional\n\ndef test_typical_fill():\n    assert notional(Decimal(\"42.17\"), 300) == Decimal(\"12651.00\")\n\ndef test_rounding_boundary_half_up():\n    assert notional(Decimal(\"10.125\"), 1) == Decimal(\"10.13\")\n\ndef test_zero_quantity():\n    assert notional(Decimal(\"42.17\"), 0) == Decimal(\"0.00\")\n\ndef test_negative_quantity_rejected():\n    with pytest.raises(ValueError):\n        notional(Decimal(\"42.17\"), -100)",
+      "caption": "Four tests, four behaviours: the normal case, the rounding boundary, zero, and the error path - run with `pytest` and they finish in milliseconds."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Floats in money tests",
+      "md": "`assert total == 12651.00` on floats is a flaky test waiting to happen - binary rounding makes computed floats almost-equal, not equal. Use `Decimal` for money (as above) or compare with a tolerance like `abs(a - b) < 1e-9`. The lesson on floating point on this platform explains why."
+    },
+    {
+      "type": "h2",
+      "text": "Integration tests: the pieces together"
+    },
+    {
+      "type": "p",
+      "md": "Unit tests prove parts work alone; **integration tests** prove they work together - the repository layer against a real database engine, the parser against real message bytes, the HTTP handler through the framework. They are slower, so teams run fewer of them, but they catch the failure class units cannot: SQL that is valid but wrong, mis-wired dependency injection, schema drift. Keep integration tests **hermetic** - a fresh test database per run (containers or an in-memory engine), seeded with known rows - so two runs never interfere and a failure is reproducible. A test that passes locally but fails on CI because of shared state is worse than no test."
+    },
+    {
+      "type": "h2",
+      "text": "Test doubles and determinism"
+    },
+    {
+      "type": "p",
+      "md": "Where the real collaborator is slow or uncontrollable, substitute a **test double**: a **stub** returns canned data, a **fake** is a lightweight working implementation (in-memory repository), a **mock** additionally asserts how it was called ('the ledger was written exactly once'). Doubles are for *boundaries you do not own* - exchanges, clocks, databases - not for the code under test. Two determinism rules prevent most flaky suites: never let tests read the wall clock or random source directly (inject a fixed clock/seed), and never let tests depend on execution order or on each other. A suite that fails only sometimes trains the team to ignore red builds, which is how real regressions slip through."
+    },
+    {
+      "type": "h2",
+      "text": "TDD: red, green, refactor"
+    },
+    {
+      "type": "p",
+      "md": "Test-driven development inverts the order: write the test for the behaviour you want, watch it fail (**red** - proving the test tests something), write the simplest code that passes (**green**), then improve names, remove duplication and keep the tests green (**refactor**). The cycle is minutes long. Its value is not ceremonial: the tests are written against the interface you wish existed, which pushes the design toward small, callable units; and the suite grows with the feature, so nothing ships untested."
+    },
+    {
+      "type": "steps",
+      "title": "Worked TDD cycle: weighted average price",
+      "items": [
+        "RED - write the failing test first: `wavg([])` raises ValueError, and `wavg([(42.10, 100), (42.20, 300)])` returns 42.175. Watch both fail (the function does not exist yet).",
+        "GREEN - implement the minimum: `if not fills: raise ValueError(...)`; otherwise `sum(p*q for p,q in fills) / sum(q for _,q in fills)`. Check: notional = 42.10x100 + 42.20x300 = 4,210 + 12,660 = 16,870; shares = 400; 16,870 / 400 = 42.175. Tests pass.",
+        "REFACTOR - name the accumulators, add a docstring, consider Decimal - tests stay green through every change, which is exactly the safety net's job."
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "info",
+      "title": "Coverage measures presence, not quality",
+      "md": "100% line coverage with no assertions proves the code runs, nothing more. A team can have 90% coverage and still ship a rounding bug if the boundary case was never asserted. Use coverage to find untested corners; judge tests by what they pin down."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "A colleague's module has: `signed_qty(side, qty)` returning `+qty` for `'BUY'` and `-qty` for `'SELL'`, and raising `ValueError` on any other side string. Write a complete pytest test module covering the two normal cases, one error case, and the boundary `qty = 0`.",
+    "hints": [
+      "One assert per test, one behaviour per test - the failure message then pinpoints the bug.",
+      "pytest.raises captures the error path.",
+      "Signed zero: -0 == 0 for ints, but the test documents that the function is total over its domain."
+    ],
+    "solution": "```python\nimport pytest\nfrom positions import signed_qty\n\ndef test_buy_is_positive():\n    assert signed_qty(\"BUY\", 300) == 300\n\ndef test_sell_is_negative():\n    assert signed_qty(\"SELL\", 300) == -300\n\ndef test_zero_quantity_is_zero():\n    assert signed_qty(\"BUY\", 0) == 0\n\ndef test_unknown_side_raises():\n    with pytest.raises(ValueError):\n        signed_qty(\"SHORT\", 100)\n```\n\nArrange-Act-Assert in each function, one behaviour each. Note `\"Short\"` vs `\"SHORT\"`-style case bugs are caught by adding a case-variant error test once the spec says sides are uppercase."
+  },
+  "independentExercise": {
+    "prompt": "Apply TDD to build `wavg(fills)` (weighted average price) where `fills` is a list of `(price, qty)` pairs. Write the test list FIRST (empty input raises ValueError; `[(42.10, 100), (42.20, 300)]` yields 42.175; a zero-qty pair does not change the average), then implement, then verify the arithmetic by hand.",
+    "hints": [
+      "Red first: the tests must fail before the function exists.",
+      "VWAP = sum(price * qty) / sum(qty) over all pairs.",
+      "Check: 42.10x100 + 42.20x300 = 16,870; 16,870 / 400 = 42.175."
+    ],
+    "solution": "```python\n# test_wavg.py (written first)\nimport pytest\nfrom pricing import wavg\n\ndef test_empty_raises():\n    with pytest.raises(ValueError):\n        wavg([])\n\ndef test_two_fills():\n    assert wavg([(42.10, 100), (42.20, 300)]) == pytest.approx(42.175)\n\ndef test_zero_qty_pair_is_ignored_in_weight():\n    # 42.10x100 + 42.20x0 = 4,210 over 100 shares -> still 42.10\n    assert wavg([(42.10, 100), (42.20, 0)]) == pytest.approx(42.10)\n\n# pricing.py (written second)\nfrom decimal import Decimal\ndef wavg(fills):\n    if not fills:\n        raise ValueError(\"no fills\")\n    total_notional = sum(Decimal(str(p)) * q for p, q in fills)\n    total_qty = sum(q for _, q in fills)\n    if total_qty == 0:\n        raise ValueError(\"total quantity is zero\")\n    return total_notional / total_qty\n```\n\nHand check: 42.10x100 + 42.20x300 = 4,210 + 12,660 = 16,870 over 400 shares = 42.175, as asserted. The zero-qty pair contributes nothing to either sum, so the average stays at the other fill's price - and the total-qty-zero guard closes the divide-by-zero hole the tests exposed."
+  },
+  "commonMistakes": [
+    "Comparing computed floats with == in assertions; use Decimal for money or a tolerance.",
+    "Writing tests that depend on execution order or shared state - 'run alone it passes, in the suite it fails'.",
+    "Mocking the code under test, which makes the test assert the mock, not the behaviour.",
+    "Reading the real wall clock or random seed inside tests; inject both so results are deterministic.",
+    "Chasing a coverage percentage with assertion-free tests instead of pinning down boundary behaviour."
+  ],
+  "realWorldApplication": "Trading firms run full test suites on every commit and gate deployment on them; post-mortems of production money-loss bugs routinely note 'the case was never tested' - which is a testing failure before it is a coding failure.",
+  "quantFinanceApplication": "Rounding, signed quantities, zero-size fills and empty books are exactly the boundary cases here; a VWAP or fee calculator without tests on its boundaries is how fractional-cent errors become reconciled-at-month-end incidents.",
+  "summary": [
+    "Unit tests isolate one behaviour for speed and precision, structured Arrange-Act-Assert, and always test boundaries plus the error path.",
+    "Integration tests verify pieces together (real DB, real messages) and must be hermetic: fresh, seeded, reproducible.",
+    "Test doubles (stub, fake, mock) stand in for slow or uncontrollable boundaries; inject clocks and seeds to keep tests deterministic.",
+    "TDD runs red -> green -> refactor in minutes: the test defines the interface, the suite grows with the feature.",
+    "Coverage says which lines have tests, not whether the tests are good; assertions on boundaries are the quality bar."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "What best distinguishes a unit test from an integration test?",
+      "options": [
+        "Unit tests run in production; integration tests run locally",
+        "Unit tests exercise one behaviour in isolation from external systems; integration tests verify multiple components working together",
+        "Unit tests are always slower",
+        "Integration tests never use real databases"
+      ],
+      "answerIndex": 1,
+      "explanation": "Isolation is the definition: unit tests cut out the database/network/filesystem for speed and precision; integration tests deliberately wire real collaborators together to catch wiring and contract failures."
+    },
+    {
+      "id": "q2",
+      "type": "code-output",
+      "prompt": "What does this Python code print?",
+      "language": "python",
+      "code": "def classify(x):\n    if x > 0:\n        return \"long\"\n    elif x < 0:\n        return \"short\"\n    return \"flat\"\n\nprint(classify(5))\nprint(classify(-2))\nprint(classify(0))",
+      "answer": "long\nshort\nflat",
+      "explanation": "5 takes the first branch, -2 the elif, and 0 falls through to the final return - which is why the zero boundary needs its own test."
+    },
+    {
+      "id": "q3",
+      "type": "ms",
+      "prompt": "Which are properties of a good unit test suite?",
+      "options": [
+        "Fast enough to run on every commit",
+        "Deterministic - same result every run",
+        "Independent - tests do not depend on each other's order",
+        "Each test asserts as many behaviours as possible to save file size"
+      ],
+      "answerIndices": [
+        0,
+        1,
+        2
+      ],
+      "explanation": "Fast, deterministic, independent - the classic triad. Bundling many behaviours into one test destroys diagnostic precision: a failure no longer says which behaviour broke."
+    },
+    {
+      "id": "q4",
+      "type": "short",
+      "prompt": "Describe the three phases of the TDD cycle and their order.",
+      "modelAnswer": "Red: write a failing test for the desired behaviour; Green: write the minimal code that makes the test pass; Refactor: improve structure and naming while keeping tests green. The order is red, green, refactor.",
+      "keywords": [
+        "red",
+        "green",
+        "refactor"
+      ],
+      "explanation": "Writing the test first proves the test can fail and forces the interface design before implementation exists."
+    },
+    {
+      "id": "q5",
+      "type": "mcq",
+      "prompt": "A test double that records how it was called ('assert the ledger write happened exactly once') is a:",
+      "options": [
+        "Stub",
+        "Fake",
+        "Mock",
+        "Fixture"
+      ],
+      "answerIndex": 2,
+      "explanation": "Stubs return canned answers, fakes are lightweight working implementations, and mocks verify interactions - here, that the collaboration happened exactly once. A fixture is the setup data/environment, not a double."
+    },
+    {
+      "id": "q6",
+      "type": "mcq",
+      "prompt": "A module shows 100% line coverage. Which conclusion is justified?",
+      "options": [
+        "The module cannot contain bugs",
+        "Every line ran during tests - but nothing is known about assertion quality or boundary coverage",
+        "The tests are high quality",
+        "The module does not need boundary tests"
+      ],
+      "answerIndex": 1,
+      "explanation": "Coverage measures execution, not verification. Lines can be 'covered' with weak or missing assertions, and boundary combinations can still be untested. Coverage finds gaps; it does not certify quality."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "definition",
+      "front": "Arrange-Act-Assert",
+      "back": "Unit test structure: build inputs (arrange), call the code once (act), assert one outcome (assert). One behaviour per test."
+    },
+    {
+      "type": "concept",
+      "front": "Red-Green-Refactor",
+      "back": "TDD cycle: write a failing test (red), make it pass minimally (green), clean up with tests kept green (refactor)."
+    },
+    {
+      "type": "definition",
+      "front": "Mock vs stub",
+      "back": "A stub returns canned data; a mock also verifies interactions (was it called, how many times, with what)."
+    },
+    {
+      "type": "concept",
+      "front": "Hermetic integration test",
+      "back": "Runs against a fresh, seeded, private environment (container or in-memory DB) so results are reproducible and runs never interfere."
+    }
+  ],
+  "references": [
+    {
+      "label": "pytest documentation - Get started",
+      "url": "https://docs.pytest.org/en/stable/getting-started.html"
+    },
+    {
+      "label": "Martin Fowler - TestDouble",
+      "url": "https://martinfowler.com/bliki/TestDouble.html"
+    }
+  ],
+  "skills": [
+    "software-engineering"
+  ]
+}

@@ -1,0 +1,236 @@
+{
+  "id": "cpp-benchmarking-profiling",
+  "moduleId": "ph4-cpp-l8",
+  "title": "Benchmarking, prof, Sanitisers and Latency Percentiles",
+  "estMinutes": 28,
+  "difficulty": "specialist",
+  "prereqs": ["cpp-branchless-simd"],
+  "objectives": [
+    "Write a correct Google Benchmark harness and explain why DoNotOptimize/ClobberMemory are needed",
+    "Compute p50/p95/p99 with the nearest-rank method and explain why tail percentiles matter more than means",
+    "Use perf stat/perf record output (cache-misses, branch-misses, cycles) to attribute time",
+    "Choose the right sanitiser (ASan/TSan/UBSan) for a given bug class and describe what each catches"
+  ],
+  "motivation": "A desk 'optimises' a spread-calculator from 210 ns to 195 ns using wall-clock prints between two statements - but the compiler deleted most of the work as dead code, and the benchmark machine was running a backup. Weeks later the real p99 was 40x the median and the 'win' was invisible. Measurement discipline - proper harnesses, percentiles, profilers, sanitisers - is what separates engineering from folklore.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Google Benchmark: measuring something real"
+    },
+    {
+      "type": "p",
+      "md": "A timing loop around code the optimizer can see through is a trap: it deletes computations with no observable effect, hoists invariants out of your timed region, and swaps real loads for constants it folded at compile time. Google Benchmark runs your function many times over a `State`, and gives you two escape hatches: `benchmark::DoNotOptimize(x)` tells the compiler a value is *used in unknowable ways* (so the work producing it cannot be deleted), and `benchmark::ClobberMemory()` tells it memory may have been read or written (so stores cannot be elided)."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <benchmark/benchmark.h>\n#include <vector>\n\nstatic void BM_SpreadSum(benchmark::State& state) {\n    const int n = state.range(0);\n    std::vector<double> bid(n, 99.5), ask(n, 100.0);   // set up OUTSIDE the timer\n    for (auto _ : state) {                             // state tracks iterations + time\n        double s = 0.0;\n        for (int i = 0; i < n; ++i) s += ask[i] - bid[i];\n        benchmark::DoNotOptimize(s);   // work survives: s must 'exist'\n        benchmark::ClobberMemory();    // stores/loads cannot be elided\n    }\n    state.SetItemsProcessed(state.iterations() * n);\n}\nBENCHMARK(BM_SpreadSum)->Arg(1 << 10)->Arg(1 << 20);\nBENCHMARK_MAIN();",
+      "caption": "Setup outside the loop, effects forced inside it. Run with: ./bench --benchmark_filter=Spread"
+    },
+    {
+      "type": "p",
+      "md": "Methodology rules that make numbers *mean* something: build the benchmark the way production runs (`-O3 -march=native`, release flags - measuring `-O0` measures debug builds); **warm up** (first iterations populate caches/branch predictors; Google Benchmark does this automatically when it estimates iterations); pin the machine - same CPU governor, no co-tenants, disabled turbo variance if you chase nanoseconds; change **one variable** at a time and re-run the baseline; report distribution, not a single number. Google Benchmark prints mean, median and stddev across repetitions (`--benchmark_repetitions=10`) precisely because single runs lie."
+    },
+    {
+      "type": "h2",
+      "text": "Latency percentiles: p50, p95, p99"
+    },
+    {
+      "type": "p",
+      "md": "For request-handling code, the mean is nearly meaningless: it hides rare-but-real slow paths, and the **tail** is where clients time out and markets move. Record many per-request latencies, sort them, and quote **percentiles** with the nearest-rank method: the $p$-th percentile is the value at rank $\\lceil p/100 \\times N \\rceil$ in the sorted list. p50 is the median; p95 is the value 95% of requests beat; p99 is the tail your risk system actually feels."
+    },
+    {
+      "type": "steps",
+      "title": "Worked example: 20 tick-processing latencies (microseconds), already sorted",
+      "items": [
+        "Samples: 2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 5, 6, 6, 7, 7, 8, 9, 10, 12, 40.",
+        "Sum $= 145$, so the mean is $145/20 = 7.25\\,\\mu s$ - dragged up by the one 40 µs outlier.",
+        "p50: rank $= \\lceil 0.50 \\times 20 \\rceil = 10$ -> the 10th value = **5 µs**.",
+        "p95: rank $= \\lceil 0.95 \\times 20 \\rceil = 19$ -> the 19th value = **12 µs**.",
+        "p99: rank $= \\lceil 0.99 \\times 20 \\rceil = 20$ -> the 20th value = **40 µs**.",
+        "Read it: half the ticks take 5 µs or less, 5% take more than 12 µs, and the tail (40 µs) is 8x the median - the mean (7.25) told you about neither shape nor tail."
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <algorithm>\n#include <cmath>\n#include <vector>\n\n// Nearest-rank percentile on a sorted vector (ascending).\nint percentile(const std::vector<int>& sorted, double p) {\n    const std::size_t rank =\n        static_cast<std::size_t>(std::ceil(p / 100.0 * sorted.size()));\n    return sorted[rank - 1];   // ranks are 1-based; indices are 0-based\n}",
+      "caption": "Ten lines you will reimplement in every latency-sensitive system."
+    },
+    {
+      "type": "h2",
+      "text": "perf: asking the hardware where time went"
+    },
+    {
+      "type": "code",
+      "lang": "bash",
+      "code": "perf stat ./bench            # cycles, instructions, IPC, cache-misses, branch-misses\nperf record -g ./bench       # sample call stacks while it runs\nperf report                  # interactive: where the samples landed\n# Useful counters: task-clock, instructions, branch-misses, cache-misses\n# IPC (instructions per cycle) low + high cache-misses => memory-bound,\n# high branch-misses => data-dependent branching (see branchless lesson).",
+      "caption": "perf samples the PMU hardware counters - no source instrumentation needed."
+    },
+    {
+      "type": "p",
+      "md": "`perf stat` answers *what kind* of problem you have: low IPC with high cache-misses says memory-bound (go back to the layout lesson), high branch-misses says control-flow-bound (branchless lesson), high IPC but slow wall-clock says you may be bandwidth- or contention-limited. `perf record`/`perf report` answer *where*, per function and call stack; flamegraphs render the same data as stacked bars where wide plateaus are your real costs."
+    },
+    {
+      "type": "h2",
+      "text": "Sanitisers: catching the bugs profilers cannot see"
+    },
+    {
+      "type": "code",
+      "lang": "bash",
+      "code": "g++ -g -O1 -fsanitize=address,undefined main.cpp -o main    # ASan + UBSan\n./main          # ASan: heap-buffer-overflow with alloc + access stack traces\n\ng++ -g -O1 -fsanitize=thread gateway.cpp -o gateway            # TSan\ngateway        # TSan: reports the two racing accesses with both stacks\n\n# -O1 (not -O3) keeps stack traces readable and keeps inlining from\n# obscuring the exact line the sanitiser blamed.",
+      "caption": "Sanitisers trade ~2x slowdown for finding undefined behaviour at the moment it happens."
+    },
+    {
+      "type": "p",
+      "md": "Each sanitiser has a jurisdiction. **ASan** (address): heap/stack/global out-of-bounds, use-after-free, double-free, leaks - the memory-safety class. **UBSan** (undefined behaviour): signed overflow, misaligned or null pointer use, invalid enum casts, out-of-range shifts - the silent-wrongness class that may not crash today. **TSan** (thread): data races and lock-order issues - the concurrency class. Run all three in CI test jobs: a bug found here costs minutes; the same bug in production costs a post-mortem."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Never benchmark a sanitiser build",
+      "md": "Sanitiser instrumentation roughly doubles run time and changes cache behaviour. Keep sanitiser builds separate from performance builds; use them for correctness, use clean release builds for numbers."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "A component logs these 20 request latencies in microseconds: 2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 5, 6, 6, 7, 7, 8, 9, 10, 12, 40 (already sorted). Compute p50, p95 and p99 by the nearest-rank method, and state why the mean is a poor headline here.",
+    "hints": [
+      "Rank for percentile p with N samples = ceil(p/100 x N), then index into the sorted list (1-based).",
+      "Compute the mean too, and compare it with the median."
+    ],
+    "solution": "p50: $\\lceil 0.50 \\times 20 \\rceil = 10$ -> 10th value = **5 µs**. p95: $\\lceil 0.95 \\times 20 \\rceil = 19$ -> **12 µs**. p99: $\\lceil 0.99 \\times 20 \\rceil = 20$ -> **40 µs**. Mean $= 145/20 = 7.25$ µs. The mean sits between median and p95, describing nothing: it overstates the typical case (most requests beat 6 µs) and understates the tail (1 in 20 takes 12+ µs, 1 in 100 takes 40 µs). Latency-sensitive systems budget on percentiles, not means."
+  },
+  "independentExercise": {
+    "prompt": "You suspect your matcher is memory-bound. (a) Name the perf command and the two counters you would inspect, and the signature that indicates memory-boundness. (b) Your benchmark harness currently measures `for (auto _ : state) { double s = expensiveFold(prices); }` with no DoNotOptimize - explain what the optimizer does to your numbers and the fix. (c) The team's release CI runs ASan on the same binary used for latency numbers - what is wrong, and how do you split it?",
+    "hints": [
+      "IPC is instructions per cycle; memory-bound code stalls on loads, so cycles rise while instructions stay flat.",
+      "If a computed value is never observed, the compiler may delete its computation entirely.",
+      "Sanitiser instrumentation changes timing; performance measurement needs an uninstrumented build."
+    ],
+    "solution": "(a) `perf stat ./matcher`; watch `cache-misses` (LLC) and `cycles`/IPC: memory-bound shows low IPC (stalled on loads) with cache-misses a significant fraction of cycles; `branch-misses` low. (b) `s` is never observed, so the optimizer may constant-fold `expensiveFold` and delete the loop body - you benchmark an empty loop and report fantasy nanoseconds. Fix: `benchmark::DoNotOptimize(s);` (plus `ClobberMemory()` if stores were involved). (c) ASan instrumentation roughly doubles runtime and perturbs cache behaviour, so latency numbers from it are meaningless. Split the pipeline: ASan/UBSan/TSan jobs run the test suite for correctness; a separate clean `-O3 -march=native` build produces the benchmark/latency artefacts."
+  },
+  "commonMistakes": [
+    "Timing with wall-clock prints inside the code instead of a harness: you measure print overhead and scheduler noise.",
+    "Letting the optimizer delete the work: no DoNotOptimize means the benchmark may measure nothing.",
+    "Reporting the mean latency as the system's speed while the p99 is 8x the median - clients and risk engines live in the tail.",
+    "Comparing -O0 debug numbers to -O3 numbers, or benchmarking with a sanitiser attached.",
+    "Running benchmarks on a noisy machine (background jobs, variable CPU governor) and 'discovering' 5% wins that are noise."
+  ],
+  "realWorldApplication": "Every serious C++ codebase pairs Google Benchmark harnesses with perf-based attribution and a sanitiser CI lane; percentiles (p50/p95/p99) are the standard SLO language for services and trading infrastructure alike.",
+  "quantFinanceApplication": "Tick-to-trade budgets are quoted in percentiles - a desk may require p99 < 10 µs - and the tail is exactly what perf exposes: an occasional page fault, a rare allocator slow path, or a co-located process's cache pollution shows up in p99 long before it moves the mean.",
+  "summary": [
+    "Google Benchmark + DoNotOptimize/ClobberMemory stops the optimizer from deleting the work you meant to measure.",
+    "Sound methodology: release flags, warm-up, pinned/quiet machine, one variable at a time, distributions over single numbers.",
+    "Nearest-rank percentile: sorted value at rank ceil(p/100 x N); p50/p95/p99 describe the tail that means hide.",
+    "perf stat diagnoses the *kind* of bottleneck (IPC, cache-misses, branch-misses); perf record/report locates the functions.",
+    "ASan = memory safety, UBSan = undefined behaviour, TSan = data races; run them in CI, never in latency benchmarks."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "In a Google Benchmark loop you compute a sum `s` but never store or print it. Which call stops the optimizer from deleting the computation, and why?",
+      "options": [
+        "state.PauseTiming() - it excludes overhead",
+        "benchmark::DoNotOptimize(s) - it marks s as observable, so the computation producing it must happen",
+        "state.SetItemsProcessed(1) - it forces one iteration",
+        "volatile double v = s - volatile is the only correct mechanism"
+      ],
+      "answerIndex": 1,
+      "explanation": "DoNotOptimize tells the compiler the value escapes into unknown code, so the work producing it cannot be elided as dead code. (A volatile sink is a folk remedy; DoNotOptimize is the supported tool.)"
+    },
+    {
+      "id": "q2",
+      "type": "numeric",
+      "prompt": "Sorted latencies (µs): 2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 5, 6, 6, 7, 7, 8, 9, 10, 12, 40. What is p95 by the nearest-rank method?",
+      "answer": 12,
+      "explanation": "Rank = ceil(0.95 x 20) = 19; the 19th sorted value is 12. (p50 = 5, p99 = 40.)"
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "Using the same 20 sorted samples, what is p99?",
+      "answer": 40,
+      "explanation": "Rank = ceil(0.99 x 20) = ceil(19.8) = 20; the last (largest) value is 40 µs. The tail is 8x the median - invisible in the mean of 7.25."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "perf stat shows low IPC and a large cache-miss count for your scan loop, with few branch-misses. What does this diagnose, and which earlier lesson's fix applies?",
+      "options": [
+        "CPU is faulty; reboot the benchmark machine",
+        "Memory-bound: layout/locality fix - SoA, contiguous arrays, prefetch-friendly streams",
+        "Branch-bound: apply mask-based branchless rewrites",
+        "Compiler bug: switch optimisation levels"
+      ],
+      "answerIndex": 1,
+      "explanation": "Low instructions-per-cycle with high cache-misses means cycles are lost waiting on memory, not on mispredicted branches - the cache-locality/data-oriented-design fixes apply."
+    },
+    {
+      "id": "q5",
+      "type": "mcq",
+      "prompt": "Your multithreaded gateway intermittently computes corrupted totals, with no crash. Which sanitiser targets this bug class?",
+      "options": [
+        "ASan - heap-buffer-overflow",
+        "UBSan - signed overflow",
+        "TSan - data races between unsynchronised accesses",
+        "LSan - leak detection"
+      ],
+      "answerIndex": 2,
+      "explanation": "Silent corruption with no crash in threaded code is the signature of a data race; TSan (built with -fsanitize=thread) reports both racing accesses with stacks."
+    },
+    {
+      "id": "q6",
+      "type": "mcq",
+      "prompt": "Why are sanitiser builds kept out of latency benchmarking pipelines?",
+      "options": [
+        "Sanitisers only work on Linux, so results are not portable",
+        "Instrumentation roughly doubles runtime and perturbs cache/branch behaviour, so the numbers do not describe production",
+        "Sanitisers disable the CPU's branch predictor",
+        "They require -O0, and -O0 benchmarks are more honest"
+      ],
+      "answerIndex": 1,
+      "explanation": "Sanitisers trade speed for bug detection: the instrumentation dominates timing and changes cache dynamics. Correctness from sanitiser builds, numbers from clean release builds - never both at once."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "definition",
+      "front": "benchmark::DoNotOptimize(x)",
+      "back": "Tells the compiler x is consumed in unknown ways, preventing dead-code elimination of the computation that produced it - the difference between measuring your code and measuring an empty loop."
+    },
+    {
+      "type": "formula",
+      "front": "Nearest-rank percentile",
+      "back": "For N sorted samples, percentile p = value at rank ceil(p/100 x N) (1-based). N=20: p50 -> rank 10, p95 -> 19, p99 -> 20."
+    },
+    {
+      "type": "concept",
+      "front": "perf stat triage signature",
+      "back": "Low IPC + high cache-misses = memory-bound (fix layout). High branch-misses = control-flow-bound (fix branches). High IPC + slow clock-time = bandwidth/contention."
+    },
+    {
+      "type": "definition",
+      "front": "Which sanitiser catches what?",
+      "back": "ASan: out-of-bounds, use-after-free, double-free. UBSan: signed overflow, misaligned/null pointer use, bad shifts. TSan: data races and lock-order problems."
+    }
+  ],
+  "references": [
+    {
+      "label": "Google Benchmark user guide",
+      "url": "https://github.com/google/benchmark/blob/main/docs/user_guide.md"
+    },
+    {
+      "label": "perf tutorial (linux.perf.wiki)",
+      "url": "https://perfwiki.github.io/main/"
+    },
+    {
+      "label": "AddressSanitizer / ThreadSanitizer docs (Chromium sanitiser guide)",
+      "url": "https://github.com/google/sanitizers"
+    }
+  ],
+  "skills": [
+    "cpp-performance",
+    "low-latency"
+  ]
+}

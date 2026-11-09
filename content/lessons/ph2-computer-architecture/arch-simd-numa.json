@@ -1,0 +1,142 @@
+{
+  "id": "arch-simd-numa",
+  "moduleId": "ph2-computer-architecture",
+  "title": "SIMD, NUMA and Performance Counters",
+  "estMinutes": 27,
+  "difficulty": "core",
+  "prereqs": ["arch-branch-prediction-oOO"],
+  "objectives": [
+    "Explain SIMD execution: packed registers, lane-parallel arithmetic, and the widths of SSE/AVX2/AVX-512",
+    "Read simple AVX intrinsics and state which loop shapes auto-vectorize and which do not",
+    "Explain NUMA: local versus remote memory costs and the first-touch allocation policy",
+    "Use performance-counter arithmetic (IPC, cache-miss rate) from tools like perf stat to characterize a workload"
+  ],
+  "motivation": "Your indicator library must recompute a 4,096-point moving average on every tick, and the scalar loop eats the budget. Two hardware levers can save it: SIMD, which multiplies the arithmetic the core performs per instruction, and NUMA-aware memory placement, which keeps that arithmetic's data on the local socket. And because guessing is not engineering, this lesson closes with performance counters - the hardware's own audit trail of cycles, instructions and misses.",
+  "blocks": [
+    { "type": "h2", "text": "SIMD: one instruction, many lanes" },
+    { "type": "p", "md": "**SIMD** (single instruction, multiple data) widens the registers. A 256-bit AVX2 register holds $8$ `float`s or $4$ `double`s; a 512-bit AVX-512 register holds $16$ `float`s or $8$ `double`s. A single packed `add` performs the operation on **all lanes at once**, so each instruction does four or eight times the arithmetic of its scalar twin. The element count is simply the register width divided by the element width - that is the whole math. The catch: loads, stores and cache bandwidth do not widen. A SIMD loop over data larger than the caches is limited by DRAM throughput, and the speedup collapses toward 1x. SIMD accelerates compute-bound array math, not memory-bound scans." },
+    { "type": "table", "headers": ["Register set", "Width", "float32 lanes", "float64 lanes"], "rows": [
+      ["SSE", "128-bit", "4", "2"],
+      ["AVX / AVX2", "256-bit", "8", "4"],
+      ["AVX-512", "512-bit", "16", "8"]
+    ] },
+    { "type": "code", "lang": "cpp", "code": "#include <immintrin.h>\n\n// dot product, 4 doubles per instruction (compile with -mavx2 -mfma)\ndouble dot(const double* x, const double* y, std::size_t n) {\n    __m256d acc = _mm256_setzero_pd();            // 4 lanes of 0.0\n    std::size_t i = 0;\n    for (; i + 4 <= n; i += 4) {\n        __m256d a = _mm256_loadu_pd(x + i);       // load 4 doubles (unaligned ok)\n        __m256d b = _mm256_loadu_pd(y + i);\n        acc = _mm256_fmadd_pd(a, b, acc);         // acc += a*b, per lane\n    }\n    double t[4];\n    _mm256_storeu_pd(t, acc);\n    double s = t[0] + t[1] + t[2] + t[3];         // horizontal sum of lanes\n    for (; i < n; ++i) s += x[i] * y[i];          // scalar tail for n % 4\n    return s;\n}", "caption": "Intrinsics name the hardware directly: set/load/add-per-lane/store. The scalar tail handles whatever the 4-lane stride leaves over." },
+    { "type": "p", "md": "You rarely need to write intrinsics: with `-O2`/`-O3` compilers **auto-vectorize** simple loops over contiguous arrays. Three things block them: **loop-carried dependencies** (each iteration needs the previous one's result, as in a running maximum without reassociation), **data-dependent early exits** (a conditional `break` the compiler cannot prove rare), and**aliasing** doubts it cannot disprove. Note the irony: the latency-hiding dependent chain of an FMA (about 4 cycles per result) means real SIMD kernels often use several accumulators to keep the pipeline busy - a detail profilers reveal, not intuition." },
+    { "type": "interactive", "component": "MemoryLayout", "params": { "totalBytes": 32, "bytesPerRow": 8 }, "caption": "One 256-bit AVX2 register viewed as memory: 32 bytes = 4 doubles, all multiplied or added by a single instruction." },
+    { "type": "h2", "text": "NUMA: memory distance is real" },
+    { "type": "p", "md": "A two-socket server has two memory controllers: each socket's DRAM is **local** to its cores and **remote** to the other socket's. A remote access crosses the socket interconnect and costs roughly $1.3$-$1.5\\times$ a local one ($\\approx 100$ ns local, $\\approx 130$-$150$ ns remote, as magnitudes). Linux allocates physical pages **on first touch**: whichever thread first writes a page decides where it lives forever. The classic bug is one initializing thread filling a giant array while the worker threads sit on the other socket - every subsequent access pays the remote penalty. Fix: allocate where you compute, or pin threads with `numactl`/`pthread_setaffinity_np` so touchers and users coincide." },
+    { "type": "h2", "text": "Performance counters: measuring instead of guessing" },
+    { "type": "p", "md": "The CPU's **performance monitoring unit (PMU)** counts hardware events: cycles, retired instructions, cache misses, branch misses. These numbers turn every lesson so far into measurable facts. The two workhorse ratios are IPC (instructions per cycle - low means stalls dominate) and misses per kilo-instruction (high means memory behaviour dominates):" },
+    { "type": "code", "lang": "bash", "code": "perf stat -e cycles,instructions,cache-misses,branch-misses ./price_engine\n\n# illustrative output for 1 s of work:\n#   3,200,000,000      cycles\n#   4,000,000,000      instructions      IPC = 4.0e9 / 3.2e9 = 1.25\n#      12,800,000      cache-misses      3.2 per 1000 instructions\n#       2,400,000      branch-misses", "caption": "perf reads the PMU while your binary runs; run it pinned and warmed up, or the numbers describe page faults instead of your loop." },
+    { "type": "callout", "variant": "quant", "title": "From counters to decisions", "md": "IPC near 1 with high cache-misses per kilo-instruction says: fix data layout (previous lesson). IPC near 1 with high branch-misses says: fix predictability. IPC well above 1 and low misses says: the core is keeping up, and SIMD is the remaining lever. Illustrative numbers, but the diagnostic order - memory, branches, then width - is how hot paths are actually triaged." },
+    { "type": "steps", "title": "Worked example: how much can 4 lanes buy?", "items": [
+      "A 4-lane double SIMD loop over $1{,}000{,}000$ elements needs $1{,}000{,}000 / 4 = 250{,}000$ iterations.",
+      "Suppose loads overlap the arithmetic well enough that each iteration retires in 2 cycles: $500{,}000$ cycles.",
+      "At 4 GHz: $500{,}000 / 4 \\times 10^9 = 125$ µs.",
+      "The scalar loop at 2 cycles per element: $2{,}000{,}000$ cycles $= 500$ µs. Same data, 4x faster - provided memory feeds the loop, which the counters will confirm or deny."
+    ] }
+  ],
+  "guidedExercise": {
+    "prompt": "You vectorize a double-precision kernel using 256-bit AVX2 with FMA. The data set is 4,000,000 doubles and the working set is 12 MiB (larger than L2, smaller than L3). (a) How many 4-lane iterations does the main SIMD loop perform? (b) How many scalar tail iterations are needed? (c) If each SIMD iteration retires in 3 cycles at 4 GHz, estimate the main loop's time in microseconds. (d) Your colleague runs the same kernel on a 200 MiB working set and sees almost no speedup - explain using the cache hierarchy.",
+    "hints": [
+      "Lanes = register bits / element bits.",
+      "Tail = elements left after the full 4-lane blocks.",
+      "Compare the working set to L3, not to L2."
+    ],
+    "solution": "(a) $4{,}000{,}000 / 4 = 1{,}000{,}000$ iterations. (b) $4{,}000{,}000 \\bmod 4 = 0$, so no tail. (c) $1{,}000{,}000 \\times 3 = 3{,}000{,}000$ cycles; $3{,}000{,}000 / 4 \\times 10^9 = 750$ µs. (d) At 200 MiB the data lives in DRAM: the loop is memory-bandwidth-bound, so SIMD lanes sit idle waiting on loads - the speedup collapses toward 1x. The fix is layout and blocking, not more lanes."
+  },
+  "independentExercise": {
+    "prompt": "perf stat reports for your backtest process: 3,200,000,000 cycles, 4,000,000,000 instructions, 12,800,000 cache misses. The CPU runs at 4 GHz. (a) Compute IPC. (b) Compute cache misses per 1,000 instructions. (c) Compute wall-clock CPU time in seconds. (d) A remote-socket access costs ~140 ns vs ~100 ns local. If 25% of the 12.8M misses are remote, how many nanoseconds of extra miss time could NUMA pinning recover, in ms?",
+    "hints": [
+      "IPC = instructions / cycles.",
+      "Extra remote cost = 40 ns per remote miss."
+    ],
+    "solution": "(a) IPC $= 4.0 \\times 10^9 / 3.2 \\times 10^9 = 1.25$. (b) $12{,}800{,}000 / 4{,}000{,}000{,}000 \\times 1000 = 3.2$ misses per kilo-instruction. (c) $3.2 \\times 10^9 / 4 \\times 10^9 = 0.8$ s. (d) Remote misses $= 0.25 \\times 12.8{,}M = 3.2{,}M$; extra cost $= 3.2M \\times 40\\ \\text{ns} = 128\\,000{,}000\\ \\text{ns} = 128$ ms."
+  },
+  "commonMistakes": [
+    "Expecting SIMD to speed up memory-bound loops - if DRAM bandwidth is the limit, extra lanes just wait, and perf's cache-miss counter is the tell.",
+    "Forgetting the scalar tail: $n \\bmod 4$ elements still need computing, and skipping them corrupts results.",
+    "Letting one initializing thread on socket 0 first-touch an array used by threads on socket 1, sentencing every access to the ~1.4x remote penalty.",
+    "Reading performance counters without pinning and warming up the process, so the profile measures startup noise instead of the hot path."
+  ],
+  "realWorldApplication": "BLAS libraries, image codecs and ML inference engines are built from hand-tuned SIMD kernels with NUMA-aware allocation - the same two levers, industrialized - and perf-style counters ship in every serious profiler.",
+  "quantFinanceApplication": "A moving-average kernel over a rolling price window is compute-bound and 4-wide vectorizable: roughly a 4x cut in CPU time (illustratively ~40 µs to ~12 µs on the same data), while NUMA pinning keeps the window's pages on the socket where the strategy thread runs.",
+  "summary": [
+    "SIMD packed arithmetic does lanes = register bits / element bits work per instruction: 4 doubles for AVX2, 8 for AVX-512.",
+    "SIMD helps compute-bound loops; on data beyond L3 the memory system is the limit and speedup collapses - verify with cache-miss counters.",
+    "Auto-vectorization dies on loop-carried dependencies, data-dependent early exits and unresolved aliasing; intrinsics and clean loops revive it.",
+    "NUMA: first-touch places pages; remote access costs ~1.3-1.5x local; allocate where you compute and pin threads.",
+    "Performance counters turn theory into facts: IPC and misses-per-kilo-instruction point at memory, branches or width as the next fix."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "numeric",
+      "prompt": "How many float64 (double) lanes does a 512-bit AVX-512 register hold?",
+      "answer": 8,
+      "explanation": "$512 / 64 = 8$ doubles per packed instruction."
+    },
+    {
+      "id": "q2",
+      "type": "numeric",
+      "prompt": "perf reports 4,000,000,000 instructions and 3,200,000,000 cycles. What is the IPC?",
+      "answer": 1.25,
+      "tolerance": 0.01,
+      "explanation": "IPC $= 4.0 / 3.2 = 1.25$ - above 1, evidence of superscalar overlap."
+    },
+    {
+      "id": "q3",
+      "type": "mcq",
+      "prompt": "A colleague vectorizes a sum over a 200 MiB array and sees nearly no speedup. What is the most likely explanation?",
+      "options": [
+        "The loop is memory-bandwidth bound; SIMD lanes wait on DRAM loads",
+        "SIMD registers refuse to hold more than 2 doubles",
+        "The compiler switched the program to interpretive mode",
+        "SIMD only works on integers"
+      ],
+      "answerIndex": 0,
+      "explanation": "Beyond cache capacity, throughput is set by DRAM bandwidth. The lanes still compute, but they cannot get data fast enough - check cache-miss counters to confirm."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "On a two-socket server, roughly how much more expensive is a remote-socket memory access than a local one?",
+      "options": ["About the same", "1.3-1.5x slower", "10x slower", "100x slower"],
+      "answerIndex": 1,
+      "explanation": "Remote traffic crosses the socket interconnect: ~130-150 ns versus ~100 ns local, a 1.3-1.5x factor - significant on hot paths, not catastrophic."
+    },
+    {
+      "id": "q5",
+      "type": "ms",
+      "prompt": "Which loop shapes typically block compiler auto-vectorization?",
+      "options": [
+        "A loop-carried dependency where each iteration needs the previous result",
+        "A data-dependent early exit (conditional break) inside the loop body",
+        "Contiguous, independently-aligned arrays with a stride-1 inner loop",
+        "Intrinsics you wrote explicitly yourself"
+      ],
+      "answerIndices": [0, 1],
+      "explanation": "Dependencies and unpredictable exits stop the compiler from proving packed execution is valid. Contiguous arrays are the *enabler*; intrinsics bypass auto-vectorization entirely by construction."
+    },
+    {
+      "id": "q6",
+      "type": "numeric",
+      "prompt": "A 4-lane SIMD loop processes 1,000,000 doubles with each iteration retiring in 2 cycles at 4 GHz. How many microseconds does the loop take?",
+      "answer": 125,
+      "tolerance": 1,
+      "explanation": "$250{,}000$ iterations $\\times 2 = 500{,}000$ cycles; $500{,}000 / 4 \\times 10^9\\ \\text{Hz} = 125$ µs."
+    }
+  ],
+  "flashcards": [
+    { "type": "definition", "front": "What is SIMD?", "back": "Single instruction, multiple data: one packed instruction applies the same op to all lanes of a wide register (AVX2: 8 floats / 4 doubles; AVX-512: 16 / 8)." },
+    { "type": "formula", "front": "SIMD lanes per register", "back": "lanes = register bits / element bits (e.g. $256 / 64 = 4$ doubles for AVX2)." },
+    { "type": "definition", "front": "What is NUMA first-touch allocation?", "back": "Linux places a physical page on the NUMA node of the thread that first writes it - so the initializing thread decides memory distance for the page's lifetime." },
+    { "type": "formula", "front": "IPC", "back": "IPC = retired instructions / cycles. Low IPC + high cache-misses → memory-bound; low IPC + high branch-misses → prediction-bound; high IPC → try widening with SIMD." }
+  ],
+  "references": [
+    { "label": "Intel Intrinsics Guide", "url": "https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html" },
+    { "label": "Brendan Gregg - perf Examples", "url": "https://www.brendangregg.com/perf.html" },
+    { "label": "Wikipedia - Non-uniform memory access (NUMA)", "url": "https://en.wikipedia.org/wiki/Non-uniform_memory_access" }
+  ],
+  "skills": ["computer-architecture", "cpp-performance"]
+}

@@ -1,0 +1,355 @@
+{
+  "id": "numa-root-finding",
+  "moduleId": "ph1-numerical-analysis",
+  "title": "Root Finding: Bisection, Newton-Raphson, Secant",
+  "estMinutes": 28,
+  "difficulty": "advanced",
+  "prereqs": [
+    "numa-errors-stability"
+  ],
+  "objectives": [
+    "Bracket a root and execute bisection, stating its guaranteed linear convergence and iteration budget",
+    "Derive and apply Newton-Raphson, verifying quadratic convergence with hand-computed iterates",
+    "Apply the secant method when derivatives are unavailable, and compare cost per iteration",
+    "Formulate implied volatility as a root-finding problem and choose a robust solver strategy"
+  ],
+  "motivation": "The market quotes a 1-year option at \\$10.45. Nobody tells you the volatility that price implies - you must invert the Black-Scholes formula: find the $\\sigma$ that makes the model price equal the market price, and no closed form exists. The same problem appears everywhere in a trading stack: bootstrapping a yield curve, solving for a breakeven spread, finding the clearing price in an auction. All of them reduce to one skill: finding where a function you can only evaluate crosses zero.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "The problem: invert a function you can only evaluate"
+    },
+    {
+      "type": "p",
+      "md": "A **root** of $f$ is a point where $f(x) = 0$. When you can evaluate $f$ but not invert it, you search numerically. The one theoretical gift is the **intermediate value theorem**: if $f$ is continuous and $f(a)$ and $f(b)$ have opposite signs, a root lies somewhere in $[a, b]$. Every robust method starts by claiming that bracket."
+    },
+    {
+      "type": "h2",
+      "text": "Bisection: slow but unbreakable"
+    },
+    {
+      "type": "p",
+      "md": "Bisection exploits the theorem mechanically: evaluate the midpoint, keep the half that still brackets a sign change, repeat. Each step halves the bracket, so after $n$ steps the root is confined to an interval of width $(b-a)/2^n$. To reach tolerance $\\tau$ you need $n \\ge \\log_2\\big((b-a)/\\tau\\big)$ steps - about 3.3 steps per decimal digit. Nothing can make bisection fail, and nothing makes it fast."
+    },
+    {
+      "type": "steps",
+      "title": "Worked: sqrt(2) by bisection on [1, 2], f(x) = x^2 - 2",
+      "items": [
+        "Midpoint $1.5$: $f = 0.25 > 0$ - root is left. Bracket $[1, 1.5]$.",
+        "Midpoint $1.25$: $f = -0.4375 < 0$ - root is right. Bracket $[1.25, 1.5]$.",
+        "Midpoint $1.375$: $f = -0.109375 < 0$. Bracket $[1.375, 1.5]$.",
+        "Midpoint $1.4375$: $f = 0.06640625 > 0$. Bracket $[1.375, 1.4375]$.",
+        "Midpoint $1.40625$: $f = -0.0224609375 < 0$. Bracket $[1.40625, 1.4375]$ - width $0.03125$ after 5 steps, so the root $\\sqrt{2} \\approx 1.41421356$ is within $0.0156$ of the bracket's midpoint.",
+        "Budget check: to reach $10^{-6}$ from width 1 needs $\\log_2(10^6) \\approx 20$ steps."
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "lo, hi = 1.0, 2.0\nfor i in range(3):\n    mid = (lo + hi) / 2\n    if mid * mid < 2:\n        lo = mid\n    else:\n        hi = mid\nprint(mid)   # 1.375",
+      "caption": "Three bisections land the bracket at [1.375, 1.5] - exactly as the hand table above."
+    },
+    {
+      "type": "h2",
+      "text": "Newton-Raphson: use the slope"
+    },
+    {
+      "type": "math",
+      "tex": "x_{n+1} = x_n - \\frac{f(x_n)}{f'(x_n)}",
+      "caption": "Follow the tangent line at the current point down to where it crosses zero."
+    },
+    {
+      "type": "p",
+      "md": "Newton replaces the function by its tangent and takes the tangent's root. Near a simple root the error obeys $e_{n+1} \\approx C\\, e_n^2$ - **quadratic convergence**: the number of correct digits *doubles* per step. That is not a slogan; verify it with actual arithmetic."
+    },
+    {
+      "type": "steps",
+      "title": "Worked: sqrt(2) by Newton on f(x) = x^2 - 2",
+      "items": [
+        "The iteration simplifies to $x_{n+1} = \\tfrac12\\left(x_n + \\tfrac{2}{x_n}\\right)$ - the ancient Babylonian averaging rule.",
+        "$x_0 = 1.5$: $x_1 = \\tfrac12(1.5 + 1.3333\\ldots) = \\tfrac{17}{12} = 1.41666667$ (error $2.5 \\times 10^{-3}$).",
+        "$x_2 = \\tfrac12(\\tfrac{17}{12} + \\tfrac{24}{17}) = \\tfrac{577}{408} = 1.41421569$ (error $2.1 \\times 10^{-6}$).",
+        "$x_3 = \\tfrac{665857}{470832} = 1.4142135623747$ (error $1.6 \\times 10^{-12}$).",
+        "Errors: $8.6 \\times 10^{-2} \\to 2.5 \\times 10^{-3} \\to 2.1 \\times 10^{-6} \\to 1.6 \\times 10^{-12}$: each is roughly the square of the previous, divided by $2\\sqrt{2}$. Three Newton steps beat twenty bisections."
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "x = 1.5\nfor i in range(3):\n    x = (x + 2 / x) / 2\n    print(round(x, 10))\n# 1.4166666667\n# 1.4142156863\n# 1.4142135624",
+      "caption": "The Babylonian iteration - Newton's method wearing casual clothes."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Implied volatility as a Newton problem",
+      "md": "Define $g(\\sigma) = \\text{BS}(\\sigma) - C_{\\text{mkt}}$ and step with $g'(\\sigma) = \\text{vega} = S\\sqrt{T}\\,\\varphi(d_1)$. Hand check: an ATM option on a \\$100 stock, $T = 1$, $\\sigma = 0.2$, $r = 0$: $d_1 = 0.1$, $\\varphi(0.1) \\approx 0.397$, so vega $\\approx 39.7$ per unit vol $\\approx$ \\$0.40 per vol point. If the model price misses the market by \\$0.40, one Newton step moves $\\sigma$ by about one vol point - exactly how a desk intuition and the algorithm agree."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Newton is not safe, only fast",
+      "md": "Newton can diverge: near a flat spot ($f' \\approx 0$) it takes enormous steps; a bad starting point can orbit forever; multiple roots slow it to linear. The production answer is a **hybrid**: bisection keeps a guaranteed bracket while Newton (or secant) accelerates inside it - that is Brent's method, the default behind `scipy.optimize.brentq` and most implied-vol solvers."
+    },
+    {
+      "type": "h2",
+      "text": "Secant: Newton without the derivative"
+    },
+    {
+      "type": "math",
+      "tex": "x_{n+1} = x_n - f(x_n)\\,\\frac{x_n - x_{n-1}}{f(x_n) - f(x_{n-1})}",
+      "caption": "Replace the tangent by the chord through the last two points - no derivative required."
+    },
+    {
+      "type": "p",
+      "md": "Root-finding is where numerical analysis stops being theory and starts being engineering: you choose a method based on what you can *guarantee* about the function, not on convergence rates from a textbook table. The three methods in this lesson have honestly different contracts — bisection buys certainty with slowness, Newton buys speed with assumptions, secant is the pragmatic middle. Professional code usually runs bisection to get close, then switches."
+    },
+    {
+      "type": "steps",
+      "title": "Bisection, worked by hand: $f(x) = x^3 - 2x - 5$ on $[2, 3]$",
+      "items": [
+        "$f(2) = -1 < 0$ and $f(3) = 16 > 0$: sign change confirmed, so a root exists in $[2,3]$ (intermediate value theorem).",
+        "Midpoint $2.5$: $f(2.5) = +5.625 > 0$ — root is in the left half. New bracket $[2, 2.5]$.",
+        "Midpoint $2.25$: $f(2.25) = +1.891 > 0$ — left again. Bracket $[2, 2.25]$.",
+        "Midpoint $2.125$: $f(2.125) = +0.346 > 0$ — bracket $[2, 2.125]$.",
+        "Midpoint $2.0625$: $f(2.0625) = -0.351 < 0$ — bracket $[2.0625, 2.125]$.",
+        "After 5 iterations the bracket is $[2.0625, 2.125]$, width $0.0625 = 2^{-4}$... each step halves the width, so after $n$ steps the width is exactly $2^{-n}$. The true root is $2.094551$. **The error bound is known before you start** — that is bisection's superpower."
+      ]
+    },
+    {
+      "type": "steps",
+      "title": "Newton-Raphson on the same equation, $x_0 = 2$",
+      "items": [
+        "Iteration 1: $f(2) = -1$, $f'(x) = 3x^2 - 2$ so $f'(2) = 10$. $x_1 = 2 - (-1/10) = 2.1$.",
+        "Iteration 2: $f(2.1) = 0.061$, $f'(2.1) = 11.23$. $x_2 = 2.1 - 0.061/11.23 = 2.094568$.",
+        "Iteration 3: $x_3 = 2.094551$ — correct to 7 decimals. **Three steps to machine precision** where bisection needed ~20 for 6 digits.",
+        "The fine print: Newton converges like this only near a simple root with a healthy derivative. Near a double root (where $f' \\approx 0$ too) it crawls linearly; with a bad $x_0$ it can cycle or fly off to infinity. It also needs $f'$ — for an implied-volatility solve, that means vega, which is exactly what calibration code supplies."
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Newton's failure modes are not exotic",
+      "md": "Try Newton on $f(x) = x^{1/3}$ from $x_0 = 1$: each step multiplies the distance from zero by $-2$ — the iterate oscillates off to infinity. The derivative $\\tfrac{1}{3}x^{-2/3}$ blows up at the root. Production solvers (including scipy's) guard with bracketing + bisection fallback for exactly this reason: hybrid beats pure."
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Method",
+        "Needs",
+        "Guaranteed convergence",
+        "Rate",
+        "Use when"
+      ],
+      "rows": [
+        [
+          "Bisection",
+          "sign change on $[a,b]$",
+          "yes, always",
+          "linear (1 bit/step)",
+          "correctness beats speed, or as a fallback"
+        ],
+        [
+          "Newton-Raphson",
+          "$f$, $f'$, good $x_0$",
+          "only near simple roots",
+          "quadratic",
+          "derivative is cheap and you start close"
+        ],
+        [
+          "Secant",
+          "$f$, two prior points",
+          "no",
+          "$\\approx 1.618$",
+          "derivative is expensive but $f$ is smooth"
+        ]
+      ]
+    },
+    {
+      "type": "steps",
+      "title": "Worked: secant on f(x) = x^2 - 2 from x0 = 1, x1 = 2",
+      "items": [
+        "$f(1) = -1$, $f(2) = 2$: $x_2 = 2 - 2\\cdot\\frac{2-1}{2-(-1)} = 2 - \\tfrac23 = \\tfrac43 \\approx 1.3333$ (error $8.1 \\times 10^{-2}$).",
+        "$f(\\tfrac43) = -\\tfrac29$: $x_3 = \\tfrac43 + \\tfrac{4}{27}\\cdot\\tfrac{9}{20} = 1.4$ (error $1.4 \\times 10^{-2}$).",
+        "$f(1.4) = -0.04$: $x_4 = 1.4 + \\tfrac{0.04 \\times 0.0667}{0.1822} = 1.41463415$ (error $4.2 \\times 10^{-4}$).",
+        "Convergence order $\\approx 1.618$ (the golden ratio) - faster than linear, slower than Newton's 2. The usual trade: if $f'$ costs as much as $f$, secant does two evaluations per Newton step but often wins in wall-clock time."
+      ]
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Method",
+        "Needs",
+        "Convergence",
+        "Guarantee"
+      ],
+      "rows": [
+        [
+          "Bisection",
+          "sign change on a bracket",
+          "linear, width /2 per step",
+          "always converges"
+        ],
+        [
+          "Newton",
+          "$f$ and $f'$, good start",
+          "quadratic (digits double)",
+          "can diverge"
+        ],
+        [
+          "Secant",
+          "$f$ at two starts",
+          "order ~1.618",
+          "can diverge"
+        ],
+        [
+          "Brent (hybrid)",
+          "bracket + smoothness",
+          "quadratic at the end",
+          "always converges"
+        ]
+      ]
+    },
+    {
+      "type": "interactive",
+      "component": "FunctionPlotter",
+      "params": {
+        "expr": "x^2 - 2",
+        "xmin": 0,
+        "xmax": 2.5
+      },
+      "caption": "Bisection shrinks a bracket around the zero crossing; Newton slides down tangent lines toward it."
+    },
+    {
+      "type": "p",
+      "md": "Choosing a method is a decision about guarantees versus speed: if the answer must be right (risk reporting), insist on a bracketed hybrid; if it must be fast and you have a good starting guess (intra-moment recalibration), Newton from the previous solution - warm starting - is unbeatable in practice."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "One Newton step for $f(x) = \\cos x - x$ starting from $x_0 = 1$. Compute $x_1$ to 4 decimal places. (Use $\\cos 1 \\approx 0.5403$, $\\sin 1 \\approx 0.8415$.)",
+    "hints": [
+      "$f'(x) = -\\sin x - 1$.",
+      "Newton: $x_1 = x_0 - f(x_0)/f'(x_0)$ - watch the double negative."
+    ],
+    "solution": "$f(1) = 0.5403 - 1 = -0.4597$. $f'(1) = -0.8415 - 1 = -1.8415$. $x_1 = 1 - (-0.4597)/(-1.8415) = 1 - 0.2496 = 0.7504$. The true root is $\\approx 0.7391$, so the error fell from $0.261$ to $0.011$ in one step."
+  },
+  "independentExercise": {
+    "prompt": "A (deliberately simplified, illustrative) pricing function gives $P(\\sigma = 0.20) = 10.00$ with vega 36.0 per unit volatility, while the market trades at 10.72. Take one Newton step to get $\\sigma_1$. At $\\sigma_1$ the model gives $P = 10.68$ with vega 35.5; take the second step. How many vole points did two steps buy, and why is vega the right derivative here?",
+    "hints": [
+      "Newton for root $g(\\sigma) = P(\\sigma) - C_{mkt}$: $\\sigma^+ = \\sigma + (C_{mkt} - P)/\\text{vega}$.",
+      "Track the residual $C_{mkt} - P$ after each step."
+    ],
+    "solution": "Step 1: residual $= 0.72$, $\\sigma_1 = 0.20 + 0.72/36.0 = 0.22$. Step 2: residual $= 10.72 - 10.68 = 0.04$, $\\sigma_2 = 0.22 + 0.04/35.5 = 0.22113$. Two steps closed a 0.72 price gap to 0.04. Vega is the right derivative because it is literally $dP/d\\sigma$ - the sensitivity the desk already computes for hedging."
+  },
+  "commonMistakes": [
+    "Running Newton without a bracket and trusting whatever it converges to - it may converge to a different root or diverge.",
+    "Forgetting the sign in $f'$: for $f(x) = \\cos x - x$, $f' = -\\sin x - 1$.",
+    "Measuring convergence by iteration count alone; per-iteration cost (especially of $f'$) decides wall-clock time.",
+    "Using a fixed 100 iterations as a stopping rule instead of a tolerance on $|f(x)|$ or on the step size.",
+    "Expecting quadratic convergence at multiple roots or away from the root - the $e_{n+1} \\approx C e_n^2$ law is local."
+  ],
+  "realWorldApplication": "Brent's method is the default zero-finder in SciPy, Julia and most spreadsheet solvers; control systems, circuit simulators and game physics engines all run Newton iterations in their inner loops.",
+  "quantFinanceApplication": "Implied volatility surfaces are produced by thousands of Newton/brentq solves per second across strikes and expiries; yield-curve bootstrapping solves for discount factors the same way, one instrument at a time.",
+  "summary": [
+    "Bracket first: opposite signs at the ends of $[a,b]$ guarantee a root by the intermediate value theorem.",
+    "Bisection halves the bracket every step and cannot fail; $n \\ge \\log_2((b-a)/\\tau)$ buys tolerance $\\tau$.",
+    "Newton follows the tangent and doubles correct digits near a simple root: $e_{n+1} \\approx C e_n^2$; the secant method keeps most of that speed without a derivative.",
+    "Production root-finding is a hybrid (Brent) - bisection's guarantee with Newton's speed - and implied volatility is the canonical application."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "numeric",
+      "prompt": "Bisection on [1, 2] must reach a bracket width of at most 0.001. What is the minimum number of midpoint evaluations?",
+      "answer": 10,
+      "explanation": "Width after $n$ steps is $2^{-n}$; $2^{-10} \\approx 0.00098 \\le 0.001$, and $2^{-9} \\approx 0.00195$ is too wide, so 10 steps."
+    },
+    {
+      "id": "q2",
+      "type": "code-output",
+      "prompt": "What exactly does this Python code print?",
+      "language": "python",
+      "code": "lo, hi = 1.0, 2.0\nfor i in range(3):\n    mid = (lo + hi) / 2\n    if mid * mid < 2:\n        lo = mid\n    else:\n        hi = mid\nprint(mid)",
+      "answer": "1.375",
+      "explanation": "Step 1: mid 1.5, $1.5^2 = 2.25 > 2$, hi = 1.5. Step 2: mid 1.25, $1.5625 < 2$, lo = 1.25. Step 3: mid 1.375, $1.890625 < 2$, lo = 1.375 - printed."
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "Newton's method for sqrt(2) starting at x0 = 1.5: give x1 = (x0 + 2/x0)/2 as a decimal (4 places).",
+      "answer": 1.4167,
+      "explanation": "$x_1 = (1.5 + 1.3333\\ldots)/2 = 17/12 = 1.416666\\ldots \\approx 1.4167$.",
+      "tolerance": 0.0002
+    },
+    {
+      "id": "q4",
+      "type": "code-output",
+      "prompt": "What exactly does this Python code print?",
+      "language": "python",
+      "code": "x = 1.5\nfor i in range(3):\n    x = (x + 2 / x) / 2\n    print(round(x, 10))",
+      "answer": "1.4166666667\n1.4142156863\n1.4142135624",
+      "explanation": "The iterates are $17/12$, $577/408$ and $665857/470832$; errors shrink $2.5\\times10^{-3} \\to 2.1\\times10^{-6} \\to 1.6\\times10^{-12}$, doubling correct digits each step."
+    },
+    {
+      "id": "q5",
+      "type": "mcq",
+      "prompt": "Why do production implied-volatility solvers use a bracketed hybrid (Brent) rather than pure Newton?",
+      "options": [
+        "Newton cannot be applied to the Black-Scholes formula",
+        "Hybrids guarantee convergence to a root in the bracket while keeping near-quadratic final speed",
+        "Bisection alone is faster than Newton in practice",
+        "Vega is too expensive to compute"
+      ],
+      "answerIndex": 1,
+      "explanation": "Newton is fast but can diverge from a poor start; the bracket from bisection makes failure impossible while Newton/secant accelerates the endgame."
+    },
+    {
+      "id": "q6",
+      "type": "mcq",
+      "prompt": "The secant method's typical convergence order is approximately:",
+      "options": [
+        "1 (linear)",
+        "1.618 (golden ratio)",
+        "2 (quadratic)",
+        "e (about 2.718)"
+      ],
+      "answerIndex": 1,
+      "explanation": "Secant converges with order $(1+\\sqrt5)/2 \\approx 1.618$ - between bisection's linear crawl and Newton's quadratic doubling."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "formula",
+      "front": "Newton-Raphson update",
+      "back": "$x_{n+1} = x_n - f(x_n)/f'(x_n)$; error law $e_{n+1} \\approx C e_n^2$ near a simple root."
+    },
+    {
+      "type": "formula",
+      "front": "Bisection step budget",
+      "back": "To reach tolerance $\\tau$ from a bracket of width $b - a$: $n \\ge \\log_2((b-a)/\\tau)$ steps (~3.3 per decimal digit)."
+    },
+    {
+      "type": "concept",
+      "front": "Implied volatility as root finding",
+      "back": "Solve $\\text{BS}(\\sigma) - C_{mkt} = 0$; Newton steps scaled by vega $S\\sqrt{T}\\varphi(d_1)$; production uses bracketed Brent for guaranteed convergence."
+    },
+    {
+      "type": "code-output",
+      "front": "Newton for sqrt(2) from 1.5: what are the first three iterates?",
+      "back": "17/12 = 1.41666667, 577/408 = 1.41421569, 665857/470832 = 1.41421356237 - errors $2.5e{-3}, 2.1e{-6}, 1.6e{-12}$."
+    }
+  ],
+  "references": [
+    {
+      "label": "Wikipedia - Root-finding algorithms",
+      "url": "https://en.wikipedia.org/wiki/Root-finding_algorithm"
+    },
+    {
+      "label": "SciPy - brentq (Brent's method)",
+      "url": "https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.brentq.html"
+    }
+  ],
+  "skills": [
+    "numerical-analysis"
+  ]
+}

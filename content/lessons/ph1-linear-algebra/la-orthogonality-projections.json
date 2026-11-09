@@ -1,0 +1,237 @@
+{
+  "id": "la-orthogonality-projections",
+  "moduleId": "ph1-linear-algebra",
+  "title": "Orthogonality, Projections and QR",
+  "estMinutes": 28,
+  "difficulty": "core",
+  "prereqs": ["la-eigen"],
+  "objectives": [
+    "Project a vector onto another vector (or a subspace) and verify the residual is orthogonal",
+    "Explain why orthogonal projections give the best approximation in the least-squares sense",
+    "Run Gram-Schmidt on two vectors to build an orthonormal basis",
+    "Solve a small least-squares regression via the normal equations and interpret it as a projection"
+  ],
+  "motivation": "Linear systems demand exact answers: $Ax = b$ has a solution only if $b$ lies in the column space of $A$. Real data never cooperates - a regression's scatter points never sit exactly on a line. The escape is one of the most useful ideas in applied mathematics: keep the matrix but settle for the *closest* achievable $Ax$, and find it by projecting $b$ perpendicularly onto the column space. Orthogonality turns \"best fit\" into simple dot-product arithmetic, and it is the engine inside least-squares regression, QR factorisation and PCA.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Orthogonality: the geometry of 'best'"
+    },
+    {
+      "type": "p",
+      "md": "Two vectors are **orthogonal** when their dot product is zero. Orthogonality matters because of a Pythagorean fact: if you want the point on a line (or plane) closest to some target point, the connecting segment must be perpendicular to that line or plane. Any tilt, and you could slide along the subspace and get closer. So the \"best approximation\" problem always resolves into: find $p$ in the subspace such that the **residual** $b - p$ is orthogonal to everything in it. One geometric picture does the work of pages of calculus."
+    },
+    {
+      "type": "math",
+      "tex": "p = \\frac{b \\cdot a}{a \\cdot a}\\, a",
+      "caption": "Projection of b onto the line spanned by a: the scalar b.a / a.a is the fraction of a that best matches b."
+    },
+    {
+      "type": "steps",
+      "title": "Worked example: projecting (3, 4) onto the line y = x",
+      "items": [
+        "Target $b = (3, 4)$; direction $a = (1, 1)$.",
+        "Scalar coefficient: $\\dfrac{b \\cdot a}{a \\cdot a} = \\dfrac{3 + 4}{1 + 1} = \\dfrac{7}{2} = 3.5$.",
+        "Projection: $p = 3.5\\, a = (3.5, 3.5)$ - the closest point on the line to $(3, 4)$.",
+        "Residual: $b - p = (-0.5, 0.5)$. Orthogonality check: $(-0.5) \\times 1 + 0.5 \\times 1 = 0$ ✓.",
+        "Pythagoras confirms 'closest': $\\lVert b \\rVert^2 = 25 = \\lVert p \\rVert^2 + \\lVert b - p \\rVert^2 = 24.5 + 0.5$ ✓."
+      ]
+    },
+    {
+      "type": "interactive",
+      "component": "VectorVisual",
+      "params": {
+        "vectors": [
+          [1, 1],
+          [3, 4]
+        ],
+        "showProjection": true,
+        "gridRange": 6
+      },
+      "caption": "The dashed segment from (3, 4) down to (3.5, 3.5) is the residual - perpendicular to the direction (1, 1). No other point on that line is closer."
+    },
+    {
+      "type": "h2",
+      "text": "Gram-Schmidt: manufacturing orthonormal bases"
+    },
+    {
+      "type": "p",
+      "md": "An **orthonormal basis** (unit-length, mutually perpendicular vectors) makes every dot product trivial and every projection one-dimensional. **Gram-Schmidt** builds one from any independent set: keep the first vector, then subtract from each later vector its projection onto all the ones already accepted - what remains is the part pointing in a genuinely new direction, which you then normalise. It is the algorithmic version of \"throw away the component you have already accounted for\"."
+    },
+    {
+      "type": "steps",
+      "title": "Worked example: Gram-Schmidt on two 3-vectors",
+      "items": [
+        "Start: $v_1 = (1, 1, 0)$, $v_2 = (1, 0, 1)$.",
+        "Keep $u_1 = (1, 1, 0)$ (we normalise at the end).",
+        "Project $v_2$ onto $u_1$: coefficient $= \\dfrac{(1)(1) + (0)(1) + (1)(0)}{1 + 1 + 0} = \\dfrac{1}{2}$, so the projection is $(0.5, 0.5, 0)$.",
+        "Subtract: $u_2 = v_2 - (0.5, 0.5, 0) = (0.5, -0.5, 1)$.",
+        "Check orthogonality: $u_1 \\cdot u_2 = 0.5 - 0.5 + 0 = 0$ ✓.",
+        "Normalise: $\\lVert u_1 \\rVert = \\sqrt{2}$, so $e_1 = \\tfrac{1}{\\sqrt 2}(1, 1, 0)$; $\\lVert u_2 \\rVert = \\sqrt{0.25 + 0.25 + 1} = \\sqrt{1.5} = \\tfrac{\\sqrt 6}{2}$, so $e_2 = \\tfrac{1}{\\sqrt 6}(1, -1, 2)$.",
+        "Final check: $e_1 \\cdot e_2 = \\dfrac{1 - 1 + 0}{\\sqrt{12}} = 0$ ✓ and both have length 1 ✓."
+      ]
+    },
+    {
+      "type": "h2",
+      "text": "QR and least squares: regression as projection"
+    },
+    {
+      "type": "p",
+      "md": "Run Gram-Schmidt on the **columns of a matrix** $A$ and you obtain the **QR decomposition**: $A = QR$, where $Q$ has orthonormal columns and $R$ is upper-triangular. It is valuable twice over. Numerically, solving $Ax = b$ becomes $Rx = Q^\\top b$ - one dot product and one cheap triangular back-substitution, with far better stability than raw elimination, which is why regression libraries are built on QR. Conceptually, $Q$ is literally an orthonormal basis for the column space, so the least-squares solution is simply $x = R^{-1} Q^\\top b$: project first, then un-triangularise."
+    },
+    {
+      "type": "p",
+      "md": "For a line fit $y = a + bx$ to points $(0, 1)$, $(1, 2)$, $(2, 2)$, the design matrix is $X = \\begin{pmatrix} 1 & 0 \\\\ 1 & 1 \\\\ 1 & 2 \\end{pmatrix}$ (rows: 1, x). Exact solving is impossible - no line hits all three points - so we solve the **normal equations** $X^\\top X \\beta = X^\\top y$, which encode exactly the orthogonality of residuals to both columns."
+    },
+    {
+      "type": "steps",
+      "title": "Worked example: least squares via the normal equations",
+      "items": [
+        "$y = (1, 2, 2)$. Compute $X^\\top X = \\begin{pmatrix} 3 & 3 \\\\ 3 & 5 \\end{pmatrix}$ (counts: three 1s sum to 3; $\\sum x = 3$; $\\sum x^2 = 5$) and $X^\\top y = (5, 6)$ ($\\sum y = 5$; $\\sum xy = 0 + 2 + 4 = 6$).",
+        "Solve $\\begin{pmatrix} 3 & 3 \\\\ 3 & 5 \\end{pmatrix} \\begin{pmatrix} a \\\\ b \\end{pmatrix} = \\begin{pmatrix} 5 \\\\ 6 \\end{pmatrix}$. Determinant $= 15 - 9 = 6$.",
+        "$a = \\dfrac{5 \\times 5 - 3 \\times 6}{6} = \\dfrac{7}{6} \\approx 1.1667$; $b = \\dfrac{3 \\times 6 - 3 \\times 5}{6} = \\dfrac{3}{6} = 0.5$.",
+        "Fit: $y = \\tfrac{7}{6} + \\tfrac{1}{2} x$. Predictions: $\\tfrac{7}{6}, \\tfrac{5}{3}, \\tfrac{13}{6}$; residuals: $-\\tfrac{1}{6}, +\\tfrac{1}{3}, -\\tfrac{1}{6}$.",
+        "Check the projection property: residuals sum to zero (they are orthogonal to the constant column) ✓, and each is orthogonal to the x-column: $-\\tfrac{1}{6}(0) + \\tfrac{1}{3}(1) - \\tfrac{1}{6}(2) = 0$ ✓."
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Why this matters for finance",
+      "md": "Estimating betas - of a stock against the market, or a book against risk factors - is ordinary least squares, i.e. a projection of returns onto the span of the factor columns. Correlated factors make the projection ill-conditioned; QR (or orthogonalising the factors first, which is Gram-Schmidt thinking) is how production code keeps the estimates stable. The same orthogonality underlies PCA: principal components are precisely an orthonormal basis chosen so the coordinates are uncorrelated."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import numpy as np\nb = np.array([2.0, 0.0, 1.0])\na = np.array([1.0, 1.0, 1.0])\np = (np.dot(b, a) / np.dot(a, a)) * a\nprint(p.tolist())               # [1.0, 1.0, 1.0]\nprint(np.dot(b - p, a))         # 0.0 - residual is orthogonal\n\nX = np.array([[1.0, 0.0], [1.0, 1.0], [1.0, 2.0]])\ny = np.array([1.0, 2.0, 2.0])\ncoef = np.linalg.lstsq(X, y, rcond=None)[0]\nprint(f\"intercept={coef[0]:.4f} slope={coef[1]:.4f}\")  # intercept=1.1667 slope=0.5000",
+      "caption": "Projection by hand matches np.linalg.lstsq - both implement the same orthogonality principle."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Project $b = (2, 0, 1)$ onto $a = (1, 1, 1)$. Compute the projection $p$, the residual $b - p$, and verify that the residual is orthogonal to $a$ and that $\\lVert b \\rVert^2 = \\lVert p \\rVert^2 + \\lVert b - p \\rVert^2$.",
+    "hints": [
+      "First compute the scalar (b.a)/(a.a), then multiply by a.",
+      "The residual should be a vector with a zero component - it will make the Pythagorean check easy."
+    ],
+    "solution": "$b \\cdot a = 2 + 0 + 1 = 3$ and $a \\cdot a = 3$, so the scalar is 1 and $p = (1, 1, 1)$. Residual: $(1, -1, 0)$. Orthogonality: $1 - 1 + 0 = 0$ ✓. Lengths: $\\lVert p \\rVert^2 = 3$, $\\lVert b - p \\rVert^2 = 2$, and $\\lVert b \\rVert^2 = 4 + 0 + 1 = 5 = 3 + 2$ ✓ - the right triangle closes exactly, confirming $p$ is the closest point."
+  },
+  "independentExercise": {
+    "prompt": "Fit $y = a + bx$ by least squares to the three points $(0, 0)$, $(1, 1)$, $(2, 1)$ using the normal equations. Compute $X^\\top X$ and $X^\\top y$, give $a$ and $b$ as fractions, list the three residuals, and verify they are orthogonal to both columns of $X$ (i.e. sum to zero and satisfy $\\sum x_i r_i = 0$).",
+    "hints": [
+      "Same X as the lesson example; only X^T y changes: compute sum(y) and sum(x*y).",
+      "Determinant of X^T X is 6, as before."
+    ],
+    "solution": "$X^\\top y = (\\sum y, \\sum xy) = (2, 0 \\cdot 0 + 1 \\cdot 1 + 2 \\cdot 1) = (2, 3)$. Solve $\\begin{pmatrix} 3 & 3 \\\\ 3 & 5 \\end{pmatrix} (a, b)^\\top = (2, 3)^\\top$: $a = \\dfrac{5 \\times 2 - 3 \\times 3}{6} = \\dfrac{1}{6}$, $b = \\dfrac{3 \\times 3 - 3 \\times 2}{6} = \\dfrac{1}{2}$. Fit: $y = \\tfrac{1}{6} + \\tfrac{x}{2}$. Predictions: $\\tfrac{1}{6}, \\tfrac{2}{3}, \\tfrac{7}{6}$; residuals: $-\\tfrac{1}{6}, +\\tfrac{1}{3}, -\\tfrac{1}{6}$. Sum: $-\\tfrac{1}{6} + \\tfrac{4}{6} - \\tfrac{1}{6} = 0$ ✓; $\\sum x_i r_i = 0 \\cdot(-\\tfrac{1}{6}) + 1 \\cdot \\tfrac{2}{3} + 2 \\cdot(-\\tfrac{1}{6}) = \\tfrac{4}{6} - \\tfrac{2}{6} = 0$ ✓ - both orthogonality conditions hold, confirming the projection."
+  },
+  "commonMistakes": [
+    "Projecting with $\\dfrac{a \\cdot b}{b \\cdot b}$ instead of $\\dfrac{b \\cdot a}{a \\cdot a}$ - the denominator must be the length of the vector being projected *onto*.",
+    "Forgetting that the least-squares residual must be orthogonal to *every column* of the design matrix, not just one.",
+    "Skipping the normalisation step in Gram-Schmidt, or normalising before orthogonalising.",
+    "Solving normal equations on badly collinear data instead of using QR - conditioning problems are hidden inside $X^\\top X$."
+  ],
+  "realWorldApplication": "GPS receivers triangulate position by projecting noisy measurements onto a solution subspace; audio and image compression throw away components orthogonal to what matters; every curve fit in a plotting library is a projection.",
+  "quantFinanceApplication": "OLS beta estimation (CAPM and multi-factor models) is exactly the projection in this lesson: regress returns on factor columns, residuals orthogonal to factors. QR factorisation is the default engine in statistical libraries for doing it stably.",
+  "summary": [
+    "Closest-point problems are orthogonality problems: minimise $\\lVert b - p \\rVert$ over a subspace by making the residual perpendicular to it.",
+    "Projection onto a direction: $p = \\dfrac{b \\cdot a}{a \\cdot a} a$; Pythagoras confirms it is the best approximation.",
+    "Gram-Schmidt orthogonalises a basis by subtracting projections; applied to a matrix it yields $A = QR$.",
+    "Least squares solves $X^\\top X \\beta = X^\\top y$ - equivalent to projecting $y$ onto the column space of $X$; residuals come out orthogonal to every column."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "numeric",
+      "prompt": "Project $b = (3, 4)$ onto $a = (1, 1)$. What is the scalar coefficient $\\dfrac{b \\cdot a}{a \\cdot a}$?",
+      "answer": 3.5,
+      "explanation": "$b \\cdot a = 7$ and $a \\cdot a = 2$, so the coefficient is $7/2 = 3.5$ and the projection is $(3.5, 3.5)$."
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "In least squares, the residual vector $y - X\\hat{\\beta}$ is always:",
+      "options": [
+        "Parallel to the first column of X",
+        "Orthogonal to every column of X",
+        "Orthogonal to $y$",
+        "The zero vector"
+      ],
+      "answerIndex": 1,
+      "explanation": "The normal equations $X^\\top(y - X\\hat\\beta) = 0$ say exactly that the residual is orthogonal to the whole column space of X - that is the projection property, and it implies the residuals sum to zero when a constant column is present."
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "After Gram-Schmidt on $v_1 = (1, 1, 0)$, $v_2 = (1, 0, 1)$, we found $u_2 = (0.5, -0.5, 1)$. What is $u_1 \\cdot u_2$ (before normalisation)?",
+      "answer": 0,
+      "explanation": "$(1)(0.5) + (1)(-0.5) + (0)(1) = 0$ - that is the whole point of the subtraction step: the leftover is exactly the part of $v_2$ orthogonal to $u_1$."
+    },
+    {
+      "id": "q4",
+      "type": "code-output",
+      "prompt": "What does this Python code print?",
+      "language": "python",
+      "code": "import numpy as np\nb = np.array([2.0, 0.0, 1.0])\na = np.array([1.0, 1.0, 1.0])\np = (np.dot(b, a) / np.dot(a, a)) * a\nprint(p.tolist())\nprint(np.dot(b - p, a))",
+      "answer": "[1.0, 1.0, 1.0]\n0.0",
+      "explanation": "The coefficient is $3/3 = 1.0$, so p = (1, 1, 1); the residual (1, -1, 0) has dot product 0 with a - printed as 0.0 since the inputs are floats."
+    },
+    {
+      "id": "q5",
+      "type": "short",
+      "prompt": "In one or two sentences: why does making the residual orthogonal to the columns of X minimise the sum of squared errors?",
+      "modelAnswer": "By Pythagoras, any other coefficient choice splits b into the projection plus a longer oblique error vector; orthogonality is exactly the condition for the error vector to have minimal length, and X^T(y - Xb) = 0 encodes it.",
+      "keywords": ["pythagoras", "orthogonal", "shortest", "closest", "perpendicular"],
+      "explanation": "The shortest path from a point to a subspace is the perpendicular one; translating that into algebra gives the normal equations, whose solution therefore minimises the squared error."
+    },
+    {
+      "id": "q6",
+      "type": "mcq",
+      "prompt": "Given $A = QR$ with orthonormal $Q$, solving $Ax = b$ proceeds by:",
+      "options": [
+        "Computing $A^{-1}$ and multiplying",
+        "Solving the triangular system $Rx = Q^\\top b$",
+        "Squaring both sides",
+        "Applying Gram-Schmidt to $b$"
+      ],
+      "answerIndex": 1,
+      "explanation": "Multiply $Ax = b$ by $Q^\\top$: $Rx = Q^\\top b$ (since $Q^\\top Q = I$). R is upper-triangular, so back-substitution finishes the job quickly and stably - no inverse ever formed."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "formula",
+      "front": "Projection of b onto direction a",
+      "back": "$p = \\dfrac{b \\cdot a}{a \\cdot a}\\, a$; residual $b - p$ is orthogonal to $a$."
+    },
+    {
+      "type": "concept",
+      "front": "Why orthogonal residual = best fit",
+      "back": "Pythagoras: the perpendicular segment is the shortest connection to the subspace, so the orthogonal residual has minimal length, i.e. minimal sum of squared errors."
+    },
+    {
+      "type": "definition",
+      "front": "QR decomposition",
+      "back": "$A = QR$: Q has orthonormal columns (Gram-Schmidt on A's columns), R is upper-triangular; solve $Ax = b$ as $Rx = Q^\\top b$."
+    },
+    {
+      "type": "formula",
+      "front": "Normal equations",
+      "back": "$X^\\top X \\beta = X^\\top y$ - the algebraic form of 'residuals orthogonal to every column of X'."
+    },
+    {
+      "type": "code-output",
+      "front": "Project (2, 0, 1) onto (1, 1, 1) - what is the projection?",
+      "back": "(1, 1, 1), with residual (1, -1, 0) orthogonal to (1, 1, 1)."
+    }
+  ],
+  "references": [
+    {
+      "label": "MIT OpenCourseWare - 18.06, Lecture 15: Projections onto subspaces",
+      "url": "https://ocw.mit.edu/courses/18-06-linear-algebra-spring-2010/"
+    },
+    {
+      "label": "NumPy documentation - numpy.linalg.lstsq",
+      "url": "https://numpy.org/doc/stable/reference/generated/numpy.linalg.lstsq.html"
+    }
+  ],
+  "skills": ["linear-algebra"]
+}

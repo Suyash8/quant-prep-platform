@@ -1,0 +1,248 @@
+{
+  "id": "cpp-storage-duration",
+  "moduleId": "ph4-cpp-l3",
+  "title": "Stack, Heap and Static Storage",
+  "estMinutes": 27,
+  "difficulty": "core",
+  "prereqs": ["cpp-object-lifetime-oop"],
+  "objectives": [
+    "Classify any object as having automatic, static or dynamic storage duration from its declaration",
+    "Predict the exact order of constructor and destructor calls across nested scopes, function-local statics and globals",
+    "Choose the correct storage duration for an object based on its size, lifetime and sharing requirements",
+    "Compute the sizeof of a simple struct accounting for alignment padding"
+  ],
+  "motivation": "Every C++ object lives somewhere: on the stack, in static storage, or on the heap. Where it lives decides how fast it is created, who destroys it and when - and misplacing an object is the root cause of the leaks, use-after-free crashes and latency spikes that dominate real trading-system incidents. This lesson builds the mental model that the rest of this module refines into production-grade resource management.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Where objects live: the three storage durations"
+    },
+    {
+      "type": "p",
+      "md": "C++ gives every object a **storage duration**: a rule that says when its storage begins and ends. There are three you must know cold. **Automatic** storage is for locals and parameters: storage starts when execution enters the scope and ends when it leaves. **Static** storage is for globals, namespace-scope objects, static class members and function-local statics: storage starts once, before main runs (or at first use), and ends after main returns. **Dynamic** storage is for anything created with new: storage starts when you say so and ends only when you explicitly release it. There is also a fourth, thread_local, which gives each thread its own copy. Note that *storage duration is not scope*: a function-local static is only visible inside its function (scope) but lives for the whole program (duration)."
+    },
+    {
+      "type": "table",
+      "headers": ["Duration", "Created", "Destroyed", "Typical example"],
+      "rows": [
+        ["automatic", "execution enters the scope", "scope exits, in reverse order", "locals, parameters, temporaries"],
+        ["static", "once, before main or at first use", "after main returns", "globals, function-local statics"],
+        ["dynamic", "when your code runs new", "when your code runs delete", "order book nodes, runtime-sized buffers"],
+        ["thread_local", "once per thread", "when the thread ends", "per-thread scratch buffers"]
+      ]
+    },
+    {
+      "type": "h2",
+      "text": "The stack: automatic storage is the default"
+    },
+    {
+      "type": "p",
+      "md": "Automatic objects live in the current **stack frame**, a block of memory the runtime reserves for each function call. Creating an automatic object usually just moves a pointer and runs a constructor - there is no search, no locking, no bookkeeping - which is why locals are essentially free to create. Destruction is just as disciplined: **destructors run in the reverse order of construction**, innermost scope first, when the scope exits. This guaranteed, ordered, automatic teardown is the single most important fact in C++ resource management; the RAII lesson will build an entire design philosophy on it. The one constraint is size: typical stacks are only 1-8 MB, so a carelessly declared local array of a few million doubles will overflow the stack, which is undefined behaviour."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <iostream>\n\nstruct Traced {\n    const char* name;\n    explicit Traced(const char* n) : name(n) { std::cout << \"  construct \" << n << '\\n'; }\n    ~Traced() { std::cout << \"  destroy \" << name << '\\n'; }\n};\n\nint main() {\n    Traced outer(\"outer\");\n    {\n        Traced inner(\"inner\");\n        Traced inner2(\"inner2\");\n    }                      // inner2 destroyed first, then inner\n    std::cout << \"scope ended\\n\";\n}                          // outer destroyed last",
+      "caption": "Automatic teardown is ordered: innermost scope exits first, then the enclosing one."
+    },
+    {
+      "type": "h2",
+      "text": "Static storage: born before main, buried after"
+    },
+    {
+      "type": "p",
+      "md": "Namespace-scope objects are constructed before main runs. **Function-local statics** are subtler and more useful: they are constructed the first time control passes through their declaration, and never again. Since C++11 that first-time initialisation is thread-safe - if two threads arrive simultaneously, exactly one performs the initialisation while the others wait. This is the standard remedy for the *static initialisation order fiasco*, where a global in one translation unit depends on a global in another and the cross-unit order is unspecified: wrap the dependency in a function-local static accessor and initialisation happens on first use, by construction. All static objects are destroyed after main returns, in the reverse order of their construction - including function-local statics that were never executed, which are simply skipped."
+    },
+    {
+      "type": "callout",
+      "variant": "info",
+      "title": "Magic statics are thread-safe",
+      "md": "Since C++11, initialisation of a function-local static is guaranteed to be atomic with respect to other threads: one thread runs the initialiser, the others block until it finishes. This makes the *construct on first use* idiom safe to use in concurrent code."
+    },
+    {
+      "type": "h2",
+      "text": "The heap: dynamic storage"
+    },
+    {
+      "type": "p",
+      "md": "Objects created by **new** live on the heap (formally, the *free store*). Their defining property is that their lifetime is completely decoupled from scope: a heap object can outlive the function that created it, be handed between threads, or wait in a container for weeks. That freedom is purchased with three costs. First, allocation goes through an allocator, which is far slower than the stack's pointer bump. Second, heap objects are reached through pointers, so every access risks a cache miss - a real issue in latency-sensitive paths. Third, and most dangerously, *you* are responsible for release: every new must be matched by exactly one delete, on every path including the error paths. The next two lessons are devoted to what happens when that contract is broken."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <iostream>\n\nint main() {\n    int* p = new int(42);            // heap allocation, then construction\n    std::cout << *p << '\\n';\n    delete p;                        // destruction, then release\n    p = nullptr;                     // deleting nullptr is a safe no-op\n\n    auto* prices = new double[3]{101.5, 102.25, 99.75};\n    std::cout << prices[1] << '\\n';  // 102.25\n    delete[] prices;                 // array new must pair with delete[]\n}",
+      "caption": "Dynamic objects: lifetime controlled entirely by you."
+    },
+    {
+      "type": "interactive",
+      "component": "MemoryLayout",
+      "params": {
+        "regions": [
+          { "name": "static storage", "objects": [{ "label": "g_config (128 B)", "size": 128 }] },
+          { "name": "stack frame: main", "objects": [{ "label": "p (8 B pointer)", "size": 8 }, { "label": "prices (8 B pointer)", "size": 8 }] },
+          { "name": "heap", "objects": [{ "label": "int(42) (4 B)", "size": 4 }, { "label": "double[3] (24 B)", "size": 24 }] }
+        ]
+      },
+      "caption": "Three regions, three lifetimes: static data outlives main, the stack frame dies at return, heap blocks live exactly as long as nobody frees them."
+    },
+    {
+      "type": "h2",
+      "text": "Padding: the storage you pay for but do not see"
+    },
+    {
+      "type": "p",
+      "md": "The hardware accesses memory most efficiently when data sits at addresses that are multiples of its alignment, so the compiler inserts **padding** between struct members and rounds the struct size up to a multiple of its strictest member's alignment. That means sizeof(T) is not the sum of sizeof of the members, and member order changes the total. For a market-data type this matters directly: an order book holding millions of ticks pays real memory - and real cache misses - for padding bytes nobody reads."
+    },
+    {
+      "type": "steps",
+      "title": "Worked example: sizeof of a tick struct",
+      "items": [
+        "struct Tick { double price; int qty; char side; }: price occupies bytes 0-7 (alignment 8).",
+        "qty fits at bytes 8-11 (alignment 4, already satisfied).",
+        "side occupies byte 12 (alignment 1).",
+        "The struct's alignment is 8 (strictest member), so the size is rounded up: bytes 13-15 are tail padding.",
+        "sizeof(Tick) = **16**, even though the members sum to 13. Reordering to { char side; int qty; double price; } gives side at 0, padding 1-3, qty 4-7, price 8-15 - still 16. But { char a; double b; char c; } costs 24, not 10: pad 1-7 and tail 17-23."
+      ]
+    },
+    {
+      "type": "h2",
+      "text": "Choosing storage in practice"
+    },
+    {
+      "type": "p",
+      "md": "The default is automatic: if a local variable can do the job, use one. Reach for the heap when the size is only known at runtime, when the object must outlive the scope that created it, or when it is genuinely large. Reach for static storage only for data that is genuinely global and immutable after start-up - configuration tables, lookup tables, loggers. Everything in between should be an automatic RAII object (a std::vector, for instance) that manages its own heap buffer, a pattern the next lessons formalise."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Predict, line by line, what this program prints - then reason about *why* each destructor appears exactly where it does.\n\n```cpp\n#include <iostream>\n\nstruct Tag {\n    const char* n;\n    explicit Tag(const char* name) : n(name) { std::cout << \"make \" << n << '\\n'; }\n    ~Tag() { std::cout << \"drop \" << n << '\\n'; }\n};\n\nTag g(\"G\");\n\nint main() {\n    Tag a(\"A\");\n    static Tag s(\"S\");\n    { Tag t(\"T\"); }\n    std::cout << \"work\\n\";\n}\n```",
+    "hints": [
+      "Namespace-scope objects are constructed before main runs.",
+      "A function-local static is constructed when control first passes its declaration, not when its scope begins.",
+      "Destruction of locals is reverse construction order; static destruction happens after main."
+    ],
+    "solution": "Output:\n\n```\nmake G\nmake A\nmake S\nmake T\ndrop T\nwork\ndrop A\ndrop S\ndrop G\n```\n\n`G` is a global, constructed before main. Inside main, `A` is constructed, then control passes the `static` declaration so `S` is constructed, then `T` in the inner block. When the inner block ends, `T` is destroyed immediately. `work` prints, then main ends: locals go first (`A`), then statics in reverse order of construction - `S` was constructed after `G`, so `S` is destroyed first, and `G` last."
+  },
+  "independentExercise": {
+    "prompt": "You are laying out an order-management hot path. For each item, choose a storage duration and justify it in one sentence: (a) a risk-limits table loaded once at start-up and read by all threads; (b) a scratch std::vector of fills rebuilt on every order event; (c) a 16 MB market-data ring buffer; (d) per-thread order-id counters. Then compute sizeof for both `struct A { char side; double price; int qty; };` and `struct B { double price; int qty; char side; };` and report both values.",
+    "hints": [
+      "(a) is written once, read everywhere - what duration fits data that outlives main?",
+      "(d) needs one counter *per thread* - there is a storage duration keyword for exactly this.",
+      "For sizeof: lay members out at addresses that respect each member's alignment, then round the total up."
+    ],
+    "solution": "(a) Static storage (a namespace-scope object): one copy, program lifetime, safe for concurrent reads. (b) Automatic: a local std::vector rebuilt per event - note its *elements* still live on the heap, but the vector object itself manages that buffer. (c) Dynamic (heap): 16 MB dwarfs the typical 1-8 MB stack, and the buffer's lifetime is owned by the gateway object. (d) thread_local: each thread gets its own counter with no synchronisation.\n\nsizeof: struct A: side at 0, padding 1-7, price at 8-15, qty at 16-19, tail padding 20-23 \u2192 **24 bytes**. struct B: price at 0-7, qty at 8-11, side at 12, tail padding 13-15 \u2192 **16 bytes**. Same members, different order, 50% size difference."
+  },
+  "commonMistakes": [
+    "Assuming scope and lifetime are the same thing: a function-local static has block scope but program-lifetime storage.",
+    "Declaring multi-megabyte buffers as locals - stacks are typically 1-8 MB and overflow is undefined behaviour.",
+    "Being surprised that static destruction runs in reverse construction order after main - a global logger can be destroyed before a static object whose destructor still tries to log.",
+    "Computing struct size as the sum of members and ignoring alignment padding, then wondering why an array of ticks consumes more memory than the arithmetic suggests."
+  ],
+  "realWorldApplication": "Exchange gateways assign each object to the region its lifetime demands: configuration in static storage, per-order scratch on the stack, order books and ring buffers on the heap. Misplacing any of the three shows up as either latency spikes or crashes in production.",
+  "quantFinanceApplication": "A desk's risk-limit table (\\$5,000,000 max position) is static data read by every thread; per-strategy scratch vectors are automatic; the market-data ring buffer is heap-allocated once at start-up - the exact three-way split this lesson teaches.",
+  "summary": [
+    "Every object has a storage duration - automatic, static, dynamic (or thread_local) - which controls when storage begins and ends, independently of scope.",
+    "Automatic objects are destroyed at scope exit in reverse construction order; this ordered teardown is the foundation RAII is built on.",
+    "Static objects are created once (function-local statics on first use, thread-safely since C++11) and destroyed after main in reverse construction order.",
+    "Heap objects have fully manual lifetimes: every new must be matched by exactly one delete, on every execution path.",
+    "sizeof includes alignment padding, so member order changes struct size - 24 vs 16 bytes for the same members."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "Which object has dynamic storage duration?",
+      "options": [
+        "int x = 5; inside a function body",
+        "static int hits = 0; at namespace scope",
+        "A function-local static counter",
+        "int* p = new int(5);"
+      ],
+      "answerIndex": 3,
+      "explanation": "Storage created by new is dynamic: its lifetime runs until delete. The others are automatic (a local) and static (a namespace-scope object and a function-local static)."
+    },
+    {
+      "id": "q2",
+      "type": "code-output",
+      "prompt": "What does this program print?",
+      "language": "cpp",
+      "code": "#include <iostream>\nstruct T {\n    const char* n;\n    explicit T(const char* name) : n(name) { std::cout << \"+\" << n << \"\\n\"; }\n    ~T() { std::cout << \"-\" << n << \"\\n\"; }\n};\nint main() {\n    T a(\"A\");\n    static T s(\"S\");\n    { T b(\"B\"); }\n    std::cout << \"mid\\n\";\n}",
+      "answer": "+A\n+S\n+B\n-B\nmid\n-A\n-S",
+      "explanation": "a constructs first (+A), then control passes the static declaration (+S), then b (+B); b dies at the end of the inner block (-B); 'mid' prints; main ends destroying a (-A); finally statics are destroyed after main in reverse construction order (-S)."
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "On a 64-bit platform where double has 8-byte alignment, what is sizeof of `struct S { int a; double b; int c; };`?",
+      "answer": 24,
+      "explanation": "a occupies 0-3, padding 4-7 so b (alignment 8) sits at 8-15, c sits at 16-19, and the struct size is rounded up to a multiple of 8: tail padding 20-23. Total 24, not 16."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "When exactly is a function-local static object constructed?",
+      "options": [
+        "Before main runs, together with all globals",
+        "The first time control passes through its declaration, thread-safely since C++11",
+        "Every time its enclosing function is called",
+        "When its enclosing block ends"
+      ],
+      "answerIndex": 1,
+      "explanation": "Function-local statics use lazy 'construct on first use' initialisation; since C++11 concurrent first arrival is safe (one thread initialises, others wait). This is the standard fix for the static initialisation order fiasco."
+    },
+    {
+      "id": "q5",
+      "type": "ms",
+      "prompt": "Select every true statement about storage duration.",
+      "options": [
+        "Automatic objects are destroyed in reverse order of construction when their scope exits",
+        "Function-local statics are initialised the first time control passes through their declaration",
+        "Objects with dynamic storage duration are destroyed automatically when the creating function returns",
+        "sizeof of a struct is always the sum of the sizes of its members"
+      ],
+      "answerIndices": [0, 1],
+      "explanation": "Reverse-order teardown of automatics and first-use initialisation of function-local statics are guaranteed. Heap objects are destroyed only by explicit delete, and alignment padding can make sizeof exceed the member sum."
+    },
+    {
+      "id": "q6",
+      "type": "code-output",
+      "prompt": "What does this program print?",
+      "language": "cpp",
+      "code": "#include <iostream>\nint next() {\n    static int n = 0;\n    return ++n;\n}\nint main() {\n    std::cout << next() << \"\\n\";\n    std::cout << next() << \"\\n\";\n    std::cout << next() << \"\\n\";\n}",
+      "answer": "1\n2\n3",
+      "explanation": "The static n is initialised to 0 once, on the first call. Each call increments the same object: 1, then 2, then 3. A local would print 1, 1, 1."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "definition",
+      "front": "What is storage duration, and what are the three kinds?",
+      "back": "The rule defining when an object's storage begins and ends: automatic (scope entry to scope exit), static (program lifetime), dynamic (from new until delete). thread_local adds a per-thread variant."
+    },
+    {
+      "type": "concept",
+      "front": "In what order are automatic objects destroyed at scope exit?",
+      "back": "Reverse order of construction: the most recently constructed object in the scope is destroyed first."
+    },
+    {
+      "type": "definition",
+      "front": "When is a function-local static constructed, and is that thread-safe?",
+      "back": "On the first pass through its declaration; since C++11 the initialisation is thread-safe (one thread runs it, the rest wait). Called 'magic statics'."
+    },
+    {
+      "type": "code-output",
+      "front": "sizeof(struct S { int a; double b; int c; }) on a 64-bit platform?",
+      "back": "24 bytes: a 0-3, pad 4-7, b 8-15, c 16-19, tail pad 20-23."
+    },
+    {
+      "type": "error-identification",
+      "front": "Bug spot: `struct Tick { char side; double price; int qty; };` used in a 10-million-element array is 24 bytes per element. Fix?",
+      "back": "Reorder members largest-alignment first: { double price; int qty; char side; } is 16 bytes - a 33% memory and cache footprint reduction."
+    }
+  ],
+  "references": [
+    { "label": "cppreference — Storage duration", "url": "https://en.cppreference.com/w/cpp/language/storage_duration" },
+    { "label": "isocpp FAQ — Static initialization order fiasco", "url": "https://isocpp.org/wiki/faq/ctors#static-init-order" },
+    { "label": "cppreference — sizeof and alignment", "url": "https://en.cppreference.com/w/cpp/language/sizeof" }
+  ],
+  "skills": ["cpp-memory"]
+}

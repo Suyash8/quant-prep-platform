@@ -1,0 +1,226 @@
+{
+  "id": "cpp-allocators-pools",
+  "moduleId": "ph4-cpp-l8",
+  "title": "Memory Pools, Custom Allocators and Alignment",
+  "estMinutes": 27,
+  "difficulty": "specialist",
+  "prereqs": [
+    "cpp-cache-locality"
+  ],
+  "objectives": [
+    "Explain the costs of general-purpose heap allocation: lock contention, fragmentation and cache effects",
+    "Use std::pmr::monotonic_buffer_resource to build an allocation-free processing scope",
+    "Compute padding and sizeof for ordered vs unordered struct members, and reorder fields to shrink records",
+    "Apply alignas to satisfy over-alignment needs such as one object per cache line or SIMD alignment"
+  ],
+  "motivation": "An order-gateway allocates a fresh Order object per message from the global heap. Under load, malloc serialises threads on an internal lock, fragments the arena, and scatters orders across memory so the matching loop takes cache misses on every object. Pool allocation turns a jittery 4-microsecond path into a flat 1-microsecond one - same logic, different memory strategy.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "What the general-purpose heap actually costs"
+    },
+    {
+      "type": "p",
+      "md": "`operator new` / `malloc` is a marvel of generality and a performance liability. Each call must search size-class **free lists** for a chunk, and shared allocators take an internal lock - under multicore load, threads *contend* on that lock even though they allocate unrelated objects. Freed chunks leave holes; with many sizes interleaved you get **fragmentation**, and objects with the same lifetime end up scattered, destroying the locality you learned about in the cache lesson. There is also *jitter*: occasionally the allocator takes a slow path (new size class, mmap for large blocks), which is exactly the tail latency a trading system cannot afford."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "The desk rule",
+      "md": "Hot paths allocate from pools or arenas created *before* the trading session; the steady-state hot path performs zero general-purpose allocations. This is why production gateways pre-size vectors with `reserve()` at startup."
+    },
+    {
+      "type": "h2",
+      "text": "Arena allocation with std::pmr"
+    },
+    {
+      "type": "p",
+      "md": "An **arena** (or *monotonic*) allocator hands out memory by bumping one pointer: allocation is a pointer increment, deallocation is a no-op, and everything is reclaimed in one step when the arena dies. That is perfect when many objects share one lifetime - a day of ticks, one incoming message, one simulation path. C++17 ships this as `std::pmr::monotonic_buffer_resource`."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <memory_resource>\n#include <vector>\n#include <iostream>\n\nint main() {\n    char buffer[1024];                        // stack block: no heap traffic at all\n    std::pmr::monotonic_buffer_resource arena{\n        buffer, sizeof(buffer)};              // hands out chunks, frees nothing individually\n\n    std::pmr::vector<double> prices(&arena);  // vector allocates from the arena\n    for (int i = 0; i < 100; ++i)\n        prices.push_back(100.0 + i * 0.25);\n\n    std::cout << prices.size() << ' ' << prices.back() << '\\n';\n    // arena dies with main's scope: one step reclaims everything\n}\n// Prints: 100 124.75",
+      "caption": "All 100 pushes (including internal growth) are served from one stack buffer."
+    },
+    {
+      "type": "p",
+      "md": "Know the trade-offs: a monotonic resource never reuses freed blocks, so a growing `pmr::vector` leaves its old buffers stranded inside the arena until the arena dies. For *same-size, recycle-forever* objects - orders, quote events - use a **pool** allocator instead: it carves one big block into fixed slots and keeps a free list, so allocate/free is a few pointer operations, every slot is the same size, and consecutive allocations are contiguous (great locality). The general pattern for an allocator-aware container is a **memory_resource**: you pass `&pool` to `std::pmr::vector<Order>` and the container routes every allocation through it."
+    },
+    {
+      "type": "steps",
+      "title": "Designing a fixed-size order pool",
+      "items": [
+        "Choose the slot size: `sizeof(Order)` rounded up to alignment - say 64 bytes so slots never straddle cache lines.",
+        "Reserve storage once: a 4 KiB page holds $4096 / 64 = 64$ slots.",
+        "Allocate: pop a slot index from the free list (O(1), branch-light).",
+        "Free: push the index back - no search, no lock if each thread owns a pool.",
+        "Result: constant-time alloc/free, zero fragmentation, and orders allocated together sit together in cache."
+      ]
+    },
+    {
+      "type": "h2",
+      "text": "Alignment: the contract every address must honour"
+    },
+    {
+      "type": "p",
+      "md": "A type with alignment $a$ must live at an address that is a multiple of $a$; `double` needs 8, `std::max_align_t`-suitable scalars up to 16. The compiler inserts **padding** to honour this inside structs, and allocators must return suitably aligned addresses or behaviour is undefined. Two places alignment becomes a *feature*: **SIMD** (aligned 32-byte loads for AVX require `alignas(32)` storage) and **cache-line control** (alignas(64) to pin one object per line or to kill false sharing)."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <cstddef>\n#include <iostream>\n\nstruct alignas(64) PaddedSlot {   // force one object per cache line\n    double v[8];                  // 64 bytes of payload\n};\n\nstruct BadOrder  { char c; double d; std::int32_t i; };  // 1 +7pad +8 +4 = 20 -> 24\nstruct GoodOrder { double d; std::int32_t i; char c; };  // 8 +4 +1 +3pad = 16\n\nint main() {\n    std::cout << sizeof(PaddedSlot) << ' ' << alignof(PaddedSlot) << '\\n';\n    std::cout << sizeof(BadOrder) << ' ' << sizeof(GoodOrder) << '\\n';\n}\n// Prints: 64 64\n//         24 16",
+      "caption": "Same members, different order: 24 vs 16 bytes - one third less memory traffic for free."
+    },
+    {
+      "type": "interactive",
+      "component": "MemoryPool",
+      "params": {}
+    },
+    {
+      "type": "p",
+      "md": "The reordering rule: declare members largest-alignment first. In `BadOrder`, `char c` at offset 0 forces `double d` to wait until offset 8 (7 padding bytes). In `GoodOrder`, `d` sits at 0, `i` at 8, `c` at 12, and only 3 bytes trail. For an array of $10^7$ orders that is 80 MB vs 160 MB - bandwidth, cache footprint and pool-slot count all change."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Over-aligned types and plain new",
+      "md": "Before C++17, `operator new` only guaranteed 16-byte alignment, so `alignas(32)` types had to use `std::aligned_alloc` or aligned `operator new` overloads. Since C++17, `new` honours `alignof(T)` for over-aligned types - but hand-rolled pools still must return addresses that are multiples of the slot's alignment, or you get undefined behaviour on the first aligned load."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "For `struct S { char a; std::int64_t b; char c; };` (8-byte alignment): (a) compute `sizeof(S)` and identify every padding byte; (b) reorder members to minimise size; (c) state the new `sizeof`.",
+    "hints": [
+      "Each member must start at an offset that is a multiple of its alignment; std::int64_t needs offset % 8 == 0.",
+      "Total struct size is rounded up to a multiple of the largest member alignment."
+    ],
+    "solution": "(a) `a` at offset 0; `b` needs 8-alignment so 7 padding bytes (offsets 1-7), `b` at 8-15; `c` at 16; total 17 rounded to multiple of 8 gives `sizeof = 24` (7 trailing pad). 14 of 24 bytes are padding. (b) Declaration order `std::int64_t b; char a; char c;` puts `b` at 0-7, `a` at 8, `c` at 9. (c) Total 10, rounded up to 16 - one third smaller with zero code-logic change."
+  },
+  "independentExercise": {
+    "prompt": "You are building a fixed-size pool for `Order` objects where `sizeof(Order) = 48`, alignment 8. (a) If you round slot size up to 64 bytes so slots never share a cache line, how many slots fit in one 4 KiB page? (b) How many fit if you leave slots at 48 bytes (with straddling)? (c) An AVX2 routine must load 4 doubles (32 bytes) with an aligned load; what alignment must the storage have, and which C++ keyword guarantees it for a struct?",
+    "hints": [
+      "Slot count is integer division of page bytes by slot bytes.",
+      "Aligned AVX loads require the address to be a multiple of the vector width in bytes."
+    ],
+    "solution": "(a) $\\lfloor 4096 / 64 \\rfloor = 64$ slots per page. (b) $\\lfloor 4096 / 48 \\rfloor = 85$ slots (with $4096 - 85 \\times 48 = 16$ bytes wasted at the end) - more density, but each slot straddles cache-line boundaries so a record access may fetch two lines. (c) The 32-byte load requires 32-byte alignment; guarantee it with `struct alignas(32) QuoteVec { double v[4]; };` (or C++17 `std::aligned_alloc(32, n)` for raw blocks)."
+  },
+  "commonMistakes": [
+    "Calling `operator new` per message on a hot path and blaming 'the network' for latency spikes.",
+    "Using a monotonic (arena) resource for long-lived recycling objects - it never reuses freed blocks; that is what pools are for.",
+    "Forgetting that a `pmr::vector` growth pattern strands old buffers inside the arena - pre-size with reserve().",
+    "Reordering struct members for size without checking alignment: the compiler will re-insert padding if a large member follows a small one.",
+    "Handing an over-aligned type to a pool that returns 16-byte-aligned slots - undefined behaviour at the first aligned load."
+  ],
+  "realWorldApplication": "Game engines, database buffer pools and every HFT system use slab/pool allocators for fixed-size hot objects and arenas for message-scoped work; the C++17 pmr facilities exist precisely to make these strategies container-compatible.",
+  "quantFinanceApplication": "An order pool of 64-byte slots means every `Order` is reachable with one cache line fetch, allocation is lock-free per thread, and the day's traffic never touches the global heap - turning worst-case allocator jitter into a flat, predictable path.",
+  "summary": [
+    "General-purpose allocation costs: free-list search, shared-lock contention, fragmentation, and occasional slow-path jitter.",
+    "Arenas (monotonic_buffer_resource) serve shared-lifetime objects with a pointer bump and reclaim everything at once.",
+    "Pools carve one block into same-size slots with a free list: O(1) alloc/free, no fragmentation, contiguous locality.",
+    "Alignment is a hardware contract: members start at multiples of their alignment, and padding follows largest-first ordering.",
+    "alignas(64) gives one object per cache line (also fixes false sharing); alignas(32) satisfies AVX aligned loads."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "numeric",
+      "prompt": "What does `sizeof(GoodOrder)` print, where `struct GoodOrder { double d; std::int32_t i; char c; };` on a 64-bit machine?",
+      "answer": 16,
+      "explanation": "d at 0-7, i at 8-11, c at 12; total 13 rounded up to the 8-byte alignment gives 16 (3 trailing pad bytes)."
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "What does `std::pmr::monotonic_buffer_resource` do when you call deallocate on one of its blocks?",
+      "options": [
+        "Returns the block to the OS immediately",
+        "Nothing - the resource only reclaims everything when it is destroyed (monotonic bump allocation)",
+        "Coalesces the block with adjacent free blocks",
+        "Throws std::bad_alloc"
+      ],
+      "answerIndex": 1,
+      "explanation": "Monotonic resources allocate by bumping a pointer and never reuse individual freed blocks; the whole buffer is released when the resource dies. For recycling objects, use a pool instead."
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "A pool uses 64-byte slots. How many slots fit in one 4 KiB (4096-byte) page?",
+      "answer": 64,
+      "explanation": "4096 / 64 = 64 slots per page, with each slot exactly one cache line - no slot ever straddles a line."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "Why does allocation from the *global* heap become slower as thread count rises, even when threads allocate unrelated objects?",
+      "options": [
+        "Each thread gets its own heap, so slowdown is imaginary",
+        "The shared allocator's internal state (free lists) is protected by a lock, so threads contend",
+        "The OS pages out freed memory immediately",
+        "Heap allocation is always O(n) in the number of live objects"
+      ],
+      "answerIndex": 1,
+      "explanation": "A general-purpose allocator is shared mutable state; its free lists need synchronisation, so concurrent allocators serialise on that lock. Per-thread pools eliminate the contention."
+    },
+    {
+      "id": "q5",
+      "type": "mcq",
+      "prompt": "You need 32-byte-aligned storage to use aligned AVX2 loads on `double v[4]`. Which declaration guarantees it?",
+      "options": [
+        "struct QuoteVec { double v[4]; };  // plain struct",
+        "struct alignas(32) QuoteVec { double v[4]; };",
+        "static double v[4];  // static storage is always aligned enough",
+        "double* v = new double[4];  // heap is always aligned enough"
+      ],
+      "answerIndex": 1,
+      "explanation": "alignas(32) raises the type's alignment so every instance - including array elements and pool slots allocated with the right alignment - sits on a 32-byte boundary. Plain structs get natural alignment (8 for double); static/heap guarantees do not reach 32 for this purpose pre-C++17 conventions."
+    },
+    {
+      "id": "q6",
+      "type": "code-output",
+      "prompt": "What does this program print?",
+      "language": "cpp",
+      "code": "#include <cstddef>\n#include <iostream>\n\nstruct alignas(64) PaddedSlot {\n    double v[8];\n};\n\nstruct BadOrder  { char c; double d; std::int32_t i; };\nstruct GoodOrder { double d; std::int32_t i; char c; };\n\nint main() {\n    std::cout << sizeof(PaddedSlot) << ' ' << alignof(PaddedSlot) << '\\n';\n    std::cout << sizeof(BadOrder) << ' ' << sizeof(GoodOrder) << '\\n';\n}",
+      "answer": "64 64\n24 16",
+      "explanation": "alignas(64) forces size 64 and alignment 64 (one object per cache line). BadOrder pads char->double (7 bytes) and trails 4 bytes to 24; GoodOrder ordered largest-first is 13 bytes rounded up to 16."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "Arena (monotonic) allocator",
+      "back": "Allocation = bump one pointer; individual deallocation is a no-op; all memory reclaimed when the arena dies. Ideal for objects with one shared lifetime (a message, a simulation path, a session)."
+    },
+    {
+      "type": "concept",
+      "front": "Fixed-size pool allocator",
+      "back": "One block carved into same-size slots plus a free list. O(1) alloc/free, no fragmentation, consecutive slots contiguous - the standard home for hot-path objects like Orders."
+    },
+    {
+      "type": "formula",
+      "front": "Struct size rule",
+      "back": "Each member starts at an offset that is a multiple of its alignment; total size is rounded up to a multiple of the largest member alignment. Largest-first ordering minimises padding."
+    },
+    {
+      "type": "definition",
+      "front": "alignas(64) on a hot per-thread struct - why?",
+      "back": "It pins each object to its own 64-byte cache line: kills false sharing between threads and guarantees one-line access per object."
+    }
+  ],
+  "references": [
+    {
+      "label": "cppreference — std::pmr::monotonic_buffer_resource",
+      "url": "https://en.cppreference.com/w/cpp/memory/monotonic_buffer_resource"
+    },
+    {
+      "label": "cppreference — alignas specifier",
+      "url": "https://en.cppreference.com/w/cpp/language/alignas"
+    },
+    {
+      "label": "CppCon 2017 — Chandler Carruth, Are Performance Features Worth the (Language) Cost? (allocator context)",
+      "url": "https://www.youtube.com/watch?v=fZNPMlyEB4w"
+    }
+  ],
+  "skills": [
+    "cpp-performance"
+  ]
+}

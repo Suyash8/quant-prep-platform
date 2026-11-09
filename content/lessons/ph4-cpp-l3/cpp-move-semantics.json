@@ -1,0 +1,258 @@
+{
+  "id": "cpp-move-semantics",
+  "moduleId": "ph4-cpp-l3",
+  "title": "Move Semantics, Rvalues and Perfect Forwarding",
+  "estMinutes": 30,
+  "difficulty": "core",
+  "prereqs": ["cpp-rule-of-five"],
+  "objectives": [
+    "Distinguish lvalues from rvalues and predict which constructor or assignment overload an expression selects",
+    "Explain std::move as a cast to an rvalue reference (no movement) and the valid-but-unspecified moved-from contract",
+    "Implement noexcept move constructor/assignment and explain their effect on vector reallocation",
+    "Write forwarding references (T&& with deduction) and use std::forward to preserve value categories through generic code"
+  ],
+  "motivation": "Reallocating a std::vector<Fill> with a million elements should not copy a million fills - move semantics exists precisely so it does not: the vector steals each element's internals instead. This lesson completes the ownership module: std::move as the explicit hand-off, the rvalue references it feeds, why noexcept decides whether vector can even use your moves, and how std::forward lets generic wrappers pass arguments through without losing or copying them. It is the machinery behind every efficient modern C++ API you will read.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Value categories: who is about to die?"
+    },
+    {
+      "type": "p",
+      "md": "Every expression is an **lvalue** (has identity: a variable, a dereference, anything you can take the address of and use again) or an **rvalue** (a temporary, or an object explicitly marked as expendable). The distinction matters because C++ can overload on it: a parameter of type `T&` binds to lvalues, a parameter of `T&&` - an **rvalue reference** - binds to rvalues. An rvalue is the language's way of saying *this object will not be used again*, which licenses the optimisation that defines the feature: instead of copying its contents, **steal** them. `std::string s2 = std::move(s1)` does not copy a long buffer; it takes s1's internal pointer and resets s1."
+    },
+    {
+      "type": "table",
+      "headers": ["Expression", "Category", "Why"],
+      "rows": [
+        ["x (a named variable)", "lvalue", "has a name, can be used again"],
+        ["x + 1, f() returning by value", "rvalue", "temporary with no identity"],
+        ["std::move(x)", "rvalue (an xvalue)", "a cast saying 'x is expendable here'"],
+        ["std::forward<T>(arg)", "whatever arg was", "restores the original category in generic code"]
+      ]
+    },
+    {
+      "type": "h2",
+      "text": "std::move casts; it does not move"
+    },
+    {
+      "type": "p",
+      "md": "The single most common misconception: `std::move(x)` **does not move anything**. It is just `static_cast<T&&>(x)` - a compile-time cast that lets the expression bind to a `T&&` overload. The actual stealing is done by the **move constructor** or **move assignment** that the cast selects. If the type has no move operations (or the object is const, so it cannot bind to the non-const rvalue reference), the cast silently selects the copy constructor instead - std::move on a const object is a copy. And after a real move, the source is **valid but unspecified**: you may assign to it, clear it, or destroy it, but you must not assume its value (in practice strings are usually empty after a move - do not rely on it)."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <iostream>\n#include <string>\n#include <utility>\n\nint main() {\n    std::string t = \"abcdef\";\n    std::string u = std::move(t);   // move ctor: steals t's buffer, no copy\n    t = \"ok\";                       // moved-from: valid but unspecified; assignment is fine\n    std::cout << u << ' ' << t << '\\n';\n}",
+      "caption": "u owns the buffer; t is a valid, usable husk we deliberately overwrite before reading."
+    },
+    {
+      "type": "h2",
+      "text": "Move operations in a class - and guaranteed elision"
+    },
+    {
+      "type": "p",
+      "md": "You already wrote move operations in the Rule-of-Five lesson; here is the full picture with C++17's other half of the story. Since C++17, initialising an object from a *prvalue* (like a function returning by value) constructs it directly in place - **guaranteed copy elision**: no move constructor is even required to exist. Moves happen where you explicitly say std::move, or where a temporary is bound into an assignment."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <cstddef>\n#include <iostream>\n#include <utility>\n\nclass Ledger {\n    double* rates_ = nullptr;\n    std::size_t n_ = 0;\npublic:\n    explicit Ledger(std::size_t n) : rates_(new double[n]{}), n_(n) {}\n    ~Ledger() { delete[] rates_; }\n\n    Ledger(Ledger&& other) noexcept\n        : rates_(std::exchange(other.rates_, nullptr)),\n          n_(std::exchange(other.n_, 0)) {\n        std::cout << \"move\\n\";\n    }\n    Ledger& operator=(Ledger&& other) noexcept {\n        if (this != &other) {\n            delete[] rates_;\n            rates_ = std::exchange(other.rates_, nullptr);\n            n_ = std::exchange(other.n_, 0);\n        }\n        std::cout << \"move=\\n\";\n        return *this;\n    }\n    Ledger(const Ledger&) = delete;          // focus: moves only\n    Ledger& operator=(const Ledger&) = delete;\n};\n\nLedger make_ledger() { return Ledger(1000); }\n\nint main() {\n    Ledger a = make_ledger();   // C++17: constructed in place, NO move printed\n    Ledger b = std::move(a);    // move\n    b = Ledger(500);            // move= from a temporary\n}\n// move\n// move=",
+      "caption": "Elision for prvalues, moves for explicit hand-offs and temporary assignments."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "noexcept is the switch, not decoration",
+      "md": "std::vector must keep the strong exception guarantee when it reallocates: if moving an element could throw, moving halfway through would corrupt the vector, so vector *copies* instead unless the move is noexcept (it consults std::move_if_noexcept). A move constructor missing noexcept is silently ignored by exactly the containers that matter most."
+    },
+    {
+      "type": "h2",
+      "text": "Forwarding references and std::forward"
+    },
+    {
+      "type": "p",
+      "md": "Now the subtle half. `T&&` has two different meanings. When `T` is a *concrete type* (`int&&`), it is a plain rvalue reference. When `T` is a *deduced template parameter* (`template <typename T> void f(T&&)`), it is a **forwarding reference** (historically 'universal reference'): it binds to *anything* - lvalues and rvalues alike - and deduction encodes which. Called with an lvalue of type int, T deduces as `int&`; called with an rvalue, T deduces as `int`. The rule that makes this work is **reference collapsing**: you can never have a reference to a reference, so `& &`, `& &&` and `&& &` all collapse to `&`, and only `&& &&` stays `&&`. With `T = int&`, the parameter type `T&&` is `int& &&` \u2192 `int&` - an lvalue reference. With `T = int`, it is plain `int&&`."
+    },
+    {
+      "type": "p",
+      "md": "Inside such a function, however, the parameter `arg` is *itself* a named variable - an lvalue - even if it bound an rvalue. Passing `arg` onward would lose the original category and force a copy. **std::forward<T>(arg)** restores it: it is a conditional cast that yields an lvalue if T was deduced as a reference, and an rvalue otherwise. That combination - forwarding reference plus std::forward - is **perfect forwarding**: generic wrappers (factory functions, emplace, delegates) that pass arguments through exactly as received, with zero copies and zero category loss."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <iostream>\n#include <utility>\n\nvoid consume(int&)  { std::cout << \"lvalue overload\\n\"; }\nvoid consume(int&&) { std::cout << \"rvalue overload\\n\"; }\n\ntemplate <typename T>\nvoid relay(T&& arg) {\n    consume(std::forward<T>(arg));   // category preserved\n}\n\nint main() {\n    int v = 5;\n    relay(v);    // T = int&  -> forward yields int&   -> lvalue overload\n    relay(42);   // T = int   -> forward yields int&&  -> rvalue overload\n}",
+      "caption": "Perfect forwarding: relay never says what its caller meant - it repeats it."
+    },
+    {
+      "type": "table",
+      "headers": ["T deduced as", "Parameter type T&& becomes"],
+      "rows": [
+        ["int&  (lvalue argument)", "int& && \u2192 int&  (lvalue reference)"],
+        ["int   (rvalue argument)", "int&&  (rvalue reference)"]
+      ]
+    },
+    {
+      "type": "h2",
+      "text": "Where you actually use this"
+    },
+    {
+      "type": "list",
+      "ordered": false,
+      "items": [
+        "**Sink parameters**: take `std::string name` *by value* and `std::move(name)` into storage - one move instead of a copy, whether the caller passes a temporary or a named string.",
+        "**emplace-style factories**: `template <class... Args> auto make(Args&&... args)` forwarding into a constructor - this is how std::vector::emplace_back works.",
+        "**Wrappers/delegates**: logging, timing or locking wrappers that forward arguments untouched.",
+        "**Everywhere else**: do not write T&& 'for speed' in application code - pass by value or reference and move where ownership transfers; forwarding machinery is for generic library code."
+      ]
+    },
+    {
+      "type": "interactive",
+      "component": "MemoryLayout",
+      "params": {
+        "regions": [
+          { "name": "stack: before move", "objects": [{ "label": "string t { ptr -> heap buffer }", "size": 32 }, { "label": "string u (being constructed)", "size": 32 }] },
+          { "name": "heap: before", "objects": [{ "label": "\"abcdef\" buffer - owned by t", "size": 8 }] },
+          { "name": "stack: after move", "objects": [{ "label": "string t { ptr = null, husk }", "size": 32 }, { "label": "string u { ptr -> heap buffer }", "size": 32 }] },
+          { "name": "heap: after", "objects": [{ "label": "\"abcdef\" buffer - owned by u now", "size": 8 }] }
+        ]
+      },
+      "caption": "A move is a pointer steal: the buffer never moves, only ownership flips - this is why moving a vector of strings is O(n) pointer swaps, not O(n) copies."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Predict the exact output of this program, including which special member runs at each line, and state what is guaranteed about `a.symbol` after line 3.\n\n```cpp\n#include <iostream>\n#include <string>\n#include <utility>\n\nstruct Order {\n    std::string symbol;\n    explicit Order(std::string s) : symbol(std::move(s)) {}\n    Order(const Order& o) : symbol(o.symbol) { std::cout << \"copy\\n\"; }\n    Order(Order&& o) noexcept : symbol(std::move(o.symbol)) { std::cout << \"move\\n\"; }\n};\n\nint main() {\n    Order a(\"AAPL\");\n    Order b = a;\n    Order c = std::move(a);\n    std::cout << c.symbol << '\\n';\n}\n```",
+    "hints": [
+      "The constructor parameter is taken by value: trace what happens to \"AAPL\" before the member init list even runs.",
+      "`Order b = a;` initialises a new object from an lvalue; `Order c = std::move(a);` initialises from an rvalue.",
+      "The moved-from string's content is not specified - but what does the program print *after* the move?"
+    ],
+    "solution": "Output:\n\n```\ncopy\nmove\nAAPL\n```\n\n- `Order a(\"AAPL\")`: the literal builds a temporary std::string (SSO, no allocation), the parameter is initialised from it, and `std::move(s)` moves it into symbol - no copies, no output.\n- `Order b = a;` initialises b from an lvalue: **copy** constructor, prints `copy`.\n- `Order c = std::move(a);` initialises c from an rvalue: **move** constructor, prints `move` and steals a's symbol buffer.\n- `c.symbol` prints `AAPL` - the buffer was stolen, not copied.\n\nAfter line 3, `a.symbol` is **valid but unspecified**: it may print empty or even the original text (SSO implementations often copy small strings), so you must not read it. Assigning to a or destroying it is always safe."
+  },
+  "independentExercise": {
+    "prompt": "A record store needs a name field. Compare three designs for `void attach(...)` given the call sites `std::string n = \"MSFT\";` then `attach(n);` and `attach(\"GOOG\");`:\n\n(a) `void attach(std::string name)` storing via `store_ = std::move(name);`\n(b) `void attach(const std::string& name)` storing via `store_ = name;`\n(c) A forwarding wrapper `template <typename S> void attach(S&& name) { store_ = std::forward<S>(name); }`\n\nFor each design, count copies and moves at **both** call sites, then answer: (d) why is by-value + move the recommended sink pattern despite one extra move vs the forwarding version? (e) Why does `std::forward` need the template parameter T at all - what breaks if you write `std::forward(name)`?",
+    "hints": [
+      "Track the temporary \"GOOG\": is it an rvalue, and which overload does each design bind it to?",
+      "For (d): compare code clarity and who bears the optimisation burden - the caller or the callee.",
+      "For (e): forward is a conditional cast keyed on what T was deduced as; without T there is nothing to condition on."
+    ],
+    "solution": "(a) By value + move: `attach(n)` - lvalue copied into the parameter (1 copy), then moved into store_ (1 move). `attach(\"GOOG\")` - the temporary is *moved* into the parameter (0 copies, 1 move), then moved into store_ (1 move). Total: 1 copy + 2 moves across both calls. (b) const&: binds both with zero initialisation copies, but `store_ = name` must **copy** in both cases (name is a const lvalue): 0 copies at the call, 2 copies at the store - and for the \"GOOG\" temporary, a copy where design (a) got away with pure moves. (c) Forwarding: `attach(n)` - T = std::string&, forward yields an lvalue \u2192 1 copy into store_; `attach(\"GOOG\")` - T = std::string, forward yields an rvalue \u2192 1 move into store_. Total: 1 copy + 1 move, the theoretical minimum. (d) By-value + move gives almost the same cost (one extra move, which for strings is a pointer swap) with an *ordinary, non-template* signature, moves the policy into the callee, and keeps call sites readable; the forwarding version's cost advantage is real but it complicates every signature it touches and blows up code size. Use forwarding in generic library layers, by-value + move at application boundaries. (e) `std::forward(name)` does not compile: forward is a conditional cast *keyed on T* - it yields an rvalue only when T was deduced as a non-reference. Without T it cannot know whether the argument was an lvalue or rvalue, and perfect forwarding collapses back into always-lvalue passing."
+  },
+  "commonMistakes": [
+    "Believing std::move moves: it is a static_cast<T&&> that enables overload selection; only a move constructor/assignment does any stealing.",
+    "Reading a moved-from object's value: the contract is valid-but-unspecified - assign, clear or destroy it; do not assume it is empty.",
+    "Forgetting noexcept on move operations: vector reallocation silently falls back to copying via move_if_noexcept.",
+    "Writing std::forward without its template argument, or using forward outside a context where T was deduced - it is meaningless without the deduction.",
+    "Calling std::move on a const object: it still copies, because a const rvalue cannot bind to the non-const T&& of a move constructor.",
+    "Using std::move on a local in a return statement: `return std::move(x);` disables NRVO and is never faster than `return x;`."
+  ],
+  "realWorldApplication": "Every modern C++ API surface you will read - emplace, make_unique, thread constructors, containers of unique_ptr - is built on rvalue references and perfect forwarding; reading those signatures fluently requires exactly this vocabulary.",
+  "quantFinanceApplication": "A market-data fan-out passes a million-tick vector from the decoder to each strategy: std::move makes every hand-off a pointer steal (nanoseconds) instead of a full deep copy (milliseconds of memcpy) - move semantics is why modern C++ feed handlers can afford per-strategy copies on demand.",
+  "summary": [
+    "lvalues have identity; rvalues are temporaries or std::move-marked objects - the categories select copy vs move overloads.",
+    "std::move is static_cast<T&&>: it moves nothing itself and silently becomes a copy for const objects or types without move operations.",
+    "Moved-from objects are valid but unspecified: assign, clear, or destroy them; never assume their value.",
+    "noexcept on move operations is what permits vector to move (not copy) during reallocation, preserving the strong guarantee.",
+    "T&& with a deduced T is a forwarding reference (lvalue: T=int&; rvalue: T=int, via reference collapsing); std::forward<T> restores the original value category for perfect forwarding.",
+    "C++17 guarantees elision for prvalues: returning by value constructs in place with no move at all."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "code-output",
+      "prompt": "What does this program print?",
+      "language": "cpp",
+      "code": "#include <iostream>\n#include <string>\n#include <utility>\nint main() {\n    std::string t = \"abcdef\";\n    std::string u = std::move(t);\n    t = \"ok\";\n    std::cout << u << \"\\n\" << t << \"\\n\";\n}",
+      "answer": "abcdef\nok",
+      "explanation": "The move constructor gives u ownership of the buffer holding \"abcdef\". t is valid-but-unspecified, but the program overwrites it with \"ok\" before printing - so only guaranteed values appear: abcdef, then ok."
+    },
+    {
+      "id": "q2",
+      "type": "code-output",
+      "prompt": "What does this program print?",
+      "language": "cpp",
+      "code": "#include <iostream>\n#include <type_traits>\n#include <utility>\ntemplate <typename T>\nvoid probe(T&&) {\n    if constexpr (std::is_lvalue_reference_v<T>) std::cout << \"L\";\n    else std::cout << \"R\";\n}\nint main() {\n    int x = 0;\n    probe(x);\n    probe(5);\n}",
+      "answer": "LR",
+      "explanation": "probe(x) passes an lvalue, so T deduces as int& and the parameter is an lvalue reference ('L'). probe(5) passes an rvalue, so T deduces as int and the parameter is int&& ('R'). That deduction difference is the heart of forwarding references."
+    },
+    {
+      "id": "q3",
+      "type": "mcq",
+      "prompt": "What does std::move(x) actually do?",
+      "options": [
+        "It moves x's resources to the destination immediately",
+        "It casts x to an rvalue reference so overload resolution can select a move constructor or move assignment",
+        "It swaps x with a temporary",
+        "It marks x const so it cannot be modified again"
+      ],
+      "answerIndex": 1,
+      "explanation": "std::move is static_cast<T&&>(x) - a compile-time cast. The stealing happens only if the cast selects a move operation; for const objects or move-less types it silently selects the copy."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "In `template <typename T> void f(T&& arg)`, the parameter type T&& is called a forwarding reference. What does T deduce to for the calls f(obj) and f(std::move(obj)), where obj is an int?",
+      "options": [
+        "T = int in both cases",
+        "T = int& for f(obj); T = int for f(std::move(obj))",
+        "T = int for f(obj); T = int&& for f(std::move(obj))",
+        "The code does not compile - T&& cannot deduce"
+      ],
+      "answerIndex": 1,
+      "explanation": "For lvalue arguments T deduces as a reference (int&), which via reference collapsing makes T&& an lvalue reference. For rvalues T deduces as the plain type, making T&& an rvalue reference. This is how forwarding references bind to anything."
+    },
+    {
+      "id": "q5",
+      "type": "mcq",
+      "prompt": "A struct's move constructor is NOT marked noexcept. What happens when a std::vector of these structs grows past capacity?",
+      "options": [
+        "Elements are still moved - noexcept is only documentation",
+        "vector copies the elements instead of moving, to preserve the strong exception guarantee (move_if_noexcept)",
+        "vector moves half and copies half",
+        "The program fails to compile"
+      ],
+      "answerIndex": 1,
+      "explanation": "vector reallocates with move_if_noexcept: throwing moves are not safe mid-reallocation, so it falls back to copying. Correctness is preserved, but the optimisation the move was written for is silently lost."
+    },
+    {
+      "id": "q6",
+      "type": "numeric",
+      "prompt": "How many heap allocations does the std::string move constructor perform?",
+      "answer": 0,
+      "explanation": "A move steals the source's internal pointer (and for SSO strings, copies the small internal buffer) - no allocation of new memory occurs. That is exactly why moving containers of strings is dramatically cheaper than copying them."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "definition",
+      "front": "What is std::move?",
+      "back": "static_cast<T&&>(x): a compile-time cast producing an rvalue. It moves nothing itself; it enables overload selection of move ctor/assign - or degrades to copy for const objects."
+    },
+    {
+      "type": "concept",
+      "front": "What is the moved-from contract?",
+      "back": "Valid but unspecified: safe to assign, clear, reset or destroy; unsafe to assume any particular value. Never read a moved-from object's content."
+    },
+    {
+      "type": "concept",
+      "front": "What is a forwarding reference, and how does T deduce?",
+      "back": "T&& where T is a deduced template parameter. Lvalue argument: T = U& (parameter becomes U& via reference collapsing). Rvalue argument: T = U (parameter U&&). Binds to anything."
+    },
+    {
+      "type": "code-output",
+      "front": "relay(v) and relay(42) with `template <typename T> void relay(T&&) { consume(std::forward<T>(...)); }` - which consume overloads run?",
+      "back": "relay(v): T=int&, forward yields int& -> lvalue overload. relay(42): T=int, forward yields int&& -> rvalue overload."
+    },
+    {
+      "type": "definition",
+      "front": "State the C++17 guaranteed copy elision rule.",
+      "back": "Initialising an object from a prvalue (e.g. a by-value function return) constructs directly in place - no copy or move constructor is called or even required."
+    }
+  ],
+  "references": [
+    { "label": "cppreference — std::move", "url": "https://en.cppreference.com/w/cpp/utility/move" },
+    { "label": "cppreference — std::forward", "url": "https://en.cppreference.com/w/cpp/utility/forward" },
+    { "label": "Scott Meyers — Universal References in C++11", "url": "https://isocpp.org/blog/2012/11/universal-references-in-c11-scott-meyers" },
+    { "label": "cppreference — Move constructors", "url": "https://en.cppreference.com/w/cpp/language/move_constructor" }
+  ],
+  "skills": ["cpp-memory", "cpp-advanced"]
+}

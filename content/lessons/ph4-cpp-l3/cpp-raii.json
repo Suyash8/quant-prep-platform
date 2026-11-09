@@ -1,0 +1,237 @@
+{
+  "id": "cpp-raii",
+  "moduleId": "ph4-cpp-l3",
+  "title": "RAII and Resource Management",
+  "estMinutes": 27,
+  "difficulty": "core",
+  "prereqs": ["cpp-lifetime-bugs"],
+  "objectives": [
+    "State the RAII contract: acquire in the constructor, release in the destructor, and connect it to reverse-order teardown",
+    "Explain why manual cleanup fails on early-return and exception paths, using stack unwinding as the mechanism that fixes it",
+    "Write a small RAII wrapper class for a resource (file, lock, connection) with correct construction, destruction and non-copyable semantics",
+    "Classify std:: library types as RAII wrappers over specific resources"
+  ],
+  "motivation": "The previous lesson's bugs all share one root cause: cleanup lives in the *code path*, not in the *type*, so any early return or thrown exception skips it. C++'s answer is RAII (Resource Acquisition Is Initialisation): bind every resource to an object whose destructor releases it, and let the compiler's guaranteed reverse-order teardown do the bookkeeping on every path - including exceptions. It is the single most important C++ idiom, and the smart pointers that follow are just RAII specialised for memory.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "The problem with manual cleanup"
+    },
+    {
+      "type": "p",
+      "md": "Consider the shape `acquire; work; release`. It leaks on every exit that is not the last statement: an early `return` inside the work, a thrown exception, a nested function that throws. You can try to cover the paths with try/catch and goto-style cleanup labels, but every new statement in 'work' multiplies the paths, and one forgotten path re-opens the leak. The insight of RAII is that C++ already has a mechanism that runs on **every** exit path from a scope: destructor calls. So instead of writing cleanup code that the control flow must remember to reach, you put the cleanup inside a destructor - which the compiler is contractually obligated to run when the object goes out of scope, whatever the reason for leaving it."
+    },
+    {
+      "type": "h2",
+      "text": "The RAII contract"
+    },
+    {
+      "type": "p",
+      "md": "**Resource Acquisition Is Initialisation**: acquiring a resource (allocating memory, opening a file, locking a mutex, opening a socket) happens in a *constructor*, and releasing it happens in the *destructor*. The resource's lifetime is then exactly the object's scope - which you already know ends deterministically, in reverse construction order, even when an exception tears the scope apart. The standard library is built on this: `std::vector` owns a heap buffer, `std::string` owns character storage, `std::fstream` owns a file handle, `std::lock_guard` owns a mutex acquisition. None of them need explicit cleanup calls; scopes do it all."
+    },
+    {
+      "type": "table",
+      "headers": ["Resource", "RAII wrapper", "Release action"],
+      "rows": [
+        ["heap buffer", "std::vector, std::unique_ptr", "delete / delete[]"],
+        ["mutex lock", "std::lock_guard, std::scoped_lock", "unlock"],
+        ["file", "std::fstream", "close"],
+        ["socket fd (C API)", "hand-written wrapper", "close(fd)"],
+        ["thread handle", "std::jthread (C++20), custom wrapper", "join / request_stop"]
+      ]
+    },
+    {
+      "type": "h2",
+      "text": "A hand-rolled RAII wrapper"
+    },
+    {
+      "type": "p",
+      "md": "The pattern is small enough to memorise: hold the raw handle as a member; acquire in the constructor (throwing on failure, so a half-built object never exists); release in the destructor; and **delete copying**, because two objects closing the same file descriptor is the double-free bug wearing a different hat."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <cstdio>\n#include <stdexcept>\n\nclass File {\n    std::FILE* f_;                     // the raw resource\npublic:\n    explicit File(const char* path) : f_(std::fopen(path, \"w\")) {\n        if (f_ == nullptr) throw std::runtime_error(\"open failed\");\n    }\n    ~File() { if (f_ != nullptr) std::fclose(f_); }   // always runs\n\n    File(const File&) = delete;             // one owner, no aliasing\n    File& operator=(const File&) = delete;\n\n    void write(const char* s) { std::fputs(s, f_); }\n};\n\nint main() {\n    File log(\"session.log\");       // acquired\n    log.write(\"order submitted\\n\");\n}                                   // fclose runs here - on every exit path",
+      "caption": "Acquire in the ctor, release in the dtor, forbid copying: the complete RAII pattern."
+    },
+    {
+      "type": "h2",
+      "text": "Why exceptions make RAII mandatory"
+    },
+    {
+      "type": "p",
+      "md": "When an exception is thrown, the runtime performs **stack unwinding**: it destroys, in reverse order, every automatic object already fully constructed in each scope it passes through on the way to the catch. Fully constructed is the key phrase - an object whose constructor is still running does not have its destructor called, which is why a constructor should not acquire a second resource after a first one can fail... unless the first is itself an RAII member. Unwinding is what turns 'destructor = release' into 'no leaks, ever', because no control-flow path can bypass a destructor call."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <iostream>\n#include <stdexcept>\n\nstruct Marker {\n    const char* n;\n    explicit Marker(const char* name) : n(name) { std::cout << \"acq \" << n << '\\n'; }\n    ~Marker() { std::cout << \"rel \" << n << '\\n'; }\n};\n\nvoid risky() {\n    Marker m(\"in risky\");\n    throw std::runtime_error(\"feed down\");\n}\n\nint main() {\n    try {\n        risky();\n    } catch (const std::exception& e) {\n        std::cout << \"caught: \" << e.what() << '\\n';\n    }\n}\n// acq in risky\n// rel in risky      <- destructor ran during unwinding, before the catch\n// caught: feed down",
+      "caption": "Unwinding destroys automatic objects between the throw and the catch."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Destructors must not throw",
+      "md": "If an exception escapes a destructor while another exception is already propagating (i.e., during unwinding), the program calls std::terminate immediately. Destructors are implicitly noexcept in C++11 and later: never let one throw, and never call throwing code from one without handling it."
+    },
+    {
+      "type": "h2",
+      "text": "Exception-safety levels, and where RAII fits"
+    },
+    {
+      "type": "list",
+      "ordered": false,
+      "items": [
+        "**Basic guarantee**: no leaks, object invariants hold after an error - RAII gives you this almost for free.",
+        "**Strong guarantee**: operations are all-or-nothing (commit or roll back) - e.g. std::vector::push_back; achieved by doing dangerous work on copies, then swapping.",
+        "**Nothrow guarantee**: the operation never fails - swap, destructors; a *precondition* for calling code from destructors.",
+        "Rule of thumb: bind every resource to an automatic RAII object, write throwing code freely, keep destructors nothrow."
+      ]
+    },
+    {
+      "type": "interactive",
+      "component": "MemoryLayout",
+      "params": {
+        "regions": [
+          { "name": "stack frame: main", "objects": [{ "label": "File log (8 B: FILE*)", "size": 8 }, { "label": "lock_guard (8 B: mutex&)", "size": 8 }] },
+          { "name": "OS / library resources", "objects": [{ "label": "open file handle (session.log)", "size": 16 }, { "label": "mutex acquisition", "size": 8 }] }
+        ]
+      },
+      "caption": "RAII objects are tiny stack residents that own heavyweight resources elsewhere; scope exit releases both automatically."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Write a minimal RAII wrapper `Conn` for a connection handle - an `int fd` where `-1` means 'no connection'. Requirements: the constructor throws `std::runtime_error` on failure; the destructor closes (print `closed` to visualise); copying is deleted; a `send(const char*)` method exists. Then show a main() that throws mid-session and still closes the connection, printing the exact output.",
+    "hints": [
+      "The destructor body is the only place release code should live.",
+      "Delete the copy constructor and copy assignment: two Conn objects would close the same fd twice.",
+      "The throw can sit anywhere in the scope - unwinding does not care where."
+    ],
+    "solution": "```cpp\n#include <iostream>\n#include <stdexcept>\n\nclass Conn {\n    int fd_;\npublic:\n    explicit Conn(int fd) : fd_(fd) {\n        if (fd_ < 0) throw std::runtime_error(\"connect failed\");\n    }\n    ~Conn() { std::cout << \"closed\\n\"; }   // ::close(fd_) in real code\n    Conn(const Conn&) = delete;\n    Conn& operator=(const Conn&) = delete;\n    void send(const char* msg) { std::cout << \"send \" << msg << '\\n'; }\n};\n\nint main() {\n    try {\n        Conn c(7);                          // pretend fd 7 is valid\n        c.send(\"NEW ORDER\");\n        throw std::runtime_error(\"mid-session failure\");\n    } catch (const std::exception& e) {\n        std::cout << \"recovered: \" << e.what() << '\\n';\n    }\n}\n```\n\nOutput:\n\n```\nsend NEW ORDER\nclosed\nrecovered: mid-session failure\n```\n\nThe destructor runs during stack unwinding, *before* the catch block executes - so the connection is closed even though no cleanup code was written anywhere near the throw."
+  },
+  "independentExercise": {
+    "prompt": "Two versions of a bracket-order handler take a `bool partial_failure` that throws `std::runtime_error` after acquiring the first leg.\n\nVersion A:\n```cpp\nvoid apply_A(bool partial_failure) {\n    Leg* leg1 = new Leg(1);\n    if (partial_failure) throw std::runtime_error(\"partial\");\n    Leg* leg2 = new Leg(2);\n    delete leg1; delete leg2;\n}\n```\nVersion B uses `auto leg1 = std::make_unique<Leg>(1);` and `auto leg2 = std::make_unique<Leg>(2);` in the same positions.\n\n(a) State exactly what is leaked in version A when partial_failure is true, and which of leg1/leg2 leak if the throw is moved *after* the second allocation. (b) State what runs in version B in both cases. (c) Write the one-sentence RAII rule that fixes version A.",
+    "hints": [
+      "In A, count the statements between each allocation and the deletes, then insert the throw in each position.",
+      "In B, ask what std::unique_ptr's destructor does and when unwinding calls it.",
+      "The rule should mention where the release code lives, not which paths to cover."
+    ],
+    "solution": "(a) With the throw in its shown position, **leg1 leaks** (leg2 was never allocated). With the throw moved after `Leg* leg2 = new Leg(2);`, **both leg1 and leg2 leak**: the exception skips both deletes, orphaning two heap blocks. (b) In version B the exception triggers stack unwinding, which destroys the automatic unique_ptr objects in reverse order: leg2 destroyed (or not yet created, depending on position), then leg1 destroyed - each running its Leg destructor and freeing the memory. **Nothing leaks in either throw position**, and none of that correctness depends on where the throw sits. (c) The rule: *bind every resource to an automatic object whose destructor releases it*, so release happens on every exit path without being written per path."
+  },
+  "commonMistakes": [
+    "Writing cleanup at the end of a function and assuming it always runs - early returns and exceptions skip it silently.",
+    "Letting destructors throw: an escaping exception during unwinding is std::terminate on the spot.",
+    "Copying RAII objects casually: two objects closing the same file descriptor or unlocking the same mutex is a double release.",
+    "Applying RAII only to memory - locks, files, sockets and connections leak in exactly the same way and deserve wrappers just as much.",
+    "Acquiring two resources in one constructor without RAII members: if the second acquisition throws, the first leaks because the destructor never runs for a half-constructed object."
+  ],
+  "realWorldApplication": "Every non-trivial C++ service is a lattice of RAII wrappers: lock guards around shared state, file streams for audit logs, connection guards for sessions. The idiom is why idiomatic C++ has no finally block - scopes are the cleanup mechanism.",
+  "quantFinanceApplication": "A pricer holding a mutex guard while it updates shared curve state releases the lock even if a validation exception aborts the update; without RAII, one exception mid-calculation deadlocks the whole desk's pricing thread pool.",
+  "summary": [
+    "RAII: acquire in the constructor, release in the destructor - the resource's lifetime equals the wrapper's scope.",
+    "Stack unwinding destroys every fully constructed automatic object on the exception path, so destructor-based release cannot be skipped by control flow.",
+    "The pattern for hand-rolled wrappers: raw handle member, throwing constructor, nothrow destructor, copy deleted.",
+    "The standard library is RAII throughout: vector, string, fstream, lock_guard; idiomatic C++ needs no finally blocks.",
+    "Destructors must never throw - an exception escaping during unwinding is std::terminate."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "code-output",
+      "prompt": "What does this program print?",
+      "language": "cpp",
+      "code": "#include <iostream>\n#include <stdexcept>\nstruct Guard {\n    const char* n;\n    explicit Guard(const char* name) : n(name) { std::cout << \"acq \" << n << \"\\n\"; }\n    ~Guard() { std::cout << \"rel \" << n << \"\\n\"; }\n};\nint f() {\n    Guard g(\"f\");\n    throw std::runtime_error(\"boom\");\n}\nint main() {\n    try {\n        f();\n    } catch (const std::exception& e) {\n        std::cout << \"caught \" << e.what() << \"\\n\";\n    }\n}",
+      "answer": "acq f\nrel f\ncaught boom",
+      "explanation": "The guard constructs and prints 'acq f'. The throw triggers stack unwinding, which destroys g - printing 'rel f' - before the catch block runs and prints 'caught boom'."
+    },
+    {
+      "id": "q2",
+      "type": "code-output",
+      "prompt": "What does this program print?",
+      "language": "cpp",
+      "code": "#include <iostream>\nstruct L {\n    const char* n;\n    explicit L(const char* name) : n(name) { std::cout << \"lock \" << n << \"\\n\"; }\n    ~L() { std::cout << \"unlock \" << n << \"\\n\"; }\n};\nint main() {\n    L m(\"m\");\n    L t(\"t\");\n    std::cout << \"work\\n\";\n}",
+      "answer": "lock m\nlock t\nwork\nunlock t\nunlock m",
+      "explanation": "Construction order m then t; destruction is reverse order, t then m, at scope exit - the same guarantee std::lock_guard relies on for nested locks."
+    },
+    {
+      "id": "q3",
+      "type": "mcq",
+      "prompt": "Which statement best defines RAII?",
+      "options": [
+        "All memory must be allocated with new and freed with delete",
+        "Resource acquisition happens in a constructor and release in the destructor, tying resource lifetime to object scope",
+        "Resources should be released in a finally block after try/catch",
+        "Every resource must be wrapped in std::shared_ptr to be exception-safe"
+      ],
+      "answerIndex": 1,
+      "explanation": "RAII = Resource Acquisition Is Initialisation: the constructor acquires, the destructor releases, and scope exit (including unwinding) does the bookkeeping on every path. It applies to any resource, not just memory."
+    },
+    {
+      "id": "q4",
+      "type": "ms",
+      "prompt": "Which standard library types are RAII wrappers over a resource?",
+      "options": [
+        "std::vector over a heap buffer",
+        "std::lock_guard over a mutex acquisition",
+        "std::fstream over a file handle",
+        "A raw FILE* variable holding fopen's result"
+      ],
+      "answerIndices": [0, 1, 2],
+      "explanation": "vector, lock_guard and fstream all acquire in construction and release in destruction. A raw FILE* is exactly the kind of unprotected handle RAII exists to wrap - cleanup depends on the programmer reaching the fclose."
+    },
+    {
+      "id": "q5",
+      "type": "mcq",
+      "prompt": "What does stack unwinding do when an exception propagates from f() to main()?",
+      "options": [
+        "It catches the exception and resumes the interrupted function",
+        "It destroys, in reverse construction order, every fully constructed automatic object in each scope it exits",
+        "It calls every destructor in the program once",
+        "It releases heap allocations created in the throwing scope"
+      ],
+      "answerIndex": 1,
+      "explanation": "Unwinding runs the destructors of fully constructed automatic objects on the way out of each scope - the mechanism that makes destructor-based release exception-safe. Heap blocks are freed only via those destructors, never directly by unwinding."
+    },
+    {
+      "id": "q6",
+      "type": "short",
+      "prompt": "Why must destructors not throw, and what happens if one does during exception propagation?",
+      "modelAnswer": "During stack unwinding an exception is already active; if a destructor throws another, there are two simultaneous exceptions and the program calls std::terminate immediately. Destructors are implicitly noexcept and should release resources without throwing.",
+      "keywords": ["terminate", "unwinding", "noexcept", "two exceptions", "destructor"],
+      "explanation": "Two live exceptions at once is unrecoverable: std::terminate ends the program without unwinding further. That is why destructors are implicitly noexcept in C++11 and later."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "definition",
+      "front": "State the RAII contract.",
+      "back": "Acquire the resource in the constructor, release it in the destructor; the resource's lifetime equals the wrapper object's scope."
+    },
+    {
+      "type": "concept",
+      "front": "What is stack unwinding?",
+      "back": "When an exception propagates, the runtime destroys every fully constructed automatic object in each exited scope, in reverse construction order, before the catch runs."
+    },
+    {
+      "type": "error-identification",
+      "front": "A class holds FILE* f_ and its compiler-generated copy constructor runs. What bug awaits?",
+      "back": "Double close: both copies' destructors fclose the same handle. Fix: delete copy operations (single ownership)."
+    },
+    {
+      "type": "concept",
+      "front": "Why does idiomatic C++ not need a finally block?",
+      "back": "Destructor calls at scope exit - guaranteed by stack unwinding - play the role of finally for every resource, not just the wrapped one."
+    },
+    {
+      "type": "definition",
+      "front": "Name the three exception-safety guarantee levels.",
+      "back": "Basic (no leaks, invariants hold), strong (commit-or-rollback), nothrow (never fails). RAII provides basic almost for free; destructors must be nothrow."
+    }
+  ],
+  "references": [
+    { "label": "cppreference — RAII", "url": "https://en.cppreference.com/w/cpp/language/raii" },
+    { "label": "C++ Core Guidelines — R.1: Manage resources automatically using resource handles and RAII", "url": "https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#r1-manage-resources-automatically-using-resource-handles-and-raii-resource-acquisition-is-initialization" },
+    { "label": "cppreference — std::lock_guard", "url": "https://en.cppreference.com/w/cpp/thread/lock_guard" }
+  ],
+  "skills": ["cpp-memory"]
+}

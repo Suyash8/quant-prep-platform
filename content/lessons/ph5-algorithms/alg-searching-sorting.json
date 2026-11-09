@@ -1,0 +1,250 @@
+{
+  "id": "alg-searching-sorting",
+  "moduleId": "ph5-algorithms",
+  "title": "Binary Search and Sorting Algorithms",
+  "estMinutes": 27,
+  "difficulty": "core",
+  "prereqs": ["ds-trees-bst"],
+  "objectives": [
+    "Trace binary search on a sorted array and bound its worst case at O(log n) comparisons",
+    "Write a correct binary search, including the overflow-safe midpoint calculation",
+    "Compare merge sort, quicksort and heapsort on time, space and stability",
+    "Recognise when counting sort or radix sort beats comparison-based sorting"
+  ],
+  "motivation": "A trading application keeps millions of historical fills sorted by timestamp and must answer questions like give-me-everything-before-10:32:04 thousands of times per second. A linear scan is far too slow; binary search answers in about twenty comparisons. Sorting and searching are the two algorithms you will run more than any others, and both reward exactness: one off-by-one slip and the search silently returns the wrong fill.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Binary search: halving the haystack"
+    },
+    {
+      "type": "p",
+      "md": "Binary search finds a value in a **sorted** array by maintaining the invariant *if $x$ is present, it lies in $a[\\text{lo}..\\text{hi}]$*. Each comparison throws away half of that window, so after $k$ comparisons at most $n/2^k$ candidates remain, giving $O(\\log n)$ comparisons: $\\log_2 1{,}000{,}000 \\approx 20$. The catch is that every boundary must be exact - the loop condition, the midpoint, and the two updates $\\text{lo} = \\text{mid}+1$ and $\\text{hi} = \\text{mid}-1$ all have to move the window strictly smaller, or the loop spins forever."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "def binary_search(a, x):\n    \"\"\"Return the index of x in the sorted list a, or -1.\"\"\"\n    lo, hi = 0, len(a) - 1\n    while lo <= hi:\n        mid = lo + (hi - lo) // 2   # overflow-safe form; see pitfall below\n        if a[mid] == x:\n            return mid\n        if a[mid] < x:\n            lo = mid + 1            # x can only be in the right half\n        else:\n            hi = mid - 1            # x can only be in the left half\n    return -1\n\nprices = [2, 5, 9, 14, 23, 37]\nprint(binary_search(prices, 23))   # 4\nprint(binary_search(prices, 10))   # -1, not present",
+      "caption": "The three ingredients: window $[\\text{lo}, \\text{hi}]$, safe midpoint, strict shrink."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "The midpoint overflow bug",
+      "md": "In Python integers never overflow, but in C++ or Java `(lo + hi) / 2` can overflow a 32-bit int when both indices are near $2^{31}$ - historically a real bug in JDK binary search. The fix is `mid = lo + (hi - lo) / 2`. Two further classic bugs: using `lo < hi` instead of `lo <= hi` (misses the one-element window), and writing `lo = mid` instead of `lo = mid + 1` (infinite loop)."
+    },
+    {
+      "type": "steps",
+      "title": "Trace: search for 23 in [2, 5, 9, 14, 23, 37]",
+      "items": [
+        "$\\text{lo}=0, \\text{hi}=5$, so $\\text{mid}=2$; $a[2]=9 < 23$, set $\\text{lo}=3$.",
+        "$\\text{lo}=3, \\text{hi}=5$, so $\\text{mid}=4$; $a[4]=23$ - found at index 4.",
+        "Two comparisons. The window shrank $6 \\to 3 \\to 1$: exactly the halving promise."
+      ]
+    },
+    {
+      "type": "interactive",
+      "component": "ComplexityCompare",
+      "params": {
+        "n": 1000000,
+        "operations": [
+          { "name": "linear scan", "count": 1000000 },
+          { "name": "binary search", "count": 20 }
+        ]
+      },
+      "caption": "One million elements: a linear scan touches all of them, binary search about 20."
+    },
+    {
+      "type": "h2",
+      "text": "Sorting: the workhorse you preprocess with"
+    },
+    {
+      "type": "p",
+      "md": "Sorting is rarely the end goal; it is the *preprocessing* that makes everything else fast - binary search, medians and percentiles, deduplication, and sweep-line algorithms all consume sorted input. A trading example: sort the day's fills by price once, and every thereafter query for the lowest five sell prices is logarithmic. The main comparison sorts differ in worst-case time, memory and **stability** (whether equal keys keep their original relative order, which preserves time priority among equal-priced orders)."
+    },
+    {
+      "type": "table",
+      "headers": ["Algorithm", "Average", "Worst", "Stable", "Extra space", "Note"],
+      "rows": [
+        ["Merge sort", "$O(n \\log n)$", "$O(n \\log n)$", "yes", "$O(n)$", "predictable; great for linked lists and external files"],
+        ["Quicksort", "$O(n \\log n)$", "$O(n^2)$", "no", "$O(\\log n)$", "fastest in practice; cache-friendly; worst case on bad pivots"],
+        ["Heapsort", "$O(n \\log n)$", "$O(n \\log n)$", "no", "$O(1)$", "in-place guarantee; builds a max-heap, repeatedly extracts"],
+        ["Counting sort", "$O(n+k)$", "$O(n+k)$", "yes", "$O(n+k)$", "keys must be small integers in range $k$"],
+        ["Radix sort", "$O(d(n+k))$", "$O(d(n+k))$", "yes", "$O(n+k)$", "$d$ passes, one per digit of a fixed-width key"]
+      ]
+    },
+    {
+      "type": "p",
+      "md": "**Merge sort** splits the array in half, sorts each half recursively, then merges two sorted runs in linear time by always taking the smaller front element. The recurrence $T(n) = 2T(n/2) + O(n)$ unrolls to $O(n \\log n)$ in *every* case, and using $\\le$ (not $<$) when comparing fronts makes it stable. **Quicksort** instead picks a pivot, partitions so smaller items sit left of it, and recurses on the two sides - no merge needed, and partitioning is in-place, but a pivot that is always smallest or largest degenerates to $O(n^2)$. **Heapsort** builds a max-heap over the array, then repeatedly swaps the root to the end and sifts down: $O(n \\log n)$ guaranteed with $O(1)$ extra space, at the cost of poor cache locality and lost stability."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "def merge_sort(a):\n    if len(a) <= 1:\n        return a\n    mid = len(a) // 2\n    left, right = merge_sort(a[:mid]), merge_sort(a[mid:])\n    out, i, j = [], 0, 0\n    while i < len(left) and j < len(right):\n        if left[i] <= right[j]:      # <= keeps equal keys in original order\n            out.append(left[i]); i += 1\n        else:\n            out.append(right[j]); j += 1\n    out.extend(left[i:]); out.extend(right[j:])\n    return out\n\nprint(merge_sort([38, 27, 43, 3, 9, 82, 10]))",
+      "caption": "Merge sort: split, sort halves, merge. Output: [3, 9, 10, 27, 38, 43, 82]."
+    },
+    {
+      "type": "interactive",
+      "component": "SortingVisual",
+      "params": {
+        "values": [38, 27, 43, 3, 9, 82, 10],
+        "algorithm": "merge"
+      },
+      "caption": "Watch merge sort split the array into runs of one and merge them back in order."
+    },
+    {
+      "type": "h2",
+      "text": "Counting and radix sorts: beating the lower bound"
+    },
+    {
+      "type": "p",
+      "md": "Any sort that only *compares* keys needs $\\Omega(n \\log n)$ comparisons in the worst case - a decision-tree argument: $n!$ possible orderings and each comparison splits the possibilities at best in half, so at least $\\log_2(n!)$ comparisons are required. Counting and radix sort escape the bound by **not comparing**: counting sort tallies how many keys equal each value in $0..k$ and rebuilds the output from the tallies, which is $O(n+k)$; radix sort applies it digit by digit, $d$ times, to sort fixed-width keys such as prices expressed in integer ticks. When your universe of keys is small - a few thousand price ticks - these linear-time sorts are the right tool."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Why sorting dominates desk software",
+      "md": "Order books keep levels sorted, replay engines sort events by timestamp, risk systems sort exposure contributions to find the tail. Choosing the right sort is a latency decision: stable merge-based sorting preserves time priority among equal prices, while radix sort over integer ticks can beat $O(n \\log n)$ when the tick range is bounded."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Trace binary search for $x = 37$ in $[2, 5, 9, 14, 23, 37]$: write down $(\\text{lo}, \\text{hi}, \\text{mid})$ and the comparison at each step, count the comparisons, and explain why no search on 6 elements can need more than 3 comparisons.",
+    "hints": [
+      "Start with $\\text{lo}=0$, $\\text{hi}=5$ and compute $\\text{mid} = \\text{lo} + (\\text{hi}-\\text{lo})//2$.",
+      "After each comparison the window at least halves, so count how many times you can halve 6 before reaching 1."
+    ],
+    "solution": "Step 1: $\\text{lo}=0, \\text{hi}=5, \\text{mid}=2$, $a[2]=9<37$ so $\\text{lo}=3$. Step 2: $\\text{lo}=3, \\text{hi}=5, \\text{mid}=4$, $a[4]=23<37$ so $\\text{lo}=5$. Step 3: $\\text{lo}=5, \\text{hi}=5, \\text{mid}=5$, $a[5]=37$ - found after **3 comparisons**. Bound: each comparison halves the window, and $\\lceil \\log_2(6+1) \\rceil = 3$ halvings suffice to isolate any element."
+  },
+  "independentExercise": {
+    "prompt": "(a) An order book archive holds 2,048 fills sorted by price. What is the maximum number of comparisons a binary search needs to locate any one of them? (b) Two resting orders at the same price carry ids 102 and 103 in that arrival order. After `sorted(orders, key=lambda o: o[1])` on equal sort keys, which id comes first, and which sort property guarantees it?",
+    "hints": [
+      "$2^{11} = 2048$.",
+      "Two stable sorts applied in sequence (by time, then by price) preserve time priority."
+    ],
+    "solution": "(a) $\\lceil \\log_2 2049 \\rceil = 11$ comparisons, since $2^{11} = 2048$ suffices to separate 2,048 candidates. (b) Id **102** comes first. Python's `sorted` (Timsort) and merge sort are **stable**: equal keys keep their input order, so arrival order (time priority) survives the price sort."
+  },
+  "commonMistakes": [
+    "Using `lo < hi` as the loop condition, which skips the final one-element window and reports misses.",
+    "Writing `lo = mid` or `hi = mid`, which can leave the window unchanged and loop forever.",
+    "Computing `(lo + hi) / 2` in a fixed-width language and overflowing - use `lo + (hi - lo) / 2`.",
+    "Assuming quicksort is always $O(n \\log n)$: with adversarial pivots it degrades to $O(n^2)$; randomised or median-of-three pivots defend against this.",
+    "Comparing floating-point prices with `==` in binary search; compare with a tolerance or use integer ticks."
+  ],
+  "realWorldApplication": "Database indexes, `bisect`-style lookups over time-sorted events, and percentile computations in risk reports are binary search and sorting applied at millions of records per second.",
+  "quantFinanceApplication": "Order books keep bid and ask levels sorted for O(1) best-price access; backtest engines binary-search timestamp-sorted ticks to find the state of the book at any moment; stable sorts preserve time priority among equal-priced orders.",
+  "summary": [
+    "Binary search maintains a halving window and needs at most $\\lceil \\log_2(n+1) \\rceil$ comparisons on $n$ sorted elements.",
+    "Use `mid = lo + (hi - lo) // 2` and strictly shrinking updates (`lo = mid+1`, `hi = mid-1`) to avoid overflow and infinite loops.",
+    "Merge sort: stable, $O(n \\log n)$ worst case, $O(n)$ space. Quicksort: in-place, fast on average, $O(n^2)$ worst case. Heapsort: in-place $O(n \\log n)$, not stable.",
+    "Comparison sorting needs $\\Omega(n \\log n)$ comparisons, but counting and radix sort beat it on small integer universes by never comparing keys.",
+    "Stability matters in finance: equal prices must keep arrival (time) priority after sorting."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "What is the worst-case number of comparisons for binary search on a sorted array of 1,000 elements?",
+      "options": ["9", "10", "16", "500"],
+      "answerIndex": 1,
+      "explanation": "The window halves each step, so the bound is $\\lceil \\log_2(1000+1) \\rceil = 10$ because $2^{10} = 1024 \\ge 1001 > 2^9$."
+    },
+    {
+      "id": "q2",
+      "type": "code-output",
+      "prompt": "What does this Python code print?",
+      "language": "python",
+      "code": "def binary_search(a, x):\n    lo, hi = 0, len(a) - 1\n    while lo <= hi:\n        mid = lo + (hi - lo) // 2\n        if a[mid] == x:\n            return mid\n        if a[mid] < x:\n            lo = mid + 1\n        else:\n            hi = mid - 1\n    return -1\n\nprint(binary_search([2, 5, 9, 14, 23, 37], 23))\nprint(binary_search([2, 5, 9, 14, 23, 37], 10))",
+      "answer": "4\n-1",
+      "explanation": "For 23: mid=2 (9<23) then mid=4 hits it, so 4. For 10: the window shrinks 6->3->1->empty without a hit, so -1."
+    },
+    {
+      "id": "q3",
+      "type": "ms",
+      "prompt": "Which statements about merge sort are true?",
+      "options": [
+        "Its worst-case running time is $O(n \\log n)$",
+        "It is a stable sort",
+        "It sorts in place with $O(1)$ extra memory",
+        "It is a comparison-based sort"
+      ],
+      "answerIndices": [0, 1, 3],
+      "explanation": "Merge sort merges two sorted halves, costing $O(n \\log n)$ always, is stable (use $\\le$ on fronts), and comparison-based. It is *not* in place: merging needs a linear-size buffer."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "Quicksort with a naive fixed pivot (say, always the last element) hits its $O(n^2)$ worst case when:",
+      "options": [
+        "The array contains duplicate values",
+        "The array is already sorted, so each partition splits into sizes $n-1$ and $0$",
+        "The array length is not a power of two",
+        "The pivot is the median element"
+      ],
+      "answerIndex": 1,
+      "explanation": "A sorted input makes every partition maximally lopsided, giving $n + (n-1) + \\dots + 1 = O(n^2)$ work. Randomised or median-of-three pivots make this worst case vanishingly unlikely."
+    },
+    {
+      "id": "q5",
+      "type": "code-output",
+      "prompt": "This is Lomuto partitioning with the last element as pivot. What does it print?",
+      "language": "python",
+      "code": "def partition(a):\n    pivot = a[-1]\n    i = 0\n    for j in range(len(a) - 1):\n        if a[j] <= pivot:\n            a[i], a[j] = a[j], a[i]\n            i += 1\n    a[i], a[-1] = a[-1], a[i]\n    return i\n\na = [7, 2, 9, 4, 3, 8, 5]\np = partition(a)\nprint(p, a[p])",
+      "answer": "3 5",
+      "explanation": "Elements $\\le 5$ are 2, 4, 3, so after swapping, indices 0-2 hold them, the pivot lands at index 3, and $a[3] = 5$."
+    },
+    {
+      "id": "q6",
+      "type": "mcq",
+      "prompt": "You must sort $10^6$ integers, each guaranteed to lie in $0..999$. Which approach is asymptotically fastest?",
+      "options": [
+        "Counting sort with 1,000 buckets, $O(n + k)$",
+        "Quicksort, $O(n \\log n)$",
+        "Insertion sort, $O(n^2)$",
+        "Binary search, $O(n \\log n)$"
+      ],
+      "answerIndex": 0,
+      "explanation": "With $k = 1000$ fixed buckets, counting sort runs in $O(n + k) = O(10^6)$ linear time, beating any comparison sort's $O(n \\log n)$. Binary search is a search, not a sort."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "definition",
+      "front": "State the invariant that makes binary search correct.",
+      "back": "If the target is present, it lies in a[lo..hi]. Each comparison discards half of this window, so at most ceil(log2(n+1)) comparisons are needed."
+    },
+    {
+      "type": "error-identification",
+      "front": "What is wrong with computing mid = (lo + hi) / 2 in C++ or Java?",
+      "back": "lo + hi can overflow a 32-bit int for large indices. Use mid = lo + (hi - lo) / 2. (In Python ints are arbitrary precision, so it cannot overflow.)"
+    },
+    {
+      "type": "concept",
+      "front": "What does it mean for a sort to be stable, and why does it matter for order books?",
+      "back": "Equal keys keep their original relative order. In a book, equal prices must preserve arrival (time) priority, so a stable sort by price keeps FIFO ordering."
+    },
+    {
+      "type": "formula",
+      "front": "Merge sort recurrence",
+      "back": "$T(n) = 2T(n/2) + O(n)$, which unrolls to $O(n \\log n)$ in every case, worst case included."
+    }
+  ],
+  "references": [
+    {
+      "label": "Wikipedia - Binary search algorithm (including the overflow history)",
+      "url": "https://en.wikipedia.org/wiki/Binary_search_algorithm"
+    },
+    {
+      "label": "Wikipedia - Merge sort",
+      "url": "https://en.wikipedia.org/wiki/Merge_sort"
+    },
+    {
+      "label": "Wikipedia - Quicksort",
+      "url": "https://en.wikipedia.org/wiki/Quicksort"
+    },
+    {
+      "label": "cp-algorithms - Counting sort and radix sort",
+      "url": "https://cp-algorithms.com/sorting/counting-sort.html"
+    }
+  ],
+  "skills": ["algorithms"]
+}

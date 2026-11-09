@@ -1,0 +1,226 @@
+{
+  "id": "cpp-arrays-strings",
+  "moduleId": "ph4-cpp-l1",
+  "title": "Arrays, std::string and std::string_view",
+  "estMinutes": 25,
+  "difficulty": "foundation",
+  "prereqs": ["cpp-references-pointers"],
+  "objectives": [
+    "Declare, index and iterate C-style arrays, and explain array-to-pointer decay",
+    "Manipulate std::string: construction, concatenation, size and element access",
+    "Use std::string_view for non-owning read-only text and avoid dangling views",
+    "Choose between array, std::string and std::string_view for a given job"
+  ],
+  "motivation": "Market data arrives as text - 'AAPL', 'BUY', 'MSFT-0621-C190' - and positions live in fixed-size buffers inside hot loops. Choosing the wrong tool here costs nanoseconds per tick or crashes via out-of-bounds indexing. This lesson covers the raw array C++ inherits from C, the owning std::string, and C++17's zero-copy std::string_view.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "C-style arrays: fixed-size and contiguous"
+    },
+    {
+      "type": "p",
+      "md": "A C-style array declares N elements of one type in **contiguous** memory: `double fills[4];`. Elements are indexed from 0 to N-1; there is **no bounds check**, and an out-of-bounds index is undefined behaviour, not an exception. In the scope where the array is declared you can recover its element count with the sizeof ratio `sizeof(fills) / sizeof(fills[0])` - but pass the array to a function and it **decays** to a pointer to its first element, forgetting its length entirely. That is why C-style APIs always carry a separate count parameter (you saw `const int* values, int count` in a previous exercise). Iteration is either a classic index loop or a range-for over the elements."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <iostream>\n\nint main() {\n    int fills[5] = {2, 4, 6, 8, 10};      // brace initialisation\n    int total = 0;\n    for (int i = 0; i < 5; ++i) {\n        total += fills[i];\n    }\n    std::cout << total << '\\n';                          // 30\n    std::cout << sizeof(fills) / sizeof(fills[0]) << '\\n';  // 5 elements\n    return 0;\n}",
+      "caption": "The sizeof ratio works here because fills' true array type is known in this scope. Output: 30 then 5"
+    },
+    {
+      "type": "interactive",
+      "component": "MemoryLayout",
+      "params": {
+        "totalBytes": 20,
+        "bytesPerRow": 4
+      },
+      "caption": "int fills[5] is 20 contiguous bytes, four per int - contiguity is what makes element i addressable as base + i * sizeof(int)."
+    },
+    {
+      "type": "h2",
+      "text": "std::string: owning, growing text"
+    },
+    {
+      "type": "p",
+      "md": "**std::string** owns a resizable character buffer: it manages its own memory, knows its length via `size()`, concatenates with `+` and `+=`, compares with `==` and `<`, and indexes like an array (`s[0]` is the first character). It copies when passed by value and allocates as it grows - the price you pay for safety and convenience. A literal such as \"FILL\" in your source is really a C-style `const char[5]` array; assigning it to a std::string copies those bytes into the string's own buffer. Note that `==` on two std::strings compares *contents*, whereas `==` on two C-style arrays would compare addresses - a subtle but critical difference."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <iostream>\n#include <string>\n\nint main() {\n    std::string s = \"fill\";\n    s += \"ed\";                        // append in place\n    std::cout << s << ' ' << s.size() << '\\n';   // filled 6\n    return 0;\n}",
+      "caption": "std::string grows its own buffer; size() counts characters. Output: filled 6"
+    },
+    {
+      "type": "h2",
+      "text": "std::string_view: read-only, non-owning (C++17)"
+    },
+    {
+      "type": "p",
+      "md": "**std::string_view** is a pointer plus a length: a read-only window over text it does **not** own. Passing a string_view costs no allocation and no copy regardless of the text's length, and it accepts std::string, string literals or slices taken with `substr` - which is why it has become the default parameter type for read-only text in C++17 codebases. The trade-off is lifetime: the view is valid only as long as the underlying buffer exists. Slicing with `substr` produces a view *into the original buffer*, not a new copy, and `find` returns the special value `npos` when nothing matches - so `substr(0, s.find('-'))` means 'everything before the first dash, or the whole text if there is no dash'."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <iostream>\n#include <string>\n#include <string_view>\n\nstd::string_view rootTicker(std::string_view symbol) {\n    // view into the original buffer - no copy made\n    return symbol.substr(0, symbol.find('-'));\n}\n\nint main() {\n    std::string sym = \"MSFT-0621-C190\";\n    std::cout << rootTicker(sym) << '\\n';     // MSFT\n    std::cout << rootTicker(\"SPY\") << '\\n';   // SPY (no dash: npos -> whole view)\n    return 0;\n}",
+      "caption": "Zero-copy slicing: the view points into the caller's buffer. Output: MSFT then SPY"
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "The dangling view",
+      "md": "`std::string_view bad() { std::string local = \"AAPL\"; return local; }` returns a window over a buffer destroyed when the function exits; every later use is undefined behaviour. Views **borrow** - they never extend a lifetime. The same rule you learned for references applies: an alias may never outlive its object."
+    },
+    {
+      "type": "table",
+      "headers": ["", "C array", "std::string", "std::string_view"],
+      "rows": [
+        ["Owns its memory", "Yes (fixed size)", "Yes (resizable)", "No - borrows"],
+        ["Knows its length", "Only in declaring scope (sizeof trick)", "size() at runtime", "length carried with the view"],
+        ["Mutate contents", "Yes", "Yes, grows as needed", "No - read-only window"],
+        ["Copy cost when passed", "Decays to pointer", "Full copy", "None - pointer + length"],
+        ["Main hazard", "Out-of-bounds UB", "Allocations in hot loops", "Dangling if buffer dies first"]
+      ]
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Write a function `double meanFills(const double* values, std::size_t n)` and call it on `double fills[4] = {101.5, 102.25, 99.75, 103.0};`. What does the program print, and why does the function need `n` as a separate parameter?",
+    "hints": [
+      "Sum first: 101.5 + 102.25 = 203.75; add 99.75 to get 303.5; add 103.0 to get 406.5.",
+      "Inside the function, `values` is just a pointer - the array's length did not travel with it (decay!)."
+    ],
+    "solution": "Sum $= 406.5$, so the mean is $406.5 / 4 =$ **101.625** (printed as `101.625`). The parameter is `const double*` because the array **decays** to a pointer to its first element - no length survives the call, so the count must be passed explicitly.\n```cpp\n#include <iostream>\n\ndouble meanFills(const double* values, std::size_t n) {\n    double sum = 0.0;\n    for (std::size_t i = 0; i < n; ++i) {\n        sum += values[i];\n    }\n    return sum / n;\n}\n\nint main() {\n    double fills[4] = {101.5, 102.25, 99.75, 103.0};\n    std::cout << meanFills(fills, 4) << '\\n';   // 101.625\n    return 0;\n}\n```"
+  },
+  "independentExercise": {
+    "prompt": "Build a small symbol utility with std::string_view:\n\n- `std::size_t dashCount(std::string_view s)` returns the number of '-' characters.\n- `std::string_view optionRoot(std::string_view s)` returns the text before the first '-' (or the whole view if there is none).\n\nRun both functions on \"MSFT-0621-C190\" and \"SPY\" and give all four results, plus the full compilable program.",
+    "hints": [
+      "Loop i from 0 to s.size() and inspect s[i] == '-'.",
+      "string_view::find returns npos when nothing matches; substr(0, npos) means 'to the end'."
+    ],
+    "solution": "dashCount: **2** for \"MSFT-0621-C190\", **0** for \"SPY\". optionRoot: **\"MSFT\"** and **\"SPY\"**.\n```cpp\n#include <iostream>\n#include <string_view>\n\nstd::size_t dashCount(std::string_view s) {\n    std::size_t count = 0;\n    for (std::size_t i = 0; i < s.size(); ++i) {\n        if (s[i] == '-') ++count;\n    }\n    return count;\n}\n\nstd::string_view optionRoot(std::string_view s) {\n    return s.substr(0, s.find('-'));\n}\n\nint main() {\n    std::cout << dashCount(\"MSFT-0621-C190\") << '\\n';    // 2\n    std::cout << dashCount(\"SPY\") << '\\n';               // 0\n    std::cout << optionRoot(\"MSFT-0621-C190\") << '\\n';   // MSFT\n    std::cout << optionRoot(\"SPY\") << '\\n';              // SPY\n    return 0;\n}\n```\nThe views returned by optionRoot point into the string literals, which live for the whole program - so nothing dangles here."
+  },
+  "commonMistakes": [
+    "Indexing past the end of a raw array - there is no bounds check and out-of-bounds access is undefined behaviour.",
+    "Using sizeof(fills)/sizeof(fills[0]) inside a function that received the array - it decayed to a pointer, so the ratio is meaningless.",
+    "Returning a std::string_view of a local std::string - the view dangles the moment the string dies.",
+    "Comparing C-style char arrays with == and comparing addresses instead of contents; == compares text only for std::string and string_view.",
+    "Passing std::string by value in a hot loop when a const std::string& or std::string_view would not copy at all."
+  ],
+  "realWorldApplication": "Protocol parsers and log scanners take string_view parameters to slice messages without a single allocation; owning std::strings appear only where text must be stored beyond the call.",
+  "quantFinanceApplication": "A market-data handler decoding 'MSFT-0621-C190' into root, expiry and strike uses string_view slices over the incoming buffer - zero copies in the hottest path of the feed.",
+  "summary": [
+    "C arrays are fixed-size, contiguous and unchecked; they decay to pointers at function boundaries, losing their length.",
+    "std::string owns a resizable buffer with size(), += concatenation and value-semantic (content) comparisons.",
+    "std::string_view (C++17) is a non-owning pointer+length read-only window: cheap to pass, fatal to outlive its buffer.",
+    "The sizeof(arr)/sizeof(arr[0]) element-count trick works only where the array's true type is still known.",
+    "Default to string_view for read-only parameters, std::string for owned text, raw arrays for fixed-size hot data."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "code-output",
+      "prompt": "What does this C++17 program print?",
+      "language": "cpp",
+      "code": "#include <iostream>\n\nint main() {\n    int a[5] = {2, 4, 6, 8, 10};\n    int s = 0;\n    for (int i = 0; i < 5; ++i) {\n        s += a[i];\n    }\n    std::cout << s << '\\n';\n    std::cout << sizeof(a) / sizeof(a[0]) << '\\n';\n    return 0;\n}",
+      "answer": "30\n5",
+      "explanation": "The loop sums 2+4+6+8+10 = 30. sizeof(a) is 20 bytes and sizeof(a[0]) is 4, so the ratio is 5 - valid because a's true array type is known in this scope."
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "You pass `fills` (declared as int[5]) to a function taking `int* arr`. Inside the function, what does sizeof(arr)/sizeof(arr[0]) evaluate to?",
+      "options": [
+        "5 - the length survives the call",
+        "4",
+        "2 on a 64-bit machine - the array length was lost in decay",
+        "Compile error"
+      ],
+      "answerIndex": 2,
+      "explanation": "The array decayed to a pointer, so sizeof(arr) is the pointer size (8 bytes) and the ratio is 8/4 = 2 - not the element count. The length must travel as a separate parameter."
+    },
+    {
+      "id": "q3",
+      "type": "code-output",
+      "prompt": "What does this C++17 program print?",
+      "language": "cpp",
+      "code": "#include <iostream>\n#include <string>\n\nint main() {\n    std::string s = \"fill\";\n    s += \"ed\";\n    std::cout << s << ' ' << s.size() << '\\n';\n    return 0;\n}",
+      "answer": "filled 6",
+      "explanation": "+= appends \"ed\" to \"fill\" producing \"filled\", whose size() is 6 characters."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "Which statement about std::string_view is TRUE?",
+      "options": [
+        "It copies the text it views",
+        "It owns the buffer it points at",
+        "It is a read-only pointer+length pair that never allocates",
+        "It extends the lifetime of a temporary string"
+      ],
+      "answerIndex": 2,
+      "explanation": "A view is just pointer + length over existing text: no allocation, no copy, no mutation - and no lifetime extension. If the buffer dies first, the view dangles."
+    },
+    {
+      "id": "q5",
+      "type": "ms",
+      "prompt": "Which uses of std::string_view are safe?",
+      "options": [
+        "A function parameter carrying read-only text into a function",
+        "Returning a view of a string literal",
+        "Returning a view of a local std::string",
+        "Storing a view of a longer-lived std::string member"
+      ],
+      "answerIndices": [0, 1, 3],
+      "explanation": "String literals and members outlive the view; a local string dies at the end of the function, leaving the view dangling. Parameter use is the canonical safe case."
+    },
+    {
+      "id": "q6",
+      "type": "short",
+      "prompt": "Why is `void scan(std::string_view line)` preferred over `void scan(std::string line)` for hot-path parsing?",
+      "modelAnswer": "Passing std::string by value copies the whole buffer (likely allocating), while string_view wraps the existing text with a pointer and length: no allocation, no copy - and it also accepts literals and slices.",
+      "keywords": ["copy", "allocat", "pointer", "length"],
+      "explanation": "The view is a borrowed window whose cost is O(1) regardless of text length, which is why C++17 APIs standardised on it for read-only text."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "Array decay",
+      "back": "Passing an array to a function converts it to a pointer to its first element; the length is lost, so APIs carry a separate count parameter."
+    },
+    {
+      "type": "formula",
+      "front": "Element count of an array in scope",
+      "back": "$\\text{count} = \\dfrac{\\text{sizeof(arr)}}{\\text{sizeof(arr[0])}}$ - valid only where the array's true type is known."
+    },
+    {
+      "type": "definition",
+      "front": "std::string_view",
+      "back": "C++17 non-owning read-only view: pointer + length over existing text; no allocation; dangles if the underlying buffer dies first."
+    },
+    {
+      "type": "concept",
+      "front": "array vs string vs string_view",
+      "back": "Array: fixed, contiguous, owned. string: owning, resizable. string_view: borrowing, read-only, cheapest to pass."
+    },
+    {
+      "type": "code-output",
+      "front": "std::string s = \"fill\"; s += \"ed\"; then cout << s << ' ' << s.size() prints?",
+      "back": "\"filled 6\" - += appends in place; size() counts characters."
+    }
+  ],
+  "references": [
+    {
+      "label": "cppreference — std::basic_string",
+      "url": "https://en.cppreference.com/w/cpp/string/basic_string"
+    },
+    {
+      "label": "cppreference — std::basic_string_view (C++17)",
+      "url": "https://en.cppreference.com/w/cpp/string/basic_string_view"
+    },
+    {
+      "label": "cppreference — Array declaration",
+      "url": "https://en.cppreference.com/w/cpp/language/array"
+    }
+  ],
+  "skills": ["cpp"]
+}

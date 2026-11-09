@@ -1,0 +1,253 @@
+{
+  "id": "ds-replication-consistency",
+  "moduleId": "ph2-distributed-systems",
+  "title": "Replication, Partitioning and Consistency",
+  "estMinutes": 27,
+  "difficulty": "advanced",
+  "prereqs": ["ds-rpc-queues"],
+  "objectives": [
+    "Explain leader-follower replication and the trade-offs of synchronous versus asynchronous shipping",
+    "Partition a dataset across shards by key hash or range and reason about shard skew",
+    "State the CAP trade-off and classify a system's behaviour during a network partition",
+    "Compute quorum overlap conditions $R + W > N$ and derive minimum read/write quorum sizes",
+    "Argue why trading systems demand predictable (typically strong) consistency in the order path and where eventual consistency is acceptable"
+  ],
+  "motivation": "One database server is a single point of failure and a throughput ceiling, so every serious system replicates data onto several machines and splits it across many. The moment you do, copies can disagree: a follower lags, a partition cuts the cable, and each read must decide which truth to serve. For a trading firm the stakes are concrete - a stale position read can breach a limit, a split-brain cluster can double-book collateral. This lesson gives you the models (leader-follower, sharding, quorums, CAP, eventual consistency) and the discipline to choose between them deliberately.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Replication: why copies, and who is in charge"
+    },
+    {
+      "type": "p",
+      "md": "Replication keeps copies of the same data on multiple nodes for **durability** (survive a node dying), **read scaling** (spread reads across replicas) and **locality** (serve users from a nearby copy). The dominant pattern is **leader-follower**: all writes go to one leader, which records them in a log and ships it to followers that apply changes in order. Followers serve reads; if the leader dies, a follower is promoted. The design decision is *when* the leader acknowledges a write:"
+    },
+    {
+      "type": "list",
+      "ordered": false,
+      "items": [
+        "**Synchronous replication**: the leader waits until followers confirm before replying to the client. A confirmed write survives leader loss, but every write pays the slowest follower's latency, and a partition can block writes entirely.",
+        "**Asynchronous replication**: the leader replies immediately and ships changes in the background. Writes are fast, but an abrupt leader crash can lose the most recent writes - and followers answer reads with **stale** data.",
+        "**Semi-synchronous** (the common middle ground): wait for *one* follower, not all - durability without full-fleet latency."
+      ]
+    },
+    {
+      "type": "p",
+      "md": "Staleness is measurable. If a follower applies changes 15 ms behind the leader, a client that writes at $t = 0$ and reads from that follower at $t = 5$ ms sees data five milliseconds old - the write exists on the leader but not yet on the reader's replica. Whether that matters is purely a business question: a reporting dashboard shrugs; an order-management system does not."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "The stale-position failure",
+      "md": "A trader flattens a position: the write hits the leader and is acknowledged. A risk gate reads the position from a lagging follower milliseconds later, sees the *old* size, and approves a second order against perceived inventory. Two orders exist where one was intended - not a bug in any single service, but a consistency choice made at the storage layer."
+    },
+    {
+      "type": "h2",
+      "text": "Partitioning: splitting the dataset"
+    },
+    {
+      "type": "p",
+      "md": "Replication copies; **partitioning (sharding)** divides. Each shard owns a disjoint slice of the data, so write throughput and storage scale horizontally. Slices are usually chosen by **key range** (accounts A-M on shard 1) or by **hash of the key** (account ID modulo shard count, or a consistent-hashing ring). Hashing spreads load evenly but scatters locality; ranges preserve locality but invite hot spots. The cost of sharding is that queries without the shard key must fan out to all shards, and **rebalancing** - moving slices when nodes join or leave - must not strand data."
+    },
+    {
+      "type": "interactive",
+      "component": "HashTableVisual",
+      "params": {
+        "buckets": 4,
+        "keys": ["acct-1000", "acct-1001", "acct-1002", "acct-1003", "acct-1004", "acct-1005", "acct-1006", "acct-1007"]
+      },
+      "caption": "Sharding is hashing with consequences: each key lands in exactly one bucket (shard). Add or remove a bucket and most keys must move - the rebalancing problem consistent hashing solves."
+    },
+    {
+      "type": "h2",
+      "text": "CAP and its daily-life cousin, latency"
+    },
+    {
+      "type": "p",
+      "md": "The **CAP theorem** says that when a network **partition** splits your nodes, a distributed store must sacrifice either **consistency** (some nodes answer with stale or reject writes) or **availability** (some requests go unanswered). You choose per system: a **CP** store refuses to serve possibly-stale data during a partition; an **AP** store keeps answering but may serve old values, reconciling later. When the network is *healthy* - i.e. almost always - the real trade-off is between consistency and **latency**: always waiting for a quorum costs milliseconds forever. That operational reading (PACELC) is how practitioners actually reason about it."
+    },
+    {
+      "type": "h2",
+      "text": "Quorums: consistency with arithmetic"
+    },
+    {
+      "type": "p",
+      "md": "Between 'wait for all replicas' and 'wait for none' lies **quorum replication**. With $N$ replicas, a write acknowledged by $W$ replicas and a read confirmed by $R$ replicas are guaranteed to overlap - and therefore to see the latest write - when $R + W > N$. Overlap forces every read set to intersect every write set, so at least one responding replica holds the newest value."
+    },
+    {
+      "type": "steps",
+      "title": "Worked example: sizing a quorum",
+      "items": [
+        "$N = 3$, $W = 2$, $R = 2$: overlap since $2 + 2 = 4 > 3$. Writes survive one replica failure; reads tolerate one.",
+        "$N = 5$, $W = 3$: minimum $R$ for overlap is $R > 5 - 3 = 2$, so $R = 3$ - the read quorum must match the write quorum's complement exactly.",
+        "$W = 1$, $R = 1$ with $N = 3$: $1 + 1 = 2 \\le 3$, no overlap - reads may hit a replica the write never reached: stale data by design.",
+        "Rule of thumb: large $W$ makes writes slow and durable; large $R$ makes reads slow and fresh. Quorum tuning is how you *spend* the CAP trade-off in milliseconds."
+      ]
+    },
+    {
+      "type": "h2",
+      "text": "Eventual consistency and its contract"
+    },
+    {
+      "type": "p",
+      "md": "**Eventual consistency** is the AP bargain: if writes stop, all replicas converge to the same values - eventually, typically within replication lag. Applications read stale data in the meantime and must either tolerate it or add refinements: **read-your-writes** (route a session's reads to a replica that has caught up with that session's writes), **monotonic reads** (never travel backward in time within a session), and conflict resolution for concurrent writes (last-writer-wins by timestamp, or application-defined merges). These guarantees are *per-session patches* over an eventually-consistent base - useful, but never a substitute for ordering in the write path itself."
+    },
+    {
+      "type": "table",
+      "headers": ["Consistency level", "What a read returns", "Typical home"],
+      "rows": [
+        ["Strong (linearizable)", "The latest committed write, always", "Order state, positions, limits"],
+        ["Read-your-writes", "Your own writes, others may lag", "Trader session on an order blotter"],
+        ["Bounded staleness", "Data no older than a bound", "Risk dashboards"],
+        ["Eventual", "Some past state, converging", "Analytics, reporting, ML features"]
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Why trading systems favour predictable consistency",
+      "md": "The order path fails dangerous before it fails slow: double-submitted orders, breached position limits and mis-stated exposure are regulatory and financial events, while an extra 5 ms of write latency is a cost line. Trading systems therefore put order state, positions and limit checks on strongly-consistent (often CP, quorum-replicated) stores, and relegate analytics, research and ML feature stores to eventually-consistent systems where staleness is a modelling nuisance, not a risk event. Consistency is a *risk decision*, not just an engineering one."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "A cluster stores the order book state with $N = 5$ replicas. (a) The team wants writes to survive 2 simultaneous replica failures - what minimum $W$ achieves that? (b) With that $W$, what is the minimum $R$ that still guarantees reads see the latest acknowledged write? (c) The team instead sets $W = 1$ and $R = 1$ for speed: give a concrete sequence of events in which a client misses a write that the store has already acknowledged, and name the consistency level the client experiences.",
+    "hints": [
+      "Surviving $f$ write failures needs $W = N - f$ acknowledged copies.",
+      "Overlap condition: $R + W > N$.",
+      "With $W = 1$ only the leader has the newest value at first; followers ship asynchronously."
+    ],
+    "solution": "(a) To acknowledge writes while tolerating 2 failures, $W = 5 - 2 = 3$ (with 2 replicas down, 3 remain - exactly the quorum). (b) $R + W > N \\Rightarrow R > 5 - 3 = 2$, so $R = 3$. Any read quorum of 3 must intersect every write quorum of 3 (both are majorities of 5, and two majorities always overlap). (c) With $W = 1, R = 1$: the leader commits the write and replies; the client's next read lands on a follower that has not yet received the change - it reads the pre-write value. That is **eventual consistency** (with no read-your-writes guarantee), and it is exactly the stale-position hazard."
+  },
+  "independentExercise": {
+    "prompt": "An exchange-adjacent firm stores accounts in a sharded, replicated store. (a) 8{,}000 accounts with IDs 0-7{,}999 are sharded by `id mod 8`: how many accounts land on shard 3, and which ID range does a *range-based* scheme with 8 equal shards give shard 3? (b) The order-state store runs $N = 3$, $W = 2$, $R = 2$. The leader plus one follower acknowledge a write; the third follower lags 40 ms. A service reads from the lagging follower 10 ms after the write: can this happen under the configured quorums, or does the quorum condition prevent it? Explain. (c) The analytics store is eventually consistent with lag under 2 s. Name one report for which that is acceptable and one place it is not, with one sentence of justification each.",
+    "hints": [
+      "Modulo sharding cycles IDs 0-7 repeatedly; count how many hits residue 3.",
+      "Range sharding with equal slices: 1000 IDs per shard.",
+      "Check $R + W$ against $N$ - and remember the quorum only binds if reads actually use $R$ replicas."
+    ],
+    "solution": "(a) IDs $\\equiv 3 \\pmod 8$ in 0-7{,}999: 1{,}000 accounts (every 8th ID). A range scheme with 8 equal shards gives shard 3 the range 3{,}000-3{,}999. (b) It **cannot** happen if reads genuinely require a quorum of $R = 2$: any read set of 2 overlaps the write set of 2, so at least one answering replica holds the write; the lagging follower alone can never satisfy a read. If a client bypasses the quorum (single-replica read from the follower), the quorum condition is moot - this is why the guarantee belongs to the protocol's use, not the configuration file. (c) Acceptable: end-of-day PnL attribution, where 2-second staleness shifts nothing material. Not acceptable: the pre-trade limit check, where a 2-second-old position can authorize a trade that breaches the limit - predictable consistency is the requirement."
+  },
+  "commonMistakes": [
+    "Reading CAP as 'pick 2 of 3' at design time: partitions are rare events; the choice is per-request *during* a partition, and consistency-vs-latency is the everyday trade-off.",
+    "Confusing replication with partitioning: replication copies the same data for durability; partitioning splits *different* data for scale - production systems do both.",
+    "Believing $W = 1$ is safe because the leader is 'most of the time' up: an acknowledged single-replica write is lost if that node dies before shipping.",
+    "Treating eventual consistency as a bug: it is a contract (convergence when writes stop) - the mistake is using it where staleness is a risk event."
+  ],
+  "realWorldApplication": "Leader-follower replication with quorum acknowledges is the default posture of production databases (PostgreSQL streaming replication, Kafka's ISR model, etcd's Raft majorities), and sharded clusters front almost every high-volume datastore on the internet.",
+  "quantFinanceApplication": "Trading systems run order and position state on strongly-consistent quorum stores and confine eventual consistency to analytics and research; the stale-position failure - a risk gate reading a lagging replica and approving a second order - is the canonical incident this design prevents.",
+  "summary": [
+    "Leader-follower replication ships a write log to copies; sync acknowledgement buys durability at latency cost, async buys speed at staleness/loss risk.",
+    "Partitioning splits data by key range or hash for scale, trading load spreading against locality, hot shards and rebalancing pain.",
+    "CAP: during a partition choose consistency (CP: refuse stale answers) or availability (AP: answer, reconcile later); day-to-day the trade-off is consistency vs latency.",
+    "Quorum overlap $R + W > N$ guarantees reads see the latest acknowledged write; $N=5$, $W=3$ needs $R=3$, while $W=1,R=1$ permits stale reads by design.",
+    "Trading systems put order/position/limit state under predictable (strong) consistency because stale reads become risk events, and accept eventual consistency only downstream."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "numeric",
+      "prompt": "A quorum-replicated store has $N = 5$ replicas and acknowledges writes at $W = 3$. What is the minimum read quorum $R$ that guarantees every read sees the latest acknowledged write?",
+      "answer": 3,
+      "tolerance": 0,
+      "explanation": "Overlap requires $R + W > N$: $R > 5 - 3 = 2$, so $R = 3$. Two majorities of 5 always intersect in at least one replica."
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "During a network partition, an AP (availability-first) system responds to client requests. What does it serve?",
+      "options": [
+        "Always the latest committed data",
+        "Possibly stale data, reconciled after the partition heals",
+        "Nothing - it refuses all requests",
+        "Only data it can prove is current, otherwise an error"
+      ],
+      "answerIndex": 1,
+      "explanation": "AP systems stay available and serve the best answer each side has - possibly stale - and reconcile divergence when connectivity returns. Refusing requests or requiring proof of currency is the CP posture."
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "Accounts with IDs 0 to 7{,}999 are sharded by `id mod 8`. How many accounts does shard 3 hold?",
+      "answer": 1000,
+      "tolerance": 0,
+      "unit": "accounts",
+      "explanation": "Exactly every 8th ID satisfies $id \\equiv 3 \\pmod 8$, and $8000/8 = 1000$ - modulo sharding spreads uniformly, unlike range sharding."
+    },
+    {
+      "id": "q4",
+      "type": "ms",
+      "prompt": "Which statements correctly describe asynchronous leader-follower replication?",
+      "options": [
+        "Followers may serve stale reads until they catch up",
+        "Recent acknowledged writes can be lost if the leader crashes before shipping them",
+        "Writes are acknowledged with lower latency than fully synchronous replication",
+        "Every replica is guaranteed to hold every acknowledged write at all times"
+      ],
+      "answerIndices": [0, 1, 2],
+      "explanation": "Async replication's whole point is fast acknowledgement; the price is lag (stale follower reads) and potential loss of the newest writes on leader death. The last option describes synchronous replication."
+    },
+    {
+      "id": "q5",
+      "type": "short",
+      "prompt": "In one or two sentences: why do trading systems avoid eventual consistency in the order path, and where do they still use it?",
+      "modelAnswer": "Stale reads there become risk events: a lagging replica can let a limit check approve a duplicate or over-limit order, and lost acknowledged writes misstate positions - so order/position state needs strong, predictable consistency. Eventually-consistent stores are fine downstream, for analytics, reporting and ML features where lag degrades quality, not safety.",
+      "keywords": ["stale", "limit", "position", "risk", "double", "order", "analytics", "strong"],
+      "explanation": "Consistency is chosen per data domain: risk-event data gets predictable consistency; quality-degradation data can converge eventually."
+    },
+    {
+      "id": "q6",
+      "type": "mcq",
+      "prompt": "A web session needs read-your-writes: a trader updates an order and must immediately see the update, while other traders' data may lag. Which mechanism best delivers this on an eventually-consistent store?",
+      "options": [
+        "Route all reads globally to the least-loaded replica",
+        "Sticky-route this session's reads to a replica that has caught up with the session's writes",
+        "Disable replication entirely",
+        "Double every write so at least one copy lands"
+      ],
+      "answerIndex": 1,
+      "explanation": "Read-your-writes is delivered by pinning a session to storage that includes its own writes (leader, or caught-up follower). Least-loaded routing can read a lagging copy; disabling replication sacrifices durability; duplicate writes solve nothing."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "Leader-follower replication",
+      "back": "All writes go to a leader; followers apply its log in order and serve reads. Sync = durable-but-slow, async = fast-but-staleness-prone, semi-sync = wait for one follower."
+    },
+    {
+      "type": "formula",
+      "front": "Quorum overlap condition",
+      "back": "$R + W > N$ guarantees every read quorum intersects every write quorum, so reads see the latest acknowledged write. $N=5, W=3 \\Rightarrow R \\ge 3$."
+    },
+    {
+      "type": "concept",
+      "front": "CAP theorem (practical reading)",
+      "back": "During a partition choose: consistency (CP - refuse possibly-stale answers) or availability (AP - answer, reconcile later). Healthy networks make it a consistency-vs-latency choice (PACELC)."
+    },
+    {
+      "type": "definition",
+      "front": "Eventual consistency",
+      "back": "If writes stop, replicas converge to the same values; reads in between may be stale. Patches: read-your-writes, monotonic reads, conflict resolution."
+    },
+    {
+      "type": "definition",
+      "front": "Sharding (partitioning)",
+      "back": "Splitting a dataset into disjoint slices (key range or hash) owned by different nodes, so throughput and storage scale horizontally; costs are hot shards and rebalancing."
+    }
+  ],
+  "references": [
+    {
+      "label": "Wikipedia - CAP theorem",
+      "url": "https://en.wikipedia.org/wiki/CAP_theorem"
+    },
+    {
+      "label": "Wikipedia - Replication (computing)",
+      "url": "https://en.wikipedia.org/wiki/Replication_(computing)"
+    },
+    {
+      "label": "Apache Kafka - replication design",
+      "url": "https://kafka.apache.org/documentation/#replication"
+    }
+  ],
+  "skills": ["distributed-systems"]
+}

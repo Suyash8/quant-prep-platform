@@ -1,0 +1,220 @@
+{
+  "id": "stat-bootstrap-permutation",
+  "moduleId": "ph8-statistics",
+  "title": "Bootstrap and Permutation Testing",
+  "estMinutes": 26,
+  "difficulty": "core",
+  "prereqs": ["stat-regression"],
+  "objectives": [
+    "Explain the resampling logic of the bootstrap and why resampling *with replacement* reconstructs sampling variability",
+    "Build a percentile confidence interval from bootstrap replicates and report simulation results with appropriate hedging",
+    "Carry out a permutation test for a difference in means and read the resulting empirical $p$-value",
+    "Name the situations where bootstrap and permutation results are untrustworthy (dependence, extremes, small samples)"
+  ],
+  "motivation": "You need the standard error of a *median* slippage estimate - and no closed-form formula for it exists in any table you own. The bootstrap replaces that missing formula with a computer: resample your own data thousands of times and let the spread of the resampled statistics stand in for the spread of the truth. Paired with permutation tests, it is the modern default when assumptions run out.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "When the formulas run out"
+    },
+    {
+      "type": "p",
+      "md": "The mean came with a free formula: $\\mathrm{SE} = s/\\sqrt{n}$. The median, the $95\\%$-tile of losses, the Sharpe ratio - none of them do, at least not under realistic distributions. Classical inference works by deriving the sampling distribution mathematically. The resampling insight is blunt and powerful: **the sample itself is the best available model of the population**, so simulate new samples from it and measure how the statistic wanders."
+    },
+    {
+      "type": "h2",
+      "text": "The bootstrap: resample with replacement"
+    },
+    {
+      "type": "p",
+      "md": "Given a sample of size $n$, draw a new sample of size $n$ **with replacement** - some points appear twice, some not at all. Recompute the statistic. Repeat $B$ times ($B$ in the thousands). The scatter of those $B$ replicates approximates the sampling distribution, and their spread approximates the standard error. Replacement is not a detail: without it every resample would equal the original and the spread would be zero."
+    },
+    {
+      "type": "steps",
+      "title": "Worked setup: median of eight days",
+      "items": [
+        "Sample (hypothetical daily slippage in basis points): $2.1, -0.5, 3.0, 1.2, -1.8, 4.0, 0.3, 2.7$.",
+        "Sorted: $-1.8, -0.5, 0.3, 1.2, 2.1, 2.7, 3.0, 4.0$; median $= (1.2 + 2.1)/2 = 1.65$.",
+        "One bootstrap resample might be $[3.0, 1.2, 1.2, 4.0, 2.1, -0.5, 2.1, 3.0]$ - note $1.2$ and $2.1$ drawn twice, others never; its median is $(2.1 + 2.1)/2 = 2.1$.",
+        "Repeat $B = 10{,}000$ times. The seeded run below gives a bootstrap standard error for the median of about $0.95$ (approximate - this is a simulation, so the number varies run to run).",
+        "The $2.5\\%$ and $97.5\\%$ percentiles of the replicate distribution give a $95\\%$ percentile interval - about $[-0.5,\\ 3.0]$ in the seeded run (approximate)."
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import random\nrandom.seed(7)                      # reproducibility - see the validation lesson\nx = [2.1, -0.5, 3.0, 1.2, -1.8, 4.0, 0.3, 2.7]\n\ndef median(v):\n    s = sorted(v)\n    n = len(s)\n    return (s[n // 2 - 1] + s[n // 2]) / 2 if n % 2 == 0 else s[n // 2]\n\nB = 10_000\nstats = [median(random.choices(x, k=len(x))) for _ in range(B)]\nstats.sort()\nse = (sum((s - sum(stats) / B) ** 2 for s in stats) / (B - 1)) ** 0.5\nprint(round(median(x), 2), round(se, 2), stats[249], stats[9749])\n# typical output: 1.65 0.95 -0.5 3.0   (percentile endpoints vary by seed)",
+      "caption": "A dependency-free bootstrap: resample, recompute, take percentiles. Results are simulation output - quote them as approximate."
+    },
+    {
+      "type": "callout",
+      "variant": "warn",
+      "title": "Bootstrap failure modes",
+      "md": "The bootstrap treats observations as independent and identically distributed. Ordered financial returns violate that - volatility clustering means naive resampling breaks the time structure, so use a **block bootstrap** (resample contiguous chunks). It is also shaky for extreme order statistics (maxima, $99\\%$-tiles) and very small samples: the resamples only ever reuse values you observed."
+    },
+    {
+      "type": "h2",
+      "text": "Permutation testing: shuffle the labels"
+    },
+    {
+      "type": "p",
+      "md": "Two variants of a rule: A averaged $1.9$ over $12$ days, B averaged $1.1$ over $12$ days. Difference: $0.8$. Is that real? The null hypothesis says the labels A and B are **exchangeable** - the $24$ observations came from one pool, and the split was luck. So test it directly: pool the observations, shuffle the labels at random, recompute the difference, and see how often chance alone produces a gap of $0.8$ or more."
+    },
+    {
+      "type": "steps",
+      "title": "A permutation test in five moves",
+      "items": [
+        "Pool all $24$ observations and record the observed difference $d = 1.9 - 1.1 = 0.8$.",
+        "Shuffle labels: randomly assign $12$ of the pooled values to 'A', the rest to 'B'; recompute the difference.",
+        "Repeat $10{,}000$ times, building the null distribution of the difference - it is centred near $0$ by construction.",
+        "Count replicates with $|\\text{difference}| \\ge 0.8$: in a typical run, about $310$ of $10{,}000$.",
+        "Empirical $p$-value $\\approx 310/10{,}000 = 0.031$ (approximate) - evidence at the $5\\%$ level against exchangeability."
+      ]
+    },
+    {
+      "type": "interactive",
+      "component": "ConfidenceIntervalLab",
+      "params": {
+        "method": "bootstrap",
+        "B": 2000,
+        "statistic": "mean",
+        "confidence": 0.95
+      },
+      "caption": "Watch a resampling interval rebuild itself every run: the endpoints move a little each time, which is exactly why simulation answers are quoted as approximate."
+    },
+    {
+      "type": "p",
+      "md": "Notice what the permutation test *never does*: it never assumes normality and never estimates a variance. Under a true null it is exact for any distribution shape - the price is computation and the assumption that observations are exchangeable. With a two-sample $t$-test on well-behaved data the two usually agree; when they disagree, suspect the normality assumption, not the shuffle."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "A sample of six fills has latencies (ms) $4, 8, 6, 5, 3, 10$. (a) Compute the sample mean. (b) For the bootstrap resample $[8, 4, 4, 10, 3, 8]$, compute the resample mean and explain what role such resample means play. (c) Why must the resampling be with replacement?",
+    "hints": [
+      "The mean of the original six values: sum them.",
+      "Sum the resample and divide by 6.",
+      "Ask what the spread of resample means would be if every resample were the original sample."
+    ],
+    "solution": "(a) Sum $= 36$, mean $= 36/6 = 6.0$. (b) Resample sum $= 8+4+4+10+3+8 = 37$, mean $\\approx 6.17$. Each resample mean is one draw from the (approximate) sampling distribution of the mean; thousands of them provide the bootstrap standard error and percentile interval. (c) Without replacement every resample would be the original sample, its statistic would never vary, and the estimated spread would be zero - replacement is what creates the variability being measured."
+  },
+  "independentExercise": {
+    "prompt": "Variant A: $n = 9$, mean $2.0$. Variant B: $n = 9$, mean $0.8$. (a) State $H_0$ in exchangeability terms. (b) Describe the permutation procedure precisely (what is pooled, what is shuffled, what is counted). (c) A run of $10{,}000$ shuffles finds $190$ with $|\\text{difference}| \\ge 1.2$. Give the empirical $p$-value and the verdict at $\\alpha = 0.05$, noting the nature of the number.",
+    "hints": [
+      "Under $H_0$, which values belong to A is a matter of chance.",
+      "The count uses the two-sided criterion $|d| \\ge 1.2$.",
+      "Divide the count by the number of shuffles."
+    ],
+    "solution": "(a) $H_0$: the 18 observations come from a single pool and the A/B labels are exchangeable - the two variants have the same distribution. (b) Pool the 18 values, randomly assign 9 to A and 9 to B, compute the mean difference; repeat 10,000 times and count how often $|d| \\ge 1.2$. (c) $p \\approx 190/10{,}000 = 0.019$ (approximate - it is a Monte Carlo estimate), which is below $0.05$: reject exchangeability and conclude the variants differ."
+  },
+  "commonMistakes": [
+    "Resampling without replacement 'to keep the sample honest' - that destroys the variability the method exists to measure.",
+    "Quoting bootstrap endpoints to four decimal places; a Monte Carlo interval moves with the seed, so report approximate values.",
+    "Permuting time-ordered observations as if they were exchangeable - autocorrelation breaks the exchangeability assumption.",
+    "Using the ordinary bootstrap for a $99\\%$-tail estimate from 50 observations: resamples only re-use observed values, so tails are systematically underexplored."
+  ],
+  "realWorldApplication": "A/B testing platforms at large consumer companies ship permutation tests for conversion differences, and clinical statistics increasingly uses bootstrap intervals for medians and ratios where no clean formula exists.",
+  "quantFinanceApplication": "Backtest Sharpe ratios and median slippage estimates get their error bars from the bootstrap; pairs-selection pipelines use permutation tests to check whether a strategy's edge is distinguishable from a shuffled-entry null.",
+  "summary": [
+    "The bootstrap approximates a sampling distribution by resampling the data *with replacement* $B$ times and recomputing the statistic.",
+    "Percentile intervals come from the $2.5\\%$/$97.5\\%$ points of the bootstrap replicates; simulation results are approximate and seed-dependent.",
+    "Permutation tests shuffle group labels under an exchangeability null and count how often chance reproduces the observed difference.",
+    "Both methods assume independent observations: dependent time series need block resampling, and extremes need care."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "Why does the bootstrap resample *with replacement*?",
+      "options": [
+        "To avoid reusing the same data point twice",
+        "To create variability across resamples that mimics sampling variability",
+        "Because samples must have the same size as the population",
+        "To make the resamples normally distributed"
+      ],
+      "answerIndex": 1,
+      "explanation": "Replacement is what lets resamples differ from one another; without it every resample is the original sample and the statistic's spread is zero."
+    },
+    {
+      "id": "q2",
+      "type": "numeric",
+      "prompt": "The bootstrap resample $[8, 4, 4, 10, 3, 8]$ is drawn from the latency data $\\{4, 8, 6, 5, 3, 10\\}$. What is the resample mean? (Two decimals.)",
+      "answer": 6.17,
+      "tolerance": 0.02,
+      "explanation": "Sum $= 37$; $37/6 = 6.1667 \\approx 6.17$."
+    },
+    {
+      "id": "q3",
+      "type": "mcq",
+      "prompt": "The null hypothesis of a permutation test for two sample means states:",
+      "options": [
+        "Both samples come from normal distributions",
+        "The two population means are exactly zero",
+        "Group labels are exchangeable - the two samples share one common distribution",
+        "The observed difference equals the population difference"
+      ],
+      "answerIndex": 2,
+      "explanation": "Exchangeability is the whole engine: if labels are meaningless, shuffling them produces equally plausible datasets, which is what builds the null distribution."
+    },
+    {
+      "id": "q4",
+      "type": "numeric",
+      "prompt": "Of 10,000 permutations, 310 produced a difference at least as extreme as observed. What is the empirical $p$-value?",
+      "answer": 0.031,
+      "tolerance": 0.002,
+      "explanation": "$310/10{,}000 = 0.031$ - a Monte Carlo estimate, so quote it as approximate."
+    },
+    {
+      "id": "q5",
+      "type": "ms",
+      "prompt": "In which settings is the ordinary (iid) bootstrap untrustworthy? Select all that apply.",
+      "options": [
+        "Autocorrelated daily returns resampled one day at a time",
+        "Estimating the $99.9\\%$-tile of losses from 40 observations",
+        "Estimating a mean from 500 independent fills",
+        "Resampling residuals of a well-specified regression"
+      ],
+      "answerIndices": [0, 1],
+      "explanation": "Dependence needs a block bootstrap, and extreme order statistics from small samples are under-served because resamples only re-use observed values. Large independent samples and residual resampling are classic safe uses."
+    },
+    {
+      "id": "q6",
+      "type": "short",
+      "prompt": "In one sentence: why do the same permutation and $t$-tests usually agree on well-behaved data, and what should you suspect when they disagree?",
+      "modelAnswer": "When the normality and equal-variance assumptions of the t-test hold, both procedures target the same null, so disagreement points to violated assumptions (heavy tails, unequal variances, dependence) rather than to the permutation test being wrong.",
+      "keywords": ["normality", "assumptions", "heavy tails"],
+      "explanation": "The permutation test is exact under exchangeability regardless of distribution shape; the $t$-test leans on normal approximations, so divergence flags assumption trouble."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "definition",
+      "front": "Bootstrap",
+      "back": "Approximate a sampling distribution by resampling the observed data with replacement and recomputing the statistic $B$ times."
+    },
+    {
+      "type": "concept",
+      "front": "Percentile confidence interval",
+      "back": "Take the $2.5\\%$ and $97.5\\%$ percentiles of the bootstrap replicates as a $95\\%$ interval - simulation-based, hence approximate."
+    },
+    {
+      "type": "definition",
+      "front": "Permutation test",
+      "back": "Under an exchangeability null, shuffle group labels many times; the p-value is the fraction of shuffles at least as extreme as the observed statistic."
+    },
+    {
+      "type": "concept",
+      "front": "Block bootstrap",
+      "back": "Resample contiguous blocks of a time series to preserve short-range dependence when iid resampling would destroy the structure."
+    }
+  ],
+  "references": [
+    {
+      "label": "NIST/SEMATECH e-Handbook - Bootstrap methods",
+      "url": "https://www.itl.nist.gov/div898/handbook/eda/section3/eda351.htm"
+    },
+    {
+      "label": "allendowney - Think Stats (resampling chapters, free)",
+      "url": "https://allendowney.github.io/ThinkStats/"
+    }
+  ],
+  "skills": ["statistics"]
+}

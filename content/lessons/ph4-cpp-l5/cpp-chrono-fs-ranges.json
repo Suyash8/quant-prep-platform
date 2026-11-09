@@ -1,0 +1,240 @@
+{
+  "id": "cpp-chrono-fs-ranges",
+  "moduleId": "ph4-cpp-l5",
+  "title": "std::chrono, std::filesystem, Ranges and Coroutines",
+  "estMinutes": 27,
+  "difficulty": "advanced",
+  "prereqs": ["cpp-value-categories"],
+  "objectives": [
+    "Time code with steady_clock and convert durations explicitly with duration_cast, knowing which clock is trustworthy for what",
+    "Walk directories and query files portably with std::filesystem (C++17)",
+    "Read and write lazy Ranges pipelines (C++20) and state what they replace in C++17 code",
+    "Explain at survey level what coroutines (C++20) offer via co_yield and which library pieces arrive later (std::generator, C++23)"
+  ],
+  "motivation": "Latency is money: answering a fill a few hundred microseconds late bleeds edge on every message. But timing with the wall clock lies - NTP adjustments move it backwards mid-run - and filesystem code written per-platform rots. std::chrono gives durations and clocks whose behaviour is contractual, std::filesystem (C++17) makes data hygiene portable, and the C++20 additions - Ranges views and coroutines - reshape how streaming work is expressed. This lesson builds the measuring and data-walking toolkit, with every feature labelled by the standard it needs.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "std::chrono: durations, clocks and honesty"
+    },
+    {
+      "type": "p",
+      "md": "A **duration** is a count times a ratio: `std::chrono::nanoseconds`, `microseconds`, `milliseconds` - or your own `duration<double, std::ratio<1, 1000>>`. A **time_point** is a duration since an epoch, tied to a clock. The three standard clocks differ in what they guarantee, and choosing wrongly is the classic bug: `system_clock` is the wall clock - right for timestamps humans file, but NTP, DST and leap seconds move it, sometimes backwards. `steady_clock` is monotonic: it never jumps, so durations across it are trustworthy - it is *the* benchmarking clock. `high_resolution_clock` is an alias with no guarantees of being either; avoid it in production."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "// C++17 (chrono literals like 1ms are C++14)\n#include <chrono>\n#include <iostream>\n\nint main() {\n    volatile double acc = 0.0;   // keeps the loop alive under optimisation\n    const auto t0 = std::chrono::steady_clock::now();\n    for (int i = 0; i < 1'000'000; ++i) acc += i * 1.000001;\n    const auto t1 = std::chrono::steady_clock::now();\n    const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count();\n    std::cout << ns << \" ns total, \" << static_cast<double>(ns) / 1e6 << \" ns/op\\n\";\n}",
+      "caption": "Machine-dependent output by design - typical: about 1,000,000 ns total, roughly 1 ns per operation. Report the median of many runs, never one sample."
+    },
+    {
+      "type": "p",
+      "md": "Durations do units-safe arithmetic: `t1 - t0` yields the clock's native duration, and `duration_cast<T>` converts with **truncation** - because 1500 ms is genuinely not two whole seconds. Literal suffixes such as `1500ms` or `2us` need `using namespace std::chrono_literals;` (C++14) and keep unit mistakes out of review. One discipline rule: stay in a single clock per measurement - converting between clock time points is where subtle off-by-a-leap-second bugs live."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "// C++17\n#include <chrono>\n#include <iostream>\n\nint main() {\n    using namespace std::chrono;\n    milliseconds ms(1500);\n    const seconds s = duration_cast<seconds>(ms);          // truncates: 1\n    std::cout << s.count() << \" \" << (ms - s).count();     // 1 500\n}",
+      "caption": "duration_cast truncates toward zero; the remainder stays in the finer unit."
+    },
+    {
+      "type": "interactive",
+      "component": "MemoryLayout",
+      "params": { "totalBytes": 8, "bytesPerRow": 8 },
+      "caption": "A nanoseconds duration is one 64-bit signed count: headroom to time roughly 292 years without overflow, and every conversion is exact integer arithmetic on that count."
+    },
+    {
+      "type": "h2",
+      "text": "std::filesystem: portable data hygiene (C++17)"
+    },
+    {
+      "type": "p",
+      "md": "`std::filesystem` (C++17, `<filesystem>`) speaks paths, directories and files in one vocabulary across platforms: `fs::path` composes with `/`, `fs::directory_iterator` range-fors over a directory's entries, `recursive_directory_iterator` descends, and `exists`, `is_regular_file`, `file_size` answer metadata questions. The desk use is data hygiene - walk the tick archive, sum bytes per date file, catch stragglers before the backtest does. In latency-sensitive or racy paths, prefer the `error_code` overloads (`fs::file_size(p, ec)`) so a vanished file is a flag, not an exception."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "// C++17\n#include <filesystem>\n#include <iostream>\nnamespace fs = std::filesystem;\n\nint main() {\n    std::uintmax_t total = 0;\n    for (const auto& entry : fs::directory_iterator(\"data/ticks\")) {\n        if (entry.is_regular_file() && entry.path().extension() == \".csv\")\n            total += entry.file_size();\n    }\n    std::cout << total << \" bytes of CSV\\n\";\n}",
+      "caption": "Output depends on the machine's data directory - the point is the vocabulary: iterate, filter, query, sum."
+    },
+    {
+      "type": "h2",
+      "text": "Ranges: lazy pipelines (C++20)"
+    },
+    {
+      "type": "p",
+      "md": "**Ranges (C++20)** turn algorithms into composable pipelines with the `|` pipe, and the crucial property is laziness: `std::views::filter` and `std::views::transform` build **no new containers** - elements flow through the pipeline one at a time as the consumer iterates. One pass, zero intermediate allocation. The C++17 equivalent below is the same computation spelled with an explicit loop; views replace the loop-nesting or copy-into-temporary style, not the mathematics."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "// C++17 - the explicit-loop equivalent\n#include <iostream>\n#include <vector>\n\nint main() {\n    const std::vector<int> fills{3, 1, 4, 1, 5, 9, 2, 6};\n    int sum = 0;\n    for (int f : fills)\n        if (f % 2 != 0) sum += f * 100;      // odd fills, in lots of 100\n    std::cout << sum << \"\\n\";               // 1900\n}",
+      "caption": "Odds 3, 1, 1, 5, 9 give lots 300 + 100 + 100 + 500 + 900 = 1900."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "// C++20 - the same computation as a lazy pipeline\n#include <iostream>\n#include <ranges>\n#include <vector>\n\nint main() {\n    const std::vector<int> fills{3, 1, 4, 1, 5, 9, 2, 6};\n    auto lots = fills\n              | std::views::filter([](int f) { return f % 2 != 0; })\n              | std::views::transform([](int f) { return f * 100; });\n    int sum = 0;\n    for (int lot : lots) sum += lot;         // pipeline runs here, lazily\n    std::cout << sum << \"\\n\";               // 1900\n}",
+      "caption": "Nothing executes until the for-loop iterates - then one element at a time."
+    },
+    {
+      "type": "h2",
+      "text": "Coroutines: pull-based streaming (C++20, survey)"
+    },
+    {
+      "type": "p",
+      "md": "**Coroutines (C++20)**: a function containing `co_await`, `co_yield` or `co_return` can suspend itself and resume later with all local state intact. `co_yield` turns a function into a **pull-based stream** - the consumer asks for the next tick, the coroutine runs until it has one, hands it over, and freezes in place. That maps naturally onto replaying tape captures or interleaving I/O with computation. Survey-level caveat with the standard label: C++20 ships the *language* machinery only; the standard `std::generator` type arrives with **C++23**, so C++20 code needs a hand-written promise type or a third-party library to get the `Generator` below."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "// C++20 language; std::generator is C++23 - shape sketch, not self-contained\nGenerator<Tick> streamTicks(TapeFile& tape) {\n    while (auto t = tape.nextTick())\n        co_yield *t;              // suspend: hand one tick to the caller\n}\n// consumer: for (const Tick& t : streamTicks(tape)) { /* react */ }",
+      "caption": "One tick materialised per pull: the pipeline never holds the whole tape in memory."
+    },
+    {
+      "type": "table",
+      "headers": ["Feature", "Minimum standard"],
+      "rows": [
+        ["std::chrono clocks and durations", "C++11"],
+        ["chrono literals: 1500ms, 2us", "C++14"],
+        ["std::filesystem", "C++17"],
+        ["Ranges: std::views, the | pipe", "C++20"],
+        ["Coroutines: co_await, co_yield, co_return", "C++20 (language)"],
+        ["std::generator", "C++23"]
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Timing lies you can avoid",
+      "md": "Benchmarking with system_clock silently includes NTP steps; a single sample includes cold caches and page faults; and high_resolution_clock is an unspecified alias with no contract. The three-point discipline before quoting 'our latency is 620 ns': steady_clock, warm-up runs, median of many samples."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "You time a matching-engine pass with steady_clock: `t1 - t0` comes back as 6,200,000 nanoseconds over 1,000,000 price updates. (a) Convert the total to microseconds and to milliseconds. (b) Compute nanoseconds per update. (c) A colleague reports 6.2 ms for the same code using system_clock across a 10-minute run during which NTP stepped the clock back by 30 ms. Explain why that number can be wrong and what steady_clock's contract prevents.",
+    "hints": [
+      "1 ms = 1,000 microseconds = 1,000,000 nanoseconds.",
+      "A monotonic clock never steps backwards or forwards: intervals across it are unaffected by what the wall clock did."
+    ],
+    "solution": "(a) 6,200,000 ns $= 6{,}200$ microseconds $= 6.2$ ms.\n\n(b) 6,200,000 ns over 1,000,000 updates $= \\mathbf{6.2}$ **ns per update**.\n\n(c) `system_clock` is the adjustable wall clock. If NTP steps it by 30 ms mid-run, any interval that spans the step is shifted by 30 ms: a 6.2 ms pass can be reported as roughly $-23.8$ ms (backwards step) or $+36.2$ ms (forward step), and the median of such samples is meaningless. `steady_clock` is monotonic **by contract** - it cannot step - so durations across it remain correct no matter what the wall clock does. Honest report: 6.2 ms per pass, median over many warm runs."
+  },
+  "independentExercise": {
+    "prompt": "Size a tick-data archive: `data/ticks` contains ticks_0100.csv (4,000,000 bytes), ticks_0200.csv (2,500,000 bytes) and readme.md (1,750,000 bytes). (a) Write the C++17 filesystem loop that sums only .csv file sizes and state the exact total. (b) The scan takes 180 microseconds and directory iteration sees all 3 entries: express 180 us in nanoseconds and compute the per-entry cost. (c) Sketch the C++20 ranges pipeline that filters .csv entries and transforms them into sizes, labelling which parts are C++20-only.",
+    "hints": [
+      "file_size returns std::uintmax_t, an unsigned byte count.",
+      "filter decides which entries pass; transform maps an entry to its size - both are views, both are C++20."
+    ],
+    "solution": "(a)\n\n```cpp\n// C++17\nstd::uintmax_t total = 0;\nfor (const auto& e : fs::directory_iterator(\"data/ticks\"))\n    if (e.is_regular_file() && e.path().extension() == \".csv\")\n        total += e.file_size();\n```\n\nOnly the CSVs pass the test: $4{,}000{,}000 + 2{,}500{,}000 = \\mathbf{6{,}500{,}000}$ bytes (readme.md excluded).\n\n(b) 180 us $= 180{,}000$ ns. With 3 entries iterated, the cost is $180{,}000 / 3 = \\mathbf{60{,}000}$ ns (60 us) per entry - the readme.md entry is visited but contributes nothing to the sum.\n\n(c)\n\n```cpp\n// C++20\nauto csvSizes = fs::directory_iterator(\"data/ticks\")\n              | std::views::filter([](const auto& e) {\n                    return e.is_regular_file() && e.path().extension() == \".csv\"; })\n              | std::views::transform([](const auto& e) { return e.file_size(); });\n```\n\n`std::views::filter`, `std::views::transform` and the `|` pipe are C++20-only; the directory iterator becomes a proper range in C++20. Summing over this lazy pipeline yields the same 6,500,000 bytes without building any intermediate container."
+  },
+  "commonMistakes": [
+    "Benchmarking with system_clock (steps with NTP) or high_resolution_clock (an unspecified alias) - use steady_clock for all duration measurement.",
+    "Quoting a single timing sample: warm up first and report the median of many runs; means are dragged by outliers.",
+    "Forgetting duration_cast truncates: 1500 ms becomes 1 s plus a 500 ms remainder, not 1.5 in integer seconds.",
+    "Using throwing filesystem calls in latency-sensitive or racy paths: the error_code overloads make a vanished file a flag instead of an exception.",
+    "Expecting std::views pipelines to run eagerly: nothing happens until you iterate - and views, pipes and ranges are C++20, not C++17."
+  ],
+  "realWorldApplication": "Every latency budget, soak test and benchmark harness is built on steady_clock and duration arithmetic, and filesystem walks power the data-integrity jobs behind any trading stack's archives.",
+  "quantFinanceApplication": "A market-data replay engine streams a tape through a co_yield generator at research speed, while the live gateway budgets its 250 microseconds per order from steady_clock medians - the same toolkit, two sides of the latency line.",
+  "summary": [
+    "Durations are count times ratio and clocks have contracts: steady_clock for timing (monotonic), system_clock for human wall timestamps.",
+    "duration_cast truncates and chrono literals (C++14) keep units readable; stay in one clock per measurement.",
+    "std::filesystem (C++17) gives portable paths, directory iteration and file queries - prefer error_code overloads in racy paths.",
+    "Ranges views (C++20) are lazy pipelines: filter and transform run one element at a time as the consumer iterates, with no intermediate containers.",
+    "Coroutines (C++20 language, std::generator C++23) express pull-based streaming via co_yield with full local state preserved across suspensions."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "code-output",
+      "prompt": "What does this C++17 program print?",
+      "language": "cpp",
+      "code": "#include <chrono>\n#include <iostream>\nint main() {\n    using namespace std::chrono;\n    milliseconds ms(1500);\n    const seconds s = duration_cast<seconds>(ms);\n    std::cout << s.count() << \" \" << (ms - s).count();\n}",
+      "answer": "1 500",
+      "explanation": "duration_cast<seconds> truncates toward zero: 1500 ms is 1 whole second. The remainder stays expressible in the finer unit: ms - s is 500 milliseconds."
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "Which clock should you use to benchmark a hot loop, and why?",
+      "options": [
+        "system_clock: it is the real wall time",
+        "steady_clock: monotonic, immune to NTP and DST adjustments",
+        "high_resolution_clock: it is the most precise by definition",
+        "Any clock: they are all equivalent for durations"
+      ],
+      "answerIndex": 1,
+      "explanation": "steady_clock is contractually monotonic - it never steps - so intervals across it are trustworthy even when NTP moves the wall clock. high_resolution_clock is an unspecified alias, and system_clock is for human timestamps."
+    },
+    {
+      "id": "q3",
+      "type": "code-output",
+      "prompt": "What does this C++17 program print?",
+      "language": "cpp",
+      "code": "#include <iostream>\n#include <vector>\nint main() {\n    const std::vector<int> fills{3, 1, 4, 1, 5, 9, 2, 6};\n    int sum = 0;\n    for (int f : fills) if (f % 2 != 0) sum += f;\n    std::cout << sum;\n}",
+      "answer": "19",
+      "explanation": "The odd values are 3, 1, 1, 5, 9 - the evens 4, 2, 6 are skipped - and 3+1+1+5+9 = 19. This is exactly the computation a C++20 filter view would express lazily."
+    },
+    {
+      "id": "q4",
+      "type": "numeric",
+      "prompt": "A gateway spends 250 microseconds per order. Over 100,000 orders, how many seconds does it spend processing (give the value in seconds)?",
+      "answer": 25,
+      "explanation": "250 us x 100,000 = 25,000,000 us = 25 s. Unit conversions like this are exactly what chrono's duration types and duration_cast make hard to get wrong."
+    },
+    {
+      "id": "q5",
+      "type": "ms",
+      "prompt": "Which feature/standard pairings are correct?",
+      "options": [
+        "std::filesystem - C++17",
+        "Ranges views and the | pipe - C++20",
+        "chrono literal suffixes such as 1500ms - C++14",
+        "std::generator - C++20"
+      ],
+      "answerIndices": [0, 1, 2],
+      "explanation": "std::generator is C++23: C++20 coroutines provide the language machinery (co_yield, co_await, co_return) but not a standard generator type - C++20 code needs a hand-written or third-party Generator."
+    },
+    {
+      "id": "q6",
+      "type": "mcq",
+      "prompt": "(C++20) When does a std::views::filter / std::views::transform pipeline actually examine elements?",
+      "options": [
+        "At construction: it copies matching elements immediately",
+        "Only as the consumer iterates - nothing runs until iteration, one element at a time",
+        "In a background thread the library spawns",
+        "At destruction of the view, in one batch"
+      ],
+      "answerIndex": 1,
+      "explanation": "Views are lazy, non-owning adaptors: elements flow through the pipeline as the consumer iterates, which means one pass and zero intermediate containers."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "Which std::chrono clock for timing, and why?",
+      "back": "steady_clock: contractually monotonic, never adjusted - NTP/DST cannot move it, so durations are trustworthy. system_clock is for wall timestamps; high_resolution_clock is an unspecified alias."
+    },
+    {
+      "type": "code-output",
+      "front": "duration_cast<seconds>(milliseconds(1500)).count() and (ms - s).count()?",
+      "back": "1 and 500 - duration_cast truncates toward zero; the remainder stays in the finer unit."
+    },
+    {
+      "type": "definition",
+      "front": "What is a view in Ranges (C++20)?",
+      "back": "A lazy, non-owning adaptor: filter/transform build no containers - elements flow through as the consumer iterates. One pass, zero intermediate allocation."
+    },
+    {
+      "type": "concept",
+      "front": "What does co_yield do?",
+      "back": "Suspends the coroutine, hands one value to the caller and keeps all local state for resumption - a pull-based stream. Language machinery is C++20; std::generator arrives in C++23."
+    }
+  ],
+  "references": [
+    { "label": "cppreference — std::chrono", "url": "https://en.cppreference.com/w/cpp/chrono" },
+    { "label": "cppreference — std::filesystem", "url": "https://en.cppreference.com/w/cpp/filesystem" },
+    { "label": "cppreference — Ranges library (C++20)", "url": "https://en.cppreference.com/w/cpp/ranges" },
+    { "label": "cppreference — Coroutines (C++20)", "url": "https://en.cppreference.com/w/cpp/language/coroutines" }
+  ],
+  "skills": ["cpp-advanced"]
+}

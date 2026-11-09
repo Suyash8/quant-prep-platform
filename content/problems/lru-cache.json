@@ -1,0 +1,103 @@
+{
+  "slug": "lru-cache",
+  "title": "LRU Cache Simulation",
+  "difficulty": "medium",
+  "category": "systems-design",
+  "tags": [
+    "cache",
+    "ordered-dictionary",
+    "design"
+  ],
+  "statement": [
+    {
+      "type": "p",
+      "md": "A market-data gateway caches the last instrument definitions it served, with strict capacity: when the cache is full, the **least recently used** entry is evicted. Both reads and writes count as *use*. Simulate the cache and report the result of every read."
+    },
+    {
+      "type": "p",
+      "md": "Operations: `PUT k v` sets key $k$ to value $v$ (evicting the LRU key if at capacity — and note that updating an existing key is *not* an eviction); `GET k` returns the current value of $k$ or `MISS` if absent. A `GET` refreshes recency, even on a miss it changes nothing."
+    }
+  ],
+  "inputFormat": "First line: capacity $c$ ($1 \\le c \\le 10^5$) and operation count $t$ ($1 \\le t \\le 10^5$). Then $t$ operations, one per line.",
+  "outputFormat": "One line per `GET`: the value, or `MISS`.",
+  "constraints": [
+    "$1 \\le c, t \\le 10^5$",
+    "keys are short strings, values are integers",
+    "an O(1)-per-operation design exists and is expected at these bounds"
+  ],
+  "examples": [
+    {
+      "input": "2 7\nPUT a 1\nPUT b 2\nGET a\nPUT c 3\nGET b\nGET c\nGET a\n",
+      "output": "1\nMISS\n3\n1\n",
+      "explanation": "GET a refreshes a; PUT c evicts b (LRU); GET b misses; GET c hits 3; GET a hits 1 (a was refreshed)."
+    }
+  ],
+  "hints": [
+    "A hash map plus a doubly-linked list gives O(1) everything — or in Python, `collections.OrderedDict` with `move_to_end`.",
+    "Eviction removes the *front* (oldest) end; both GET and PUT move/insert at the *back*."
+  ],
+  "editorial": [
+    {
+      "type": "p",
+      "md": "The LRU contract needs, per operation: O(1) lookup (hash map), O(1) recency update (move a node to the newest end of an ordered structure), and O(1) eviction (pop the oldest end). A doubly-linked list keyed by a hash map is the classic composition; `OrderedDict` is exactly that structure with the same guarantees."
+    },
+    {
+      "type": "p",
+      "md": "The two behaviours tests love: an `UPDATE` of an existing key does not evict (the key stays, refreshed), and a `GET` on a present key refreshes it — changing which key the *next* eviction removes. Both are one-line differences in a correct implementation and silent bugs in a naive one."
+    }
+  ],
+  "solutions": {
+    "python": "import sys\nfrom collections import OrderedDict\ndata = sys.stdin.read().split()\ncap = int(data[0])\nt = int(data[1])\nidx = 2\ncache = OrderedDict()\nout = []\nfor _ in range(t):\n    op = data[idx]; idx += 1\n    if op == \"PUT\":\n        k, v = data[idx], int(data[idx+1]); idx += 2\n        if k in cache: cache.move_to_end(k)\n        cache[k] = v\n        if len(cache) > cap: cache.popitem(last=False)\n    else:\n        k = data[idx]; idx += 1\n        if k in cache:\n            cache.move_to_end(k)\n            out.append(str(cache[k]))\n        else:\n            out.append(\"MISS\")\nprint(\"\\n\".join(out))",
+    "cpp": "#include <bits/stdc++.h>\nusing namespace std;\nint main(){int c, t; scanf(\"%d %d\",&c,&t);\n list<pair<string,long long>> order;\n unordered_map<string, list<pair<string,long long>>::iterator> pos;\n char buf[64]; char op[8]; long long val;\n for(int i=0;i<t;i++){ scanf(\"%s %s\", op, buf); string k(buf);\n  if(op[0]=='P'){ scanf(\"%lld\",&val);\n   auto it=pos.find(k);\n   if(it!=pos.end()){ order.erase(it->second); order.push_back({k,val}); pos[k]=prev(order.end()); }\n   else { order.push_back({k,val}); pos[k]=prev(order.end());\n          if((int)order.size()>c){ pos.erase(order.front().first); order.pop_front(); } }\n  } else {\n   auto it=pos.find(k);\n   if(it==pos.end()) puts(\"MISS\");\n   else { auto node=it->second; long long v=node->second;\n          order.erase(node); order.push_back({k,v}); pos[k]=prev(order.end());\n          printf(\"%lld\\n\", v); }\n  }\n } return 0;}"
+  },
+  "tests": [
+    {
+      "input": "2 7\nPUT a 1\nPUT b 2\nGET a\nPUT c 3\nGET b\nGET c\nGET a\n",
+      "expected": "1\nMISS\n3\n1\n",
+      "hidden": false
+    },
+    {
+      "input": "1 5\nPUT x 10\nGET x\nPUT y 20\nGET x\nGET y\n",
+      "expected": "10\nMISS\n20\n",
+      "hidden": false
+    },
+    {
+      "input": "3 4\nGET nope\nPUT k 1\nGET k\nGET k2\n",
+      "expected": "MISS\n1\nMISS\n",
+      "hidden": true
+    },
+    {
+      "input": "2 8\nPUT a 1\nPUT b 2\nGET a\nPUT c 3\nPUT d 4\nGET b\nGET a\nGET d\n",
+      "expected": "1\nMISS\nMISS\n4\n",
+      "hidden": true
+    },
+    {
+      "input": "1 3\nPUT a 1\nPUT a 2\nGET a\n",
+      "expected": "2\n",
+      "hidden": true
+    },
+    {
+      "input": "2 9\nPUT a 1\nPUT b 2\nGET b\nPUT a 9\nPUT c 3\nGET a\nGET b\nGET c\nGET d\n",
+      "expected": "2\n9\nMISS\n3\nMISS\n",
+      "hidden": true
+    },
+    {
+      "input": "4 6\nPUT a 1\nPUT b 2\nPUT c 3\nPUT d 4\nGET a\nGET a\n",
+      "expected": "1\n1\n",
+      "hidden": true
+    },
+    {
+      "input": "2 10\nPUT p 5\nGET p\nPUT q 6\nGET p\nPUT r 7\nGET q\nPUT s 8\nGET r\nGET s\nGET p\n",
+      "expected": "5\n5\nMISS\n7\n8\nMISS\n",
+      "hidden": true
+    },
+    {
+      "input": "3 5\nPUT a 1\nPUT b 2\nPUT c 3\nPUT d 4\nGET b\n",
+      "expected": "2\n",
+      "hidden": true
+    }
+  ],
+  "timeLimitMs": 4000,
+  "memoryLimitMb": 256,
+  "estMinutes": 30
+}

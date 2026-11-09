@@ -1,0 +1,216 @@
+{
+  "id": "prob-conditional-bayes",
+  "moduleId": "ph1-probability",
+  "title": "Conditional Probability and Bayes' Theorem",
+  "estMinutes": 28,
+  "difficulty": "core",
+  "prereqs": ["prob-foundations"],
+  "objectives": [
+    "Compute conditional probabilities from the definition P(A|B) = P(A \\cap B)/P(B)",
+    "Apply the multiplication rule to sequential experiments, including draws without replacement",
+    "Use Bayes' theorem to invert a conditioning statement and update a prior into a posterior",
+    "Explain base-rate neglect by carrying out a false-positive calculation in full"
+  ],
+  "motivation": "A model fires a \"sell\" signal. Your trading edge lives in P(price falls | signal fired), but backtests usually measure the reverse - P(signal fires | price falls). Confusing those two quantities is the classic quant error, and Bayes' theorem is exactly the machine that converts one into the other. The same mathematics drives fraud detection, diagnostic testing and default prediction.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Conditioning is shrinking the sample space"
+    },
+    {
+      "type": "p",
+      "md": "Suppose we learn that some event $B$ has occurred. All outcomes outside $B$ are now impossible, so the sample space collapses to $B$ and probabilities must be rescaled inside it. The **conditional probability** of $A$ given $B$ is"
+    },
+    {
+      "type": "math",
+      "tex": "P(A \\mid B) = \\frac{P(A \\cap B)}{P(B)}, \\qquad P(B) > 0",
+      "caption": "Definition of conditional probability"
+    },
+    {
+      "type": "steps",
+      "title": "Worked example: two dice, information arrives",
+      "items": [
+        "Question: what is $P(\\text{sum} \\ge 10 \\mid \\text{first die is } 6)$?",
+        "Given the first die shows 6, the sample space shrinks to the 6 outcomes $(6,1), \\dots, (6,6)$, all equally likely.",
+        "Within this reduced space, sum $\\ge 10$ requires the second die $\\in \\{4, 5, 6\\}$ - 3 favourable outcomes.",
+        "So $P(\\text{sum} \\ge 10 \\mid \\text{first die } 6) = 3/6 = 0.5$ - double the unconditional $6/36 \\approx 0.1667$, because the information genuinely helps."
+      ]
+    },
+    {
+      "type": "p",
+      "md": "Rearranging the definition gives the **multiplication rule** $P(A \\cap B) = P(A)\\,P(B \\mid A)$, which chains through sequential experiments. Drawing two cards from a deck without replacement: $P(\\text{two aces}) = \\tfrac{4}{52} \\times \\tfrac{3}{51} = \\tfrac{12}{2652} = \\tfrac{1}{221} \\approx 0.0045$ - the second factor is a conditional probability because the deck composition changed. **Independence** is precisely the special case where the conditioning does nothing: $P(B \\mid A) = P(B)$, so factors multiply without adjustment."
+    },
+    {
+      "type": "h2",
+      "text": "Bayes' theorem: running conditionals backwards"
+    },
+    {
+      "type": "p",
+      "md": "Data-generating processes are easy to describe in one direction - given the disease, how often does the test come back positive? - but decisions need the other direction. Bayes' theorem, obtained by writing $P(H \\cap D)$ two ways with the multiplication rule, flips the conditioning:"
+    },
+    {
+      "type": "math",
+      "tex": "P(H \\mid D) = \\frac{P(D \\mid H)\\,P(H)}{P(D)}, \\qquad P(D) = P(D \\mid H)P(H) + P(D \\mid H^c)P(H^c)",
+      "caption": "Bayes' theorem with the law-of-total-probability denominator expanded"
+    },
+    {
+      "type": "p",
+      "md": "Read the pieces as a story: $P(H)$ is the **prior** (belief before data), $P(D \\mid H)$ the **likelihood** (how characteristic the data are of the hypothesis), and $P(H \\mid D)$ the **posterior** (belief after data). The denominator $P(D)$ is the **evidence**: the overall chance of seeing the data, computed by averaging the likelihood over both worlds. Rare hypotheses drown in that denominator - which is exactly the base-rate effect."
+    },
+    {
+      "type": "steps",
+      "title": "Worked example: a good test, a rare disease",
+      "items": [
+        "Setup: prevalence $P(H) = 0.01$; sensitivity $P(+ \\mid H) = 0.99$; false-positive rate $P(+ \\mid H^c) = 0.05$.",
+        "Numerator: $P(+ \\mid H)P(H) = 0.99 \\times 0.01 = 0.0099$ - truly sick and flagged.",
+        "Denominator: $0.0099 + 0.05 \\times 0.99 = 0.0099 + 0.0495 = 0.0594$ - everyone who tests positive.",
+        "Posterior: $P(H \\mid +) = 0.0099 / 0.0594 = 1/6 \\approx 0.1667$.",
+        "A 99%-sensitive test on a 1%-prevalent population yields only a $\\approx 17\\%$ chance of actually being sick after a positive - the false positives from the huge healthy pool dominate."
+      ]
+    },
+    {
+      "type": "interactive",
+      "component": "ProbabilitySimulator",
+      "params": {
+        "experiment": "medical-test",
+        "prevalence": 0.01,
+        "sensitivity": 0.99,
+        "falsePositiveRate": 0.05,
+        "trials": 10000
+      },
+      "caption": "Simulate 10,000 patients: count who tests positive, then how many of those are actually sick - the ratio lands near 1/6, no algebra needed."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Signals and posteriors on a trading desk",
+      "md": "Let \"up\" be an up-move tomorrow with prior $P(\\text{up}) = 0.55$. A momentum signal fires on 70% of up-days ($P(\\text{signal} \\mid \\text{up}) = 0.7$) but also on 30% of down-days ($P(\\text{signal} \\mid \\text{down}) = 0.3$). Bayes: posterior $= (0.7 \\times 0.55) / (0.7 \\times 0.55 + 0.3 \\times 0.45) = 0.385 / 0.52 \\approx 0.7404$. The signal lifted your edge from 55% to about 74% - and that posterior is what a rational bet size should be based on."
+    },
+    {
+      "type": "p",
+      "md": "Two habits prevent most Bayes errors. First, always build the denominator as a two-term (or multi-term) sum - never invent $P(D)$ from thin air. Second, keep the direction straight in notation: $P(\\text{data} \\mid \\text{hypothesis})$ is a property of the measurement device, while $P(\\text{hypothesis} \\mid \\text{data})$ is a property of your beliefs. Only Bayes moves you between them."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "A credit desk uses a distress model: 5% of bonds in the universe default; the model flags 90% of bonds that will default, but also flags 10% of bonds that will not. Compute $P(\\text{default} \\mid \\text{flagged})$ with a full Bayes calculation.",
+    "hints": [
+      "Numerator: probability a bond defaults AND is flagged.",
+      "Denominator: total probability of being flagged, over defaulters and non-defaulters."
+    ],
+    "solution": "Numerator: $0.90 \\times 0.05 = 0.045$. Denominator: $0.045 + 0.10 \\times 0.95 = 0.045 + 0.095 = 0.14$. Posterior: $0.045 / 0.14 \\approx 0.3214$. Despite 90% sensitivity, a flagged bond defaults only about 32% of the time - the 95% non-defaulting pool supplies most flags."
+  },
+  "independentExercise": {
+    "prompt": "A factory has two production lines: line A makes 60% of output with a 2% defect rate; line B makes 40% with a 5% defect rate. (a) Compute the overall defect rate using total probability. (b) A part is found defective - what is the probability it came from line A?",
+    "hints": [
+      "(a) Weight each line's defect rate by its output share.",
+      "(b) Posterior = (share of output that is from A and defective) / (all defective output)."
+    ],
+    "solution": "(a) $P(\\text{defective}) = 0.6 \\times 0.02 + 0.4 \\times 0.05 = 0.012 + 0.020 = 0.032$ (3.2%). (b) $P(A \\mid \\text{defective}) = 0.012 / 0.032 = 0.375$. Line A causes most production but only 37.5% of defects - line B is disproportionately responsible."
+  },
+  "commonMistakes": [
+    "Quoting P(signal | up-move) as if it were P(up-move | signal) - the quant version of base-rate neglect.",
+    "Dropping the false-positive term from the Bayes denominator, which turns every positive into a certainty.",
+    "Applying sensitivity (0.99) to the healthy population: P(+ | healthy) is the false-positive rate, a different number.",
+    "Multiplying probabilities in sequence without checking whether the second probability should be conditional."
+  ],
+  "realWorldApplication": "Medical screening, spam filters, fraud engines and court evidence (the 'prosecutor's fallacy') are all exercises inverting P(evidence | cause) into P(cause | evidence) with Bayes' theorem.",
+  "quantFinanceApplication": "Signal research reports conditional hit rates; position sizing and expected-value calculations need the posterior P(move | signal). Default models, such as the distress-flag exercise above, use the same inversion to turn model flags into implied default probabilities.",
+  "summary": [
+    "Conditioning rescales probabilities onto the reduced sample space: $P(A \\mid B) = P(A \\cap B)/P(B)$.",
+    "The multiplication rule $P(A \\cap B) = P(A)P(B \\mid A)$ handles sequential experiments; independence is the case $P(B \\mid A) = P(B)$.",
+    "Bayes' theorem converts likelihoods into posteriors: $P(H \\mid D) = P(D \\mid H)P(H)/P(D)$.",
+    "The denominator (evidence) is built by averaging over all worlds; rare hypotheses get diluted by it.",
+    "Always ask which direction your probability conditions - confusion here is the classic quant mistake."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "numeric",
+      "prompt": "Two fair dice are rolled. Given that the first die shows 6, what is the probability the sum is at least 10?",
+      "answer": 0.5,
+      "tolerance": 0.001,
+      "explanation": "Conditioning shrinks the space to 6 outcomes; the second die must show 4, 5 or 6, so $3/6 = 0.5$."
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "$P(A) = 0.4$, $P(B) = 0.25$ and $P(A \\cap B) = 0.1$. What follows?",
+      "options": [
+        "$A$ and $B$ are independent, and $P(A \\mid B) = 0.4$",
+        "$A$ and $B$ are independent, and $P(A \\mid B) = 0.1$",
+        "$A$ and $B$ are dependent because $0.1 < 0.65$",
+        "Nothing can be concluded without $P(B \\mid A)$"
+      ],
+      "answerIndex": 0,
+      "explanation": "$P(A)P(B) = 0.4 \\times 0.25 = 0.10 = P(A \\cap B)$, which is the definition of independence; then $P(A \\mid B) = 0.1/0.25 = 0.4 = P(A)$ - conditioning changes nothing."
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "Two cards are drawn without replacement from a standard 52-card deck. What is the probability both are aces? (4 decimal places.)",
+      "answer": 0.0045,
+      "tolerance": 0.0005,
+      "explanation": "$(4/52) \\times (3/51) = 12/2652 = 1/221 \\approx 0.0045$; the second factor is conditional because one ace is already gone."
+    },
+    {
+      "id": "q4",
+      "type": "numeric",
+      "prompt": "Prior $P(\\text{up}) = 0.55$; $P(\\text{signal} \\mid \\text{up}) = 0.7$; $P(\\text{signal} \\mid \\text{down}) = 0.3$. Compute the posterior $P(\\text{up} \\mid \\text{signal})$ (4 decimal places).",
+      "answer": 0.7404,
+      "tolerance": 0.005,
+      "explanation": "$(0.7 \\times 0.55)/(0.7 \\times 0.55 + 0.3 \\times 0.45) = 0.385/0.52 \\approx 0.7404$."
+    },
+    {
+      "id": "q5",
+      "type": "code-output",
+      "prompt": "What does this Python code print?",
+      "language": "python",
+      "code": "prev, sens, fpr = 0.01, 0.99, 0.05\npost = sens * prev / (sens * prev + fpr * (1 - prev))\nprint(round(post, 4))",
+      "answer": "0.1667",
+      "explanation": "This is the medical-test Bayes computation: $0.0099 / 0.0594 = 1/6 \\approx 0.1667$."
+    },
+    {
+      "id": "q6",
+      "type": "short",
+      "prompt": "In one or two sentences, what is base-rate neglect and why does Bayes' theorem guard against it?",
+      "modelAnswer": "Base-rate neglect is ignoring the prior probability of an event and reacting only to the likelihood, e.g. trusting a positive test for a rare disease. Bayes' theorem forces the prior into both numerator and denominator, so rare hypotheses get diluted by false positives.",
+      "keywords": ["prior", "base rate", "denominator", "false positive"],
+      "explanation": "The posterior multiplies the likelihood by the prior and divides by the evidence averaged over both worlds; ignoring prevalence silently deletes the terms that protect you from false positives."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "formula",
+      "front": "Conditional probability definition",
+      "back": "$P(A \\mid B) = P(A \\cap B) / P(B)$ for $P(B) > 0$ - probabilities rescaled onto the reduced space B."
+    },
+    {
+      "type": "formula",
+      "front": "Bayes' theorem",
+      "back": "$P(H \\mid D) = P(D \\mid H)P(H) / P(D)$, with $P(D) = P(D \\mid H)P(H) + P(D \\mid H^c)P(H^c)$."
+    },
+    {
+      "type": "concept",
+      "front": "Prior, likelihood, posterior",
+      "back": "Prior = belief before data P(H); likelihood = P(data | hypothesis), a property of the measurement; posterior = updated belief P(H | data). Bayes connects them."
+    },
+    {
+      "type": "error-identification",
+      "front": "Spot the error: 'The signal fires on 70% of up-days, so after a signal the market goes up 70% of the time.'",
+      "back": "Wrong direction. 70% is P(signal | up); you need P(up | signal), which also depends on the base rate and the false-signal rate - typically very different from 70%."
+    }
+  ],
+  "references": [
+    {
+      "label": "Seeing Theory - Conditional Probability and Bayes",
+      "url": "https://seeing-theory.brown.edu/basic-probability/index.html"
+    },
+    {
+      "label": "MIT OCW 18.05 - Bayes' Theorem notes",
+      "url": "https://ocw.mit.edu/courses/18-05-introduction-to-probability-and-statistics-spring-2022/"
+    }
+  ],
+  "skills": [
+    "probability"
+  ]
+}

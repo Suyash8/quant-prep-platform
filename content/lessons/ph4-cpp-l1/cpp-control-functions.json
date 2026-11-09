@@ -1,0 +1,204 @@
+{
+  "id": "cpp-control-functions",
+  "moduleId": "ph4-cpp-l1",
+  "title": "Control Flow, Functions and Overloading",
+  "estMinutes": 25,
+  "difficulty": "foundation",
+  "prereqs": ["cpp-types-variables"],
+  "objectives": [
+    "Use if/else, switch and loops (for, while, range-for) to express order-flow logic with correct conditions",
+    "Write functions with parameters, return values and default arguments, and predict pass-by-value behaviour",
+    "Create overloaded function sets and predict which overload a given call selects",
+    "Read code containing break/continue and determine its exact output"
+  ],
+  "motivation": "Pre-trade risk checks, fill loops and order-state machines are all control flow: reject orders above a notional cap, walk the tape, dispatch on side. Functions then package that logic for reuse and testing, and overloading lets one natural name cover int share counts and double fractional quantities. Master these mechanics and the rest of C++ is mostly vocabulary.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Branching: if/else and switch"
+    },
+    {
+      "type": "p",
+      "md": "**if/else** evaluates a boolean condition and branches; conditions come from the comparison operators (==, !=, <, <=, >, >=) combined with && (and), || (or) and ! (not). A classic trap is writing `=` where you meant `==`: `if (filled = 0)` *assigns* zero, and the condition evaluates as false - the branch never fires and the variable is corrupted. The **switch** statement dispatches on an integral value (int, char, enum) and jumps to the matching case; each case normally ends with **break**, because otherwise execution **falls through** into the next case - occasionally useful, usually a bug. Grouping cases by omitting break *deliberately* is idiomatic: `case 'B': case 'b':` handles both spellings with one body."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <iostream>\n\nint main() {\n    char side = 'B';\n    switch (side) {\n        case 'B':\n        case 'b':\n            std::cout << \"buy\\n\";\n            break;\n        case 'S':\n            std::cout << \"sell\\n\";\n            break;\n        default:\n            std::cout << \"unknown\\n\";\n    }\n    return 0;\n}",
+      "caption": "Deliberate fallthrough groups 'B' and 'b'; every group ends in break. Output: buy"
+    },
+    {
+      "type": "h2",
+      "text": "Loops: for, while and range-for"
+    },
+    {
+      "type": "p",
+      "md": "The counting **for** loop runs an index over a range - ideal when you need the index itself, as in `for (int i = 0; i < n; ++i)`. The **while** loop tests before each pass; the **do-while** tests after, so its body always runs at least once. C++11 added the **range-for**: `for (int x : fills)` walks every element with zero index bookkeeping and works with anything that can hand out begin/end - raw arrays, std::string, and later the containers. Inside any loop, **break** exits immediately and **continue** skips the rest of the body and jumps to the next iteration. The daily bread of loop bugs: off-by-one bounds and signed/unsigned mixing - comparing `int i` against the unsigned result of `v.size()` makes the compiler warn under `-Wall`, because the int gets converted to unsigned."
+    },
+    {
+      "type": "h2",
+      "text": "Functions: packaging logic"
+    },
+    {
+      "type": "p",
+      "md": "A function has a return type, a name and a parameter list. By default arguments are passed **by value**: the callee works on a *copy*, so modifying a parameter never affects the caller's variable. That copy cost matters for large objects - which is why C++ also has references and pointers, the subject of the next lesson. **Default arguments** let callers omit trailing parameters, as in `notional(price, qty, \"USD\")` where a third parameter defaults elsewhere. Two style rules keep functions honest: do one job, and either return a value or mutate through a reference/pointer parameter - never surprise the caller with hidden state. Declarations and definitions reuse the lesson-1 split: declare in headers, define once in sources."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <iostream>\n\n// Returns the notional actually sendable, capped at the desk limit.\ndouble clippedNotional(double price, int qty, double cap) {\n    double notional = price * qty;\n    return notional > cap ? cap : notional;   // ternary: condition ? a : b\n}\n\nint main() {\n    std::cout << clippedNotional(42.17, 250, 9000.0) << '\\n';  // capped\n    std::cout << clippedNotional(42.17, 100, 9000.0) << '\\n';  // under cap\n    return 0;\n}",
+      "caption": "A pre-trade risk primitive: min(price x qty, cap). Output: 9000 then 4217"
+    },
+    {
+      "type": "h2",
+      "text": "Overloading: one name, several signatures"
+    },
+    {
+      "type": "p",
+      "md": "Overloading lets the same name serve different parameter types: `square(int)` and `square(double)` coexist, and the compiler selects by **overload resolution** - matching the argument types to the best parameter list (exact match beats promotion, promotion beats conversion). Overloads must differ in their *parameter* types; a different return type alone is a compile error. Overloads interact dangerously with default arguments: if `report(int, double scale = 1.0)` and `report(double)` both exist, the call `report(3.5)` matches both and the build fails with *call is ambiguous* - when you see that error, this is the first thing to check."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <iostream>\n\nint square(int x) { return x * x; }\ndouble square(double x) { return x * x; }   // overload: same name, new parameters\n\nint main() {\n    std::cout << square(4) << ' ' << square(2.5) << '\\n';  // int vs double call\n    return 0;\n}",
+      "caption": "square(4) picks square(int); square(2.5) picks square(double). Output: 16 6.25"
+    },
+    {
+      "type": "callout",
+      "variant": "info",
+      "title": "Pass-by-value, for now",
+      "md": "Every parameter in this lesson is a copy. When the next lesson introduces references, keep this in mind: references exist precisely to let a function operate on the caller's actual object - and to skip the copy entirely."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Predict the exact output, then verify by compiling and running:\n\n```cpp\n#include <iostream>\n\nint main() {\n    int total = 0;\n    for (int i = 1; i <= 4; ++i) {\n        if (i == 3) continue;\n        total += i * i;\n    }\n    std::cout << total << '\\n';\n    return 0;\n}\n```\n\nState precisely what `continue` does on the third pass.",
+    "hints": [
+      "i takes the values 1, 2, 3, 4 in turn.",
+      "continue jumps straight to the loop's increment (i += 1), skipping the rest of the body for that iteration only."
+    ],
+    "solution": "Iterations: $i=1$ adds 1; $i=2$ adds 4; $i=3$ hits `continue`, adds nothing; $i=4$ adds 16. Total $= 1 + 4 + 16 =$ **21**, printed as `21`. On the third pass, `continue` skips `total += i * i` and jumps directly to `++i`, so only the $i = 3$ contribution is lost."
+  },
+  "independentExercise": {
+    "prompt": "Write an overloaded pair for an order gateway:\n\n- `void route(char side)` prints BUY for 'B'/'b', SELL for 'S'/'s', REJECT otherwise (use a switch).\n- `void route(int signedQty)` prints BUY when positive, SELL when negative, REJECT at zero.\n\nIn `main`, call route('b'), route('S'), route(0), route(-150), route(75). Give the exact five-line output and full compilable code.",
+    "hints": [
+      "Combine the two char cases with deliberate fallthrough: case 'B': case 'b':",
+      "For the int overload, a single if / else if / else chain on the sign suffices."
+    ],
+    "solution": "Output (five lines): `BUY`, `SELL`, `REJECT`, `SELL`, `BUY`.\n```cpp\n#include <iostream>\n\nvoid route(char side) {\n    switch (side) {\n        case 'B':\n        case 'b':\n            std::cout << \"BUY\\n\";\n            break;\n        case 'S':\n        case 's':\n            std::cout << \"SELL\\n\";\n            break;\n        default:\n            std::cout << \"REJECT\\n\";\n    }\n}\n\nvoid route(int signedQty) {\n    if (signedQty > 0)      std::cout << \"BUY\\n\";\n    else if (signedQty < 0) std::cout << \"SELL\\n\";\n    else                    std::cout << \"REJECT\\n\";\n}\n\nint main() {\n    route('b');    // BUY\n    route('S');    // SELL\n    route(0);      // REJECT\n    route(-150);   // SELL\n    route(75);     // BUY\n    return 0;\n}\n```\nThe two overloads are distinguished by parameter type (char vs int); the switch uses deliberate fallthrough to merge the upper/lower-case cases."
+  },
+  "commonMistakes": [
+    "Omitting break in a switch case and silently falling through into the next case's body.",
+    "Writing if (x = 5) instead of if (x == 5) - assignment yields 5 (truthy), so the branch always fires and x is clobbered.",
+    "Assuming parameters are references: pass-by-value copies, so changes inside the function never reach the caller.",
+    "Overloading only on return type - overloads must differ in parameter types.",
+    "Adding a default argument to one overload so an existing call now matches two signatures and fails as ambiguous."
+  ],
+  "realWorldApplication": "Order gateways are control flow end to end: risk checks (if), venue dispatch (switch), market-data processing loops (for / range-for), with the reusable pieces extracted into small, testable functions.",
+  "quantFinanceApplication": "A pre-trade risk function - the clippedNotional cap pattern plus an overloaded route() that accepts a side character or a signed quantity - is exactly the shape of production order validation, just smaller.",
+  "summary": [
+    "Branch with if/else for conditions and switch for integral dispatch; a missing break causes fallthrough into the next case.",
+    "Loops: for when you need an index, range-for for elements, while/do-while for condition-driven repetition; break exits, continue skips one pass.",
+    "Arguments pass by value: the function mutates its copy, never the caller's variable.",
+    "Overload resolution picks the best-matching parameter list (exact > promotion > conversion); overloads must differ in parameters.",
+    "Default arguments widen the calls an overload accepts - and can create ambiguity with a sibling overload."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "code-output",
+      "prompt": "What does this C++17 program print?",
+      "language": "cpp",
+      "code": "#include <iostream>\n\nint main() {\n    int total = 0;\n    for (int i = 1; i <= 4; ++i) {\n        if (i == 3) continue;\n        total += i * i;\n    }\n    std::cout << total << '\\n';\n    return 0;\n}",
+      "answer": "21",
+      "explanation": "i = 3 is skipped by continue; the contributions are 1 + 4 + 16 = 21."
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "In a switch, what happens if a case body omits break?",
+      "options": [
+        "Compile error",
+        "The switch exits immediately",
+        "Execution falls through into the next case",
+        "The default case runs"
+      ],
+      "answerIndex": 2,
+      "explanation": "Without break, control falls through to the following case's statements - sometimes intentional (grouping 'B' and 'b'), but usually a bug."
+    },
+    {
+      "id": "q3",
+      "type": "mcq",
+      "prompt": "A function `void bump(int x) { x += 1; }` is called with bump(score);. What is score afterwards?",
+      "options": [
+        "Increased by 1",
+        "Unchanged - bump received a copy",
+        "Unpredictable",
+        "Compile error"
+      ],
+      "answerIndex": 1,
+      "explanation": "Arguments pass by value: bump mutates its own copy and score is untouched. Reaching the caller's variable requires a reference or pointer (next lesson)."
+    },
+    {
+      "id": "q4",
+      "type": "code-output",
+      "prompt": "Given the overloads `void report(int x)` printing `int <x>` and `void report(double x)` printing `double <x>`, what does the following main print?",
+      "language": "cpp",
+      "code": "#include <iostream>\n\nvoid report(int x) { std::cout << \"int \" << x << '\\n'; }\nvoid report(double x) { std::cout << \"double \" << x << '\\n'; }\n\nint main() {\n    report(3);\n    report(3.0);\n    report(3.5f);\n    return 0;\n}",
+      "answer": "int 3\ndouble 3\ndouble 3.5",
+      "explanation": "3 matches report(int) exactly; 3.0 is a double, and the float literal 3.5f is promoted to double, so both select report(double). A float is promoted to double rather than converted to int."
+    },
+    {
+      "id": "q5",
+      "type": "numeric",
+      "prompt": "Using the lesson's semantics (clippedNotional returns min(price x qty, cap)), what does clippedNotional(9.75, 600, 5000.0) return?",
+      "answer": 5000,
+      "explanation": "9.75 x 600 = 5850, which exceeds the 5000 cap, so the clipped value 5000 is returned."
+    },
+    {
+      "id": "q6",
+      "type": "short",
+      "prompt": "Why can adding a default argument to an overload make previously fine calls ambiguous? Give an example of the failing call shape.",
+      "modelAnswer": "A default argument lets an overload also match calls that omit it; if two overloads can both match the same call once defaults are filled in, neither is better and the compiler rejects the call as ambiguous - e.g. report(int, double scale = 1.0) and report(double) both match report(3.5).",
+      "keywords": ["ambiguous", "default", "overload", "match"],
+      "explanation": "Defaults widen the set of calls an overload accepts; two acceptable matches with no ordering between them is an ambiguity error."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "break vs continue",
+      "back": "break exits the loop (or switch) immediately; continue skips the rest of the body and jumps to the next iteration."
+    },
+    {
+      "type": "concept",
+      "front": "Pass-by-value",
+      "back": "The function receives a copy of each argument; mutating a parameter never changes the caller's variable."
+    },
+    {
+      "type": "concept",
+      "front": "Overload resolution",
+      "back": "The compiler picks the overload whose parameter types best match the arguments: exact match > promotion > conversion; a tie is an ambiguity error."
+    },
+    {
+      "type": "definition",
+      "front": "Switch fallthrough",
+      "back": "Without break, execution continues into the next case's body; deliberate use groups cases: case 'B': case 'b':"
+    },
+    {
+      "type": "code-output",
+      "front": "Loop over i = 1..4 with continue at i == 3, accumulating i * i - final total?",
+      "back": "21: 1 + 4 + 16, because the i = 3 pass adds nothing."
+    }
+  ],
+  "references": [
+    {
+      "label": "cppreference — if / switch statements",
+      "url": "https://en.cppreference.com/w/cpp/language/if"
+    },
+    {
+      "label": "cppreference — Overload resolution",
+      "url": "https://en.cppreference.com/w/cpp/language/overload_resolution"
+    }
+  ],
+  "skills": ["cpp"]
+}

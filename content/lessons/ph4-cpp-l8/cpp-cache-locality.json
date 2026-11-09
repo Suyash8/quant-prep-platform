@@ -1,0 +1,223 @@
+{
+  "id": "cpp-cache-locality",
+  "moduleId": "ph4-cpp-l8",
+  "title": "Cache Locality and Data-Oriented Design",
+  "estMinutes": 28,
+  "difficulty": "specialist",
+  "prereqs": ["arch-cache-hierarchy"],
+  "objectives": [
+    "Compute the padding, sizeof and cache-line utilisation of a given struct layout",
+    "Explain why sequential, contiguous access out-performs pointer-chasing at hardware level",
+    "Convert an array-of-structs design into a struct-of-arrays layout for a stated hot loop",
+    "Identify false sharing and describe how to avoid it in multi-threaded tick handlers"
+  ],
+  "motivation": "A feed handler must scan one million quotes and recompute spreads on every tick. The arithmetic is trivial - one subtraction per quote - yet a naive object-oriented layout can run this loop three to five times slower than a hardware-friendly one, purely because of where the bytes sit. At 200+ cycles per DRAM access, memory locality, not FLOPs, decides who gets the fill.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "The machine you are really programming"
+    },
+    {
+      "type": "p",
+      "md": "At 3 GHz the CPU retires one instruction roughly every 0.33 ns - but register-adjacent data is only the beginning of the story. Hitting **L1** cache costs about 4 cycles, **L2** about 12, **L3** about 40, and **DRAM** 200 or more. A single main-memory stall is therefore longer than 600 instructions of actual work. The cache moves data in fixed **cache lines** - typically 64 bytes - so touching even 1 byte drags the whole line in. Two consequences dominate performance engineering: *temporal locality* (reuse data soon after touching it) and *spatial locality* (touch neighbouring bytes together, because the hardware already fetched them)."
+    },
+    {
+      "type": "interactive",
+      "component": "MemoryLayout",
+      "params": {
+        "totalBytes": 64,
+        "bytesPerRow": 16
+      },
+      "caption": "One 64-byte cache line. Hardware prefetchers fetch these in sequence - contiguity is what lets the CPU hide DRAM latency entirely."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Latency in trading terms",
+      "md": "If your tick-to-trade path takes 2 microseconds and you add 10 cache misses at ~70 ns each (L3/DRAM mix), you have just burned 0.7 microseconds - over a third of your budget - without writing any new logic. Layout is a latency decision."
+    },
+    {
+      "type": "h2",
+      "text": "Array of structs vs struct of arrays"
+    },
+    {
+      "type": "p",
+      "md": "Object-oriented habit says: one `Quote` object holding everything a quote *is*. Hardware says: one array of the fields the hot loop *uses*. The first is **AoS** (array of structs), the second **SoA** (struct of arrays). Consider a market-data hot loop that only reads `bid` and `ask`:"
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <cstddef>\n#include <cstdint>\n#include <iostream>\n\nstruct Quote {            // one instrument's market state\n    double bid;           // 8 bytes\n    double ask;           // 8 bytes\n    std::int32_t symId;   // 4 bytes\n    bool stale;           // 1 byte\n};                        // 8 + 8 + 4 + 1 = 21 -> padded to 24\n\nint main() {\n    std::cout << sizeof(Quote) << '\\n';       // 24 (padded for 8-byte alignment)\n    std::cout << 64 / sizeof(Quote) << '\\n';  // 2  whole quotes per cache line\n}\n// Per 64-byte line: 48 bytes of struct, but only 32 bytes (bid+ask)\n// are useful to the spread loop -> 50% cache-line utilisation.",
+      "caption": "sizeof says 24, but the cache-line arithmetic is what predicts speed."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <cstddef>\n#include <cstdint>\n#include <vector>\n\n// Structure of arrays: each field is its own contiguous array.\nstruct QuoteBook {\n    std::vector<double> bid;\n    std::vector<double> ask;\n    std::vector<std::int32_t> symId;\n    std::vector<bool> stale;\n};\n\n// Hot path touches ONLY bid and ask; symId/stale bytes never enter the cache.\ndouble totalSpread(const QuoteBook& b) {\n    double s = 0.0;\n    const std::size_t n = b.bid.size();\n    for (std::size_t i = 0; i < n; ++i)\n        s += b.ask[i] - b.bid[i];   // two perfectly sequential streams\n    return s;\n}\n// A 64-byte line now holds 8 bids (or 8 asks), all useful -> 100% utilisation,\n// and the prefetcher can stream both arrays ahead of the loop.",
+      "caption": "SoA: the fields the loop ignores are physically absent from its cache traffic."
+    },
+    {
+      "type": "p",
+      "md": "The cost model is blunt. For $n = 10^6$ quotes, the AoS spread loop streams $24 \\times 10^6$ bytes of cache lines while using only $16 \\times 10^6$ - a third of memory bandwidth wasted. SoA streams exactly $16 \\times 10^6$ useful bytes. Worse, AoS *mixes* cold fields (`symId`, `stale`) into the same lines as hot fields, so the cache fills with bytes the loop never reads."
+    },
+    {
+      "type": "h2",
+      "text": "Data-oriented design: organise for the access pattern"
+    },
+    {
+      "type": "p",
+      "md": "**Data-oriented design (DOD)** inverts the usual process: start from the hot loops, list what they touch per iteration, then choose the layout that minimises bytes moved. Practical rules: keep hot arrays contiguous and index-based (no pointer chasing - each hop is a potential cache miss the prefetcher cannot predict); split hot from cold fields; store fixed-size records so indexing is $\\text{base} + i \\times \\text{size}$ arithmetic; batch work so each cache line fetched is fully consumed. Virtual functions and per-object heap allocation fight DOD because they hide where the bytes actually are."
+    },
+    {
+      "type": "p",
+      "md": "One multi-threaded trap deserves its own mention: **false sharing**. If two threads write different variables that happen to live on the *same* 64-byte line, the cache-coherence protocol shuttles the line between cores on every write, costing hundreds of cycles per access - even though the threads never share data. Fix: pad or align hot per-thread data so each thread owns whole lines."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <new>   // std::hardware_destructive_interference_size (C++17)\n\nstruct alignas(64) ThreadCounters {   // one counter set per cache line\n    std::uint64_t fills = 0;\n    std::uint64_t rejects = 0;\n    // padding to 64 bytes happens implicitly via alignas(64)\n};\n// Two threads writing counters[0].fills and counters[1].fills now touch\n// different lines - no coherence traffic, no false sharing.",
+      "caption": "alignas(64) makes each counters element occupy its own cache line."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Measure, then restructure",
+      "md": "SoA is not free: field-wise arrays make single-record updates touch several distant locations, and some code gets uglier. Restructure for the loops that dominate profiles (measure first - see the benchmarking lesson), not for aesthetics."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Given `struct Tick { double price; long qty; char flags; };` on a 64-bit machine (8-byte alignment), compute: (a) `sizeof(Tick)` with padding; (b) how many whole `Tick` objects fit in one 64-byte cache line; (c) the fraction of a cache line that carries useful `price` bytes for a loop that only reads prices.",
+    "hints": [
+      "Lay members out in declaration order, then round the total up to a multiple of the largest alignment (8).",
+      "Cache-line capacity uses integer division."
+    ],
+    "solution": "(a) `price` occupies offsets 0-7, `qty` 8-15, `flags` offset 16, then 7 bytes of padding -> `sizeof = 24`. (b) $\\lfloor 64/24 \\rfloor = 2$ whole ticks per line (48 bytes used, 16 idle). (c) Two ticks per line contribute $2 \\times 8 = 16$ useful `price` bytes, so utilisation $= 16/64 = 25\\%$. An SoA layout of prices alone would be $8 \\times 8 = 64$ bytes of pure prices per line - $100\\%$."
+  },
+  "independentExercise": {
+    "prompt": "A book scanner loops over 250,000 instruments reading only each instrument's `bestBid` and `bestAsk` (two `double`s each). Currently the instruments live in an AoS vector where each record is `bestBid`, `bestAsk`, `symbolName[16]` (16 bytes of `char`), and `std::int32_t venueId`. Compute: (a) `sizeof` the record; (b) bytes of cache traffic per scan in AoS; (c) bytes of cache traffic per scan after an SoA split that stores only the two doubles contiguously; (d) the percentage of bandwidth saved.",
+    "hints": [
+      "Member sizes: 8 + 8 + 16 + 4 = 36; round up to the alignment of the largest member (8).",
+      "In SoA, the scanner streams two arrays of 8-byte doubles; traffic = 2 x 8 bytes per instrument."
+    ],
+    "solution": "(a) $8+8+16+4 = 36$, padded to a multiple of 8 gives `sizeof = 40`. (b) AoS traffic $= 250{,}000 \\times 40 = 10^7$ bytes (10 MB), of which only 16 bytes per record are useful. (c) SoA traffic $= 250{,}000 \\times 16 = 4 \\times 10^6$ bytes (4 MB). (d) Saving $= (10-4)/10 = 60\\%$ less memory traffic - and every fetched line is now 100% useful, so the prefetcher streams perfectly."
+  },
+  "commonMistakes": [
+    "Believing big-O alone predicts speed: two O(n) loops can differ 3-5x purely on layout and cache-line utilisation.",
+    "Counting sizeof as the whole story: alignment padding inside arrays means sizeof(record) records per line, not sizeof(fields) worth of data.",
+    "Chasing pointers (linked lists, node-based containers) in hot loops - each hop can be an unpredictable cache miss.",
+    "Letting threads write distinct variables that share a cache line (false sharing) and blaming the 'slow CPU'."
+  ],
+  "realWorldApplication": "Game engines, scientific codes and HFT systems all converge on SoA layouts with cache-line-aligned hot structures; the same arithmetic you did above is exactly what a feed-handler author computes before choosing the quote-store design.",
+  "quantFinanceApplication": "A pricing hot loop that recomputes spreads or marks across a million instruments is bandwidth-bound: cutting per-instrument cache traffic from 40 to 16 bytes directly reduces tick-to-trade latency and lets one core handle more instruments per tick.",
+  "summary": [
+    "Memory moves in 64-byte cache lines; L1 ~4 cycles vs DRAM ~200+ cycles makes locality the first-order performance factor.",
+    "AoS interleaves hot and cold bytes; SoA gives each hot loop its own contiguous, fully-used cache lines.",
+    "Compute layout impact with arithmetic: struct size, records per line, useful-bytes fraction.",
+    "False sharing is coherence traffic on lines shared by accident; fix with alignment/padding, not locks.",
+    "Data-oriented design starts from hot loops and chooses the layout that minimises bytes moved."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "numeric",
+      "prompt": "A 64-bit machine, 8-byte alignment. What is sizeof of `struct Quote { double bid; double ask; std::int32_t symId; bool stale; };` in bytes?",
+      "answer": 24,
+      "explanation": "8 + 8 + 4 + 1 = 21 bytes of members; the struct's alignment is 8 (largest member is double), so the total is rounded up to 24 with 3 trailing padding bytes."
+    },
+    {
+      "id": "q2",
+      "type": "numeric",
+      "prompt": "How many 8-byte doubles fit in one 64-byte cache line?",
+      "answer": 8,
+      "explanation": "64 / 8 = 8 doubles per line, which is why an SoA array of doubles achieves 100% cache-line utilisation."
+    },
+    {
+      "id": "q3",
+      "type": "mcq",
+      "prompt": "A spread-scan loop reads only `bid` and `ask` from the 24-byte `Quote` struct above, stored as a big AoS vector. Roughly what fraction of the cache-line bytes it fetches is useful?",
+      "options": [
+        "~50%: each 64-byte line holds 2 whole quotes (48 bytes) but only their bid+ask bytes (32) are read",
+        "~100%: the prefetcher removes all waste",
+        "~67%: 16 of 24 bytes are useful",
+        "~75%: 3 of 4 fields are read per quote"
+      ],
+      "answerIndex": 0,
+      "explanation": "24 does not divide 64: each line carries 2 whole quotes = 48 bytes (16 bytes of the line idle), and the loop reads only bid+ask = 32 bytes of those 48. Useful/total = 32/64 = 50%."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "Two worker threads each increment a different `uint64_t` counter, but the counters sit 8 bytes apart in one array. Profiling shows huge time in 'coherence stalls'. What is this, and the standard fix?",
+      "options": [
+        "Deadlock; fix with a mutex",
+        "False sharing; fix by padding/aligning so each thread's data occupies its own cache line",
+        "Cache aliasing; fix by changing the allocator",
+        "A mispredicted branch; fix by restructuring the loop"
+      ],
+      "answerIndex": 1,
+      "explanation": "The counters are distinct, but they share one 64-byte cache line, so the coherence protocol ping-pongs the line between cores on every write. alignas(64) or padding separates them onto different lines."
+    },
+    {
+      "id": "q5",
+      "type": "mcq",
+      "prompt": "Which change most directly improves spatial locality for a hot scan loop over market records?",
+      "options": [
+        "Replacing contiguous arrays with a linked list of heap-allocated record objects",
+        "Splitting the record into SoA arrays so the loop's fields are contiguous and nothing cold is interleaved",
+        "Adding virtual methods to the record class for extensibility",
+        "Increasing the struct size so records are 'rounder'"
+      ],
+      "answerIndex": 1,
+      "explanation": "SoA makes the touched fields one sequential stream - every fetched line is fully used and prefetchable. Pointer chasing kills prefetching; virtual calls obscure layout; bigger structs waste bandwidth."
+    },
+    {
+      "id": "q6",
+      "type": "code-output",
+      "prompt": "What does this program print?",
+      "language": "cpp",
+      "code": "#include <cstddef>\n#include <cstdint>\n#include <iostream>\n\nstruct Quote {\n    double bid;\n    double ask;\n    std::int32_t symId;\n    bool stale;\n};\n\nint main() {\n    std::cout << sizeof(Quote) << '\\n';\n    std::cout << 64 / sizeof(Quote) << '\\n';\n}",
+      "answer": "24\n2",
+      "explanation": "sizeof is 24 (21 bytes of members padded to the 8-byte alignment), and integer division 64/24 = 2 whole quotes per 64-byte cache line."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "definition",
+      "front": "What is a cache line and why does it matter?",
+      "back": "The unit (typically 64 bytes) in which caches move data. Touching 1 byte fetches the whole line, so neighbouring bytes are nearly free and distant bytes are not."
+    },
+    {
+      "type": "concept",
+      "front": "AoS vs SoA",
+      "back": "AoS: one struct per record, all fields together - good for whole-record access. SoA: one contiguous array per field - good for hot loops touching a few fields, gives 100% cache-line utilisation and streamable prefetch."
+    },
+    {
+      "type": "formula",
+      "front": "Cache-line utilisation of a hot loop",
+      "back": "useful bytes read per line / 64. E.g. reading bid+ask (16 B) from 24-byte Quotes: 2 quotes/line -> 32 useful of 64 = 50%."
+    },
+    {
+      "type": "definition",
+      "front": "False sharing",
+      "back": "Two threads writing different variables that share one cache line, causing coherence traffic between cores even though no data is logically shared. Fix: align/pad to one line per thread's data."
+    }
+  ],
+  "references": [
+    {
+      "label": "cppreference — alignas and alignment",
+      "url": "https://en.cppreference.com/w/cpp/language/alignas"
+    },
+    {
+      "label": "CppCon 2014 — Mike Acton, Data-Oriented Design and C++",
+      "url": "https://www.youtube.com/watch?v=rX0ItVEVjHc"
+    },
+    {
+      "label": "What Every Programmer Should Know About Memory (Ulrich Drepper)",
+      "url": "https://people.freebsd.org/~lstewart/articles/cpumemory.pdf"
+    }
+  ],
+  "skills": [
+    "cpp-performance",
+    "low-latency"
+  ]
+}

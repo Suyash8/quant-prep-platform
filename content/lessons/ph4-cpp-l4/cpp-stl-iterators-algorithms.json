@@ -1,0 +1,255 @@
+{
+  "id": "cpp-stl-iterators-algorithms",
+  "moduleId": "ph4-cpp-l4",
+  "title": "Iterators, Invalidation and the Algorithm Library",
+  "estMinutes": 27,
+  "difficulty": "core",
+  "prereqs": ["cpp-stl-adaptors"],
+  "objectives": [
+    "Match standard algorithms to the iterator categories they require and explain why some containers reject std::sort",
+    "Remove elements from a vector safely with the erase-remove idiom and explain why std::remove alone is not enough",
+    "Use std::sort, std::lower_bound, std::upper_bound and std::accumulate on price data with correct semantics",
+    "Identify iterator invalidation when mutating during iteration and write the safe loop patterns"
+  ],
+  "motivation": "Algorithms are where C++ pays for its strictness: std::sort on a million prices finishes while a hand-written loop is still warming up, and std::lower_bound finds a price level in 20 comparisons instead of a million. But every algorithm speaks the language of iterators, and iterators die when containers mutate underneath them. This lesson covers the categories, the invalidation traps, and the handful of algorithms a quant developer uses daily.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Iterators: the algorithm interface"
+    },
+    {
+      "type": "p",
+      "md": "Every STL algorithm operates on a half-open range [first, last) described by two iterators. The iterator's **category** declares what it can do: input iterators read forward once; forward iterators can re-read and make multiple passes; bidirectional iterators also step back; random-access iterators jump to any offset in O(1), like pointers. std::vector, std::array and std::deque deliver random-access iterators; std::list, std::map and std::set are bidirectional; the unordered containers are forward-only. Algorithms state the minimum category they require - and the compiler enforces it at build time."
+    },
+    {
+      "type": "table",
+      "headers": ["Container", "Iterator category", "std::sort on it?"],
+      "rows": [
+        ["vector, array, deque", "random access", "yes"],
+        ["list, map, set", "bidirectional", "no - use member list::sort or keep the tree ordered"],
+        ["unordered_map, unordered_set", "forward", "no - copy the pairs to a vector and sort there"],
+        ["istream_iterator", "input", "no - single pass only"]
+      ]
+    },
+    {
+      "type": "p",
+      "md": "The enforcement matters because std::sort needs random access to swap distant elements efficiently; calling it on a list's iterators simply does not compile, and list::sort exists precisely because it can relink nodes instead of moving elements. When you need a sorted view of a hash table, copy the pairs into a vector and sort there: the copy is $O(n)$ and the sort $O(n \\log n)$ - and the copy into contiguous memory is usually faster than it looks."
+    },
+    {
+      "type": "interactive",
+      "component": "SortingVisual",
+      "params": {
+        "algorithm": "quick",
+        "data": [64, 25, 12, 22, 11]
+      },
+      "caption": "Partitioning in action: each level of quicksort touches all n elements and there are about log n levels - O(n log n) made visible."
+    },
+    {
+      "type": "h2",
+      "text": "Mutating while iterating"
+    },
+    {
+      "type": "p",
+      "md": "A range-for grabs begin() and end() once, then walks. If the body erases from or pushes into the same vector, the cached end() and the current iterator can dangle: undefined behaviour, often invisible in debug builds and a crash in release. The fix is to own the loop and use the return value of erase, which hands back the next valid iterator."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <vector>\n#include <iostream>\n\nint main() {\n    std::vector<int> v{1, 2, 3, 4, 5, 6};\n    for (auto it = v.begin(); it != v.end(); ) {\n        if (*it % 2 == 0)\n            it = v.erase(it);   // erase returns the next valid iterator\n        else\n            ++it;\n    }\n    for (int x : v) std::cout << x << \" \";\n    std::cout << \"\\n\";\n}",
+      "caption": "Prints 1 3 5 (trailing space and all) - the loop survives because erase re-seats the iterator."
+    },
+    {
+      "type": "p",
+      "md": "Filtering out many values has a better shape than one-at-a-time. std::remove(first, last, value) shifts the kept elements forward and returns an iterator to the new logical end - but it cannot erase anything, because it holds no container. The tail elements are left in an unspecified state and size() is unchanged. Erasing is the container's job: v.erase(newEnd, v.end()) truncates. Together the two calls are the **erase-remove idiom**."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <vector>\n#include <algorithm>\n#include <iostream>\n\nint main() {\n    std::vector<int> v{5, 9, 2, 9, 7, 9};\n    auto newEnd = std::remove(v.begin(), v.end(), 9);\n    std::cout << \"size still \" << v.size() << \"\\n\";   // 6: remove never erases\n    v.erase(newEnd, v.end());\n    std::cout << \"size now \" << v.size() << \"\\n\";     // 3\n}",
+      "caption": "remove shifts survivors forward; erase truncates the stale tail."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "std::remove does not remove",
+      "md": "std::remove moves survivors forward and returns a past-the-end iterator for the kept range; it never calls erase and never shrinks size(). After remove alone, the vector's tail holds stale copies and size() is still the old value. C++20 adds std::erase_if(v, pred), which fuses both steps - but C++17 code lives on the idiom."
+    },
+    {
+      "type": "h2",
+      "text": "Sorting and binary search on prices"
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <vector>\n#include <algorithm>\n#include <iostream>\n\nint main() {\n    std::vector<double> px{100.50, 99.75, 101.00, 100.50};\n    std::sort(px.begin(), px.end());\n    // sorted: 99.75  100.50  100.50  101.00\n    auto lo = std::lower_bound(px.begin(), px.end(), 100.50);\n    std::cout << lo - px.begin() << \"\\n\";          // first position >= 100.50\n    auto up = std::upper_bound(px.begin(), px.end(), 100.50);\n    std::cout << up - px.begin() << \"\\n\";          // first position > 100.50\n    std::cout << std::boolalpha\n              << std::binary_search(px.begin(), px.end(), 101.00) << \"\\n\";\n}",
+      "caption": "Output: 1, 3, true - the two bounds bracket the whole run of 100.50s."
+    },
+    {
+      "type": "p",
+      "md": "lower_bound returns the first position whose element is not less than the target; upper_bound the first strictly greater. On the sorted ladder 99.75, 100.50, 100.50, 101.00 the two bounds are positions 1 and 3 - and that half-open range is exactly the set of resting orders at price 100.50. Both are $O(\\log n)$ on random-access iterators, but they require the range to be sorted ascending under the same comparator; on unsorted data they return garbage, not an error."
+    },
+    {
+      "type": "h2",
+      "text": "Numerics: accumulate and friends"
+    },
+    {
+      "type": "p",
+      "md": "std::accumulate(first, last, init) folds the range into init with +. The initializer's type matters more than people expect: the accumulator is a copy of init, so accumulate over a vector<double> with init 0 sums in **integer** arithmetic and truncates every step. Pass 0.0 for a floating-point fold. And because floating-point addition is not associative, the sum of a return series depends on its order - a fact that matters at book scale."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <vector>\n#include <numeric>\n#include <iostream>\n\nint main() {\n    std::vector<int> fills{150, 200, 100};\n    int total = std::accumulate(fills.begin(), fills.end(), 0);\n    std::cout << \"filled \" << total << \"\\n\";            // 450\n\n    std::vector<double> rets{0.01, -0.02, 0.03};\n    // int init: every partial sum is truncated to an integer\n    int truncated = std::accumulate(rets.begin(), rets.end(), 0);\n    std::cout << \"int init gives \" << truncated << \"\\n\";  // 0\n}",
+      "caption": "The accumulator's type is the init's type - 0 means integer arithmetic throughout."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Sums have an order",
+      "md": "Floating-point addition is not associative: (0.1 + 0.2) + 0.3 differs from 0.1 + (0.2 + 0.3) in the last bits. Over millions of returns the drift is real, so numerical desks use pairwise or Kahan summation (std::accumulate cannot; C++17's std::reduce with execution policies may reassociate deliberately). Know your accumulator's precision budget before quoting a PnL to eight decimals."
+    },
+    {
+      "type": "interactive",
+      "component": "ComplexityCompare",
+      "params": {
+        "title": "Finding a target price in a sorted vector of n prices",
+        "n": 1000000,
+        "operations": [
+          { "name": "std::find (linear scan, no order needed)", "complexity": "O(n)", "ops": 1000000 },
+          { "name": "std::lower_bound (binary search, sorted input)", "complexity": "O(log n)", "ops": 20 }
+        ]
+      },
+      "caption": "Sorting once costs O(n log n) and buys O(log n) searches forever after - 20 comparisons instead of a million."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Given std::vector<int> v{5, 9, 2, 9, 7, 9}: (a) after v.erase(std::remove(v.begin(), v.end(), 9), v.end()), state size() and the contents. (b) After std::sort(v.begin(), v.end()), state the contents and the indices returned by std::lower_bound(v.begin(), v.end(), 5) and std::upper_bound(v.begin(), v.end(), 5). (c) State std::accumulate over the sorted vector with initial value 0.",
+    "hints": [
+      "remove shifts survivors forward; erase truncates the tail.",
+      "lower_bound is the first index whose element is >= the target."
+    ],
+    "solution": "(a) The survivors 5, 2, 7 shift forward, so size() = **3** and contents are {5, 2, 7}. (b) Sorted: {2, 5, 7}; lower_bound(5) = index **1** (first element >= 5), upper_bound(5) = index **2** (first element > 5). (c) $2 + 5 + 7 = $ **14**."
+  },
+  "independentExercise": {
+    "prompt": "A replay log is std::vector<int> ticks{11, 12, 12, 13, 11, 14}. Using STL algorithms only: (a) count the 11s; (b) erase all 12s with the erase-remove idiom and give size() and the contents; (c) sort the vector and report the values at *std::min_element and *std::max_element; (d) compute the total with std::accumulate and the mean as a double (total divided by size in double arithmetic).",
+    "hints": [
+      "std::count(first, last, value) returns the number of occurrences.",
+      "The mean needs a double division: static_cast<double>(total) / ticks.size()."
+    ],
+    "solution": "(a) std::count = **2**. (b) Removing the 12s leaves survivors {11, 13, 11, 14}: size() = **4**. (c) Sorted: {11, 11, 13, 14}; min = **11**, max = **14**. (d) Total $= 11 + 13 + 11 + 14 = $ **49**; mean $= 49.0 / 4 = $ **12.25**."
+  },
+  "commonMistakes": [
+    "Erasing inside a range-for loop - begin() and end() are cached once and dangle after the first erase; use it = v.erase(it) or erase-remove.",
+    "Calling std::remove and expecting the vector to shrink - remove only shifts survivors; the erase call does the truncating.",
+    "Calling std::lower_bound on an unsorted range - the result is meaningless garbage, not an error.",
+    "Accumulating doubles with an integer init of 0 - every partial sum is truncated; pass 0.0.",
+    "Trying std::sort on a std::list - its iterators are only bidirectional; use the member sort or copy to a vector."
+  ],
+  "realWorldApplication": "Tick-data filtering, sorted ladders, session-level aggregations and binary-search lookups into history are all loops over the algorithms in this lesson; the invalidation rules decide whether the surrounding code survives refactoring.",
+  "quantFinanceApplication": "Sorting a day's prints and slicing the equal-range at a price is exactly how resting-volume-at-price queries are served; accumulate-style folds over return vectors are the innermost loop of every backtest and risk report.",
+  "summary": [
+    "Iterator categories run input -> forward -> bidirectional -> random access; vector/array/deque are random access, list/map/set bidirectional, unordered_* forward.",
+    "std::sort requires random-access iterators and is O(n log n); std::lower_bound needs at least forward iterators and is O(log n) only on random access.",
+    "The erase-remove idiom (std::remove + v.erase) filters a vector in O(n); remove alone shifts survivors and never shrinks size().",
+    "lower_bound is the first element >= target, upper_bound the first strictly greater - together they bracket the equal range.",
+    "std::accumulate folds with the init's type as the accumulator: integer init truncates; float sums depend on order."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "Which iterator category does std::sort require?",
+      "options": [
+        "Input",
+        "Forward",
+        "Bidirectional",
+        "Random access"
+      ],
+      "answerIndex": 3,
+      "explanation": "Quicksort-style partitioning swaps distant elements and needs O(1) jumps - random access. That is why list has its own member sort, which relinks nodes instead."
+    },
+    {
+      "id": "q2",
+      "type": "code-output",
+      "prompt": "What does this program print?",
+      "language": "cpp",
+      "code": "#include <vector>\n#include <algorithm>\n#include <iostream>\n\nint main() {\n    std::vector<int> v{5, 9, 2, 9, 7, 9};\n    auto newEnd = std::remove(v.begin(), v.end(), 9);\n    std::cout << \"size still \" << v.size() << \"\\n\";\n    v.erase(newEnd, v.end());\n    std::cout << \"size now \" << v.size() << \"\\n\";\n}",
+      "answer": "size still 6\nsize now 3",
+      "explanation": "std::remove shifts the survivors 5, 2, 7 forward and returns the new logical end - size() is untouched at 6. Only the erase call truncates the stale tail, leaving size 3."
+    },
+    {
+      "id": "q3",
+      "type": "code-output",
+      "prompt": "What does this program print?",
+      "language": "cpp",
+      "code": "#include <vector>\n#include <algorithm>\n#include <iostream>\n\nint main() {\n    std::vector<double> px{100.50, 99.75, 101.00, 100.50};\n    std::sort(px.begin(), px.end());\n    auto lo = std::lower_bound(px.begin(), px.end(), 100.50);\n    std::cout << lo - px.begin() << \"\\n\";\n    auto up = std::upper_bound(px.begin(), px.end(), 100.50);\n    std::cout << up - px.begin() << \"\\n\";\n    std::cout << std::boolalpha\n              << std::binary_search(px.begin(), px.end(), 101.00) << \"\\n\";\n}",
+      "answer": "1\n3\ntrue",
+      "explanation": "Sorting gives 99.75, 100.50, 100.50, 101.00. lower_bound(100.50) is the first element >= 100.50 at index 1; upper_bound is the first strictly greater at index 3; binary_search finds 101.00, so boolalpha prints true."
+    },
+    {
+      "id": "q4",
+      "type": "numeric",
+      "prompt": "With std::vector<int> v{5, 9, 2, 9, 7, 9}; after v.erase(std::remove(v.begin(), v.end(), 9), v.end()); what is v.size()?",
+      "answer": 3,
+      "explanation": "Three nines are removed: the survivors 5, 2, 7 are shifted forward and the tail of three elements is erased, leaving size 3."
+    },
+    {
+      "id": "q5",
+      "type": "ms",
+      "prompt": "Which of these compile and are correct when handed std::list<int>::iterators?",
+      "options": [
+        "std::find",
+        "std::sort",
+        "std::accumulate",
+        "std::lower_bound (given the list is kept sorted)"
+      ],
+      "answerIndices": [0, 2, 3],
+      "explanation": "List iterators are bidirectional: find needs input, accumulate needs input, and lower_bound needs only forward - all satisfied (lower_bound degrades to O(n) without random access). std::sort requires random access and does not compile; use the member list::sort, O(n log n) via node relinking."
+    },
+    {
+      "id": "q6",
+      "type": "short",
+      "prompt": "Why is erasing from a std::vector inside a range-for loop undefined behaviour?",
+      "modelAnswer": "The range-for caches begin() and end() once; erase invalidates the current iterator and shifts elements past the cached end, so the loop walks dangling iterators.",
+      "keywords": ["begin", "end", "cache", "invalidate", "dangling"],
+      "explanation": "The loop holds two iterators it never updates; the first erase invalidates them (or the elements they designate). The manual pattern works because erase's return value re-seats the iterator after every mutation."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "definition",
+      "front": "Name the STL iterator categories, weakest to strongest.",
+      "back": "Input (single-pass read) -> Output (single-pass write) -> Forward (multi-pass) -> Bidirectional (also steps back) -> Random access (O(1) jumps, pointer-like). vector/array/deque: random access; list/map/set: bidirectional; unordered_*: forward."
+    },
+    {
+      "type": "code-output",
+      "front": "vector<int> v{5,9,2,9,7,9}; v.erase(std::remove(v.begin(), v.end(), 9), v.end()); cout << v.size();",
+      "back": "3 - remove shifted the survivors {5, 2, 7} forward and returned the new logical end; erase truncated the stale tail."
+    },
+    {
+      "type": "concept",
+      "front": "lower_bound vs upper_bound on a sorted range",
+      "back": "lower_bound: first element >= target. upper_bound: first element > target. Together they bracket the run of elements equal to the target; both O(log n) on random-access iterators, and the range must be sorted ascending."
+    },
+    {
+      "type": "formula",
+      "front": "Costs: sort, lower_bound, accumulate",
+      "back": "sort: O(n log n) comparisons, random-access required. lower_bound/upper_bound: O(log n) on random access, O(n) on forward-only. accumulate: O(n) with the init's type as the accumulator type."
+    }
+  ],
+  "references": [
+    {
+      "label": "cppreference - Iterator categories",
+      "url": "https://en.cppreference.com/w/cpp/iterator"
+    },
+    {
+      "label": "cppreference - std::remove / erase-remove idiom",
+      "url": "https://en.cppreference.com/w/cpp/algorithm/remove"
+    },
+    {
+      "label": "cppreference - std::lower_bound",
+      "url": "https://en.cppreference.com/w/cpp/algorithm/lower_bound"
+    }
+  ],
+  "skills": ["cpp-stl"]
+}

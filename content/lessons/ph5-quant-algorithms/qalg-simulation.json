@@ -1,0 +1,222 @@
+{
+  "id": "qalg-simulation",
+  "moduleId": "ph5-quant-algorithms",
+  "title": "Event Simulation and Monte Carlo Optimisation",
+  "estMinutes": 27,
+  "difficulty": "advanced",
+  "prereqs": ["qalg-orderbook-structures"],
+  "objectives": [
+    "Implement the discrete-event loop: priority queue of (time, sequence) events, pop, advance clock, schedule",
+    "Explain why a heap beats a sorted list for the pending-event set, including tie-breaking",
+    "State the Monte Carlo estimator and its standard error, and size a simulation for a target accuracy",
+    "Apply antithetic variates and quantify when they reduce variance"
+  ],
+  "motivation": "A backtester is a discrete-event simulation: fills, quotes and cancels fire at timestamps, and the engine must process them in exact order while scheduling consequences. Pricing and risk teams face the mirror problem - estimating an expectation by simulation, where each extra decimal of accuracy costs 100x the samples. Both problems share one insight: the efficiency comes from the data structure and from variance reduction, not from raw compute.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "The discrete-event loop"
+    },
+    {
+      "type": "p",
+      "md": "A **discrete-event simulation** jumps between event times instead of ticking through every moment: it holds a set of pending events keyed by time, pops the earliest, advances the clock to it, executes the event's handler, and lets that handler **schedule** new events. The pending set is a **priority queue** - a binary heap gives $O(\\log E)$ push and pop. Two details make simulations correct: ties need a deterministic order (push $(\\text{time}, \\text{seq})$ pairs with a monotonically increasing sequence number, which also keeps the heap from comparing incomparable payloads), and handlers must only *schedule*, never loop - the queue is the single source of control flow."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import heapq\n\nevents = []\nfor t, seq, kind in [(2.0, 2, \"fill\"), (1.0, 0, \"tick\"), (1.5, 1, \"quote\")]:\n    heapq.heappush(events, (t, seq, kind))   # O(log E)\n\nout = []\nwhile events:\n    t, seq, kind = heapq.heappop(events)     # earliest event wins\n    out.append(kind)                         # clock would advance to t here\nprint(\" \".join(out))",
+      "caption": "The whole engine: push (time, seq, payload), pop until empty. Prints tick quote fill."
+    },
+    {
+      "type": "p",
+      "md": "This loop *is* a market-replay backtester's core: a tick event updates the book, a strategy handler reacts by scheduling an order event, the order event schedules fills per the matching rules of the previous lesson. A naive alternative - keeping an array of events sorted and re-sorting on every insertion - costs $O(E \\log E)$ per step; the heap amortises to a single $O(\\log E)$ per event. For million-event replays that is the difference between seconds and hours."
+    },
+    {
+      "type": "h2",
+      "text": "Monte Carlo: estimating expectations by sampling"
+    },
+    {
+      "type": "p",
+      "md": "**Monte Carlo** estimates $\\mu = E[f(X)]$ by averaging $N$ independent samples: $\\hat{\\mu} = \\frac{1}{N}\\sum_{i=1}^{N} f(x_i)$. The estimator is unbiased, and its standard error falls as $\\text{SE} = \\hat{\\sigma}/\\sqrt{N}$ - the square root is the cruel part: **10x tighter accuracy costs 100x more samples**. Halving SE needs $4N$; this $1/\\sqrt{N}$ wall is why variance reduction matters more than hardware."
+    },
+    {
+      "type": "math",
+      "tex": "\\hat{\\mu} = \\frac{1}{N}\\sum_{i=1}^{N} f(x_i), \\qquad \\mathrm{SE} = \\frac{\\hat{\\sigma}}{\\sqrt{N}}",
+      "caption": "Report mu-hat with its SE; a price without an error bar is not a number."
+    },
+    {
+      "type": "h2",
+      "text": "Antithetic variates"
+    },
+    {
+      "type": "p",
+      "md": "**Antithetic variates** exploit symmetry: if $U$ is uniform on $(0,1)$, so is $1-U$, and for any *monotone* integrand the pair $\\big(f(U) + f(1-U)\\big)/2$ has the same mean but smaller variance than $f(U)$ alone - ups and downs hedge inside each pair. Payoff functions are typically monotone in the underlying, so the trick ports directly to option pricing. It is not a free lunch: when $f$ is non-monotone the pairing can *increase* variance, so the monotonicity check comes first."
+    },
+    {
+      "type": "steps",
+      "title": "Verified toy example: estimating E[U^2] for U ~ Uniform(0,1)",
+      "items": [
+        "Truth: $E[U^2] = 1/3 \\approx 0.3333$.",
+        "Plain two-sample estimate with $u = 0.2, 0.7$: $(0.04 + 0.49)/2 = 0.265$.",
+        "Antithetic, same two uniforms paired with complements: $\\big((0.04 + 0.64)/2 + (0.49 + 0.09)/2\\big)/2 = (0.34 + 0.29)/2 = 0.315$ - closer to 0.3333 from the same inputs.",
+        "Why: $\\mathrm{Var}(U^2) = 1/5 - 1/9 = 4/45 \\approx 0.0889$, but $\\mathrm{Var}\\big((U^2 + (1-U)^2)/2\\big) = 1/180 \\approx 0.0056$ - a **16x** variance reduction for this integrand."
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "us = [0.2, 0.7]                  # pretend: two drawn uniforms\nplain = [u * u for u in us]\nanti = [(u * u + (1 - u) * (1 - u)) / 2 for u in us]   # pair u with 1-u\n\nprint(round(sum(plain) / 2, 4), round(sum(anti) / 2, 4))\n# truth: E[U^2] = 1/3 ~ 0.3333",
+      "caption": "Same two uniforms, antithetic estimate lands closer. Prints 0.265 0.315."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "The standard reduction toolkit",
+      "md": "Antithetic variates pair $u$ with $1-u$; control variates subtract a known-mean correlated quantity (e.g. the underlying's terminal value against a GBM path); stratified sampling forces samples into fixed strata. Every pricing library ships all three - and always reports the standard error alongside the estimate."
+    },
+    {
+      "type": "interactive",
+      "component": "MonteCarloPi",
+      "params": {
+        "samples": 5000
+      },
+      "caption": "Monte Carlo estimation of pi: watch the estimate wobble and its error shrink like 1/sqrt(N) as samples accumulate."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "An engine holds events: tick at 0.5, quote at 0.8, order at 1.2 (which schedules a fill 0.3 later). (a) Give the processing order and the clock value after each event. (b) A Monte Carlo estimate has $\\hat{\\sigma} = 2.0$ over $N = 10{,}000$ samples: compute the standard error and the sample count needed to halve it.",
+    "hints": [
+      "The fill is not in the queue until the order event executes.",
+      "SE = sigma / sqrt(N); to halve SE you need 4x the samples."
+    ],
+    "solution": "(a) Pop tick (clock 0.5), pop quote (clock 0.8), pop order (clock 1.2) - the fill enters the queue at $1.2 + 0.3 = 1.5$ - pop fill (clock **1.5**). Order: tick, quote, order, fill. (b) SE $= 2.0/\\sqrt{10{,}000} = 2.0/100 = \\textbf{0.02}$. Halving needs $4 \\times 10{,}000 = \\textbf{40{,}000}$ samples."
+  },
+  "independentExercise": {
+    "prompt": "Estimate $E[U^2]$ ($U \\sim$ Uniform(0,1), true value $1/3$) from the two uniforms $u = 0.3$ and $u = 0.6$. (a) Compute the plain two-sample estimate. (b) Compute the antithetic estimate. (c) Which is closer to the truth, and what property of $f(u) = u^2$ makes antithetic pairing work here?",
+    "hints": [
+      "Plain: average $u^2$ over the two draws.",
+      "Antithetic: average $\\big(u^2 + (1-u)^2\\big)/2$ over the two draws."
+    ],
+    "solution": "(a) Plain: $(0.09 + 0.36)/2 = 0.225$. (b) Antithetic: $\\big((0.09+0.49)/2 + (0.36+0.16)/2\\big)/2 = (0.29 + 0.26)/2 = 0.275$. (c) Antithetic (0.275) is closer to $0.3333$ than plain (0.225). It works because $u^2$ is **monotone** on $(0,1)$, so a draw and its complement hedge each other's deviation from the mean - the pair's variance (1/180) is far below the single-draw variance (4/45)."
+  },
+  "commonMistakes": [
+    "Pushing events without a sequence tiebreaker, letting the heap compare incomparable payloads or reorder simultaneous events nondeterministically.",
+    "Executing an event's *consequences* inline instead of scheduling them through the queue - breaks the causal order.",
+    "Quoting a Monte Carlo estimate without its standard error.",
+    "Assuming accuracy scales linearly: SE $\\propto 1/\\sqrt{N}$, so 10x accuracy needs 100x samples.",
+    "Applying antithetic variates to non-monotone payoffs, where pairing can increase variance."
+  ],
+  "realWorldApplication": "Chip design, queueing models, logistics and game AI all run discrete-event loops on priority queues; Monte Carlo underlies radiation transport, epidemic models and uncertainty quantification in engineering.",
+  "quantFinanceApplication": "Market replay backtests and matching-engine simulation are discrete-event systems; option pricing, CVA and VaR engines are Monte Carlo with antithetic/control-variate variance reduction and reported standard errors.",
+  "summary": [
+    "The discrete-event loop: heap of (time, seq) events; pop earliest, advance clock, execute, schedule consequences.",
+    "Ties need a monotone sequence number for determinism; the heap costs O(log E) per event versus re-sorting's O(E log E).",
+    "Monte Carlo estimates $E[f(X)]$ with SE $= \\hat{\\sigma}/\\sqrt{N}$: 10x accuracy costs 100x samples.",
+    "Antithetic variates pair $u$ with $1-u$; variance shrinks (here 80x for $U^2$) exactly when the integrand is monotone.",
+    "Control variates and stratification complete the reduction toolkit; always report SE with the estimate."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "code-output",
+      "prompt": "What does this discrete-event core print?",
+      "language": "python",
+      "code": "import heapq\n\nevents = []\nfor t, seq, kind in [(2.0, 2, \"fill\"), (1.0, 0, \"tick\"), (1.5, 1, \"quote\")]:\n    heapq.heappush(events, (t, seq, kind))\n\nout = []\nwhile events:\n    t, seq, kind = heapq.heappop(events)\n    out.append(kind)\nprint(\" \".join(out))",
+      "answer": "tick quote fill",
+      "explanation": "The heap orders by time: 1.0 tick, then 1.5 quote, then 2.0 fill - the simulation clock jumps event to event."
+    },
+    {
+      "id": "q2",
+      "type": "numeric",
+      "prompt": "A Monte Carlo estimate has sample standard deviation $\\hat{\\sigma} = 2.0$ over $N = 10{,}000$ samples. What is its standard error?",
+      "answer": 0.02,
+      "tolerance": 0.001,
+      "explanation": "SE $= \\hat{\\sigma}/\\sqrt{N} = 2.0/100 = 0.02$. Halving it would require $40{,}000$ samples."
+    },
+    {
+      "id": "q3",
+      "type": "code-output",
+      "prompt": "What does this antithetic toy print?",
+      "language": "python",
+      "code": "us = [0.2, 0.7]\nplain = [u * u for u in us]\nanti = [(u * u + (1 - u) * (1 - u)) / 2 for u in us]\n\nprint(round(sum(plain) / 2, 4), round(sum(anti) / 2, 4))",
+      "answer": "0.265 0.315",
+      "explanation": "Plain: $(0.04+0.49)/2 = 0.265$. Antithetic: $(0.34+0.29)/2 = 0.315$ - closer to the true $E[U^2] = 1/3 \\approx 0.3333$."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "Why store events as (time, seq) pairs with an increasing sequence number?",
+      "options": [
+        "To compress the timestamps",
+        "To break ties deterministically and keep the heap from comparing incomparable payloads",
+        "Because heaps require integer keys",
+        "To allow O(1) event cancellation"
+      ],
+      "answerIndex": 1,
+      "explanation": "Simultaneous events must execute in a reproducible order (usually arrival order); the seq field guarantees it, and keeps tuple comparisons well-defined even when payloads cannot be compared."
+    },
+    {
+      "id": "q5",
+      "type": "mcq",
+      "prompt": "Antithetic variates are guaranteed to reduce variance when:",
+      "options": [
+        "The sample size is large",
+        "The integrand is monotone in the uniform variate",
+        "The estimator is biased",
+        "The underlying distribution is normal"
+      ],
+      "answerIndex": 1,
+      "explanation": "For monotone f, u and 1-u hedge each other, so the pair average has lower variance. For non-monotone f the pairing can backfire and increase variance."
+    },
+    {
+      "id": "q6",
+      "type": "ms",
+      "prompt": "Which statements are true of Monte Carlo estimation?",
+      "options": [
+        "Its standard error shrinks like $1/\\sqrt{N}$",
+        "Discrete-event simulation needs a priority queue over pending events",
+        "Antithetic pairing always reduces variance, for any integrand",
+        "Taking more samples removes model bias"
+      ],
+      "answerIndices": [0, 1],
+      "explanation": "SE scales as $1/\\sqrt{N}$ and event loops run on priority queues. Antithetic pairing needs monotonicity, and bias comes from the model itself - more samples only shrink sampling error, never bias."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "The discrete-event simulation loop",
+      "back": "Priority queue of (time, seq, event): pop earliest, advance clock to it, execute handler, handler schedules new events. Heap: O(log E) per event."
+    },
+    {
+      "type": "formula",
+      "front": "Monte Carlo standard error",
+      "back": "$SE = \\hat{\\sigma}/\\sqrt{N}$. Accuracy scales as $1/\\sqrt{N}$: 10x accuracy costs 100x samples."
+    },
+    {
+      "type": "concept",
+      "front": "Antithetic variates - idea and precondition",
+      "back": "Average f(u) with f(1-u): same mean, lower pair variance when f is monotone (e.g. Var((U^2+(1-U)^2)/2) = 1/180 vs Var(U^2) = 4/45). Non-monotone f can increase variance."
+    },
+    {
+      "type": "code-output",
+      "front": "What does the event heap print for times 2.0/1.0/1.5 with kinds fill/tick/quote?",
+      "back": "tick quote fill - the heap pops strictly in time order regardless of insertion order."
+    }
+  ],
+  "references": [
+    {
+      "label": "Wikipedia - Discrete-event simulation",
+      "url": "https://en.wikipedia.org/wiki/Discrete-event_simulation"
+    },
+    {
+      "label": "Wikipedia - Monte Carlo method",
+      "url": "https://en.wikipedia.org/wiki/Monte_Carlo_method"
+    },
+    {
+      "label": "Wikipedia - Antithetic variates",
+      "url": "https://en.wikipedia.org/wiki/Antithetic_variates"
+    }
+  ],
+  "skills": ["algorithms", "numerical-analysis"]
+}

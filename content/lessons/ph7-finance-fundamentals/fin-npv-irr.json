@@ -1,0 +1,219 @@
+{
+  "id": "fin-npv-irr",
+  "moduleId": "ph7-finance-fundamentals",
+  "title": "NPV, IRR and Discount Rates",
+  "estMinutes": 26,
+  "difficulty": "foundation",
+  "prereqs": ["fin-time-value"],
+  "objectives": [
+    "Compute the net present value of a cash-flow stream at a given discount rate",
+    "State and apply the NPV decision rule for standalone and mutually exclusive projects",
+    "Estimate the internal rate of return by trial and improvement and interpret it as a break-even rate",
+    "Explain why the discount rate is a risk- and opportunity-dependent choice, and recognise IRR's failure modes"
+  ],
+  "motivation": "A project costs 1,000 today and returns 400 per year for three years. Is that good? The raw total, 1,200, ignores when the money arrives - and timing is everything. NPV turns the whole stream into one comparable number using the discounting machinery from the previous lesson, and IRR answers the same question from a different angle. Every capital-budgeting desk, real-estate underwriter and trading-infrastructure investment goes through exactly this funnel.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Discounting turns a stream into one number"
+    },
+    {
+      "type": "p",
+      "md": "The **net present value** of a cash-flow stream $C_0, C_1, \\dots, C_n$ at discount rate $r$ is the sum of each flow multiplied by its date's discount factor. Convention: cash you pay out is negative, money you receive is positive, and $C_0$ - the cost at time zero - is usually negative."
+    },
+    {
+      "type": "math",
+      "tex": "NPV = C_0 + \\frac{C_1}{1+r} + \\frac{C_2}{(1+r)^2} + \\dots + \\frac{C_n}{(1+r)^n} = \\sum_{t=0}^{n} \\frac{C_t}{(1+r)^t}",
+      "caption": "Each cash flow is discounted to today, then added."
+    },
+    {
+      "type": "steps",
+      "title": "Worked example: cost 1,000, returns 400 per year for 3 years, $r = 8\\%$",
+      "items": [
+        "Year 1: $400 / 1.08 = 370.37$ (discount factor $0.925926$).",
+        "Year 2: $400 / 1.1664 = 342.94$ (factor $0.857339$).",
+        "Year 3: $400 / 1.259712 = 317.53$ (factor $0.793832$).",
+        "Sum of discounted inflows: $370.37 + 342.94 + 317.53 = 1{,}030.84$.",
+        "NPV $= 1{,}030.84 - 1{,}000 = \\textbf{+30.84}$."
+      ]
+    },
+    {
+      "type": "p",
+      "md": "**Decision rule:** accept a standalone project if $NPV > 0$ - doing it adds 30.84 of value in today's money beyond whatever else your 1,000 could earn at 8%. Between mutually exclusive projects, pick the highest NPV. The logic is airtight because NPV is measured in the only currency that matters at the decision moment: present dollars. A project whose NPV is negative destroys value relative to the alternative of simply earning $r$ somewhere else."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Where does $r$ come from?",
+      "md": "The discount rate is the **opportunity cost of capital**: the return available on alternatives of comparable risk. Riskier cash flows get higher $r$, which punishes their distant, uncertain flows more heavily. There is no single 'correct' rate - choosing and justifying it is a modelling decision, often the single most consequential input in a valuation."
+    },
+    {
+      "type": "h2",
+      "text": "IRR: the break-even rate"
+    },
+    {
+      "type": "p",
+      "md": "The **internal rate of return** is the discount rate that makes NPV exactly zero. For the stream above we need $r$ such that $400/(1+r) + 400/(1+r)^2 + 400/(1+r)^3 = 1{,}000$. We find it by trial: at $9.7\\%$ the discount factors are $0.911577$, $0.830972$ and $0.757496$, which sum to $2.500045$. Multiplied by 400 that gives $PV = 1{,}000.02 \\approx 1{,}000$, so **IRR $\\approx 9.70\\%$**. The interpretation: at any hurdle rate below 9.70% the project earns more than the alternative; above it, less. Since our 8% hurdle is below 9.70%, both criteria agree - accept. They always agree for this simple sign pattern: one outflow followed by inflows."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "cash_flows = [-1000, 400, 400, 400]   # t = 0, 1, 2, 3\n\ndef npv(rate, cfs):\n    return sum(cf / (1 + rate) ** t for t, cf in enumerate(cfs))\n\ndef irr(cfs, lo=-0.5, hi=2.0):         # bisection: NPV falls as rate rises\n    for _ in range(100):\n        mid = (lo + hi) / 2\n        if npv(mid, cfs) > 0:\n            lo = mid\n        else:\n            hi = mid\n    return (lo + hi) / 2\n\nprint(round(npv(0.08, cash_flows), 2))  # 30.84\nprint(round(irr(cash_flows), 4))        # ~0.097, i.e. 9.70%",
+      "caption": "NPV is a direct sum; IRR is a root-finding exercise on the same equation."
+    },
+    {
+      "type": "callout",
+      "variant": "warn",
+      "title": "Three classic IRR traps",
+      "md": "**Multiple answers:** a stream with alternating signs (cost, profit, cost, profit) can have several IRRs, since the polynomial can cross zero repeatedly. **Scale blindness:** a 100% IRR on 10 of investment loses to a 12% IRR on 10,000 - IRR ignores size, NPV does not. **Reinvestment fiction:** IRR implicitly assumes interim cash flows earn the IRR itself, which is often unrealistic. NPV is the more robust ranking tool; IRR survives in practice because a percentage is easier to say than a dollar amount."
+    },
+    {
+      "type": "interactive",
+      "component": "CompoundGrowth",
+      "params": {
+        "principal": 1000,
+        "rate": 0.08,
+        "years": 3
+      },
+      "caption": "\\$1,000 growing at 8% reaches \\$1,259.71 in three years - that is exactly why the 400-per-year stream above, worth 1,030.84 discounted at 8%, only just beats the alternative of earning 8% elsewhere."
+    },
+    {
+      "type": "p",
+      "md": "One more subtlety: discount factors for *different* maturities need not come from one flat rate. In reality short and long rates differ (a yield curve), so a careful analyst discounts each flow at its own maturity's rate. Flat-rate NPV is the standard first approximation, and the curve-aware version is a fixed-income lesson later in this curriculum."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "A project costs 800 today and pays 300 at the end of each of the next four years. Using a 10% discount rate, compute the NPV step by step: find each discount factor, discount each flow, sum, subtract the cost, and state the decision.",
+    "hints": [
+      "Factors at 10%: $1/1.1 = 0.909091$, $1/1.21 = 0.826446$, $1/1.331 = 0.751315$, $1/1.4641 = 0.683013$.",
+      "The four inflows are an annuity - you can sum the four factors first, then multiply by 300."
+    ],
+    "solution": "Factors sum to $0.909091 + 0.826446 + 0.751315 + 0.683013 = 3.169865$. PV of inflows $= 300 \\times 3.169865 = 950.96$. NPV $= 950.96 - 800 = \\textbf{+150.96}$. Since $NPV > 0$, accept. (Equivalently, IRR is well above 10%.)"
+  },
+  "independentExercise": {
+    "prompt": "A project costs 2,400 today and generates 1,200 at t=1, 1,400 at t=2 and 600 at t=3. Your discount rate is 9%. (a) Compute the NPV and state the decision. (b) Without computing it exactly, is the project's IRR above or below 9%, and why?",
+    "hints": [
+      "Discount factors at 9%: $1/1.09 = 0.917431$, $1/1.1881 = 0.841680$, $1/1.295029 = 0.772183$.",
+      "NPV > 0 at a rate means the rate that zeroes NPV lies further out."
+    ],
+    "solution": "(a) PVs: $1{,}200 \\times 0.917431 = 1{,}100.92$; $1{,}400 \\times 0.841680 = 1{,}178.35$; $600 \\times 0.772183 = 463.31$. Sum $= 2{,}742.58$; NPV $= 2{,}742.58 - 2{,}400 = \\textbf{+342.58}$ → accept. (b) IRR is **above** 9%: NPV declines as the discount rate rises, and it is still positive at 9%, so the break-even rate is strictly higher."
+  },
+  "commonMistakes": [
+    "Adding undiscounted cash flows and calling the total the NPV - timing must be handled first.",
+    "Comparing IRRs of different-sized projects and ignoring scale; NPV ranks correctly, IRR can mislead.",
+    "Forgetting that $C_0$ is negative: costs enter the sum with a minus sign, not as a separate subtraction done twice.",
+    "Reporting IRR as meaningful for streams with multiple sign changes, where several IRRs may exist."
+  ],
+  "realWorldApplication": "Corporate capital budgeting, infrastructure tenders and even build-vs-buy decisions on trading infrastructure are decided by NPV at a hurdle rate; private-equity pitches live and die on reported IRRs.",
+  "quantFinanceApplication": "Bond pricing *is* NPV: a bond's price is the NPV of its coupons and principal at the market yield, and yield-to-maturity is exactly the IRR of the bond's cash-flow stream.",
+  "summary": [
+    "$NPV = \\sum_t C_t/(1+r)^t$ converts a stream to present dollars; accept when $NPV > 0$, and prefer the highest-NPV project among mutually exclusive options.",
+    "The discount rate $r$ is the opportunity cost of capital for that risk level - the most consequential and most judgemental input.",
+    "IRR is the rate that zeroes NPV (here $\\approx 9.70\\%$ for cost 1,000 with 400/year for 3 years); it agrees with NPV for one-sign-change streams but has scale, reinvestment and multiplicity traps.",
+    "Worked check: at 8%, inflows worth 1,030.84 minus cost 1,000 give NPV $= +30.84$."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "numeric",
+      "prompt": "A project costs 500 today and pays 600 in one year. At a 10% discount rate, what is the NPV (to the nearest cent)?",
+      "answer": 45.45,
+      "tolerance": 0.01,
+      "explanation": "$PV = 600/1.1 = 545.45$; NPV $= 545.45 - 500 = +45.45$. Positive, so accept."
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "Two mutually exclusive projects: A has NPV +40, B has NPV +55. Which do you take?",
+      "options": [
+        "A, because it has the higher percentage return",
+        "B, because NPV is the correct ranking criterion for mutually exclusive projects",
+        "Neither, since both are risky",
+        "Both, to diversify"
+      ],
+      "answerIndex": 1,
+      "explanation": "Mutually exclusive means you can take only one, so choose the largest value added: B. Percentage-return and IRR rankings can conflict with value rankings when scale differs; NPV resolves it."
+    },
+    {
+      "id": "q3",
+      "type": "code-output",
+      "prompt": "What does this Python code print?",
+      "language": "python",
+      "code": "cfs = [-1000, 400, 400, 400]\nr = 0.08\nnpv = sum(cf / (1 + r) ** t for t, cf in enumerate(cfs))\nprint(round(npv, 2))",
+      "answer": "30.84",
+      "explanation": "Discounted inflows total $1{,}030.84$ at 8% ($370.37 + 342.94 + 317.53$), so NPV $= 30.84$."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "The internal rate of return (IRR) of a project is best described as:",
+      "options": [
+        "The accounting profit divided by investment",
+        "The discount rate at which the project's NPV equals zero",
+        "The maximum possible cash flow the project can produce",
+        "The rate the central bank charges banks"
+      ],
+      "answerIndex": 1,
+      "explanation": "IRR is defined implicitly: it is the $r$ solving $\\sum_t C_t/(1+r)^t = 0$, i.e. the break-even discount rate. It must be found numerically except for special cases."
+    },
+    {
+      "id": "q5",
+      "type": "numeric",
+      "prompt": "Estimate the IRR of the stream $-1{,}000$ today, then $+400$, $+400$, $+400$, to the nearest 0.1 percentage point (enter as a percent, e.g. 9.7).",
+      "answer": 9.7,
+      "tolerance": 0.15,
+      "unit": "%",
+      "explanation": "At 9.7% the three discount factors are $0.911577 + 0.830972 + 0.757496 = 2.500045$; times 400 gives 1,000.02, so NPV $\\approx 0$ and IRR $\\approx 9.70\\%$."
+    },
+    {
+      "id": "q6",
+      "type": "ms",
+      "prompt": "Which statements about IRR are true?",
+      "options": [
+        "A stream with alternating signs can have more than one IRR",
+        "IRR accounts for the scale of the investment",
+        "IRR assumes interim cash flows are reinvested at the IRR itself",
+        "For a single outflow followed by inflows, IRR > hurdle rate agrees with NPV > 0"
+      ],
+      "answerIndices": [0, 2, 3],
+      "explanation": "Multiple sign changes can produce multiple roots; the reinvestment assumption is built into the definition; and for the simple sign pattern NPV and IRR always agree. IRR is a percentage and ignores investment scale - that is exactly why NPV is the safer ranking tool."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "formula",
+      "front": "Net present value",
+      "back": "$NPV = \\sum_{t=0}^{n} C_t/(1+r)^t$; accept a standalone project iff $NPV > 0$."
+    },
+    {
+      "type": "definition",
+      "front": "Internal rate of return (IRR)",
+      "back": "The discount rate that makes NPV exactly zero - the project's break-even rate, found numerically."
+    },
+    {
+      "type": "concept",
+      "front": "Opportunity cost of capital",
+      "back": "The discount rate $r$: the return available on alternative investments of comparable risk. Riskier cash flows deserve higher $r$."
+    },
+    {
+      "type": "error-identification",
+      "front": "Why can IRR mislead when comparing projects?",
+      "back": "It ignores scale (100% on a tiny investment can lose to 12% on a large one), assumes reinvestment at the IRR, and is ambiguous when signs alternate. Use NPV for ranking."
+    }
+  ],
+  "references": [
+    {
+      "label": "Investopedia — Net Present Value (NPV)",
+      "url": "https://www.investopedia.com/terms/n/npv.asp"
+    },
+    {
+      "label": "Investopedia — Internal Rate of Return (IRR)",
+      "url": "https://www.investopedia.com/terms/i/irr.asp"
+    },
+    {
+      "label": "Damodaran — Approaches to Discounting (NYU Stern)",
+      "url": "https://pages.stern.nyu.edu/~adamodar/"
+    }
+  ],
+  "skills": ["finance-fundamentals"]
+}

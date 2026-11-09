@@ -1,0 +1,235 @@
+{
+  "id": "cx-big-o",
+  "moduleId": "ph5-complexity",
+  "title": "Time and Space Complexity, Big-O Notation",
+  "estMinutes": 26,
+  "difficulty": "core",
+  "prereqs": ["pf-functions-scope"],
+  "objectives": [
+    "Explain why asymptotic analysis is used instead of wall-clock timing",
+    "Classify a function's growth as O(1), O(log n), O(n), O(n log n), O(n^2) or O(2^n)",
+    "Analyse sequential loops, nested loops and halving loops to derive a code fragment's complexity",
+    "Estimate running time from a complexity class, input size and an operations-per-second budget",
+    "Distinguish time complexity from space complexity and state the space cost of a given routine"
+  ],
+  "motivation": "Two candidates submit pricing-library changes. One takes 0.2 seconds on the desk's dataset, the other 0.3 seconds - on the developer's laptop, this morning, with a warm cache. Before anyone wastes a week benchmarking on production hardware, complexity analysis settles the argument from the shape of the code alone. Every interview loop and every latency budget in this curriculum leans on this one skill.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Why we count operations instead of seconds"
+    },
+    {
+      "type": "p",
+      "md": "A stopwatch measurement tells you how *one* algorithm behaved on *one* machine on *one* input, and it changes when the hardware changes. Complexity analysis asks a better question: as the input size $n$ grows, how does the number of elementary steps grow? We write the step count as a function of $n$, keep only the fastest-growing term, and drop constant factors. The result - written $O(g(n))$, read *big-O of g* - describes the **shape** of the growth, which no CPU upgrade can change."
+    },
+    {
+      "type": "interactive",
+      "component": "ComplexityCompare",
+      "params": {
+        "series": [
+          { "name": "O(1)", "points": [[10, 1], [100, 1], [1000, 1], [10000, 1]] },
+          { "name": "O(log n)", "points": [[10, 4], [100, 7], [1000, 10], [10000, 14]] },
+          { "name": "O(n)", "points": [[10, 10], [100, 100], [1000, 1000], [10000, 10000]] },
+          { "name": "O(n log n)", "points": [[10, 33], [100, 664], [1000, 9966], [10000, 132877]] },
+          { "name": "O(n^2)", "points": [[10, 100], [100, 10000], [1000, 1000000], [10000, 100000000]] }
+        ]
+      },
+      "caption": "Drag across the chart: at n = 10 the curves are close together, but by n = 10,000 the O(n^2) algorithm has done 100 million steps while the O(log n) one has done about 14. Crossing points near small n are why constants still matter in practice."
+    },
+    {
+      "type": "h2",
+      "text": "The formal claim behind the symbol"
+    },
+    {
+      "type": "p",
+      "md": "$f(n) = O(g(n))$ means: for all large enough $n$, $f$ never exceeds some constant multiple of $g$. Formally:"
+    },
+    {
+      "type": "math",
+      "tex": "f(n) = O(g(n)) \\iff \\exists\\, c > 0,\\ n_0 : \\quad 0 \\le f(n) \\le c \\cdot g(n) \\ \\text{for all } n \\ge n_0",
+      "caption": "Big-O is an upper bound that holds from some point n0 onwards."
+    },
+    {
+      "type": "p",
+      "md": "Two companions complete the picture: $\\Omega(g(n))$ is a lower bound (the algorithm takes *at least* this long) and $\\Theta(g(n))$ is a tight bound (both at once). In casual use people write $O(\\cdot)$ when they really mean $\\Theta(\\cdot)$, so *\"this sort is O(n log n)\"* usually claims both directions. Dropping constants is justified because buying faster hardware multiplies the constant, never the shape; dropping slower terms is justified because they become irrelevant: for $3n^2 + 100n + 500$, the $100n$ term is under 2% of the total once $n > 5{,}000$."
+    },
+    {
+      "type": "table",
+      "headers": ["Class", "Typical algorithm", "Steps at n = 1,000,000", "Time at 10^8 steps/sec"],
+      "rows": [
+        ["O(1)", "hash-table lookup", "1", "negligible"],
+        ["O(log n)", "binary search", "about 20", "negligible"],
+        ["O(n)", "linear scan", "1,000,000", "0.01 s"],
+        ["O(n log n)", "merge sort", "about 20,000,000", "0.2 s"],
+        ["O(n^2)", "all-pairs comparison", "1,000,000,000,000", "about 2.8 hours"],
+        ["O(2^n)", "subset enumeration", "impossible beyond n = 40", "-"]
+      ]
+    },
+    {
+      "type": "h2",
+      "text": "Reading complexity out of code"
+    },
+    {
+      "type": "p",
+      "md": "Three rules cover most code you will read. **Sequential blocks add**: an $O(n)$ pass followed by an $O(n^2)$ pass is $O(n^2)$ overall, because the dominant term wins. **Nested loops multiply**: an outer loop of $n$ iterations whose body does $n$ work costs $n \\times n$. **Halving loops log**: if the loop variable is multiplied or divided by a constant each step, the iteration count is $\\log$-shaped, since $n$ can only be halved $\\log_2 n$ times before it hits 1."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "def profile(prices):\n    total = 0.0\n    for p in prices:            # O(n)\n        total += p\n\n    best = None\n    for p in prices:            # O(n), sequential: adds\n        if best is None or p > best:\n            best = p\n\n    pairs = 0\n    n = len(prices)\n    for i in range(n):          # nested over same n: multiplies\n        for j in range(i + 1, n):\n            pairs += 1          # runs n*(n-1)/2 times -> O(n^2)\n\n    x = n\n    while x > 1:                # halving: O(log n)\n        x //= 2\n\n    return total, best, pairs",
+      "caption": "Sequential loops add, nested loops multiply, halving loops log."
+    },
+    {
+      "type": "steps",
+      "title": "Worked example: mixed inner loop",
+      "items": [
+        "Outer loop: `for i in range(n)` - exactly $n$ iterations.",
+        "Inner loop: `j = 1; while j < n: j *= 2` - $j$ takes values $1, 2, 4, \\dots$ and needs $\\lceil \\log_2 n \\rceil$ steps to reach $n$.",
+        "Per outer iteration the inner cost is $\\log_2 n$, so the total is $n \\cdot \\log_2 n$.",
+        "Conclusion: the function is $\\Theta(n \\log n)$ - better than quadratic, worse than linear."
+      ]
+    },
+    {
+      "type": "h2",
+      "text": "Space: the other budget"
+    },
+    {
+      "type": "p",
+      "md": "Time is not the only scarce resource. **Space complexity** counts the extra memory an algorithm needs beyond its input, and it obeys the same add/multiply/log rules. A loop that accumulates a sum uses $O(1)$ extra space; building a list of all pairwise sums uses $O(n^2)$; recursion is not free either - a naive recursive sum over $n$ elements holds $n$ stack frames at once, so it is $O(n)$ space even though it is $O(n)$ time. On a trading system the space column is often the binding constraint: a tick store that keeps every intermediate copy can exhaust memory long before it gets slow."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Big-O is an upper bound, not a promise",
+      "md": "An $O(n^2)$ routine can beat an $O(n)$ one for small inputs because constants and cache effects are real: for $n = 20$, $2n^2 = 800$ while $50n \\log n \\approx 4{,}300$. Also, $f = O(g)$ only says $f$ *stays under* $cg$ eventually - a linear-time function is technically also $O(n^2)$. When you need precision, say $\\Theta$, and when you need real milliseconds, measure."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Why desks care before they benchmark",
+      "md": "A pre-trade risk check that scans $200{,}000$ positions at ~10 ns per position costs ~2 ms per order - about 500 orders per second per core. Replacing the scan with an $O(1)$ aggregated counter brings it to ~100 ns and the same core handles millions of orders per second. The complexity class predicted the capacity limit before any benchmark ran."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Analyse this function. For each loop give its iteration count as a function of $n$, then state the overall time complexity and the total iteration count when $n = 1{,}000$.\n\n```python\ndef analyze(prices):\n    n = len(prices)\n    s = 0.0\n    for p in prices:        # loop A\n        s += p\n    m = 0\n    for i in range(n):      # loop B\n        for j in range(i + 1, n):\n            m += 1\n    k = n\n    while k > 1:            # loop C\n        k //= 2\n    return s, m\n```",
+    "hints": [
+      "Loop A touches each element once.",
+      "For loop B, count how many (i, j) pairs exist: for each i, the inner loop runs n - 1 - i times.",
+      "Loop C halves k each step; count the halvings from 1,000 down to 1."
+    ],
+    "solution": "Loop A: $n$ iterations. Loop B: $\\sum_{i=0}^{n-1} (n-1-i) = \\tfrac{n(n-1)}{2}$ iterations - for $n = 1{,}000$ that is $\\tfrac{1000 \\times 999}{2} = 499{,}500$. Loop C: $1{,}000 \\to 500 \\to 250 \\to 125 \\to 62 \\to 31 \\to 15 \\to 7 \\to 3 \\to 1$ - nine halvings, i.e. $\\lfloor \\log_2 n \\rfloor$. Total time $= n + \\tfrac{n(n-1)}{2} + \\log_2 n = \\Theta(n^2)$; the quadratic term dominates everything else, so for $n = 1{,}000$ the function performs about $1{,}000 + 499{,}500 + 9 \\approx 500{,}509$ iterations."
+  },
+  "independentExercise": {
+    "prompt": "A pre-trade risk engine must check every order against a position list. Version 1 scans all $n = 200{,}000$ positions per order at about 10 ns per position. Version 2 keeps an aggregate counter and checks it in a constant ~100 ns. (a) How long does one check take in each version, in milliseconds? (b) How many orders per second can one core handle in each version? (c) The desk needs 50,000 orders per second per core - which version survives, and what is the complexity of each check?",
+    "hints": [
+      "Time per check = (per-item cost) x n.",
+      "Orders per second = 1 second / time per check; watch the ns-to-ms conversion.",
+      "50,000 orders per second means a budget of 1/50,000 s = 20 microseconds per order."
+    ],
+    "solution": "(a) Version 1: $200{,}000 \\times 10\\ \\text{ns} = 2{,}000{,}000\\ \\text{ns} = 2$ ms per order. Version 2: ~100 ns $= 0.0001$ ms. (b) Version 1: $1\\ \\text{s} / 2\\ \\text{ms} = 500$ orders/s. Version 2: $1\\ \\text{s} / 100\\ \\text{ns} = 10{,}000{,}000$ orders/s. (c) The 50,000 orders/s target needs a check under $20\\ \\mu\\text{s}$; version 1's 2 ms misses by $100\\times$, version 2 clears it easily. Version 1 is $O(n)$ per order, version 2 is $O(1)$ - the complexity class, not micro-optimisation, is what saved the desk."
+  },
+  "commonMistakes": [
+    "Reporting wall-clock times from one machine as if they prove a complexity class.",
+    "Keeping constant factors inside Big-O: $3n^2 + 100n$ is written $O(n^2)$, not $O(3n^2 + 100n)$.",
+    "Claiming nested loops are always O(n^2) - only when both loops range over the problem size n.",
+    "Confusing an upper bound with a tight bound: a linear scan is O(n) but also O(n^2); the tight statement is Theta(n).",
+    "Ignoring recursion depth when costing space: recursive calls consume stack frames."
+  ],
+  "realWorldApplication": "Capacity planning for any service starts from complexity classes: a team that knows its hot path is O(n log n) can predict how load grows with users before the monitoring dashboard shows it, and can budget hardware accordingly.",
+  "quantFinanceApplication": "Order-gateway throughput, risk-check latency and backtesting cost are all quoted against complexity budgets: desks reject O(n^2) ideas for n = millions of ticks on paper, because 10^12 operations is hours per run regardless of how tight the inner loop is.",
+  "summary": [
+    "Big-O describes the growth shape of an algorithm's step count in $n$, dropping constants and slower terms; Theta adds the matching lower bound.",
+    "Sequential loops add their costs, nested loops multiply them, and loops that multiply or divide the counter by a constant are logarithmic.",
+    "Growth class dominates hardware: an O(n^2) routine is hours at n = 10^6 while O(n log n) is fractions of a second.",
+    "Space complexity counts extra memory, including recursion stack depth, and is often the binding constraint on data-heavy systems."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "What is the tight complexity of a routine that performs $3n^2 + 100n + 500$ steps?",
+      "options": ["$O(n)$", "$O(n^2)$", "$O(n \\log n)$", "$O(n^3)$"],
+      "answerIndex": 1,
+      "explanation": "The fastest-growing term is $n^2$ and constant factors are dropped, so the routine is $\\Theta(n^2)$. The $100n$ term is dominated as soon as $n$ is large."
+    },
+    {
+      "id": "q2",
+      "type": "numeric",
+      "prompt": "A nested loop runs `for i in range(n): for j in range(i + 1, n): pairs += 1`. How many times does the body run when $n = 1{,}000$?",
+      "answer": 499500,
+      "tolerance": 0.5,
+      "explanation": "The inner loop runs $n - 1 - i$ times for each $i$, so the total is $\\tfrac{n(n-1)}{2} = \\tfrac{1000 \\times 999}{2} = 499{,}500$ - exactly half of $n^2$, still $\\Theta(n^2)$."
+    },
+    {
+      "id": "q3",
+      "type": "mcq",
+      "prompt": "What is the complexity of `x = n; while x > 1: x //= 3`?",
+      "options": ["$O(n)$", "$O(n/3)$", "$O(\\log n)$", "$O(n \\log n)$"],
+      "answerIndex": 2,
+      "explanation": "Each iteration divides $x$ by 3, so after $k$ steps $x = n/3^k$; the loop needs $\\log_3 n \\approx \\log_2 n / 1.58$ steps - logarithmic. The base of the log is a constant factor, so we just write $O(\\log n)$."
+    },
+    {
+      "id": "q4",
+      "type": "code-output",
+      "prompt": "What does this Python code print?",
+      "language": "python",
+      "code": "count = 0\nn = 6\nfor i in range(n):\n    for j in range(i + 1, n):\n        count += 1\nprint(count)",
+      "answer": "15",
+      "explanation": "The inner loop runs $5 + 4 + 3 + 2 + 1 + 0 = 15$ times, which is $\\tfrac{6 \\times 5}{2}$. An $O(n^2)$ pair loop does $\\tfrac{n(n-1)}{2}$ iterations."
+    },
+    {
+      "id": "q5",
+      "type": "ms",
+      "prompt": "Select every true statement.",
+      "options": [
+        "Binary search on a sorted array of n elements takes O(log n) time.",
+        "Indexing `a[i]` in a contiguous array costs O(n).",
+        "Two nested loops each over the same n-element list typically cost O(n^2).",
+        "Dropping constant factors is safe when comparing growth classes."
+      ],
+      "answerIndices": [0, 2, 3],
+      "explanation": "Array indexing is O(1) thanks to address arithmetic, so option 2 is false. The others are standard: binary search halves the range each step, nested same-size loops multiply, and constants are irrelevant to the growth shape."
+    },
+    {
+      "id": "q6",
+      "type": "numeric",
+      "prompt": "An O(n^2) algorithm takes 1 second at $n = 1{,}000$. Roughly how many seconds does it take at $n = 4{,}000$?",
+      "answer": 16,
+      "tolerance": 1,
+      "explanation": "Quadratic work scales with the square of the size: $4{,}000 / 1{,}000 = 4$, and $4^2 = 16$, so the runtime is about 16 seconds. Linear work would have scaled by only 4x."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "definition",
+      "front": "Define Big-O notation.",
+      "back": "f(n) = O(g(n)) means there exist constants c > 0 and n0 with 0 <= f(n) <= c * g(n) for all n >= n0 - an eventual upper bound up to a constant factor."
+    },
+    {
+      "type": "concept",
+      "front": "Why are constant factors dropped in Big-O?",
+      "back": "Hardware and implementation change constants, not growth shape; the fastest-growing term dominates as n grows, so O(3n^2 + 100n) is written O(n^2)."
+    },
+    {
+      "type": "formula",
+      "front": "Iteration count of a pair loop `for i in range(n): for j in range(i+1, n)`",
+      "back": "n(n-1)/2 = sum of 0+1+...+(n-1), which is Theta(n^2) - about n^2/2 steps."
+    },
+    {
+      "type": "code-output",
+      "front": "How many iterations does `x = n; while x > 1: x //= 2` run for n = 64?",
+      "back": "6 - 64 -> 32 -> 16 -> 8 -> 4 -> 2 -> 1. Halving loops are Theta(log2 n)."
+    }
+  ],
+  "references": [
+    {
+      "label": "Wikipedia — Big O notation",
+      "url": "https://en.wikipedia.org/wiki/Big_O_notation"
+    },
+    {
+      "label": "Big-O Cheat Sheet — common data structure and algorithm complexities",
+      "url": "https://www.bigocheatsheet.com/"
+    }
+  ],
+  "skills": ["complexity"]
+}

@@ -1,0 +1,239 @@
+{
+  "id": "cpp-operator-overloading",
+  "moduleId": "ph4-cpp-l2",
+  "title": "Operator Overloading and Special Members",
+  "estMinutes": 27,
+  "difficulty": "core",
+  "prereqs": [
+    "cpp-classes"
+  ],
+  "objectives": [
+    "Overload arithmetic, comparison and stream operators for a money type, choosing member vs free-function placement deliberately",
+    "Implement compound assignments returning references and define plain operators in terms of them",
+    "Describe the special member functions the compiler generates and control them with =default and =delete",
+    "Name the operators that cannot be overloaded and explain why operator<< must be a free function"
+  ],
+  "motivation": "A PnL engine that adds prices, scales notionals and compares bids lives or dies by operator discipline: mix a dollar value with a cents value and the blotter is quietly wrong. C++ lets your own types use the same operators as built-ins, so buy + sell or bid < ask means exactly what the class says it means. Along the way this lesson introduces the special member functions the compiler silently writes for every class - the machinery behind copies, assignments and destruction.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Operators are functions with punctuation names"
+    },
+    {
+      "type": "p",
+      "md": "Every overloadable operator is just a function: `a + b` resolves to either `a.operator+(b)` (member form) or `operator+(a, b)` (free form). Overloading exists so domain types read naturally: a Money type holding cents in a long long can support `+`, `-`, `==`, `<` and stream output, keeping every calculation inside the type instead of scattering conversion factors through the code. You cannot invent new operators, and you cannot change precedence, associativity or arity - you can only give an existing operator a meaning for your class."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <iostream>\n\nclass Money {\npublic:\n    explicit Money(long long cents = 0) : cents_{cents} {}\n\n    Money& operator+=(const Money& rhs) { cents_ += rhs.cents_; return *this; }\n    Money& operator-=(const Money& rhs) { cents_ -= rhs.cents_; return *this; }\n\n    long long cents() const { return cents_; }\n\nprivate:\n    long long cents_;\n};\n\nMoney operator+(const Money& a, const Money& b) { Money r{a}; r += b; return r; }\nMoney operator-(const Money& a, const Money& b) { Money r{a}; r -= b; return r; }\n\nbool operator==(const Money& a, const Money& b) { return a.cents() == b.cents(); }\nbool operator!=(const Money& a, const Money& b) { return !(a == b); }\nbool operator<(const Money& a, const Money& b)  { return a.cents() < b.cents(); }\n\nstd::ostream& operator<<(std::ostream& os, const Money& m) {\n    long long c = m.cents();\n    long long a = c < 0 ? -c : c;\n    os << (c < 0 ? \"-\" : \"\") << a / 100 << '.'\n       << (a % 100 < 10 ? \"0\" : \"\") << a % 100;\n    return os;\n}\n\nint main() {\n    Money buy{421700};      // 4217.00\n    Money sell{423125};     // 4231.25\n    Money pnl = sell - buy;\n    std::cout << pnl << '\\n';             // 14.25\n    pnl += Money{-300};                   // a 3.00 commission\n    std::cout << pnl << '\\n';             // 11.25\n    std::cout << (buy < sell) << '\\n';    // 1\n}",
+      "caption": "Run it: 14.25, then 11.25 after the commission, then 1 for buy < sell."
+    },
+    {
+      "type": "p",
+      "md": "Design notes visible in the snippet. `operator+=` is a member returning `Money&` - returning `*this` lets assignments chain the way built-ins do. The free `operator+` is written **in terms of** `+=`, so the two operators can never drift apart semantically. Free (non-member) operators treat both sides symmetrically: if Money ever gained a non-explicit constructor from long long, `money + 5` and `5 + money` would both work through the free function, while a member `operator+` would only accept the left-hand form. `operator<<` has no choice at all: its left operand is a `std::ostream`, so it cannot be a member of Money - it must be a free function, returning the stream by reference so output chains."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Money in integer cents",
+      "md": "Storing 4217.00 as long long cents 421700 avoids binary floating point entirely: adding and comparing cents is exact, so no 0.01 drift ever appears in an accumulation loop. Convert to decimal only at the boundary - exactly what the stream operator does."
+    },
+    {
+      "type": "h2",
+      "text": "The special members the compiler writes for you"
+    },
+    {
+      "type": "p",
+      "md": "Every class can have six **special member functions** generated on demand: default constructor, copy constructor, copy assignment, move constructor, move assignment (covered in the move-semantics module) and destructor. The generated copy operations copy every member memberwise; the destructor runs its body, then destroys members in reverse declaration order. You only notice them when members are plain values - which is exactly when they are right - or when members are raw resources, where memberwise copying is a bug; the Rule of Three/Five lesson makes that systematic."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <iostream>\n\nclass Ticket {\npublic:\n    explicit Ticket(int id) : id_{id} { std::cout << \"ctor \" << id_ << '\\n'; }\n    Ticket(const Ticket& other) : id_{other.id_} { std::cout << \"copy \" << id_ << '\\n'; }\n    Ticket& operator=(const Ticket& rhs) {\n        id_ = rhs.id_;\n        std::cout << \"assign \" << id_ << '\\n';\n        return *this;\n    }\n    ~Ticket() { std::cout << \"dtor \" << id_ << '\\n'; }\n\nprivate:\n    int id_;\n};\n\nint main() {\n    Ticket a{1};      // ctor 1\n    Ticket b = a;     // copy 1   (initialization of a NEW object)\n    Ticket c{2};      // ctor 2\n    c = a;            // assign 1 (existing object assigned)\n}",
+      "caption": "Copy construction happens on initialization; assignment on an existing object (note: c ends up holding id 1). Destruction runs in reverse creation order: dtor 1, dtor 1, dtor 1."
+    },
+    {
+      "type": "p",
+      "md": "Two keywords control generation. `= default` asks for the compiler-generated version explicitly - useful to keep a defaulted copy alongside a hand-written constructor. `= delete` forbids it: deleting the copy constructor and copy assignment makes a class non-copyable, the right answer for a process-wide RiskLimits object that must never be duplicated."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "class RiskLimits {\npublic:\n    RiskLimits() = default;\n    RiskLimits(const RiskLimits&) = delete;             // no copying\n    RiskLimits& operator=(const RiskLimits&) = delete;\n};\n\nint main() {\n    RiskLimits limits;\n    // RiskLimits copy = limits;   // compile error: copying is deleted\n}",
+      "caption": "Deleting copies turns a would-be runtime bug into a compile error."
+    },
+    {
+      "type": "h2",
+      "text": "What you cannot overload, and friendship"
+    },
+    {
+      "type": "list",
+      "ordered": false,
+      "items": [
+        "Cannot be overloaded: `.` (member access), `.*` (pointer-to-member access), `::` (scope resolution), `?:` (ternary), `sizeof` and `typeid` - they must mean what they mean for the type system to work.",
+        "Can be overloaded: arithmetic `+ - * / %`, comparisons `== != < > <= >=`, the compound family `+= -= *= ...`, subscript `[]`, function call `()`, increment/decrement, stream insertion/extraction and more.",
+        "Precedence, associativity and arity are fixed: `<<` stays left-associative, which is exactly why chained stream output works.",
+        "A free operator that must touch private members is declared a `friend` inside the class. Friendship is granted by the class, never taken, and it is neither inherited nor transitive. Prefer going through public accessors - the Money operator<< above needs no friend because it uses cents()."
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <iostream>\n\nclass Money {\npublic:\n    explicit Money(long long c) : cents_{c} {}\nprivate:\n    long long cents_;\n    friend std::ostream& operator<<(std::ostream& os, const Money& m);\n};\n\nstd::ostream& operator<<(std::ostream& os, const Money& m) {\n    return os << m.cents_ << \" cents\";   // friend: may touch cents_ directly\n}\n\nint main() {\n    std::cout << Money{1425} << '\\n';    // 1425 cents\n}",
+      "caption": "Friendship is an alternative to accessors - use it sparingly."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Extend the Money class with a unary `operator-()` member returning the negated amount, and a binary `Money operator*(long long n) const` scaling by an integer quantity of shares. In `main`: a position loses 8 cents per share, so start from `Money perLot{-8}`; compute `total = perLot * 250`, print it, then print `-total`. Expected output: `-20.00` then `20.00`.",
+    "hints": [
+      "Unary minus is a member with no parameters: Money operator-() const.",
+      "Reuse the stream operator from the lesson; it already handles the sign and two-digit pennies."
+    ],
+    "solution": "-8 x 250 = -2000 cents prints as `-20.00`; applying unary minus gives `Money{2000}`, printed as `20.00`.\n\n```cpp\n#include <iostream>\n\nclass Money {\npublic:\n    explicit Money(long long cents = 0) : cents_{cents} {}\n    Money operator-() const { return Money{-cents_}; }                 // unary\n    Money operator*(long long n) const { return Money{cents_ * n}; }   // scale\n    long long cents() const { return cents_; }\nprivate:\n    long long cents_;\n};\n\nstd::ostream& operator<<(std::ostream& os, const Money& m) {\n    long long c = m.cents();\n    long long a = c < 0 ? -c : c;\n    os << (c < 0 ? \"-\" : \"\") << a / 100 << '.'\n       << (a % 100 < 10 ? \"0\" : \"\") << a % 100;\n    return os;\n}\n\nint main() {\n    Money perLot{-8};\n    Money total = perLot * 250;   // -2000 cents\n    std::cout << total << '\\n';   // -20.00\n    std::cout << -total << '\\n';  // 20.00\n}\n```"
+  },
+  "independentExercise": {
+    "prompt": "A blotter sorts orders by notional. Write class `Order` with private `int qty_` and `double limitPx_`, a constructor, and `double notional() const`. Define `bool operator<(const Order&, const Order&)` as a free function comparing notionals. Put three orders in a `std::vector<Order>` - {3 lots at 101.5}, {10 at 42.0}, {2 at 250.0} - `std::sort` them, and print the smallest notional. Then answer in a comment: what would change if operator< were a member instead?",
+    "hints": [
+      "The notionals are 3 x 101.5, 10 x 42.0 and 2 x 250.0; sort ascending, then print book.front().notional().",
+      "std::sort only needs operator< for Order; a member operator< would also work here because the left side of every comparison is an Order."
+    ],
+    "solution": "The notionals are 304.5, 420.0 and 500.0, so the smallest is 304.5.\n\n```cpp\n#include <algorithm>\n#include <iostream>\n#include <vector>\n\nclass Order {\npublic:\n    Order(int qty, double limitPx) : qty_{qty}, limitPx_{limitPx} {}\n    double notional() const { return qty_ * limitPx_; }\nprivate:\n    int qty_;\n    double limitPx_;\n};\n\nbool operator<(const Order& a, const Order& b) { return a.notional() < b.notional(); }\n\nint main() {\n    std::vector<Order> book{{3, 101.5}, {10, 42.0}, {2, 250.0}};\n    std::sort(book.begin(), book.end());\n    std::cout << book.front().notional() << '\\n';   // 304.5\n}\n```\n\nAs a member, `a < b` still works for Order-on-the-left comparisons; the free form additionally supports symmetric conversions if Order ever gains non-explicit converting constructors. With a non-converting class like this one, both placements behave identically."
+  },
+  "commonMistakes": [
+    "Overloading operator+ but not operator+= (or vice versa) so the two drift apart; write += first and define + from it.",
+    "Returning by value from operator+= instead of returning *this as a reference, breaking chains and spawning copies.",
+    "Trying to overload ., ::, sizeof or ?: - they are not overloadable.",
+    "Making operator<< a member of your class; the left operand is the stream, so it must be a free function.",
+    "Forgetting the trailing return os; in a stream operator, which breaks chained output.",
+    "Leaving a one-argument constructor non-explicit and letting values convert silently between unit-bearing types."
+  ],
+  "realWorldApplication": "Pricing libraries define arithmetic on Money, Yield, Spread and Volatility types so a bond math function cannot be handed a volatility where a spread belongs; the operators are overloaded once and the whole desk inherits the safety.",
+  "quantFinanceApplication": "Integer-cent money arithmetic shown here is the same trick production trading systems use to keep cash accounting exact: store the smallest quoted unit, expose operators, convert to decimal only when printing or reporting.",
+  "summary": [
+    "Operators are functions: compound/mutating operators work well as members; symmetric binary operators and operator<< belong to free functions.",
+    "Implement operator+= first and define operator+ in terms of it so the semantics exist in exactly one place.",
+    "The compiler generates default constructor, copy constructor, copy assignment, moves and destructor memberwise on demand; =default requests them, =delete forbids them.",
+    "operator<< must be a free function taking (std::ostream&, const T&) and returning the stream by reference.",
+    "Unoverloadable operators: . .* :: ?: sizeof typeid."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "Why must operator<< for Money be a free function rather than a member of Money?",
+      "options": [
+        "Because operator<< cannot be overloaded at all",
+        "Because its left operand is a std::ostream, not a Money",
+        "Because member functions cannot return references",
+        "Because free functions run faster"
+      ],
+      "answerIndex": 1,
+      "explanation": "In the expression `cout << m` the left operand is the stream. A member operator<< would have to live in std::ostream, which you cannot modify - so the free function form `operator<<(std::ostream&, const Money&)` is the only option."
+    },
+    {
+      "id": "q2",
+      "type": "code-output",
+      "prompt": "What does this program print?",
+      "language": "cpp",
+      "code": "#include <iostream>\n\nclass Ticket {\npublic:\n    explicit Ticket(int id) : id_{id} { std::cout << \"ctor \" << id_ << '\\n'; }\n    Ticket(const Ticket& other) : id_{other.id_} { std::cout << \"copy \" << id_ << '\\n'; }\n    Ticket& operator=(const Ticket& rhs) {\n        id_ = rhs.id_;\n        std::cout << \"assign \" << id_ << '\\n';\n        return *this;\n    }\n    ~Ticket() { std::cout << \"dtor \" << id_ << '\\n'; }\nprivate:\n    int id_;\n};\n\nint main() {\n    Ticket a{1};\n    Ticket b = a;\n    Ticket c{2};\n    c = a;\n}",
+      "answer": "ctor 1\ncopy 1\nctor 2\nassign 1\ndtor 1\ndtor 1\ndtor 1",
+      "explanation": "Ticket b = a is initialization of a new object (copy ctor); c = a is assignment on an existing object, which overwrites c.id_ with 1. Destruction runs in reverse creation order: c first - but its id is now 1 after the assignment - then b (1), then a (1). The \"dtor 2\" many people expect never appears because assignment changed the state before destruction."
+    },
+    {
+      "id": "q3",
+      "type": "code-output",
+      "prompt": "What does this program print?",
+      "language": "cpp",
+      "code": "#include <iostream>\n\nclass Tick {\npublic:\n    explicit Tick(int v) : v_{v} {}\n    Tick& operator+=(const Tick& r) { v_ += r.v_; return *this; }\n    int value() const { return v_; }\nprivate:\n    int v_;\n};\n\nTick operator+(const Tick& a, const Tick& b) { return Tick{a.value() + b.value()}; }\nstd::ostream& operator<<(std::ostream& os, const Tick& t) { return os << t.value(); }\n\nint main() {\n    Tick a{40}, b{2};\n    a += b + b;\n    std::cout << a << '\\n';\n}",
+      "answer": "44",
+      "explanation": "First the free operator+ evaluates b + b, producing Tick{4}. Then the member operator+= adds it into a: 40 + 4 = 44, and the stream operator prints the value."
+    },
+    {
+      "id": "q4",
+      "type": "ms",
+      "prompt": "Which of these C++ operators cannot be overloaded for a user-defined class?",
+      "options": [
+        "operator.",
+        "operator::",
+        "operator()",
+        "operator<"
+      ],
+      "answerIndices": [
+        0,
+        1
+      ],
+      "explanation": "Member access (.), scope resolution (::), .*, ?:, sizeof and typeid are not overloadable. Function call operator() and operator< are ordinary, heavily used overloads."
+    },
+    {
+      "id": "q5",
+      "type": "numeric",
+      "prompt": "A Money holds cents: buy at 421700, sell at 423125, then a commission of Money{-300} is added. What dollar amount does the final Money print as, in the format 12.34?",
+      "answer": 11.25,
+      "tolerance": 0.001,
+      "explanation": "Cents: $423125 - 421700 = 1425$, then $1425 - 300 = 1125$ cents. The stream operator renders 1125 cents as 11.25."
+    },
+    {
+      "id": "q6",
+      "type": "short",
+      "prompt": "Why implement operator+ as `Money r{a}; r += b; return r;` instead of duplicating the addition logic inside operator+?",
+      "modelAnswer": "So the addition semantics live in exactly one place: operator+= holds the real logic and operator+ reuses it, guaranteeing the two operators stay consistent.",
+      "keywords": [
+        "+=",
+        "consistent",
+        "duplicate",
+        "one"
+      ],
+      "explanation": "Defining + in terms of += gives both operators the same semantics by construction, removes duplicated code to test, and means a future fix to the addition logic automatically applies everywhere."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "Member vs free-function placement for overloaded operators",
+      "back": "Mutating/compound operators (+=, ++, [], ()) work naturally as members; symmetric binary operators and operator<< (stream is the left operand) belong to free functions."
+    },
+    {
+      "type": "code-output",
+      "front": "Money{-1525} printed through the lesson stream operator shows what?",
+      "back": "-15.25 - the operator emits the sign, the whole dollars and two-digit pennies from a long long of cents."
+    },
+    {
+      "type": "error-identification",
+      "front": "bool operator<(const Money& a, const Money& b) { return a < b; } - what is wrong?",
+      "back": "Infinite recursion: the body calls itself. It must compare the underlying data, e.g. a.cents() < b.cents()."
+    },
+    {
+      "type": "definition",
+      "front": "Which special member functions does the compiler generate on demand?",
+      "back": "Default constructor, copy constructor, copy assignment, move constructor, move assignment and destructor - all memberwise, each generated only when used."
+    },
+    {
+      "type": "definition",
+      "front": "= default vs = delete on a special member",
+      "back": "= default asks for the compiler-generated implementation explicitly; = delete forbids it, e.g. deleting the copy ctor/assignment to make a class non-copyable."
+    }
+  ],
+  "references": [
+    {
+      "label": "cppreference — Operator overloading",
+      "url": "https://en.cppreference.com/w/cpp/language/operators"
+    },
+    {
+      "label": "cppreference — Copy constructors",
+      "url": "https://en.cppreference.com/w/cpp/language/copy_constructor"
+    },
+    {
+      "label": "cppreference — Destructors",
+      "url": "https://en.cppreference.com/w/cpp/language/destructor"
+    },
+    {
+      "label": "cppreference — Friend declaration",
+      "url": "https://en.cppreference.com/w/cpp/language/friend"
+    }
+  ],
+  "skills": [
+    "cpp",
+    "cpp-memory"
+  ]
+}

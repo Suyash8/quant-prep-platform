@@ -1,0 +1,268 @@
+{
+  "id": "precalc-modelling",
+  "moduleId": "ph1-precalc",
+  "title": "Mathematical Modelling Workflow",
+  "estMinutes": 25,
+  "difficulty": "core",
+  "prereqs": [
+    "precalc-growth-models"
+  ],
+  "objectives": [
+    "Apply the six-step modelling workflow: frame, define variables with units, choose structure, parameterise, validate, report with limitations",
+    "Justify a linear vs exponential structure from the mechanism generating the data",
+    "Compute break-even and crossover points for two competing linear cost models",
+    "Validate a model using special cases, monotonicity checks and sensitivity analysis"
+  ],
+  "motivation": "A model is a machine for turning assumptions into numbers - and every number a desk produces, from a fee comparison to a VaR estimate, comes from one. The difference between a useful model and a dangerous one is rarely the algebra; it is whether the builder asked what the structure assumes, checked the outputs against reality, and reported the limitations. This lesson installs the workflow once, on small transparent examples, so that later modules can spend their attention on the mathematics instead of the method.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "What a model is (and is not)"
+    },
+    {
+      "type": "p",
+      "md": "A mathematical model is a **deliberate simplification** linking inputs you can observe to outputs you care about. It is a map, not the territory: useful precisely because it omits things, dangerous exactly where its omissions matter. 'All models are wrong, some are useful' is not a joke but an operating instruction - the useful part is earned by a disciplined workflow, not by fitting formulas to data until they look right. The workflow below is small enough to apply in an afternoon and scales unchanged to the factor models, Monte Carlo engines and PDE pricers of later phases."
+    },
+    {
+      "type": "list",
+      "ordered": true,
+      "items": [
+        "**Frame the question** - what decision will the output inform, and at what precision?",
+        "**Define variables and units** - names, units, and ranges for every quantity; ambiguity here poisons everything downstream.",
+        "**Choose a structure with a reason** - linear, exponential, power, piecewise - justified by the *mechanism*, not by what fits best.",
+        "**Parameterise** - fix constants from contract terms, measurements or data.",
+        "**Validate** - special cases, sanity ranges, comparison against held-out reality, sensitivity to each assumption.",
+        "**Report with limitations** - the output plus its assumptions and where the model is expected to fail."
+      ]
+    },
+    {
+      "type": "h2",
+      "text": "Worked example: choosing between two fee schedules"
+    },
+    {
+      "type": "p",
+      "md": "You must pick a broker for trades of $n$ shares. Broker A charges a $5 fixed fee plus $0.01 per share; Broker B charges no fixed fee but \\$0.015 per share. Which is cheaper? **Structure**: both schedules are linear in $n$ because the contract terms are per-share rates plus constants - the mechanism dictates the structure, so no curve fitting is needed. **Parameterise**: $C_A(n) = 5 + 0.01n$ and $C_B(n) = 0.015n$, with $n$ in shares and $C$ in dollars."
+    },
+    {
+      "type": "p",
+      "md": "**Solve**: the crossover is where the costs tie: $5 + 0.01n = 0.015n \\Rightarrow 5 = 0.005n \\Rightarrow n = 1000$. Below 1000 shares B is cheaper; above, A wins. **Validate** with special cases and sanity values:"
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Shares $n$",
+        "$C_A(n) = 5 + 0.01n$",
+        "$C_B(n) = 0.015n$",
+        "Cheaper"
+      ],
+      "rows": [
+        [
+          "0",
+          "\\$5.00",
+          "\\$0.00",
+          "B"
+        ],
+        [
+          "500",
+          "\\$10.00",
+          "\\$7.50",
+          "B"
+        ],
+        [
+          "1,000",
+          "\\$15.00",
+          "\\$15.00",
+          "tie (crossover)"
+        ],
+        [
+          "2,000",
+          "\\$25.00",
+          "\\$30.00",
+          "A"
+        ]
+      ]
+    },
+    {
+      "type": "p",
+      "md": "The tie at exactly $n = 1000$ confirms the algebra; the monotone pattern (B better small, A better large) matches the mechanism - a fixed fee dilutes as size grows. **Sensitivity**: if A's fixed fee doubles to \\$10, the crossover moves to $n = 10/0.005 = 2000$ - the answer is fragile to the fixed-fee assumption, and that is worth saying in the report. **Limitations**: real fee schedules are often tiered or capped, so the linear structure should be re-checked against the actual contract before trading large sizes."
+    },
+    {
+      "type": "interactive",
+      "component": "CompoundGrowth",
+      "params": {
+        "principal": 1000,
+        "rate": 0.07,
+        "years": 10
+      },
+      "caption": "\\$1,000 at 7% with annual compounding reaches \\$1,967.15 in 10 years: an exponential structure, because the mechanism is multiplication by a fixed factor each year."
+    },
+    {
+      "type": "h2",
+      "text": "Choosing structure: linear adds, exponential multiplies"
+    },
+    {
+      "type": "p",
+      "md": "The single most consequential modelling decision is structure. A **linear** model adds the same amount each period - appropriate when the driver is a constant rate of flow. An **exponential** model multiplies by the same factor each period - appropriate when growth earns growth: interest on interest, population dynamics, or proportional returns on a portfolio. Ask: does the mechanism *add* or *compound*? A quick fingerprint: exponential processes have a constant **doubling time**, linear ones do not. From $V(t) = V_0(1+r)^t$, doubling requires $t_2$ with $(1+r)^{t_2} = 2$, so $t_2 = \\ln 2 / \\ln(1+r)$."
+    },
+    {
+      "type": "steps",
+      "title": "Worked derivation: doubling time at 7% per year",
+      "items": [
+        "Set $V(t_2) = 2V_0$, i.e. $(1.07)^{t_2} = 2$.",
+        "Take logs: $t_2 \\ln(1.07) = \\ln 2$, so $t_2 = \\ln 2 / \\ln(1.07) = 0.6931 / 0.0677 = 10.24$ years.",
+        "Cross-check with the 'rule of 72' heuristic: $72/7 = 10.29$ years - close, as expected for small rates ($\\ln 2 \\approx 0.693 \\approx 0.70$, so $0.70/r \\approx 70/r$).",
+        "Validate: $1.07^{10} = 1.9672$, i.e. \\$1,000 grows to \\$1,967.15 - just under double, consistent with 10.24 > 10."
+      ]
+    },
+    {
+      "type": "h2",
+      "text": "Validation is the deliverable"
+    },
+    {
+      "type": "p",
+      "md": "A number without validation is an opinion with decimals. Cheap, high-value checks: **special cases** (set the input to 0 or the crossover and see if reality agrees), **monotonicity** (does the direction of change match the mechanism?), **units** (does the answer come out in dollars, not dollar-squared?), and **sensitivity** (how much does the answer move if one parameter moves 10%?). If the conclusion flips under a plausible parameter change, the report must say so. This habit - documenting assumptions, checking outputs, stating limitations - is precisely what separates a quant developer's work from a spreadsheet someone found online."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "The same loop, bigger mathematics",
+      "md": "Every model you will meet later - Monte Carlo pricing, finite-difference PDE solvers, factor risk models - runs this same six-step loop. The mathematics inside gets harder, but the discipline does not change: justify structure from mechanism, parameterise honestly, validate with special cases, and ship the limitations with the answer."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Broker C charges \\$2 fixed plus \\$0.012 per share. Against Broker A (\\$5 + \\$0.01 per share), find the crossover trade size, verify the tie by computing both costs there, and state which broker is cheaper below and above it.",
+    "hints": [
+      "Set $C_C(n) = C_A(n)$ and solve for $n$.",
+      "Substitute your crossover back into both formulas as a validation step."
+    ],
+    "solution": "$C_C(n) = 2 + 0.012n$ and $C_A(n) = 5 + 0.01n$. Tie: $2 + 0.012n = 5 + 0.01n \\Rightarrow 0.002n = 3 \\Rightarrow n = 1500$. Check: $C_C(1500) = 2 + 18 = \\$20$ and $C_A(1500) = 5 + 15 = \\$20$ - a genuine tie. Below 1500 shares C is cheaper (e.g. at $n = 1000$: C costs $14, A costs \\$15); above 1500, A is cheaper (at $n = 2000$: C costs $26, A costs \\$25). Sensitivity note: the crossover is $3/0.002$, extremely sensitive to the \\$0.002 rate gap - a small repricing moves it a lot."
+  },
+  "independentExercise": {
+    "prompt": "A small market-maker models revenue and cost as $R(q) = 25q$ and $C(q) = 2000 + 12q$, with $q$ units produced per month, all figures in dollars. (a) Give one mechanism-based reason the cost model has a fixed term. (b) Find the smallest integer $q$ with non-negative profit, showing the loss and profit either side. (c) Validate: what is profit at $q = 0$? (d) Sensitivity: if fixed cost rises to \\$2,600, what is the new break-even?",
+    "hints": [
+      "Profit $= R(q) - C(q) = 13q - 2000$.",
+      "Compute profit at 153 and 154.",
+      "With the higher fixed cost, profit is $13q - 2600$."
+    ],
+    "solution": "(a) The \\$2,000 is infrastructure/rent that does not scale with output - it exists even at $q = 0$. (b) Profit $= 13q - 2000$: at $q = 153$, $13(153) - 2000 = 1989 - 2000 = -11$ (loss); at $q = 154$, $2002 - 2000 = +2$ (profit). So $q = 154$ is the first profitable size, consistent with break-even at $2000/13 = 153.85$. (c) At $q = 0$: profit $= -2000$, the fixed cost exactly - a clean special-case check. (d) $13q - 2600 = 0 \\Rightarrow q = 200$ exactly: $R(200) = 5000 = C(200) = 2600 + 2400$. A \\$600 rise in fixed cost moves break-even by 46 units."
+  },
+  "commonMistakes": [
+    "Choosing structure by what fits the sample best instead of by mechanism - it will fit noise and fail out of sample.",
+    "Mixing units (per-share vs per-lot, per-year vs per-month) so parameters silently absorb a factor of 12 or 100.",
+    "Reporting the crossover without sensitivity: here a \\$0.005 rate gap fully determines the answer.",
+    "Skipping special-case checks such as $n = 0$, where most parameter errors show up immediately."
+  ],
+  "realWorldApplication": "Vendor selection, capacity planning and pricing decisions in any engineering organisation use exactly this linear-cost comparison with crossover analysis, usually presented with a sensitivity note - the workflow is identical to the one practised here.",
+  "quantFinanceApplication": "Desk-level fee comparison, break-even trade sizing and doubling-time projections are daily quant work. The six-step loop reappears verbatim in later modules: Monte Carlo pricers (ph1-stochastic-calculus) and PDE solvers (ph1-pde) differ only in their mathematics, not their method.",
+  "summary": [
+    "Models are deliberate simplifications; usefulness comes from the workflow: frame, variables+units, structure by mechanism, parameterise, validate, report limitations.",
+    "Linear structures add a fixed amount per period; exponential ones multiply by a fixed factor - decide by mechanism, not fit quality.",
+    "Two linear cost models cross over exactly once: $5 + 0.01n = 0.015n$ ties at $n = 1000$.",
+    "Doubling time $t_2 = \\ln 2/\\ln(1+r) = 10.24$ years at 7%; the rule of 72 gives 10.29 - a good sanity check.",
+    "Validation tools: special cases ($n=0$), exact ties, monotonicity, units, and sensitivity (fixed fee \\$5→\\$10 moves crossover 1000→2000)."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "numeric",
+      "prompt": "Broker A: $5 + $0.01/share. Broker B: \\$0.015/share. At what trade size $n$ (shares) do the two costs tie?",
+      "answer": 1000,
+      "explanation": "$5 + 0.01n = 0.015n \\Rightarrow 5 = 0.005n \\Rightarrow n = 1000$."
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "A quantity that multiplies by a fixed factor each period (interest earning interest) should be modelled as:",
+      "options": [
+        "linear, because each period looks like the last",
+        "exponential, because growth compounds on growth",
+        "quadratic, because it accelerates",
+        "constant, because the factor is fixed"
+      ],
+      "answerIndex": 1,
+      "explanation": "Multiplicative mechanisms give exponential structure $V_0(1+r)^t$; additive mechanisms give linear. Fingerprint: exponential models have a constant doubling time."
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "At 7% annual growth, the doubling time is $\\ln 2 / \\ln(1.07)$ years. Give it to 2 decimal places.",
+      "answer": 10.24,
+      "tolerance": 0.05,
+      "explanation": "$\\ln 2 = 0.69315$, $\\ln 1.07 = 0.06766$; $0.69315/0.06766 = 10.2448 \\approx 10.24$. The rule of 72 heuristic gives $72/7 = 10.29$."
+    },
+    {
+      "id": "q4",
+      "type": "code-output",
+      "prompt": "Costs are computed in cents to keep arithmetic exact. What does this Python code print?",
+      "language": "python",
+      "code": "def CA(n): return 500 + n      # 5 + 0.01n, in cents\ndef CB(n): return 1.5 * n      # 0.015n, in cents\n\nn = 0\nwhile CA(n) > CB(n):\n    n += 1\nprint(n)",
+      "answer": "1000",
+      "explanation": "$500 + n > 1.5n$ holds while $n < 1000$; at $n = 1000$ both cost 1500 cents, the loop stops, and 1000 is printed - the crossover found by search agrees with the algebra."
+    },
+    {
+      "id": "q5",
+      "type": "ms",
+      "prompt": "Which of these are LINEAR models in their input?",
+      "options": [
+        "$C(n) = 5 + 0.01n$",
+        "$V(t) = 1000 \\times 1.07^{\\,t}$",
+        "$P(S) = 100S - 5010$",
+        "$V(t) = 1000\\,e^{0.07t}$"
+      ],
+      "answerIndices": [
+        0,
+        2
+      ],
+      "explanation": "$C(n)$ and $P(S)$ are of the form (constant) + (rate)$\\times$input - linear. The two $V(t)$ models multiply by a fixed factor per period: exponential."
+    },
+    {
+      "id": "q6",
+      "type": "short",
+      "prompt": "Name two validation checks from this lesson and say what each one would catch.",
+      "modelAnswer": "Special cases (e.g. set n = 0 and check outputs against known contract terms) catch parameter errors and missing terms; sensitivity analysis (move one parameter and see if the decision flips) catches fragile conclusions that depend on uncertain assumptions.",
+      "keywords": [
+        "special",
+        "sensitivity",
+        "case",
+        "parameter"
+      ],
+      "explanation": "Any two of: special cases, unit checks, monotonicity checks, sensitivity analysis, comparison with held-out data. Each catches a different failure mode - wrong parameters, wrong units, wrong mechanism direction, fragile assumptions."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "The six-step modelling workflow",
+      "back": "Frame the question; define variables with units; choose structure by mechanism; parameterise; validate; report with limitations."
+    },
+    {
+      "type": "formula",
+      "front": "Crossover of two linear cost models",
+      "back": "$a + bn = c + dn \\Rightarrow n = (a-c)/(d-b)$; e.g. $5 + 0.01n = 0.015n$ ties at $n = 1000$."
+    },
+    {
+      "type": "formula",
+      "front": "Doubling time under growth rate $r$",
+      "back": "$t_2 = \\ln 2 / \\ln(1+r)$; at $r = 0.07$: $10.24$ years. Rule of 72: $72/100r \\approx t_2$ for small $r$."
+    },
+    {
+      "type": "error-identification",
+      "front": "A colleague fits a quadratic to 12 months of fee data and picks the structure with the best R-squared. What went wrong?",
+      "back": "Structure must come from the mechanism (contract terms = per-share rate + fixed fee → linear), not from fit quality; a good fit to noise fails out of sample."
+    }
+  ],
+  "references": [
+    {
+      "label": "OpenStax College Algebra — Linear and Exponential Growth",
+      "url": "https://openstax.org/books/college-algebra-2e/pages/6-7-modeling-data"
+    },
+    {
+      "label": "Wikipedia — Rule of 72",
+      "url": "https://en.wikipedia.org/wiki/Rule_of_72"
+    }
+  ],
+  "skills": [
+    "quant-modelling",
+    "algebra"
+  ]
+}

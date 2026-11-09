@@ -1,0 +1,230 @@
+{
+  "id": "orient-quant-developer-role",
+  "moduleId": "ph0-orientation",
+  "title": "What a Quantitative Developer Actually Does",
+  "estMinutes": 22,
+  "difficulty": "foundation",
+  "prereqs": ["orient-what-is-quant-finance"],
+  "objectives": [
+    "Describe the four common workstreams of a quantitative developer: pricing libraries, data pipelines, backtesting infrastructure and order-book systems",
+    "Distinguish research code from production code and explain why the difference matters",
+    "Explain how code quality and numerical correctness translate into financial consequences",
+    "List the engineering habits - testing, review, benchmarking, documentation - that production quant code requires"
+  ],
+  "motivation": "Job advertisements say quant developer, but they rarely say what the person will build on a Tuesday afternoon. This lesson describes the actual deliverables - pricing libraries, data pipelines, backtesting infrastructure, order-book systems - and confronts the single most important transition you will make: from writing code that works once on your machine to writing code whose correctness, speed and precision other people's money depends on.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "The job in one sentence"
+    },
+    {
+      "type": "p",
+      "md": "A **quantitative developer** turns models and trading ideas into software that runs reliably, quickly and correctly - and keeps doing so under market pressure, regulatory scrutiny and constant change. The role sits between research and production: researchers and quants specify *what* should be computed; developers decide *how* it is computed, and are accountable for the result behaving exactly as specified, every day, at industrial scale. In practice this means the quant developer is a software engineer with an obligation to understand the mathematics well enough to implement it correctly and to notice when a result looks wrong."
+    },
+    {
+      "type": "h2",
+      "text": "Four workstreams you will actually work on"
+    },
+    {
+      "type": "p",
+      "md": "Across banks, funds and trading firms, quant development work concentrates into four recurring streams. The names differ between firms; the substance is remarkably stable."
+    },
+    {
+      "type": "list",
+      "ordered": false,
+      "items": [
+        "**Pricing libraries** - reusable implementations of valuation mathematics: discounting and curve construction, option models, calibration. These are the crown jewels of a bank's quant code and are very often written in C++ for speed and numerical control. A subtle bug here misprices every trade that touches it.",
+        "**Data pipelines** - systems that ingest, clean, align and store market and reference data: prices, corporate actions, calendars, instrument definitions. Finance data is messy; a pipeline that silently mis-scales a price by 100 or drops a dividend corrupts everything downstream.",
+        "**Backtesting infrastructure** - engines that replay historical data through a strategy to estimate how it would have behaved. The engineering challenge is *fidelity*: avoiding look-ahead bias (using information the strategy would not yet have had) and survivorship bias, and reproducing results exactly.",
+        "**Order-book and execution systems** - the low-latency machinery that maintains live order books, decides and sends orders, and manages risk in real time. This is the most performance-critical code in the industry, where microseconds and memory layout are design decisions."
+      ]
+    },
+    {
+      "type": "h2",
+      "text": "Research code versus production code"
+    },
+    {
+      "type": "p",
+      "md": "The same person may write both kinds of code in the same week, but they are different crafts with different definitions of success. **Research code** optimises for iteration speed: try a hypothesis, plot the result, throw it away if it fails. Hard-coded paths, global state and notebook-style scripts are acceptable because the artefact is an insight. **Production code** optimises for correctness, latency, maintainability and auditability: the artefact is a system that other people run, that must behave identically every run, and that someone must be able to inspect a year later to explain a decision."
+    },
+    {
+      "type": "list",
+      "ordered": false,
+      "items": [
+        "**Testing** - research code is checked by eyeballing plots; production code carries unit and regression tests, including tests of numerical values to a stated tolerance.",
+        "**Reproducibility** - a research result that cannot be re-run is annoying; a production PnL number that cannot be reproduced is an audit finding.",
+        "**Failure behaviour** - a research script may crash freely; a production system must fail loudly, alert someone, and never silently continue with wrong data.",
+        "**Interfaces and review** - production code is reviewed by colleagues, versioned, and built by reproducible pipelines, because many people will change it after you."
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Why numerics are a first-class concern",
+      "md": "Floating-point arithmetic is inexact, and finance accumulates millions of floating-point operations. Adding numbers in different orders gives different last-bit answers; over a large portfolio those last bits become a PnL discrepancy someone must explain. Production quant code therefore specifies precision deliberately - summation order, rounding rules, tolerance thresholds - rather than leaving them to chance."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import math\n\nxs = [0.1] * 10\nprint(sum(xs))        # 0.9999999999999999  (naive left-to-right accumulation)\nprint(math.fsum(xs))  # 1.0                 (exact summation, then one rounding)\nprint(0.1 + 0.2)      # 0.30000000000000004 (0.1 and 0.2 are not exact in binary)",
+      "caption": "Ten additions of 0.1 give 0.9999999999999999, not 1.0. Same numbers, different accumulation strategy, different answer."
+    },
+    {
+      "type": "p",
+      "md": "Nothing in that snippet is exotic - it is the ordinary behaviour of binary floating point - yet a naive accumulator in a position-keeping system produces exactly this kind of drift, and reconciliations fail at the last decimal. This is why the platform invests heavily in numerical foundations and in C++: in pricing libraries and execution systems you must know what the machine is actually doing with your numbers, not merely hope it is fine."
+    },
+    {
+      "type": "h2",
+      "text": "What good looks like"
+    },
+    {
+      "type": "p",
+      "md": "Production quant code is judged by habits as much as by cleverness. Tests exist and pass; the tests include known numerical cases checked by hand. Changes go through review, and reviewers can understand the change because the code is readable and documented. Performance-sensitive code has benchmarks, so a slowdown is measured rather than discovered by an angry desk. Data flows are validated at their boundaries - every pipeline checks what it is told and refuses to propagate nonsense. None of this is glamorous, and all of it is why two candidates who can both write a moving average are not equivalent: the profession pays for the version that is still correct in three years."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Pick one of the four workstreams (pricing library, data pipeline, backtesting infrastructure, order-book system) and write three or four sentences describing what a *bad* implementation of it looks like and what a production-quality implementation adds.",
+    "hints": [
+      "For each workstream, ask: what does 'silently wrong' mean here, and what would the downstream consequence be?",
+      "Production-quality means tests, validation at boundaries, reproducibility, and measured performance - attach those to concrete failure modes."
+    ],
+    "solution": "**Model answer (data pipeline).** A bad pipeline reads price files, converts them, and loads them into a table, with no checks: if a feed changes scale from dollars to cents, or a corporate action is missing, the wrong data flows downstream silently, and every backtest and risk number built on it is wrong. A production-quality pipeline validates at each boundary - schema checks, range checks (a price of \\$0.01 for a large-cap stock triggers review), reconciliation against secondary sources, explicit handling of corporate actions and calendar gaps, and monitoring that alarms when volumes or distributions shift. It also records lineage: which source, which version, which transformation produced each row, so a questionable number can be traced to its origin."
+  },
+  "independentExercise": {
+    "prompt": "Think of a piece of code you have written in any language (a script, a coursework project, anything). Classify it honestly as research-style or production-style, then write down two concrete changes that would move it toward production grade, and one numerical edge case in it you have never actually verified.",
+    "hints": [
+      "Production-grade markers: automated tests, input validation, version control with review, documentation, known behaviour on empty/zero/negative inputs.",
+      "Numerical edge cases: empty inputs, zero, negative values, very large values, repeated additions where error could accumulate."
+    ],
+    "solution": "**Model answer.** My coursework script that averaged daily returns is research-style: it read a hard-coded CSV path, had no tests, and printed results straight to the console. Two production changes: (1) wrap the averaging in a function with input validation that rejects non-numeric or missing rows loudly rather than skipping them; (2) add unit tests with hand-computed expected values, e.g. mean of [0.02, -0.01, 0.05] = 0.02. An unverified numerical edge case: I never checked what happens with a single data point (the mean is trivially that point, but my variance call may divide by zero) - a production version must specify and test that behaviour rather than letting it crash at 2 a.m."
+  },
+  "commonMistakes": [
+    "Assuming the quant developer role is 'researcher who codes' - the accountability is engineering accountability: correctness, performance, maintainability.",
+    "Treating floating-point quirks as harmless - last-bit differences become reconciliation failures in production.",
+    "Writing backtests that leak future information into the past (look-ahead bias), making a bad strategy look good.",
+    "Believing code quality is optional in finance - it is the product; the model without reliable software produces no money."
+  ],
+  "realWorldApplication": "Every trading day, pricing libraries value books, pipelines refresh market data, backtesting engines vet new ideas, and order-book systems transact - all built and maintained by quant developers whose code quality determines whether those numbers can be trusted.",
+  "quantFinanceApplication": "The worked numerical example (summation of ten 0.1s) is the same class of accumulation error that production PnL and risk systems must control by choosing summation strategies and tolerances deliberately.",
+  "summary": [
+    "A quantitative developer turns models and trading ideas into software that is reliable, fast, correct and auditable.",
+    "Four recurring workstreams: pricing libraries, data pipelines, backtesting infrastructure, and order-book / execution systems.",
+    "Research code optimises for iteration speed; production code optimises for correctness, latency, maintainability and auditability - the transition between them is the core of the job.",
+    "Numerics matter: floating-point accumulation order changes results, so precision decisions are made deliberately and verified by tests.",
+    "Good production practice - tests, review, benchmarks, boundary validation - is what separates a demo from a system people trust with money."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "What is the primary deliverable of a quantitative developer?",
+      "options": [
+        "Reliable, fast, correct software that implements models and trading ideas in production",
+        "Publishing academic research papers",
+        "Deciding which trades the desk takes intraday",
+        "Negotiating commissions with brokers"
+      ],
+      "answerIndex": 0,
+      "explanation": "The quant developer is accountable for turning models into production software. Researchers publish and design, traders take the decisions, and broker negotiations are commercial, not engineering, work."
+    },
+    {
+      "id": "q2",
+      "type": "ms",
+      "prompt": "Which of the following are typical quantitative developer workstreams?",
+      "options": [
+        "Building a pricing library for derivative valuation",
+        "Cleaning and aligning intraday market data",
+        "Designing a marketing campaign for a new fund",
+        "Implementing a backtesting engine",
+        "Writing an order-entry gateway to an exchange",
+        "Auditing a company's tax returns"
+      ],
+      "answerIndices": [0, 1, 3, 4],
+      "explanation": "Pricing libraries, data pipelines, backtesting infrastructure and order-book/execution systems are the four workstreams from the lesson. Marketing campaigns and tax audits are not engineering workstreams."
+    },
+    {
+      "id": "q3",
+      "type": "mcq",
+      "prompt": "In backtesting, what is look-ahead bias?",
+      "options": [
+        "Using information in the simulation that the strategy would not yet have had at that point in time",
+        "Re-running the backtest multiple times to tune parameters",
+        "Testing a strategy on data after the period it was designed on",
+        "Simulating trades at the closing price instead of intraday prices"
+      ],
+      "answerIndex": 0,
+      "explanation": "Look-ahead bias means the simulated strategy acts on future information (e.g. today's closing price when deciding this morning), inflating results. Out-of-sample testing (option C) is good practice, and choice of simulated price (option D) is a fidelity decision, not the definition of the bias."
+    },
+    {
+      "id": "q4",
+      "type": "short",
+      "prompt": "Give two concrete differences between research code and production code, as described in this lesson.",
+      "modelAnswer": "Research code optimises iteration speed (scripts, no tests, plots as output); production code carries unit/regression tests, is reviewed and versioned, must be reproducible, has specified failure behaviour and monitoring, and meets latency/performance requirements.",
+      "keywords": ["test", "review", "reproducib", "latency", "maintainab", "monitor", "version"],
+      "explanation": "Any two of: testing, reproducibility, failure behaviour, review/versioning, performance requirements. The definitions of success differ: insight vs dependable system."
+    },
+    {
+      "id": "q5",
+      "type": "code-output",
+      "prompt": "What exactly does this Python code print?",
+      "language": "python",
+      "code": "xs = [0.1] * 10\nprint(sum(xs))\nprint(0.1 + 0.2 == 0.3)",
+      "answer": "0.9999999999999999\nFalse",
+      "explanation": "Naive summation of ten 0.1s accumulates binary rounding error to 0.9999999999999999, and 0.1 + 0.2 is 0.30000000000000004, which is not equal to 0.3 - so the comparison prints False. This is ordinary floating-point behaviour, which production code anticipates rather than discovers."
+    },
+    {
+      "id": "q6",
+      "type": "mcq",
+      "prompt": "Why do quant developers treat numerical accumulation order as a design decision?",
+      "options": [
+        "Different summation orders give different last-bit results, and across millions of operations these become PnL discrepancies that must be explained",
+        "Because Python requires lists to be sorted before summing",
+        "Because regulators mandate ascending-order summation of all prices",
+        "Because summation order affects how quickly the source code compiles"
+      ],
+      "answerIndex": 0,
+      "explanation": "Floating-point addition is not associative: order changes the rounding. At industrial scale, uncontrolled accumulation shows up as reconciliation breaks - so precision strategy is specified deliberately (e.g. pairwise or exact summation, stated tolerances)."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "definition",
+      "front": "What is a quantitative developer accountable for?",
+      "back": "Turning models and trading ideas into software that is reliable, fast, numerically correct and auditable - and keeping it that way in production."
+    },
+    {
+      "type": "concept",
+      "front": "Four typical quant developer workstreams",
+      "back": "Pricing libraries; data pipelines; backtesting infrastructure; order-book and execution systems."
+    },
+    {
+      "type": "concept",
+      "front": "Research code vs production code",
+      "back": "Research optimises iteration speed (insight is the artefact). Production optimises correctness, latency, maintainability, auditability (the system is the artefact, run by others, inspected years later)."
+    },
+    {
+      "type": "code-output",
+      "front": "In Python, what is sum([0.1] * 10)?",
+      "back": "0.9999999999999999 - naive floating-point accumulation drifts; math.fsum gives exactly 1.0 by summing exactly and rounding once."
+    },
+    {
+      "type": "definition",
+      "front": "Look-ahead bias",
+      "back": "A backtest flaw where the simulated strategy uses information it would not have had yet at decision time, producing inflated historical performance."
+    }
+  ],
+  "references": [
+    {
+      "label": "Python documentation - math.fsum (exact floating-point summation)",
+      "url": "https://docs.python.org/3/library/math.html#math.fsum"
+    },
+    {
+      "label": "Goldberg - What Every Computer Scientist Should Know About Floating-Point Arithmetic",
+      "url": "https://docs.oracle.com/cd/E19957-01/806-3568/ncg_goldberg.html"
+    }
+  ],
+  "skills": [
+    "professional-skills",
+    "software-engineering"
+  ]
+}

@@ -1,0 +1,244 @@
+{
+  "id": "sca-ito-lemma",
+  "moduleId": "ph1-stochastic-calculus",
+  "title": "Itô's Lemma and Stochastic Differential Equations",
+  "estMinutes": 30,
+  "difficulty": "specialist",
+  "prereqs": [
+    "sca-ito-integral"
+  ],
+  "objectives": [
+    "State Itô's lemma for $f(t, X_t)$ and explain why the second-derivative term survives",
+    "Apply Itô's lemma to derive $d \\ln S_t$ for geometric Brownian motion and interpret volatility drag",
+    "Simulate a geometric-Brownian-Motion path with the Euler–Maruyama scheme and check individual steps by hand",
+    "Distinguish the mean and median of $S_T$ and connect GBM simulation to risk-neutral Monte Carlo pricing"
+  ],
+  "motivation": "Asset prices follow stochastic differential equations - differential equations whose noise term is $dW_t$ - and every derivative-pricing result you will meet needs one operation: changing variables, from price to log-price, from price to option value. Ordinary chain rules break on Brownian noise because $(dW)^2 = dt$; Itô's lemma is the corrected chain rule that makes the operation legal. This lesson derives it, applies it to geometric Brownian motion - the standard asset model - and shows how the resulting Euler–Maruyama scheme turns the SDE into the Monte Carlo engines used for pricing exotic derivatives.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Fixing the chain rule"
+    },
+    {
+      "type": "p",
+      "md": "Let $X_t$ follow a stochastic differential equation (SDE) $dX_t = \\mu_t\\, dt + \\sigma_t\\, dW_t$: a drift $\\mu_t$ per unit time plus noise scaled by $\\sigma_t$. (Read $dX_t = \\dots$ as shorthand for the integral form $X_t = X_0 + \\int \\mu\\, ds + \\int \\sigma\\, dW$.) When you want $f(t, X_t)$ for a smooth function $f$, ordinary calculus would apply the chain rule. Brownian noise demands one repair. Expand $f$ to second order in the step and remember what the last lesson established: $(dW_t)^2 = dt$ on average - more precisely, the sum of squared increments converges to $dt$'s total - while $dW_t\\, dt$ and $(dt)^2$ are negligible. The second-order term, dead for smooth curves, is alive here:"
+    },
+    {
+      "type": "math",
+      "tex": "df \\;=\\; \\left( \\frac{\\partial f}{\\partial t} + \\mu_t \\frac{\\partial f}{\\partial x} + \\tfrac{1}{2}\\sigma_t^2 \\frac{\\partial^2 f}{\\partial x^2} \\right) dt \\;+\\; \\sigma_t \\frac{\\partial f}{\\partial x}\\, dW_t",
+      "caption": "Itô's lemma. The $\\tfrac{1}{2}\\sigma^2 f_{xx}\\, dt$ term is the Itô correction - exactly the $-T/2$ from $\\int W\\, dW$, now general."
+    },
+    {
+      "type": "p",
+      "md": "Sanity check against the last lesson: take $f(x) = \\tfrac{1}{2}x^2$ (so $f_x = x$, $f_{xx} = 1$, $f_t = 0$) applied to $dX = dW$ (so $\\mu = 0$, $\\sigma = 1$). Itô's lemma gives $d\\big(\\tfrac{1}{2}W_t^2\\big) = \\tfrac{1}{2}\\,dt + W_t\\, dW_t$; integrating and rearranging yields $\\int_0^T W_t\\, dW_t = \\tfrac{1}{2}W_T^2 - \\tfrac{T}{2}$, exactly the result derived from first principles previously. The lemma is nothing but that correction, automated for any $f$."
+    },
+    {
+      "type": "h2",
+      "text": "Geometric Brownian motion"
+    },
+    {
+      "type": "p",
+      "md": "The standard asset model is **geometric Brownian motion** (GBM): $dS_t = \\mu S_t\\, dt + \\sigma S_t\\, dW_t$, with drift $\\mu$ and volatility $\\sigma$ both constant and *proportional to the price* - so uncertainty scales with the asset's level, and $S$ stays positive (a Brownian wiggle can no more send a GBM negative than compound interest can make a debt of a growing business negative). Apply Itô's lemma to $f(S) = \\ln S$, for which $f_S = 1/S$ and $f_{SS} = -1/S^2$:"
+    },
+    {
+      "type": "math",
+      "tex": "d\\ln S_t \\;=\\; \\left(\\mu - \\tfrac{1}{2}\\sigma^2\\right) dt \\;+\\; \\sigma\\, dW_t",
+      "caption": "The log-price is Brownian motion with drift $\\mu - \\tfrac{1}{2}\\sigma^2$ - the drift is NOT $\\mu$."
+    },
+    {
+      "type": "p",
+      "md": "This is the volatility drag: compounding a noisy proportional return costs $\\tfrac{1}{2}\\sigma^2$ per year of expected *log*-growth. It has a direct distributional reading. Since $\\ln S_T$ is normal, $S_T$ is lognormal with $\\mathbb{E}[S_T] = S_0 e^{\\mu T}$ but **median** $S_0 e^{(\\mu - \\sigma^2/2)T}$. With $\\mu = 0.08$, $\\sigma = 0.20$, $T = 1$: mean growth factor $e^{0.08} = 1.0833$, median $e^{0.06} = 1.0618$ - the typical outcome grows 6.2% while the average grows 8.3%, because the rare lucky paths pull the mean up while the typical path pays the drag $\\tfrac{1}{2}\\sigma^2 = 0.02$. Over 30 years the gap compounds to $e^{0.02 \\times 30} = e^{0.6} \\approx 1.82$ - mean 82% above median."
+    },
+    {
+      "type": "h2",
+      "text": "Simulating the SDE: Euler–Maruyama"
+    },
+    {
+      "type": "p",
+      "md": "The Euler–Maruyama scheme turns an SDE into code by discretising exactly like the Euler method for ODEs, plus the noise increment. For GBM with time step $\\Delta$ and $Z \\sim N(0,1)$:"
+    },
+    {
+      "type": "math",
+      "tex": "S_{t+\\Delta} \\;=\\; S_t + \\mu S_t\\,\\Delta + \\sigma S_t \\sqrt{\\Delta}\\, Z",
+      "caption": "Euler–Maruyama. It is the Itô integral's left-endpoint sum in disguise: the position $S_t$ is known before the increment $\\sqrt{\\Delta}Z$ arrives."
+    },
+    {
+      "type": "steps",
+      "title": "Worked steps: one month ahead ($\\Delta = 1/12$, $\\mu = 0.08$, $\\sigma = 0.20$, $S_0 = 100$)",
+      "items": [
+        "Monthly noise: $\\sigma\\sqrt{\\Delta} = 0.20 \\times \\sqrt{1/12} = 0.20 \\times 0.288675 = 0.0577$ - a **5.77% monthly standard deviation**.",
+        "Monthly drift: $\\mu\\Delta = 0.08/12 = 0.0067$ - a 0.67% expected proportional gain.",
+        "For $Z = +0.5$: $S_1 = 100\\,(1 + 0.006667 + 0.0577 \\times 0.5) = 100 \\times 1.035534 = 103.55$.",
+        "For $Z = -1$: $S_1 = 100\\,(1 + 0.006667 - 0.0577) = 100 \\times 0.948932 = 94.89$.",
+        "Cross-check against the exact log-normal step $S_1 = S_0 \\exp[(\\mu - \\tfrac{1}{2}\\sigma^2)\\Delta + \\sigma\\sqrt{\\Delta}Z]$: for $Z = +0.5$ the exponent is $(0.06)(1/12) + 0.0577 \\times 0.5 = 0.033868$, giving $S_1 = 103.44$; for $Z = -1$, $S_1 = 94.86$. Euler–Maruyama matches to a few cents at monthly granularity - and the exact log-step can be used instead whenever you want the grid values exactly lognormal."
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import math\n\nS0, mu, sigma, dt = 100.0, 0.08, 0.20, 1/12\nz = 0.5\n\neuler = S0 * (1 + mu*dt + sigma*math.sqrt(dt)*z)\nexact = S0 * math.exp((mu - 0.5*sigma*sigma)*dt + sigma*math.sqrt(dt)*z)\nprint(round(euler, 2))    # 103.55 - Euler-Maruyama\nprint(round(exact, 2))    # 103.44 - exact log-normal step",
+      "caption": "The worked step, verified by machine. For finer $\\Delta$ the two agree to more decimals; at coarse $\\Delta$ prefer the exact log-step."
+    },
+    {
+      "type": "h2",
+      "text": "Why pricing needs this"
+    },
+    {
+      "type": "p",
+      "md": "Two roads lead to derivative prices, and both pass through this lesson. The **SDE road**: simulate risk-neutral GBM paths (with $\\mu$ replaced by the risk-free rate $r$ - the measure change that makes discounted prices martingales, formalised in the change-of-measure lesson), compute the discounted average payoff, and you have a Monte Carlo pricer for path-dependent exotics. The **PDE road**: apply Itô's lemma to the option value $V(S, t)$, eliminate risk by hedging, and you obtain the Black-Scholes PDE $V_t + \\tfrac{1}{2}\\sigma^2 S^2 V_{SS} + rSV_S - rV = 0$ - a parabolic equation of exactly the type the PDE module solves numerically, transformable into the heat equation. Itô's lemma is the hinge connecting the two: it is how stochastic information ($dW$) becomes deterministic PDE structure ($\\partial^2 V / \\partial S^2$)."
+    },
+    {
+      "type": "callout",
+      "variant": "warn",
+      "title": "The two drifts people mix up",
+      "md": "$\\mu$ is the drift of $S$ itself; $\\mu - \\tfrac{1}{2}\\sigma^2$ is the drift of $\\ln S$. Quoting an 8% expected return and then projecting log-returns at 8% overstates long-run medians by a factor $e^{\\sigma^2 T/2}$ - at $\\sigma = 0.20$ and $T = 30$, that is $\\times 1.82$. Whenever a backtest compounds log-returns or a Monte Carlo exponentiates normals, check which drift is being used."
+    },
+    {
+      "type": "interactive",
+      "component": "BrownianMotion",
+      "params": {
+        "steps": 250,
+        "dt": 0.004
+      },
+      "caption": "The noise engine behind GBM: geometric Brownian motion is the exponential of this process (plus drift), so the log-price panels are what GBM paths look like after taking logs."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Use Itô's lemma to find the SDE for $f(S) = S^2$ when $S$ follows GBM $dS = \\mu S\\, dt + \\sigma S\\, dW$. Work term by term, then verify your answer is consistent by checking that the drift is $\\mathbb{E}[\\cdot]/dt$ applied to the squared position.",
+    "hints": [
+      "$f_S = 2S$ and $f_{SS} = 2$.",
+      "The $(dS)^2$ term contributes: $(dS)^2 = \\sigma^2 S^2\\, dt$.",
+      "Collect $dt$ terms and $dW$ terms separately."
+    ],
+    "solution": "Itô: $df = f_S\\, dS + \\tfrac{1}{2}f_{SS}\\,(dS)^2$ (no $f_t$ term). So $d(S^2) = 2S(\\mu S\\, dt + \\sigma S\\, dW) + \\tfrac{1}{2}\\cdot 2 \\cdot \\sigma^2 S^2\\, dt = (2\\mu + \\sigma^2)S^2\\, dt + 2\\sigma S^2\\, dW$. The Itô correction promoted the drift from $2\\mu$ to $2\\mu + \\sigma^2$: the same $\\tfrac{1}{2}\\sigma^2$ drag, now working for you because squaring rewards volatility. Consistency check via the isometry logic: $\\mathbb{E}[S_t^2]$ grows at rate $2\\mu + \\sigma^2$ per unit time - the squared position inherits the correction, exactly as $\\mathbb{E}[W_t^2] = t$ does for Brownian motion."
+  },
+  "independentExercise": {
+    "prompt": "A stock follows GBM with $\\mu = 0.05$, $\\sigma = 0.20$, $S_0 = 100$. (a) Compute the 30-year median and mean growth factors and interpret the gap. (b) Simulate one month ($\\Delta = 1/12$) with Euler–Maruyama for $Z = -1$, and also with the exact log-normal step; report both prices. (c) Your colleague projects log-returns at 5% per year for 30 years. What median outcome do they wrongly forecast, and by what factor is it too high?",
+    "hints": [
+      "(a) Median $e^{(\\mu - \\sigma^2/2)T}$, mean $e^{\\mu T}$; with $\\sigma^2/2 = 0.02$ the exponent gap is $0.02 \\times 30 = 0.6$.",
+      "(b) Monthly noise $\\sigma\\sqrt{\\Delta} = 0.20 \\times 0.288675 = 0.0577$; monthly drift $0.05/12 = 0.004167$.",
+      "(c) The correct log-drift is 3%, not 5%."
+    ],
+    "solution": "(a) Median: $e^{(0.05 - 0.02) \\times 30} = e^{0.9} \\approx 2.4596$ ($245.96 from \\$100); mean: $e^{1.5} \\approx 4.4817$ (\\$448.17). The typical path less than doubles-and-a-half while the mean claims 4.5× - rare high paths pull the average, and the $\\tfrac{1}{2}\\sigma^2 = 0.02$/yr drag compounds to a factor $e^{0.6} \\approx 1.82$ between them. (b) Euler: $100\\,(1 + 0.004167 - 0.0577) = 100 \\times 0.946432 = 94.64$. Exact: exponent $= 0.03 \\times (1/12) - 0.057735 = 0.0025 - 0.057735 = -0.055235$, so $S_1 = 100\\,e^{-0.055235} = 100 \\times 0.946263 = 94.63$. The two agree to the cent here; at coarser $\\Delta$ the exact log-step stays exact. (c) Projecting log-growth at 5% predicts median $e^{1.5} \\approx 4.48$, i.e. \\$448.17 - too high by the factor $e^{0.6} \\approx 1.82$ versus the true median \\$245.96."
+  },
+  "commonMistakes": [
+    "Dropping the $\\tfrac{1}{2}\\sigma^2 f_{xx}\\, dt$ term - the entire content of Itô's lemma; it is what distinguishes $\\int W\\,dW = \\tfrac{1}{2}W^2 - T/2$ from ordinary calculus.",
+    "Using $\\mu$ as the drift of log-returns: the log-drift is $\\mu - \\tfrac{1}{2}\\sigma^2$, and the error compounds as $e^{\\sigma^2 T/2}$.",
+    "In Euler–Maruyama, using $\\sigma$ instead of $\\sigma\\sqrt{\\Delta}$ for the noise, or evaluating $S_t$ at the right endpoint (lookahead).",
+    "Thinking GBM paths can go negative: proportional noise $\\sigma S\\, dW$ vanishes as $S \\to 0$, so positivity is preserved (unlike arithmetic $dS = \\mu\\, dt + \\sigma\\, dW$)."
+  ],
+  "realWorldApplication": "Stochastic differential equations model interest rates, neural-network training noise and control systems under uncertainty; Euler–Maruyama is their workhorse simulator, used anywhere smooth dynamics meet continuous noise.",
+  "quantFinanceApplication": "GBM under the risk-free rate is the simulation backbone of Monte Carlo pricing for exotic options; Itô's lemma produces the Black-Scholes PDE and every local-volatility extension of it; and the $\\mu - \\tfrac{1}{2}\\sigma^2$ log-drift is central to long-horizon return projections and volatility-drag adjustments in portfolio math.",
+  "summary": [
+    "Itô's lemma: $df = (f_t + \\mu f_x + \\tfrac{1}{2}\\sigma^2 f_{xx})\\,dt + \\sigma f_x\\, dW$ - the second-derivative term survives because $(dW)^2 = dt$.",
+    "For GBM $dS = \\mu S\\, dt + \\sigma S\\, dW$: $d\\ln S = (\\mu - \\tfrac{1}{2}\\sigma^2)\\, dt + \\sigma\\, dW$ - volatility drag $\\tfrac{1}{2}\\sigma^2$.",
+    "$S_T$ is lognormal: mean $S_0 e^{\\mu T}$, median $S_0 e^{(\\mu - \\sigma^2/2)T}$; at $\\mu = 0.08$, $\\sigma = 0.20$: 1.0833 vs 1.0618 after one year.",
+    "Euler–Maruyama: $S_{t+\\Delta} = S_t(1 + \\mu\\Delta + \\sigma\\sqrt{\\Delta}\\, Z)$; monthly step gives 103.55 ($Z = +0.5$) and 94.89 ($Z = -1$) vs exact log-step 103.44 and 94.86.",
+    "Monte Carlo pricing simulates risk-neutral GBM (drift $r$); the PDE route to Black-Scholes enters through the same lemma."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "The term that distinguishes Itô's lemma from the ordinary chain rule is:",
+      "options": [
+        "$\\tfrac{1}{2}\\sigma^2 f_{xx}\\, dt$ - the second derivative against the noise variance",
+        "$\\mu f_x\\, dt$ - the drift term",
+        "$\\sigma f_x\\, dW$ - the noise term",
+        "$f_t\\, dt$ - the explicit time dependence"
+      ],
+      "answerIndex": 0,
+      "explanation": "For smooth curves the second-order term dies; for Brownian noise $(dW)^2 = dt$ keeps $\\tfrac{1}{2}\\sigma^2 f_{xx}\\, dt$ alive. It is the systematic version of the $-T/2$ correction in $\\int W\\, dW$."
+    },
+    {
+      "id": "q2",
+      "type": "numeric",
+      "prompt": "For GBM with $\\sigma = 0.20$, what is the one-month standard deviation $\\sigma\\sqrt{1/12}$, in percent? (2 decimal places.)",
+      "answer": 5.77,
+      "tolerance": 0.02,
+      "explanation": "$\\sqrt{1/12} = 0.288675$; $0.20 \\times 0.288675 = 0.057735$ → 5.77% monthly volatility from 20% annual."
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "For GBM with $\\mu = 0.08$ and $\\sigma = 0.20$, what is the drift of $\\ln S_t$?",
+      "answer": 0.06,
+      "tolerance": 0.001,
+      "explanation": "$\\mu - \\tfrac{1}{2}\\sigma^2 = 0.08 - 0.02 = 0.06$: volatility drag costs 2 percentage points of log-growth per year."
+    },
+    {
+      "id": "q4",
+      "type": "code-output",
+      "prompt": "What does this Python code print?",
+      "language": "python",
+      "code": "import math\n\nS0, mu, sigma, dt = 100.0, 0.08, 0.20, 1/12\nz = 0.5\n\neuler = S0 * (1 + mu*dt + sigma*math.sqrt(dt)*z)\nexact = S0 * math.exp((mu - 0.5*sigma*sigma)*dt + sigma*math.sqrt(dt)*z)\nprint(round(euler, 2))\nprint(round(exact, 2))",
+      "answer": "103.55\n103.44",
+      "explanation": "Euler–Maruyama: $100(1 + 0.006667 + 0.0288675) = 103.5534$. Exact log-normal step: exponent $(0.06)(1/12) + 0.057735 \\times 0.5 = 0.0338675$, so $100\\,e^{0.0338675} = 103.4448$. The small gap is the Euler discretisation error at monthly granularity."
+    },
+    {
+      "id": "q5",
+      "type": "numeric",
+      "prompt": "For GBM with $\\mu = 0.08$, $\\sigma = 0.20$, $T = 1$: what is the median growth factor $S_T / S_0$? (4 decimal places.)",
+      "answer": 1.0618,
+      "tolerance": 0.005,
+      "explanation": "Median $= e^{(\\mu - \\sigma^2/2)T} = e^{0.06} = 1.0618$. The mean is $e^{0.08} = 1.0833$ - higher, because rare lucky paths pull the average while the typical path pays the drag."
+    },
+    {
+      "id": "q6",
+      "type": "short",
+      "prompt": "Explain in two or three sentences why $\\mathbb{E}[S_T] > \\text{median}(S_T)$ for geometric Brownian motion.",
+      "modelAnswer": "Log S_T is normal with drift mu - sigma^2/2, so S_T is lognormal and right-skewed: a small probability of enormous upside pulls the mean above the median. The median grows at the log-drift rate mu - sigma^2/2 (volatility drag), while the mean grows at mu, giving a gap factor of exp(sigma^2 T / 2).",
+      "keywords": [
+        "lognormal",
+        "skew",
+        "median",
+        "drag"
+      ],
+      "explanation": "Exponentiating a normal produces right skew; means are dominated by rare high outcomes. The typical (median) path grows at $\\mu - \\tfrac{1}{2}\\sigma^2$ and the mean at $\\mu$."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "formula",
+      "front": "Itô's lemma (1-D)",
+      "back": "$df = (f_t + \\mu f_x + \\tfrac{1}{2}\\sigma^2 f_{xx})\\, dt + \\sigma f_x\\, dW$ for $dX = \\mu\\, dt + \\sigma\\, dW$."
+    },
+    {
+      "type": "formula",
+      "front": "Log-drift of GBM",
+      "back": "$d\\ln S = (\\mu - \\tfrac{1}{2}\\sigma^2)\\, dt + \\sigma\\, dW$: the log-price drifts at $\\mu - \\tfrac{1}{2}\\sigma^2$, not $\\mu$."
+    },
+    {
+      "type": "formula",
+      "front": "Euler–Maruyama step",
+      "back": "$S_{t+\\Delta} = S_t + \\mu S_t \\Delta + \\sigma S_t \\sqrt{\\Delta}\\, Z$ with $Z \\sim N(0,1)$; exact alternative: $S_{t+\\Delta} = S_t \\exp[(\\mu - \\tfrac{1}{2}\\sigma^2)\\Delta + \\sigma\\sqrt{\\Delta}\\, Z]$."
+    },
+    {
+      "type": "code-output",
+      "front": "Euler vs exact one-month step, $S_0 = 100$, $\\mu = 0.08$, $\\sigma = 0.20$, $Z = +0.5$?",
+      "back": "Euler–Maruyama: 103.55; exact log-normal step: 103.44 - both verified, gap is discretisation error."
+    },
+    {
+      "type": "error-identification",
+      "front": "A report projects median 30-year wealth using log-growth equal to the 5% expected return (with $\\sigma = 0.20$). What is wrong?",
+      "back": "Log-drift should be $\\mu - \\tfrac{1}{2}\\sigma^2 = 0.03$, not $\\mu = 0.05$; the forecast is too high by $e^{0.02 \\times 30} \\approx 1.82$."
+    }
+  ],
+  "references": [
+    {
+      "label": "Wikipedia — Itô's lemma",
+      "url": "https://en.wikipedia.org/wiki/It%C3%B4%27s_lemma"
+    },
+    {
+      "label": "Wikipedia — Geometric Brownian motion",
+      "url": "https://en.wikipedia.org/wiki/Geometric_Brownian_motion"
+    },
+    {
+      "label": "Wikipedia — Euler–Maruyama method",
+      "url": "https://en.wikipedia.org/wiki/Euler%E2%80%93Maruyama_method"
+    }
+  ],
+  "skills": [
+    "stochastic-calculus"
+  ]
+}

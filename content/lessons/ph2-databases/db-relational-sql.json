@@ -1,0 +1,258 @@
+{
+  "id": "db-relational-sql",
+  "moduleId": "ph2-databases",
+  "title": "Relational Model and SQL Foundations",
+  "estMinutes": 26,
+  "difficulty": "core",
+  "prereqs": [],
+  "objectives": [
+    "Explain relations, tuples, attributes, primary keys and foreign keys, and why constraints make bad data hard to store",
+    "Write SELECT queries with WHERE, ORDER BY, LIMIT and IS NULL against an orders/fills schema",
+    "Choose correct data types for financial columns, in particular NUMERIC for money instead of floating point",
+    "Normalise a denormalised table by eliminating repeating groups into a child table with a foreign key"
+  ],
+  "motivation": "A desk's end-of-day report must reconcile every fill against every order: which orders fully executed, which are still open, and at what cost. That report is a database query, and its correctness depends on a schema that makes wrong data hard to store. This lesson builds the vocabulary - relations, keys, constraints - and the basic SQL that every later data lesson on this platform assumes you can already read.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "From flat files to relations"
+    },
+    {
+      "type": "p",
+      "md": "The **relational model** stores data in *relations* - what SQL calls tables. Each table is a set of **tuples** (rows), each tuple has the same **attributes** (columns), and every attribute has a fixed type. Two properties distinguish a true relation from a spreadsheet: rows have no inherent order (a table is a *set*, so asking for 'the third row' is meaningless without ORDER BY), and no two rows are identical when a **primary key** is declared. These rules are not pedantry. A position-keeping system that relies on row order will corrupt itself the moment the storage engine rewrites a page, so real systems key everything explicitly."
+    },
+    {
+      "type": "p",
+      "md": "A **primary key** uniquely identifies each row: the database rejects a duplicate `order_id` instead of silently creating a phantom position. A **foreign key** declares that a column must reference an existing row elsewhere: every fill must belong to a real order, so a fill with a typo'd order id cannot be inserted at all. Constraints like `NOT NULL`, `UNIQUE` and `CHECK` push business rules ('quantity must be positive') into the schema itself, which is exactly where an auditor wants them. Code can be bypassed; the schema cannot."
+    },
+    {
+      "type": "code",
+      "lang": "sql",
+      "code": "CREATE TABLE orders (\n    order_id    BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,\n    symbol      VARCHAR(16) NOT NULL,\n    side        VARCHAR(4)  NOT NULL CHECK (side IN ('BUY', 'SELL')),\n    order_type  VARCHAR(10) NOT NULL,\n    limit_price NUMERIC(12,4),            -- NULL for market orders\n    quantity    INTEGER     NOT NULL CHECK (quantity > 0),\n    created_at  TIMESTAMP WITH TIME ZONE NOT NULL\n);\n\nCREATE TABLE fills (\n    fill_id     BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,\n    order_id    BIGINT      NOT NULL REFERENCES orders(order_id),\n    price       NUMERIC(12,4) NOT NULL CHECK (price > 0),\n    quantity    INTEGER     NOT NULL CHECK (quantity > 0),\n    commission  NUMERIC(12,4) NOT NULL DEFAULT 0,\n    executed_at TIMESTAMP WITH TIME ZONE NOT NULL\n);",
+      "caption": "A minimal but production-shaped schema: one order, many fills. Note the deliberate denormalisation choice later lessons revisit."
+    },
+    {
+      "type": "interactive",
+      "component": "HashTableVisual",
+      "params": {
+        "capacity": 8,
+        "keys": [
+          1001,
+          1002,
+          1007,
+          2003,
+          5555
+        ],
+        "query": 1007
+      },
+      "caption": "A primary-key lookup behaves like a hash map: the key decides the bucket, so finding order 1007 does not require scanning every row."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Money is NUMERIC, never FLOAT",
+      "md": "`NUMERIC(12,4)` stores exact decimal digits - four of them after the point here. `FLOAT`/`DOUBLE` store binary approximations: \\$0.10 has no exact binary representation, so summing millions of floats drifts by cents that nobody can explain to risk control. Shares are `INTEGER`; timestamps are `TIMESTAMP WITH TIME ZONE` so a London fill and a New York fill are unambiguous."
+    },
+    {
+      "type": "h2",
+      "text": "Reading data: SELECT"
+    },
+    {
+      "type": "p",
+      "md": "A query passes through a fixed logical pipeline: `FROM` picks the table, `WHERE` filters rows, `SELECT` projects columns, `ORDER BY` sorts, `LIMIT` trims. Two behaviours surprise newcomers. First, **NULL is not a value** - it means 'unknown or absent', and `commission = NULL` matches nothing; you must write `commission IS NULL`. Second, without `ORDER BY` the database may return rows in any order it likes, and that order can change between runs. Deterministic output needs deterministic sorting."
+    },
+    {
+      "type": "code",
+      "lang": "sql",
+      "code": "-- Every MSFT sell fill above \\$190, most expensive first, top 10\nSELECT price, quantity, commission\nFROM   fills\nWHERE  symbol = 'MSFT'\n  AND  side = 'SELL'\n  AND  price >= 190\nORDER BY price DESC\nLIMIT  10;\n\n-- Fills that still lack a commission booking\nSELECT fill_id, price, quantity\nFROM   fills\nWHERE  commission IS NULL;",
+      "caption": "Filter, project, sort, trim - the four verbs of almost every ad-hoc desk query."
+    },
+    {
+      "type": "h2",
+      "text": "Choosing types on purpose"
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Column",
+        "Type",
+        "Why"
+      ],
+      "rows": [
+        [
+          "price, limit_price, commission",
+          "NUMERIC(12,4)",
+          "Exact decimal arithmetic; no rounding drift"
+        ],
+        [
+          "quantity",
+          "INTEGER",
+          "Whole shares; CHECK (quantity > 0) blocks nonsense"
+        ],
+        [
+          "symbol",
+          "VARCHAR(16)",
+          "Short fixed-meaning code, not a free-form string"
+        ],
+        [
+          "executed_at",
+          "TIMESTAMP WITH TIME ZONE",
+          "One absolute instant, unambiguous across venues"
+        ],
+        [
+          "order_id, fill_id",
+          "BIGINT identity",
+          "Cheap, unique, monotonic identifiers"
+        ]
+      ]
+    },
+    {
+      "type": "p",
+      "md": "Notice what the schema deliberately *omits*: `fills` has no `symbol` or `side` column, because both are derivable through the foreign key to `orders`. Storing them again invites the classic corruption where a fill says SELL but its order says BUY. When a later lesson needs faster reads, we will reintroduce duplication *knowingly* - denormalisation is a measured trade-off, not an accident."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "NULL is three-valued logic",
+      "md": "`WHERE NOT (side = 'SELL')` excludes rows where `side` is NULL as well as SELL rows, because `NOT (NULL)` is still unknown and unknown rows are filtered out. When you need the 'missing' rows back, combine with `OR side IS NULL`."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Using the schema above, write one query that returns `price`, `quantity` and `commission` for every fill of symbol `'AAPL'` executed at or after `2024-06-03 09:30:00`, highest price first, limited to the first 10 rows.",
+    "hints": [
+      "One condition per line in WHERE makes missing a filter obvious.",
+      "The timestamp literal form is `TIMESTAMP '2024-06-03 09:30:00'`.",
+      "Descending sort keyword is DESC."
+    ],
+    "solution": "```sql\nSELECT price, quantity, commission\nFROM   fills\nWHERE  symbol = 'AAPL'\n  AND  executed_at >= TIMESTAMP '2024-06-03 09:30:00'\nORDER BY price DESC\nLIMIT  10;\n```\nThe pipeline runs top to bottom: `FROM fills` gathers rows, `WHERE` keeps AAPL fills from 09:30 onward, `SELECT` projects three columns, `ORDER BY price DESC` sorts most-expensive first, `LIMIT 10` trims. Every clause is standard SQL, so the same query runs on PostgreSQL, MySQL or SQLite with only cosmetic changes."
+  },
+  "independentExercise": {
+    "prompt": "A legacy table stores fills as repeating groups: `orders_wide(order_id, symbol, side, fill1_price, fill1_qty, fill2_price, fill2_qty, fill3_price, fill3_qty)`, with NULLs wherever a fill is absent. (a) Name the design smell and the relational fix. (b) Write a single `INSERT INTO fills ... SELECT ...` that migrates every non-null fill into the normalised `fills` table from this lesson (ignore `commission` and `executed_at` defaults).",
+    "hints": [
+      "Repeating groups are the classic first-normal-form violation.",
+      "`UNION ALL` stacks several SELECTs; filter each with `IS NOT NULL`."
+    ],
+    "solution": "(a) Repeating groups violate first normal form: an order with a 4th fill cannot be stored, and every query must COALESCE across three column families. The fix is a child table with a foreign key - exactly the `fills` table. (b)\n\n```sql\nINSERT INTO fills (order_id, price, quantity)\nSELECT order_id, fill1_price, fill1_qty FROM orders_wide WHERE fill1_qty IS NOT NULL\nUNION ALL\nSELECT order_id, fill2_price, fill2_qty FROM orders_wide WHERE fill2_qty IS NOT NULL\nUNION ALL\nSELECT order_id, fill3_price, fill3_qty FROM orders_wide WHERE fill3_qty IS NOT NULL;\n```\nEach branch contributes one fill per order, NULLs are filtered out, and `UNION ALL` (not `UNION`) keeps duplicates that are legitimately distinct fills."
+  },
+  "commonMistakes": [
+    "Using FLOAT/DOUBLE for prices or cash balances - binary rounding makes totals unreconcilable.",
+    "Writing `WHERE commission = NULL`; NULL comparisons are unknown, so the query silently returns nothing. Use `IS NULL`.",
+    "Depending on the physical row order of a table ('the first order I inserted') instead of ORDER BY with a key.",
+    "Denormalising symbol and side into fills 'for convenience' without a reason, then having to reconcile contradictory copies.",
+    "Forgetting a WHERE clause on UPDATE or DELETE - the change hits every row in the table."
+  ],
+  "realWorldApplication": "Every reconciliation, settlement and regulatory report a bank produces is ultimately a set of SQL queries over schemas shaped like the one in this lesson, and schema constraints are the first line of defence auditors check.",
+  "quantFinanceApplication": "The orders/fills pair is the backbone of a position-keeping system: fills roll up into positions, positions into PnL. Keeping quantities positive, sides valid and money exact in NUMERIC columns is what lets a desk trust its own numbers.",
+  "summary": [
+    "A relation is an unordered set of typed tuples; identity comes from keys, not position.",
+    "Primary keys, foreign keys, CHECK and NOT NULL push business rules into the schema so bad data is rejected at insert time.",
+    "SELECT pipelines FROM -> WHERE -> SELECT -> ORDER BY -> LIMIT, and NULL must be tested with IS NULL, never =.",
+    "Money uses NUMERIC (exact decimals); floating point approximations make financial totals drift.",
+    "Normalisation removes repeating groups; denormalisation is a deliberate, justified trade-off, never a default."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "What does declaring `order_id BIGINT PRIMARY KEY` guarantee?",
+      "options": [
+        "order_id values are unique and never NULL, and duplicates are rejected at insert",
+        "order_id values are sorted ascending on disk",
+        "order_id values start at 1 and increase by exactly 1 forever",
+        "order_id is automatically indexed on every other column"
+      ],
+      "answerIndex": 0,
+      "explanation": "A primary key enforces uniqueness and NOT NULL - identity, not ordering or gaps. Auto-increment behaviour comes from the identity clause, not from PRIMARY KEY itself."
+    },
+    {
+      "id": "q2",
+      "type": "code-output",
+      "prompt": "Given these fills rows: (fill_id 1, side 'BUY', quantity 100), (fill_id 2, side 'BUY', quantity 300), (fill_id 3, side 'SELL', quantity 200), (fill_id 4, side 'BUY', quantity 150) - what does the query return?",
+      "language": "sql",
+      "code": "SELECT SUM(quantity) FROM fills WHERE side = 'BUY';",
+      "answer": "550",
+      "explanation": "BUY fills are 100 + 300 + 150 = 550; the SELL row is filtered out by WHERE."
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "A fill is 300 shares at \\$42.17. What is the gross notional in dollars (price times quantity)?",
+      "answer": 12651,
+      "unit": "USD",
+      "explanation": "300 x 42.17 = 12651.00 - a one-line SELECT price * quantity FROM fills would produce exactly this in NUMERIC arithmetic."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "`SELECT * FROM fills WHERE commission = NULL` returns:",
+      "options": [
+        "All rows with commission IS NULL",
+        "Zero rows, because = NULL is never true",
+        "A syntax error in standard SQL",
+        "All rows where commission is 0"
+      ],
+      "answerIndex": 1,
+      "explanation": "NULL means unknown, and unknown compared to anything is unknown, so the WHERE clause filters every row out. The correct predicate is `commission IS NULL`."
+    },
+    {
+      "id": "q5",
+      "type": "short",
+      "prompt": "In one or two sentences: why is NUMERIC preferred over FLOAT for price columns?",
+      "modelAnswer": "NUMERIC stores exact decimal digits, so sums and comparisons of monetary values are exact; FLOAT stores binary approximations of decimals, so repeated arithmetic accumulates rounding error that makes totals unreconcilable.",
+      "keywords": [
+        "exact",
+        "decimal",
+        "rounding"
+      ],
+      "explanation": "0.10 is not exactly representable in binary floating point; exactness is a hard requirement for money, which NUMERIC provides and FLOAT does not."
+    },
+    {
+      "id": "q6",
+      "type": "mcq",
+      "prompt": "Which statement about row order in a relational table is correct?",
+      "options": [
+        "Rows come back in insertion order unless you sort",
+        "Rows have no inherent order; only ORDER BY defines the result order",
+        "Rows always come back ordered by primary key",
+        "Row order is fixed by the first index created"
+      ],
+      "answerIndex": 1,
+      "explanation": "A relation is a set - tables are unordered bags of rows, and storage engines may return them in any order. Deterministic output requires an explicit ORDER BY."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "definition",
+      "front": "Primary key",
+      "back": "A column (or column set) that uniquely identifies each row; the database enforces uniqueness and NOT NULL on it."
+    },
+    {
+      "type": "definition",
+      "front": "Foreign key",
+      "back": "A column constrained to reference an existing primary key in another table - e.g. fills.order_id -> orders.order_id - so orphan rows cannot exist."
+    },
+    {
+      "type": "concept",
+      "front": "Why NUMERIC over FLOAT for money",
+      "back": "NUMERIC is exact decimal arithmetic; FLOAT approximates decimals in binary, so totals drift by rounding error that never reconciles."
+    },
+    {
+      "type": "code-output",
+      "front": "fills has rows with quantities (100, 300, 200, 150) and sides (BUY, BUY, SELL, BUY). What does SELECT COALESCE(SUM(quantity), 0) FROM fills WHERE side = 'SELL' return?",
+      "back": "200 - only the SELL row is summed; COALESCE would substitute 0 if no rows matched."
+    }
+  ],
+  "references": [
+    {
+      "label": "PostgreSQL Tutorial - Basic SELECT",
+      "url": "https://www.postgresql.org/docs/current/tutorial-select.html"
+    },
+    {
+      "label": "SQLBolt - Interactive SQL lessons",
+      "url": "https://sqlbolt.com/"
+    }
+  ],
+  "skills": [
+    "databases"
+  ]
+}

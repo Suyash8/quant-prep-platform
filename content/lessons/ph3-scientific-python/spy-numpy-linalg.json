@@ -1,0 +1,280 @@
+{
+  "id": "spy-numpy-linalg",
+  "moduleId": "ph3-scientific-python",
+  "title": "Linear Algebra and Random Sampling in NumPy",
+  "estMinutes": 26,
+  "difficulty": "core",
+  "prereqs": [
+    "spy-numpy"
+  ],
+  "objectives": [
+    "Compute covariance and correlation matrices from a returns matrix with np.cov and interpret the diagonal and off-diagonal entries",
+    "Solve small linear systems with np.linalg.solve and explain why explicit inversion is slower and less accurate",
+    "Interpret the eigendecomposition of a symmetric covariance matrix via np.linalg.eigh, including variance explained by the top eigenvalue",
+    "Use np.random.default_rng Generators to draw reproducible samples (normal, uniform, integers, multivariate_normal)",
+    "Estimate probabilities by Monte Carlo and validate them against closed-form values"
+  ],
+  "motivation": "Portfolio risk is linear algebra: a covariance matrix, its eigenvectors, and the weights that solve a constrained system. NumPy puts LAPACK - the same battle-tested library behind every serious numerical package - behind one import. And Monte Carlo needs randomness you can *reproduce*: the same seed must rebuild the same paths, or your backtest cannot be audited. This lesson turns matrix algebra you already know into np.linalg calls and introduces the modern random Generator.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Data as matrices; covariance in one line"
+    },
+    {
+      "type": "p",
+      "md": "Convention: rows are observations, columns are variables - a $(T, n)$ returns matrix has $T$ days and $n$ assets. The sample covariance is $C = X_c^{\\top} X_c / (T-1)$ where $X_c$ is the column-demeaned matrix; `np.cov(X, rowvar=False)` computes exactly this (note the default `rowvar=True` treats *rows* as variables - the classic mistake). The diagonal holds variances, off-diagonals covariances, and dividing by the outer product of standard deviations gives the correlation matrix."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import numpy as np\n\nX = np.array([[0.01, 0.02],\n              [0.03, -0.01],\n              [0.02, 0.01]])        # 3 days, 2 assets\nC = np.cov(X, rowvar=False)\nprint(C.round(6))\n# [[ 0.0001  -0.00015]\n#  [-0.00015  0.000233]]",
+      "caption": "Asset 1 variance $10^{-4}$ (vol 1%). The negative covariance says the assets hedge each other: correlation = -0.00015 / (0.01 x 0.01528) ~ -0.98."
+    },
+    {
+      "type": "h2",
+      "text": "Solve systems; avoid inverses"
+    },
+    {
+      "type": "p",
+      "md": "Constrained portfolio problems reduce to $Aw = b$: here $A$ encodes the constraints (weights sum to 1, portfolio return hits a target) and $w$ is the unknown allocation. `np.linalg.solve(A, b)` runs LU factorisation under the hood - faster and numerically better behaved than computing $A^{-1}$ and multiplying, which never touches a production library (numerical-analysis phase: conditioning)."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import numpy as np\n\nA = np.array([[1.0, 1.0],       # w1 + w2 = 1\n              [0.08, 0.12]])    # 0.08 w1 + 0.12 w2 = 0.09\nb = np.array([1.0, 0.09])\nw = np.linalg.solve(A, b)\nprint(w)                        # [0.75 0.25]",
+      "caption": "Two constraints pin two weights exactly: 75% in asset 1, 25% in asset 2. Verify: 0.08(0.75) + 0.12(0.25) = 0.09."
+    },
+    {
+      "type": "interactive",
+      "component": "MatrixTransform",
+      "params": {
+        "matrix": [
+          [
+            1.0,
+            0.4
+          ],
+          [
+            0.4,
+            1.2
+          ]
+        ]
+      },
+      "caption": "A covariance matrix as a linear map: unit circles deform into ellipses whose axes are the eigenvectors - the directions where risk acts cleanly - with axis lengths set by the eigenvalues."
+    },
+    {
+      "type": "h2",
+      "text": "Eigendecomposition: risk's principal axes"
+    },
+    {
+      "type": "p",
+      "md": "For a symmetric matrix, `np.linalg.eigh` returns real eigenvalues in **ascending** order and orthonormal eigenvectors: $\\Sigma = Q \\Lambda Q^{\\top}$. Each eigenvector is an uncorrelated synthetic portfolio; its eigenvalue is that portfolio's variance. The share of total risk carried by the largest direction is $\\lambda_{\\max} / \\sum_k \\lambda_k$ - in fixed income this decomposition recovers level/slope/curvature factors; in equities it surfaces the market factor."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import numpy as np\n\nC = np.array([[0.01, 0.004],\n              [0.004, 0.04]])\nvals, vecs = np.linalg.eigh(C)\nprint(vals.round(6))         # [0.009476 0.040524]\nshare = vals[-1] / vals.sum()\nprint(round(share, 3))       # 0.81",
+      "caption": "The dominant direction carries 81% of total variance - a strongly concentrated risk structure."
+    },
+    {
+      "type": "h2",
+      "text": "Random sampling the numpy 2.x way"
+    },
+    {
+      "type": "p",
+      "md": "New code uses `rng = np.random.default_rng(seed)` - a `Generator` (PCG64) - not the legacy global `np.random.seed` state, which is shared, untestable and deprecated in spirit. The Generator draws from typed methods: `rng.normal(mu, sigma, size=...)`, `rng.uniform`, `rng.integers`, `rng.choice` (with or without replacement), `rng.multivariate_normal` for correlated paths. Reproducibility is the point: the same seed rebuilds the exact same stream on any machine - which is what makes a backtest reviewable."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import numpy as np\n\nrng = np.random.default_rng(7)\nx = rng.normal(size=3)\nprint(x.round(2))            # [ 0.    0.3  -0.27]\npaths = rng.normal(0.0, 0.01, size=(2, 3))   # 2 paths, 3 steps each",
+      "caption": "Draw all Monte Carlo paths as one array, then vectorise the payoff - never sample in a Python loop."
+    },
+    {
+      "type": "p",
+      "md": "The bridge from \"knowing linear algebra\" to \"using it\" is small but decisive: real problems hand you data, not matrices. A covariance matrix from returns, a design matrix from factors, a system from an arbitrage relationship — and the linalg routines are the same three operations every time: solve, decompose, project."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import numpy as np\n\n# 4 assets, 6 daily returns (hypothetical)\nrets = np.array([\n    [ 0.020,  0.015, -0.010,  0.024],\n    [ 0.008, -0.006,  0.018,  0.011],\n    [ 0.012,  0.010,  0.004,  0.014],\n    [-0.004,  0.006, -0.008,  0.002],\n    [ 0.016,  0.012,  0.010,  0.018],\n    [ 0.010,  0.008,  0.002,  0.012],\n])\n\nC = np.cov(rets, rowvar=False)      # 4x4 covariance (columns are assets)\neigvals = np.linalg.eigvalsh(C)     # Hermitian solver: sorted ascending\nprint('eigenvalues:', np.round(eigvals, 8))\nprint('smallest eig (-> conditioning):', eigvals[0])\nprint('PD?', eigvals[0] > 0)\n\n# smallest eigenvalue vs largest = condition indicator\nprint('conditioning:', eigvals[-1] / max(eigvals[0], 1e-18))\n\n# solve C w = 1 for equal-risk weights, then normalise\nones = np.ones(4)\nw = np.linalg.solve(C, ones)\nw /= w.sum()\nprint('equal-risk weights:', np.round(w, 4))"
+    },
+    {
+      "type": "p",
+      "md": "Read the output like a practitioner. The eigenvalues of a covariance matrix are the variances along the principal axes; the *smallest* one is the early-warning channel — near zero means some portfolio of the assets has almost no variance, i.e. the assets are nearly linearly dependent (often a duplicated or synthetic instrument sneaking into the panel). `eigvalsh` is the right call for symmetric matrices: faster and numerically better behaved than the general `eigvals`. And `solve` (LU with pivoting) is both faster and more accurate than inverting: `inv(C) @ ones` computes a full inverse you do not need."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "np.random knows the difference",
+      "md": "Sampling multivariate normals with `np.random.multivariate_normal(mean, C)` requires C to be positive semi-definite; a C estimated from fewer observations than assets is almost surely not (its rank is capped by the sample count). Fix by shrinking toward a diagonal or factor-structuring the matrix — do not reach for `np.linalg.pinv` as a silent patch; it will happily return a matrix that hides the rank deficiency instead of exposing it."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Monte Carlo discipline",
+      "md": "Fix the seed, draw everything as one array `z = rng.normal(size=(n_paths, n_steps))`, compute the payoff vectorised, and store the seed with the results. Memory check: 100k paths x 250 steps x 8 bytes = 200 MB - chunk the draws if needed. And never share one Generator between threads; give each worker its own seeded Generator (py-gil-threading)."
+    },
+    {
+      "type": "steps",
+      "title": "Worked Monte Carlo: probability of a bad day",
+      "items": [
+        "Model daily returns as $N(\\mu=0.0002, \\sigma=0.01)$. Question: $P(r < -2\\%)$?",
+        "Draw once: `r = rng.normal(0.0002, 0.01, size=100_000)` with a fixed seed.",
+        "Estimate: `(r < -0.02).mean()` - a boolean mean, i.e. a sample fraction.",
+        "Validate: the z-score is $(-0.02 - 0.0002)/0.01 = -2.02$, and the normal tail gives $\\approx 0.0217$. The Monte Carlo estimate lands within sampling error (~0.0005 standard error at 100k draws)."
+      ]
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "For the matrix `X = [[0.01, 0.02], [0.03, -0.01], [0.02, 0.01]]` from the lesson:\n\n(a) Compute the sample variance of column 2 (asset 2) by hand: demean, square, divide by $T-1$.\n(b) Confirm it matches `np.cov(X, rowvar=False)[1, 1]`.\n(c) Compute the correlation between the two assets given $\\sigma_1 = 0.01$, $\\sigma_2 = \\sqrt{0.000233}$ and $\\text{cov} = -0.00015$.",
+    "hints": [
+      "Column 2 values: 0.02, -0.01, 0.01; mean = 0.02/3.",
+      "Divide the sum of squared deviations by T-1 = 2.",
+      "corr = cov / (sigma1 * sigma2)."
+    ],
+    "solution": "(a) Mean $= 0.006667$. Deviations: $0.013333, -0.016667, 0.003333$; squares sum to $0.0004667$; divide by 2: $\\text{var}_2 = 0.0002333$. (b) Matches `C[1,1] = 0.000233` (rounded). (c) $\\sigma_2 = 0.01528$, so corr $= -0.00015 / (0.01 \\times 0.01528) = -0.982$ - near-perfect negative correlation, a textbook diversifier."
+  },
+  "independentExercise": {
+    "prompt": "Estimate by Monte Carlo the probability that a single-asset portfolio loses more than 2% in a day, where daily returns are $N(0.0002, 0.01)$: use `rng = np.random.default_rng(0)`, 100,000 draws, estimate `p = (r < -0.02).mean()`. Then compute the exact answer via the z-score $(-0.02 - 0.0002)/0.01 = -2.02$ and a standard normal table ($\\approx 0.0217$), and state the standard error of your estimate (formula $\\sqrt{p(1-p)/n}$). What happens to both the estimate and its standard error if you rerun with seed 1?",
+    "hints": [
+      "A boolean array's mean is the fraction of True entries.",
+      "Sampling error shrinks like 1/sqrt(n).",
+      "A different seed gives a different but statistically equivalent answer."
+    ],
+    "solution": "```python\nimport numpy as np\nrng = np.random.default_rng(0)\nr = rng.normal(0.0002, 0.01, size=100_000)\np = float((r < -0.02).mean())\nse = (p * (1 - p) / len(r)) ** 0.5\nprint(round(p, 4), round(se, 5))\n```\nThe estimate comes out near the closed-form $\\Phi(-2.02) \\approx 0.0217$, with standard error $\\approx \\sqrt{0.0217 \\times 0.9783 / 10^5} \\approx 0.00046$. Rerunning with seed 1 changes the estimate by roughly one standard error and leaves the standard error essentially unchanged - the estimate is uncertain at the $\\pm 0.0005$ level, which is why 100k draws (not 100) are the desk default."
+  },
+  "commonMistakes": [
+    "Calling np.cov(X) on an observations-by-variables matrix without rowvar=False - you get an T x T covariance of days instead of assets.",
+    "Computing A_inv = np.linalg.inv(A) then A_inv @ b: slower and less accurate than np.linalg.solve(A, b).",
+    "Using the deprecated global np.random.seed / np.random.normal in library code instead of a default_rng Generator.",
+    "Forgetting that eigh returns eigenvalues in ASCENDING order - the dominant component is vals[-1], not vals[0].",
+    "Sharing one Generator across threads/processes; each worker needs its own seeded Generator.",
+    "Using ddof=0 (np.var default) when the desk convention is sample variance with ddof=1."
+  ],
+  "realWorldApplication": "PCA via eigendecomposition is standard in fixed-income curve modelling and equity risk factor construction; every Monte Carlo engine - from CVA to venue latency studies - is a seeded Generator plus vectorised reductions.",
+  "quantFinanceApplication": "The covariance matrix estimated here feeds directly into mean-variance optimisation (spy-scipy) and the eigen-decomposition underlies PCA risk factors; the seeded Generator makes every backtest and pricing run exactly reproducible for audit.",
+  "summary": [
+    "Rows = observations, columns = variables: np.cov(X, rowvar=False) gives the n x n asset covariance; diagonal = variances; correlation = cov / outer(sigma, sigma).",
+    "Solve linear systems with np.linalg.solve (LU under the hood), never with an explicit inverse - solve is faster and numerically safer.",
+    "np.linalg.eigh on a symmetric matrix returns ascending eigenvalues and orthonormal eigenvectors: Sigma = Q L Q^T; lambda_max / trace = share of variance in the dominant direction.",
+    "np.random.default_rng(seed) creates a reproducible PCG64 Generator; draw all Monte Carlo paths as one array and validate against closed-form values.",
+    "Monte Carlo estimates carry sampling error ~ sqrt(p(1-p)/n) - report it, and keep the seed with the results."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "code-output",
+      "prompt": "What does this print?",
+      "language": "python",
+      "code": "import numpy as np\nA = np.array([[2.0, 0.0], [0.0, 5.0]])\nw, v = np.linalg.eigh(A)\nprint(w)",
+      "answer": "[2. 5.]",
+      "explanation": "eigh returns eigenvalues in ascending order; for a diagonal matrix they are the diagonal entries themselves, printed numpy-style with a space and no trailing decimals: [2. 5.]."
+    },
+    {
+      "id": "q2",
+      "type": "code-output",
+      "prompt": "What does this print?",
+      "language": "python",
+      "code": "import numpy as np\nrng = np.random.default_rng(7)\nx = rng.normal(size=3)\nprint(x.round(2))",
+      "answer": "[ 0.    0.3  -0.27]",
+      "explanation": "Seed 7 fixes the PCG64 stream, so every run and every machine draws the same three values, rounded here to 2 dp (note numpy's aligned spacing)."
+    },
+    {
+      "id": "q3",
+      "type": "mcq",
+      "prompt": "Why is np.linalg.solve(A, b) preferred over np.linalg.inv(A) @ b?",
+      "options": [
+        "solve uses less memory only - results are identical",
+        "solve factors once and back-substitutes: faster and numerically more stable than forming the explicit inverse",
+        "inv works only on symmetric matrices",
+        "solve supports overdetermined systems while inv does not"
+      ],
+      "answerIndex": 1,
+      "explanation": "Forming an explicit inverse costs more flops and amplifies rounding error; LU solve delivers the same answer more accurately. For overdetermined systems, use lstsq, not either."
+    },
+    {
+      "id": "q4",
+      "type": "numeric",
+      "prompt": "What does `np.var(np.array([0.01, -0.01, 0.03, -0.03]))` return (numpy's default ddof=0)?",
+      "answer": 0.0005,
+      "tolerance": 1e-06,
+      "explanation": "Mean is 0; squared deviations: $10^{-4}, 10^{-4}, 9 \\times 10^{-4}, 9 \\times 10^{-4}$, sum $= 2 \\times 10^{-3}$, divided by 4 (ddof=0): $5 \\times 10^{-4}$."
+    },
+    {
+      "id": "q5",
+      "type": "ms",
+      "prompt": "Which statements about np.linalg.eigh are true for a symmetric matrix? Select all that apply.",
+      "options": [
+        "It returns eigenvalues in ascending order",
+        "The eigenvalues are guaranteed real",
+        "The returned eigenvectors are orthonormal",
+        "It accepts any square matrix and still gives real eigenvalues"
+      ],
+      "answerIndices": [
+        0,
+        1,
+        2
+      ],
+      "explanation": "eigh is specialised for symmetric (Hermitian) matrices: real eigenvalues ascending, orthonormal eigenvectors. For non-symmetric matrices use eig - eigenvalues may be complex."
+    },
+    {
+      "id": "q6",
+      "type": "short",
+      "prompt": "Why does fixing the RNG seed matter in quant work? Name two concrete reasons.",
+      "modelAnswer": "Reproducibility and auditability: the same seed regenerates identical Monte Carlo paths, so a backtest or pricing run can be re-run and reviewed by risk or audit, and bugs can be reproduced exactly instead of disappearing between runs.",
+      "keywords": [
+        "reproduc",
+        "audit",
+        "debug",
+        "same",
+        "seed",
+        "path"
+      ],
+      "explanation": "A seeded Generator turns 'random' into a deterministic, reviewable stream - essential for backtests, audits and debugging intermittent failures."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "formula",
+      "front": "Covariance matrix from a returns matrix X (T x n)",
+      "back": "C = Xc^T Xc / (T-1) with column-demeaned Xc - or np.cov(X, rowvar=False) (ddof=1). Diagonal = variances; divide by outer(sigma, sigma) for correlation."
+    },
+    {
+      "type": "code-output",
+      "front": "np.linalg.eigh returns eigenvalues in which order?",
+      "back": "Ascending. The dominant direction is vals[-1]; share of variance = vals[-1] / vals.sum()."
+    },
+    {
+      "type": "definition",
+      "front": "np.random.default_rng(seed)",
+      "back": "Creates a modern Generator (PCG64) with a fixed, reproducible stream. Methods: normal, uniform, integers, choice, multivariate_normal. Replaces the legacy global np.random.seed state."
+    },
+    {
+      "type": "concept",
+      "front": "solve vs inv",
+      "back": "np.linalg.solve(A, b) factorises (LU) and back-substitutes - faster and more accurate than computing A^{-1} explicitly and multiplying."
+    },
+    {
+      "type": "formula",
+      "front": "Monte Carlo standard error of an estimated probability p",
+      "back": "SE = sqrt(p(1-p)/n). At p~0.02 and n=100k, SE ~ 0.00046 - error shrinks like 1/sqrt(n)."
+    }
+  ],
+  "references": [
+    {
+      "label": "NumPy linalg documentation",
+      "url": "https://numpy.org/doc/stable/reference/routines.linalg.html"
+    },
+    {
+      "label": "NumPy random Generator documentation",
+      "url": "https://numpy.org/doc/stable/reference/random/generator.html"
+    },
+    {
+      "label": "NumPy - covariance (np.cov)",
+      "url": "https://numpy.org/doc/stable/reference/generated/numpy.cov.html"
+    }
+  ],
+  "skills": [
+    "scientific-python"
+  ]
+}

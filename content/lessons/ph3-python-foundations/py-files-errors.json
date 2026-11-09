@@ -1,0 +1,239 @@
+{
+  "id": "py-files-errors",
+  "moduleId": "ph3-python-foundations",
+  "title": "Files, Exceptions and Modules",
+  "estMinutes": 24,
+  "difficulty": "foundation",
+  "prereqs": ["py-control-functions"],
+  "objectives": [
+    "Read and write text files with open() and the with-statement, choosing r, w and a modes deliberately",
+    "Parse simple line-based data files by splitting and converting fields",
+    "Catch specific exceptions with try/except, select the right exception type from the traceback, and raise your own for bad input",
+    "Import code from the standard library and from your own modules, and explain the __name__ == '__main__' guard"
+  ],
+  "motivation": "Prices arrive in files, results must survive the program that produced them, and at desk scale things go wrong hourly: a missing file, a corrupted row, a price field that reads 'N/A'. Programs that cannot read input, persist output and recover from failure are toys. This lesson adds the three production essentials - file I/O, exception handling and modular code organization - to the computation skills you already have.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Reading and writing files"
+    },
+    {
+      "type": "p",
+      "md": "open(path, mode) connects your program to a file: mode `'r'` reads (the default), `'w'` **truncates** the file or creates it, and `'a'` appends to the end. Writing text needs explicit newlines - the string `\\n` marks the end of a line. Reading line by line iterates lazily, so even a file of millions of quotes needs no more memory than one line at a time. Lines carry their trailing newline, so strip() before splitting."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "with open('prices.txt', 'w') as f:\n    f.write('AAPL,42.25\\n')\n    f.write('MSFT,43.50\\n')\n\nwith open('prices.txt') as f:            # 'r' is the default mode\n    for line in f:\n        symbol, price = line.strip().split(',')\n        print(symbol, float(price) * 100)   # AAPL 4225.0 / MSFT 4350.0",
+      "caption": "Write two rows, then read them back as fields: strip the newline, split on the comma, convert the price."
+    },
+    {
+      "type": "p",
+      "md": "The **with-statement** is the only open() style you should use in production code. It wraps the file in a context manager: no matter how the block ends - normally, or via an exception - Python guarantees close() is called, releasing the handle immediately. Files left open by crashes or early returns are how logs go missing and writes never land."
+    },
+    {
+      "type": "h2",
+      "text": "Exceptions: failures you can plan for"
+    },
+    {
+      "type": "p",
+      "md": "An exception is a signal that an operation failed - a missing key, an unparseable number, a file that does not exist. Unhandled, it stops the program with a traceback naming the exception type. Handled, with try/except, your code responds deliberately: catch **specific** types around the smallest block that can fail, and let truly unexpected errors crash loudly rather than hide."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "for row in ['AAPL,42.25', 'MSFT,not_a_price']:\n    symbol, price = row.split(',')\n    try:\n        print(symbol, float(price))\n    except ValueError:\n        print(symbol, 'unparseable price')",
+      "caption": "Output: AAPL 42.25, then MSFT unparseable price - one bad row no longer kills the whole load."
+    },
+    {
+      "type": "table",
+      "headers": ["Exception", "Raised when", "Example trigger"],
+      "rows": [
+        ["KeyError", "a dict key is missing", "fills['MSFT'] with no MSFT entry"],
+        ["IndexError", "a list index is out of range", "fills[10] on a 3-element list"],
+        ["ValueError", "right type, bad value", "int('12.5')"],
+        ["TypeError", "wrong type for the operation", "'250' * 42.17"],
+        ["FileNotFoundError", "open() of a missing path", "open('ghost.csv')"],
+        ["ZeroDivisionError", "division or modulo by zero", "pnl / 0"]
+      ]
+    },
+    {
+      "type": "p",
+      "md": "Your own code should refuse bad input loudly too: `raise ValueError('qty must be positive')` aborts the operation with a message a teammate can act on. The optional else clause runs when no exception occurred, and finally runs always - useful for cleanup that must happen either way. In most desk code, try / except / (maybe) finally covers it."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Never write a bare except:",
+      "md": "`except:` with no exception type catches everything - including the KeyError caused by your own typo and KeyboardInterrupt when a human kills the process. The bug disappears into a generic message and resurfaces in production. Always name the exception you expect: except ValueError, except KeyError, except FileNotFoundError."
+    },
+    {
+      "type": "h2",
+      "text": "Modules: code you did not have to write"
+    },
+    {
+      "type": "p",
+      "md": "An import makes another file's names available in yours. Three forms cover everything: `import math` (call as math.sqrt), `from math import log` (call log directly), and `import numpy as np` (renaming for convenience). The standard library ships thousands of modules - math, csv, json, pathlib - and your own `.py` files import exactly the same way: a file named trades.py becomes the module `trades`."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import math\nfrom math import log\n\nprint(math.sqrt(2))            # 1.4142135623730951\nprint(round(log(math.e), 6))   # 1.0\nprint(round(math.pi, 4))       # 3.1416",
+      "caption": "Both import styles in one script; the math module is the standard library's calculator."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "# trades.py\ndef position_value(qty, price):\n    return qty * price",
+      "caption": "One file in the folder..."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "# report.py - same folder as trades.py\nimport trades\n\nif __name__ == '__main__':\n    print(trades.position_value(250, 42.25))   # 10562.5",
+      "caption": "...and the sibling file that imports it. The guard block runs only when report.py is executed directly, never when someone imports it."
+    },
+    {
+      "type": "p",
+      "md": "The `if __name__ == '__main__':` guard works because Python sets the module-level name `__name__` to `'__main__'` in the file you execute, but to the module's own name in any file you import. Putting demo or test code under the guard keeps modules importable without side effects - the habit that makes codebases of many files pleasant instead of fragile."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Build a robust price loader in one script: (1) write three rows to prices.txt - 'AAPL,42.25', 'BAD,not_a_price' and 'MSFT,43.50' (each ending with \\n); (2) read the file back into a dict mapping symbol to float price, catching ValueError per row and printing 'skipped: <row>' for the bad one; (3) print the finished dict.",
+    "hints": [
+      "Split each stripped line on ',' and convert the second field with float() inside the try.",
+      "Catch only ValueError - a row with the wrong shape is a different problem.",
+      "Printing: assignment loaded[symbol] = price adds keys in file order."
+    ],
+    "solution": "```python\nwith open('prices.txt', 'w') as f:\n    f.write('AAPL,42.25\\n')\n    f.write('BAD,not_a_price\\n')\n    f.write('MSFT,43.50\\n')\n\nloaded = {}\nwith open('prices.txt') as f:\n    for line in f:\n        symbol, price = line.strip().split(',')\n        try:\n            loaded[symbol] = float(price)\n        except ValueError:\n            print('skipped:', line.strip())\n\nprint(loaded)\n```\nOutput:\n\n```\nskipped: BAD,not_a_price\n{'AAPL': 42.25, 'MSFT': 43.5}\n```\nThe corrupt row fails float(), the except prints and the loop moves on, so one bad row costs one message - not the whole load."
+  },
+  "independentExercise": {
+    "prompt": "Write a script that (1) opens pnl_log.txt in append mode and writes two lines, 'AAPL,50.0' and 'MSFT,-50.0', each ending with a newline; (2) attempts to open ghost.csv for reading and prints 'no such file' when FileNotFoundError is raised; (3) re-reads pnl_log.txt and prints each line stripped of its newline. Use the with-statement for every open.",
+    "hints": [
+      "Append mode is 'a'; it creates the file if needed and never truncates.",
+      "Wrap only the open of ghost.csv (and its reading) in the try block.",
+      "line.strip() removes the trailing \\n before printing."
+    ],
+    "solution": "```python\nwith open('pnl_log.txt', 'a') as f:\n    f.write('AAPL,50.0\\n')\n    f.write('MSFT,-50.0\\n')\n\ntry:\n    with open('ghost.csv') as f:\n        print(f.read())\nexcept FileNotFoundError:\n    print('no such file')\n\nwith open('pnl_log.txt') as f:\n    for line in f:\n        print(line.strip())\n```\nOutput:\n\n```\nno such file\nAAPL,50.0\nMSFT,-50.0\n```\nAppend mode preserves earlier runs' lines, the missing file produces a handled FileNotFoundError rather than a crash, and the log reads back line by line."
+  },
+  "commonMistakes": [
+    "Using mode 'w' on a log you meant to extend - it truncates the file instantly; append with 'a'.",
+    "Writing a bare `except:` that swallows typos and KeyboardInterrupts; always catch specific exception types.",
+    "Forgetting line.strip() before splitting a read line - the trailing \\n becomes a silent field-breaker.",
+    "Importing with side effects: a module that runs its demo code at import time forces every importer to execute it - use the __name__ guard."
+  ],
+  "realWorldApplication": "ETL jobs, config readers and report writers are all this lesson: open with with, parse fields, catch specific failures per row, and keep reusable logic in modules the main script imports.",
+  "quantFinanceApplication": "End-of-day files of fills and prices are the desk's daily bread: a loader that skips corrupt rows with a message and persists computed PnL to a log is a one-evening build with exactly the tools shown here."
+  , "summary": [
+    "with open(path, mode) is the only way to open files in production: 'r' reads, 'w' truncates, 'a' appends - and the handle always closes, even on error.",
+    "try/except around the smallest failing block, catching specific exceptions: KeyError, IndexError, ValueError, TypeError, FileNotFoundError, ZeroDivisionError.",
+    "raise ValueError('message') refuses bad input loudly; bare except: hides bugs and is forbidden in production code.",
+    "import, from x import y and import x as y bring in the standard library and your own modules; the __name__ == '__main__' guard keeps files importable."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "code-output",
+      "prompt": "What does this script print?",
+      "language": "python",
+      "code": "try:\n    x = int('12.5')\nexcept ValueError:\n    print('bad number')",
+      "answer": "bad number",
+      "explanation": "int() rejects strings that are not integer literals, raising ValueError; the except block handles it and prints instead of crashing."
+    },
+    {
+      "id": "q2",
+      "type": "code-output",
+      "prompt": "What does this script print?",
+      "language": "python",
+      "code": "d = {'AAPL': 250, 'MSFT': 100}\nprint(d.get('TSLA', 0))\ntry:\n    print(d['TSLA'])\nexcept KeyError:\n    print('no position')",
+      "answer": "0\nno position",
+      "explanation": ".get() returns the default 0 for the missing key; direct indexing raises KeyError, which the try/except converts into a message."
+    },
+    {
+      "id": "q3",
+      "type": "mcq",
+      "prompt": "Why should files be opened with `with open(...) as f:` rather than open() alone?",
+      "options": [
+        "It reads the file faster",
+        "It guarantees the file is closed when the block ends, even if an exception occurs",
+        "It converts all values to strings automatically",
+        "It prevents other programs from reading the file forever"
+      ],
+      "answerIndex": 1,
+      "explanation": "The with-statement runs the file's cleanup (close) on every exit path, including exceptions - no leaked handles, no lost buffered writes."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "What is the difference between open(path, 'w') and open(path, 'a')?",
+      "options": [
+        "'w' appends and 'a' truncates",
+        "'w' truncates the file (or creates it) while 'a' appends to the end",
+        "Both do the same on an existing file",
+        "'w' fails if the file exists, 'a' overwrites it"
+      ],
+      "answerIndex": 1,
+      "explanation": "'w' empties the file the moment it opens - dangerous for logs; 'a' preserves existing content and writes at the end. Both create the file if it is missing."
+    },
+    {
+      "id": "q5",
+      "type": "code-output",
+      "prompt": "What does this script print?",
+      "language": "python",
+      "code": "import math\n\nprint(round(math.pi, 4))\nprint(math.sqrt(4))",
+      "answer": "3.1416\n2.0",
+      "explanation": "round(math.pi, 4) gives 3.1416; math.sqrt always returns a float, so even sqrt(4) prints as 2.0."
+    },
+    {
+      "id": "q6",
+      "type": "code-output",
+      "prompt": "demo.py contains exactly one line, shown below, and is executed with `python3 demo.py`. What is printed?",
+      "language": "python",
+      "code": "print(__name__)",
+      "answer": "__main__",
+      "explanation": "When a file runs directly, Python sets its module-level __name__ to '__main__'; under an import it would be the module name, which is what the guard tests."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "Why always `with open(...) as f:`?",
+      "back": "It wraps the file in a context manager: the file closes when the block ends, even if an exception is raised inside - no leaked handles, no lost writes."
+    },
+    {
+      "type": "definition",
+      "front": "Which exception for which mistake?",
+      "back": "KeyError: missing dict key; IndexError: bad list index; ValueError: right type, bad value (int('12.5')); TypeError: wrong type; FileNotFoundError: open() of a missing path."
+    },
+    {
+      "type": "code-output",
+      "front": "try: int('12.5') except ValueError: print('bad') - what prints?",
+      "back": "bad - int() refuses non-integer text; float('12.5') would have succeeded."
+    },
+    {
+      "type": "concept",
+      "front": "What does `if __name__ == '__main__':` do?",
+      "back": "Runs its block only when the file is executed directly, not when imported - modules stay reusable while a demo or harness runs on demand."
+    },
+    {
+      "type": "concept",
+      "front": "File modes 'w' vs 'a'?",
+      "back": "'w' truncates (empties) or creates the file; 'a' appends to the end, creating if needed. Reading uses 'r', the default."
+    }
+  ],
+  "references": [
+    {
+      "label": "Python.org - Reading and Writing Files",
+      "url": "https://docs.python.org/3/tutorial/inputoutput.html#reading-and-writing-files"
+    },
+    {
+      "label": "Python.org - Errors and Exceptions",
+      "url": "https://docs.python.org/3/tutorial/errors.html"
+    },
+    {
+      "label": "Python.org - Modules",
+      "url": "https://docs.python.org/3/tutorial/modules.html"
+    }
+  ],
+  "skills": ["python"]
+}

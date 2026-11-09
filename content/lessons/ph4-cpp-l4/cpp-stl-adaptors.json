@@ -1,0 +1,239 @@
+{
+  "id": "cpp-stl-adaptors",
+  "moduleId": "ph4-cpp-l4",
+  "title": "Stacks, Queues, Deques and Priority Queues",
+  "estMinutes": 26,
+  "difficulty": "core",
+  "prereqs": ["cpp-stl-associative"],
+  "objectives": [
+    "Explain what container adaptors are and identify the default underlying container of stack, queue and priority_queue",
+    "Describe deque's block-based layout and its O(1) insertion at both ends",
+    "Write a correct custom comparator for priority_queue and predict which element ends on top",
+    "Model a top-of-book with two priority queues and reason about push, pop and top costs"
+  ],
+  "motivation": "Every trading system is full of deliberately restricted structures: a cancel queue that must unwind last-in-first-out, an event bus that must preserve arrival order, a matching core that always needs the single best price right now. The STL's container adaptors give each of these a purpose-built interface over a container you never have to write - and priority_queue with a custom comparator is the standard model of a price-priority matching engine.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Adaptors restrict, they do not reinvent"
+    },
+    {
+      "type": "p",
+      "md": "A container adaptor is a thin class that owns a real container by value and exposes only a narrowed interface. std::stack offers push, pop and top - the underlying container's operator[] is deliberately gone, so misuse gets harder, not easier. The defaults: stack and queue sit on std::deque (cheap insertion at both ends), while priority_queue sits on std::vector (a heap over contiguous storage). You can override the underlying container, as in std::stack<int, std::vector<int>>, but the defaults are chosen well."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <stack>\n#include <queue>\n#include <iostream>\n\nint main() {\n    std::stack<int> s;\n    for (int x : {1, 2, 3}) s.push(x);\n    std::queue<int> q;\n    for (int x : {1, 2, 3}) q.push(x);\n    std::cout << s.top() << \" \" << q.front() << \" \" << q.back() << \"\\n\";\n}",
+      "caption": "Same three pushes, three different reads: 3 1 3."
+    },
+    {
+      "type": "p",
+      "md": "The one-line output captures the asymmetry: the stack's top is the most recent push (LIFO), the queue's front is the oldest and its back is the newest (FIFO). Note the interface quirks that cost people compile errors: pop() returns void - read top() or front() first if you need the value - and priority_queue::top() returns a const reference, so the best element cannot be modified in place; you pop it and push a replacement."
+    },
+    {
+      "type": "h2",
+      "text": "deque: a vector with a fast front"
+    },
+    {
+      "type": "p",
+      "md": "std::deque (double-ended queue) stores elements in fixed-size blocks, with a small directory of block pointers. push_front and push_back are $O(1)$ - usually just filling an empty slot in a boundary block - and operator[] is still $O(1)$ random access: one directory lookup plus one offset within a block. Elements never move when you push at the ends, so pointers and references to existing elements stay valid; iterators are more delicate. The costs against vector: one extra indirection per access and slightly worse cache behaviour, plus $O(n)$ insert or erase in the middle, as everywhere."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <deque>\n#include <cstddef>\n#include <iostream>\n\nint main() {\n    std::deque<int> d{3, 4, 5};\n    d.push_front(2);      // O(1): empty slot in the front block\n    d.push_front(1);\n    d.push_back(6);\n    for (std::size_t i = 0; i < d.size(); ++i)\n        std::cout << d[i] << (i + 1 < d.size() ? \" \" : \"\\n\");\n    std::cout << d[3] << \"\\n\";   // random access still O(1)\n}",
+      "caption": "Output: 1 2 3 4 5 6, then 4. Both ends grew in O(1); index 3 needed no traversal."
+    },
+    {
+      "type": "h2",
+      "text": "priority_queue: always the best price on top"
+    },
+    {
+      "type": "p",
+      "md": "std::priority_queue<T, Container, Compare> is a binary heap: the element that compares largest under Compare always sits at top(), readable in $O(1)$, while push and pop cost $O(\\log n)$. The comparator convention trips everyone exactly once: comp(a, b) returning true means a ranks **below** b. So a comparator returning a.price < b.price makes the highest price the largest element - a max-heap, exactly the bid side of a book. Flip the comparison and the same machinery becomes a min-heap for the ask side."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <queue>\n#include <vector>\n#include <iostream>\n\nstruct Order {\n    double price;\n    int qty;\n};\n\n// comp(a,b) == true means a ranks BELOW b: max-heap on price.\nstruct BidBetter {\n    bool operator()(const Order& a, const Order& b) const {\n        return a.price < b.price;\n    }\n};\n\nint main() {\n    std::priority_queue<Order, std::vector<Order>, BidBetter> bids;\n    bids.push({100.25, 400});\n    bids.push({100.75, 200});\n    bids.push({100.50, 900});\n    std::cout << \"top \" << bids.top().price << \" x \" << bids.top().qty << \"\\n\";\n    bids.pop();\n    std::cout << \"next \" << bids.top().price << \"\\n\";\n}",
+      "caption": "Best bid surfaces without any search: top 100.75 x 200, then next 100.5."
+    },
+    {
+      "type": "p",
+      "md": "Trace it: three orders arrive in scrambled order, yet the heap has already arranged them so top() is 100.75 x 200 with no searching at all. pop() removes it and the heap sifts the next-best price (100.50) up in one $O(\\log n)$ operation - not a scan. Constructing the heap from a range of $n$ elements at once is $O(n)$, so bulking up a book before the open is cheaper than pushing one at a time. The ask side is the mirror image, conveniently written as a lambda:"
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <queue>\n#include <vector>\n#include <iostream>\n\nstruct Order { double price; int qty; };\n\nint main() {\n    auto askBetter = [](const Order& a, const Order& b) {\n        return a.price > b.price;      // min-heap: lowest price on top\n    };\n    std::priority_queue<Order, std::vector<Order>, decltype(askBetter)> asks(askBetter);\n    asks.push({100.50, 300});\n    asks.push({100.25, 100});\n    asks.push({100.75, 200});\n    std::cout << \"best ask \" << asks.top().price << \"\\n\";\n}",
+      "caption": "a.price > b.price means a higher price ranks below: the minimum surfaces as the best ask."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Comparator direction",
+      "md": "If the bid side keeps showing the lowest price on top, the comparator is upside down: comp(a, b) == true means a loses to b, so return a.price < b.price for best-bid-on-top. The second classic bug is assuming priority_queue is sorted - it is only heap-ordered: iteration visits elements in an unspecified order, and only top() is guaranteed."
+    },
+    {
+      "type": "list",
+      "ordered": false,
+      "items": [
+        "**std::stack** - LIFO: unwinding corrections, nested order state, depth-first search.",
+        "**std::queue** - FIFO: preserving arrival order of market events and messages.",
+        "**std::priority_queue** - priority order: matching by price priority, top-of-book, top-k analytics."
+      ]
+    },
+    {
+      "type": "interactive",
+      "component": "ComplexityCompare",
+      "params": {
+        "title": "Serving the best price among n live orders",
+        "n": 100000,
+        "operations": [
+          { "name": "priority_queue (heap)", "insert": "O(log n)", "readBest": "O(1)" },
+          { "name": "sorted vector", "insert": "O(n)", "readBest": "O(1)" },
+          { "name": "unsorted vector, min-scan per query", "insert": "O(1)", "readBest": "O(n)" }
+        ]
+      },
+      "caption": "The heap is the compromise that wins when orders stream in but only the best one is read: logarithmic writes, constant-time reads."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "The heap is the textbook matching engine",
+      "md": "A price-time matching core wants the highest buy and the lowest sell immediately: two heaps over (price, time) keys give O(1) best-price reads and O(log n) inserts as orders stream in. Production engines add price-level structures to make cancels cheap, but interview questions about matching engines almost always begin from priority_queue plus a comparator - and the comparator direction is the part they are really testing."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "With the BidBetter comparator from the lesson, the orders (100.25 x 400), (100.75 x 200), (100.50 x 900) are pushed onto bids in that order. State what top() returns after each of three successive pop() calls, and give the total big-O cost of the three pops.",
+    "hints": [
+      "top() is the maximum under the comparator - the highest price.",
+      "After each pop the heap restores itself; nothing is scanned."
+    ],
+    "solution": "Pops come out in descending price: **100.75, then 100.50, then 100.25**. Each pop is $O(\\log n)$ (sift-down), so three pops are $O(3 \\log n)$ - still $O(\\log n)$ for this fixed size. Note the quantities ride along untouched: top() was 100.75 x 200, not the largest-quantity order - the comparator, not the qty field, decides priority."
+  },
+  "independentExercise": {
+    "prompt": "You keep two priority_queues over Order{double price; int qty;}: bids with the comparator 'return a.price < b.price;' and asks with 'return a.price > b.price;'. Push bids (99.75 x 500), (99.50 x 800), (99.90 x 300) and asks (100.10 x 200), (100.25 x 400), (100.05 x 150). (a) State the best bid and best ask as price x qty. (b) Compute the quoted spread in dollars. (c) State which side is larger at the top of book, and as what ratio.",
+    "hints": [
+      "Bid comparator a.price < b.price builds a max-heap on price.",
+      "Spread = best ask minus best bid."
+    ],
+    "solution": "(a) Best bid = **99.90 x 300** (maximum price); best ask = **100.05 x 150** (minimum price under the a.price > b.price comparator). (b) Spread $= 100.05 - 99.90 = $ **\\$0.15**. (c) Top-of-book size is 300 bid against 150 ask: the bid side is **2:1** heavier, a bid-leaning imbalance. Both tops were read in $O(1)$; the six pushes cost $O(\\log n)$ each."
+  },
+  "commonMistakes": [
+    "Writing the comparator upside down: comp(a, b) == true means a ranks below b, so a.price < b.price puts the HIGHEST price on top for the bid side.",
+    "Expecting priority_queue iteration in sorted order - it is heap-ordered; only top() has a guarantee.",
+    "Trying to use the value returned by pop() - it returns void; read top() (or front()) first.",
+    "Believing deque elements move on push_front/push_back - they do not; references to existing elements stay valid, iterators may not.",
+    "Choosing queue when order events must be processed by priority, or priority_queue when strict arrival order matters - pick the adaptor whose discipline matches the semantics."
+  ],
+  "realWorldApplication": "Undo/rollback stacks, FIFO event and message buses, and price-priority matching are ubiquitous; the STL adaptors provide all three disciplines with well-understood costs and no custom containers to maintain.",
+  "quantFinanceApplication": "The two-heap top-of-book in the exercise - max-heap bids, min-heap asks, O(1) best-price reads, O(log n) inserts - is the canonical design used to teach matching engines and appears in exchange-protocol interview questions at trading firms.",
+  "summary": [
+    "Container adaptors own a container by value and expose a narrowed interface: stack (LIFO), queue (FIFO), priority_queue (best-first). Defaults are deque, deque and vector.",
+    "std::deque stores fixed-size blocks behind a directory: O(1) push at both ends and O(1) random access, with references to existing elements stable across end-pushes.",
+    "priority_queue is a binary heap: top() in O(1), push/pop in O(log n), built from a range in O(n).",
+    "comp(a, b) == true means a ranks below b; a.price < b.price gives a max-heap (best bid), a.price > b.price a min-heap (best ask).",
+    "pop() returns void everywhere - read top()/front() before popping if the value is needed."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "Which container do std::stack and std::queue use by default?",
+      "options": [
+        "std::vector",
+        "std::deque",
+        "std::list",
+        "std::array"
+      ],
+      "answerIndex": 1,
+      "explanation": "Both default to std::deque because insertion and removal must be cheap at the end they operate on - and deque is O(1) at both ends. priority_queue defaults to std::vector."
+    },
+    {
+      "id": "q2",
+      "type": "code-output",
+      "prompt": "What does this program print?",
+      "language": "cpp",
+      "code": "#include <stack>\n#include <queue>\n#include <iostream>\n\nint main() {\n    std::stack<int> s;\n    for (int x : {1, 2, 3}) s.push(x);\n    std::queue<int> q;\n    for (int x : {1, 2, 3}) q.push(x);\n    std::cout << s.top() << \" \" << q.front() << \" \" << q.back() << \"\\n\";\n}",
+      "answer": "3 1 3",
+      "explanation": "The stack's top is the most recently pushed element (3, LIFO); the queue's front is the oldest (1, FIFO) and its back the newest (3)."
+    },
+    {
+      "id": "q3",
+      "type": "code-output",
+      "prompt": "What does this program print?",
+      "language": "cpp",
+      "code": "#include <queue>\n#include <vector>\n#include <iostream>\n\nstruct Order { double price; int qty; };\n\nint main() {\n    auto askBetter = [](const Order& a, const Order& b) {\n        return a.price > b.price;\n    };\n    std::priority_queue<Order, std::vector<Order>, decltype(askBetter)> asks(askBetter);\n    asks.push({100.50, 300});\n    asks.push({100.25, 100});\n    asks.push({100.75, 200});\n    std::cout << \"best ask \" << asks.top().price << \"\\n\";\n}",
+      "answer": "best ask 100.25",
+      "explanation": "The comparator a.price > b.price means a higher price ranks below a lower one, so the heap is a min-heap on price and top() is the lowest price 100.25 - the best ask."
+    },
+    {
+      "id": "q4",
+      "type": "numeric",
+      "prompt": "In the lesson's bid heap (BidBetter comparator, orders 100.25 x 400, 100.75 x 200, 100.50 x 900), what price is on top after exactly two pop() calls?",
+      "answer": 100.25,
+      "tolerance": 0.001,
+      "explanation": "Pops come out in descending price: 100.75, then 100.50, leaving 100.25 as the new top. The heap maintains best-first order without any scan."
+    },
+    {
+      "id": "q5",
+      "type": "ms",
+      "prompt": "Which statements are true?",
+      "options": [
+        "std::priority_queue::push is O(log n)",
+        "Pushing at either end of a std::deque keeps references to existing elements valid",
+        "std::queue::pop returns the element it removed",
+        "std::stack::top returns the most recently pushed element"
+      ],
+      "answerIndices": [0, 1, 3],
+      "explanation": "Heap push sifts at most the height of the heap: O(log n). deque end-pushes never move existing elements, so references survive (iterators may not). pop() returns void in all STL containers - read before popping. stack::top is the newest element by LIFO definition."
+    },
+    {
+      "id": "q6",
+      "type": "short",
+      "prompt": "Why does a matching engine reach for a heap rather than a sorted vector of live orders?",
+      "modelAnswer": "Reading the best order is O(1) at top() and each insert/pop is O(log n); keeping a vector sorted would cost O(n) per insert on the hot path.",
+      "keywords": ["O(log n)", "O(1)", "top", "sorted", "O(n)"],
+      "explanation": "The workload is write-heavy (orders stream in) with best-only reads: the heap's O(log n) inserts and O(1) top beat the sorted vector's O(n) inserts, and the unsorted vector's O(n) scans per read."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "definition",
+      "front": "What is a container adaptor?",
+      "back": "A class that owns a container by value and exposes a narrowed interface: stack (LIFO), queue (FIFO), priority_queue (best-first heap). Defaults: deque, deque, vector."
+    },
+    {
+      "type": "code-output",
+      "front": "stack<int> s; push 1,2,3. queue<int> q; push 1,2,3. What are s.top(), q.front(), q.back()?",
+      "back": "3, 1, 3 - stack top is the newest element; queue front is the oldest and back is the newest."
+    },
+    {
+      "type": "concept",
+      "front": "priority_queue comparator convention",
+      "back": "comp(a, b) == true means a ranks BELOW b, so top() is the largest element under comp. a.price < b.price gives a max-heap (best bid); a.price > b.price gives a min-heap (best ask)."
+    },
+    {
+      "type": "formula",
+      "front": "Costs: priority_queue vs deque",
+      "back": "priority_queue: top O(1), push/pop O(log n), build from n elements O(n). deque: push_front/push_back O(1), operator[] O(1), insert/erase in the middle O(n)."
+    }
+  ],
+  "references": [
+    {
+      "label": "cppreference - std::priority_queue",
+      "url": "https://en.cppreference.com/w/cpp/container/priority_queue"
+    },
+    {
+      "label": "cppreference - std::deque",
+      "url": "https://en.cppreference.com/w/cpp/container/deque"
+    },
+    {
+      "label": "cppreference - std::stack and std::queue",
+      "url": "https://en.cppreference.com/w/cpp/container/stack"
+    }
+  ],
+  "skills": ["cpp-stl", "dsa"]
+}

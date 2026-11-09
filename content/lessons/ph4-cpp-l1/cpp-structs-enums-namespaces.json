@@ -1,0 +1,247 @@
+{
+  "id": "cpp-structs-enums-namespaces",
+  "moduleId": "ph4-cpp-l1",
+  "title": "Structs, Enums and Namespaces",
+  "estMinutes": 24,
+  "difficulty": "foundation",
+  "prereqs": [
+    "cpp-arrays-strings"
+  ],
+  "objectives": [
+    "Define structs that group related data, construct them with brace initialisation and access members with . and ->",
+    "Use scoped enum class types for closed sets of values and explain why they beat plain enums",
+    "Organise code into namespaces and resolve name collisions",
+    "Model a price/order domain using exact integer-cents arithmetic"
+  ],
+  "motivation": "A fill is not one number - it is symbol, side, price, quantity, venue, timestamp. C++ lets you bind those into a struct so functions pass one coherent Order instead of six loose variables, while enum class pins 'side' to exactly Buy or Sell. Namespaces then keep your Order from colliding with a vendor library's Order. These three features are the core vocabulary of every real trading codebase.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "struct: data that travels together"
+    },
+    {
+      "type": "p",
+      "md": "A **struct** is a user-defined type bundling named members. Define the type once, then construct objects with **brace initialisation**, listing values in member order - nested members can be initialised with their own braces (`{\"AAPL\", {19050}, 100, 'B'}`). Access members with the dot operator (`order.quantity`) and, through a pointer, the arrow operator (`ptr->quantity`, shorthand for `(*ptr).quantity`). Structs make function signatures honest: `void clip(const Order& o)` cannot confuse a price with a quantity, and adding a field later updates one definition instead of a dozen parameter lists. Note the money discipline from lesson 2 built right in: `Price` stores **cents in a long long**, so every notional computed from it is exact."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <iostream>\n#include <string>\n\nstruct Price {\n    long long cents;      // exact: 42.17 USD stored as 4217\n};\n\nstruct Order {\n    std::string symbol;\n    Price limit;\n    int quantity;\n    char side;            // 'B' or 'S' for now - upgraded to an enum below\n};\n\nint main() {\n    Order o{\"AAPL\", {19050}, 100, 'B'};\n    long long notional = o.limit.cents * o.quantity;   // 1,905,000 cents\n    std::cout << o.symbol << ' ' << notional << '\\n';\n    return 0;\n}",
+      "caption": "Brace initialisation fills members in order; the nested Price gets its own braces. Output: AAPL 1905000"
+    },
+    {
+      "type": "h2",
+      "text": "enum class: closed sets of values"
+    },
+    {
+      "type": "p",
+      "md": "A **scoped enum** declares a closed set of named constants with its own type: `enum class Side { Buy, Sell };`. Compared with old-style (unscoped) enums it fixes two real problems. First, its names are *scoped* - you write `Side::Buy`, and two enums may each define `Buy` without colliding. Second, its values do **not** implicitly convert to int: `int x = Side::Buy;` is a compile error; you must write `static_cast<int>(Side::Buy)`. That friction is the point - a Side can no longer be mistaken for a share count. You can pin the underlying storage with `enum class Venue : unsigned char { Nyse, Nasdaq, Dark };`, making each venue one byte in a struct that holds millions of orders."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <iostream>\n\nenum class Side { Buy, Sell };\nenum class Venue : unsigned char { Nyse, Nasdaq, Dark };\n\nint main() {\n    Side s = Side::Buy;\n    Venue v = Venue::Nasdaq;\n    std::cout << (s == Side::Buy ? \"buy\" : \"sell\") << '\\n';\n    std::cout << static_cast<int>(v) << '\\n';   // 1 - Nyse is 0, Dark is 2\n    return 0;\n}",
+      "caption": "Scoped enums compare only against their own type; the cast makes the underlying number explicit. Output: buy then 1"
+    },
+    {
+      "type": "h2",
+      "text": "namespaces: your names versus everyone else's"
+    },
+    {
+      "type": "p",
+      "md": "**Namespaces** partition the global name space: `namespace risk { ... }` wraps declarations so callers write `risk::withinLimit(...)`. Two libraries can each define an `Order` because each lives in its own namespace. Prefer explicit qualification, or a targeted **using declaration** (`using risk::withinLimit;`), over the blanket `using namespace risk;` - and never put a using directive in a header, where it leaks into every includer. Namespaces are open: the same namespace can be reopened across files, which is how a library splits its implementation among source files while presenting one interface."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <iostream>\n\nnamespace risk {\n    constexpr long long kMaxNotionalCents{1'000'000};   // 1,000,000 cents\n\n    bool withinLimit(long long notionalCents) {\n        return notionalCents <= kMaxNotionalCents;\n    }\n}\n\nint main() {\n    std::cout << risk::withinLimit(1'905'000) << '\\n';  // 0 - over the cap\n    std::cout << risk::withinLimit(950'000) << '\\n';    // 1 - inside\n    return 0;\n}",
+      "caption": "Digit separators (1'000'000) make large constants readable; bool prints as 1/0 by default. Output: 0 then 1"
+    },
+    {
+      "type": "h2",
+      "text": "Putting it together: a validated order"
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <iostream>\n#include <string>\n\nnamespace book {\n    enum class Side { Buy, Sell };\n    enum class Venue : unsigned char { Nyse, Nasdaq, Dark };\n\n    struct Order {\n        std::string symbol;\n        long long limitCents;\n        int quantity;\n        Side side;\n        Venue venue;\n    };\n\n    bool withinLimit(const Order& o, long long capCents) {\n        return o.limitCents * static_cast<long long>(o.quantity) <= capCents;\n    }\n}\n\nint main() {\n    book::Order o{\"AAPL\", 19050, 100, book::Side::Buy, book::Venue::Nasdaq};\n    std::cout << book::withinLimit(o, 2'000'000) << '\\n';  // 1,905,000 <= 2,000,000\n    return 0;\n}",
+      "caption": "One namespace holds the domain types; the risk check takes const Order& - no copy, no ambiguity. Output: 1"
+    },
+    {
+      "type": "p",
+      "md": "User-defined types are how a codebase stops arguing. When `Side`, `OrderId` and `Price` are distinct types — not `int`, `int` and `double` wearing comments — the compiler enforces the vocabulary the desk already uses. This is the difference between type systems as bureaucracy and type systems as free unit tests: every accidental swap of an order id and a quantity becomes a compile error instead of a 3am page."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <cstdint>\n#include <cstdio>\n#include <string>\n\nnamespace md {                       // namespacing = ownership boundary\n\nenum class Side : uint8_t { Buy, Sell };   // scoped enum: no implicit int leaks\n\nstruct OrderId {\n    uint64_t value;\n    explicit OrderId(uint64_t v) : value(v) {}\n};\n\nstruct Price {\n    int64_t ticks;                    // price as integer ticks: the fix for 0.1+0.2 != 0.3\n    explicit Price(int64_t t) : ticks(t) {}\n    double as_double(int tick_size_decimals) const {\n        double scale = 1; for (int i = 0; i < tick_size_decimals; ++i) scale *= 10;\n        return ticks / scale;\n    }\n};\n\n}  // namespace md\n\nint main() {\n    md::Side s = md::Side::Buy;\n    // md::Side s2 = 1;                 // COMPILE ERROR: no implicit conversion — the point\n    md::OrderId id{42};\n    // int x = id.value + 100;         // compiles but is visibly wrong to the reader\n    md::Price p{100025};               // 100.025 at 3 decimals\n    printf(\"side=%s price=%.3f\\n\",\n           s == md::Side::Buy ? \"BUY\" : \"SELL\", p.as_double(3));\n}",
+      "caption": "Strong types: distinct vocabularies for concepts the desk keeps distinct."
+    },
+    {
+      "type": "p",
+      "md": "Three design rules worth internalising. **Scoped enums (`enum class`) always** — plain enums leak their enumerators into the enclosing scope and convert to integers implicitly, which is two bugs per keystroke saved. **Constructors of strong types get `explicit`** — it stops `f(42)` from silently becoming an `OrderId`, and makes the intended construction `OrderId{42}` visible at the call site. **Namespaces mirror ownership, not taxonomies** — `md::` (market data), `oms::` (order management), `risk::` boundaries are where build-time dependencies can be cut; a namespace named `utils::` is where good intentions go to die."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Why price is an integer in the example",
+      "md": "Money and prices as `double` accumulate binary representation error (the numerical-stability lesson at micro scale). The professional pattern is integer ticks + a per-instrument decimal scale, exactly as the example shows — with the conversion to double confined to display and analytics boundaries. When you see `int64_t ticks` in a codebase, that team has been burned before; when you see `double price` in an order path, they will be."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "The model is the documentation",
+      "md": "Notice what this tiny model encodes: prices are exact integer cents, Side and Venue are closed sets, the risk rule is one named function. Six months from now, a new hire can read these types and understand the desk's invariants without reading a word of prose."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Given `struct Price { long long cents; };` and `struct Order { std::string symbol; Price limit; int quantity; };`, write a function `long long notionalCents(const Order& o)` and print the notional for `Order{\"TSLA\", {24850}, 50}`. What is the exact output, and what is the notional in dollars?",
+    "hints": [
+      "24850 cents is 248.50 dollars.",
+      "Multiply cents by quantity: the result stays in cents."
+    ],
+    "solution": "Notional $= 24850 \\times 50 = 1{,}242{,}500$ cents $=$ **\\$12,425.00**; the program prints `1242500`.\n```cpp\n#include <iostream>\n#include <string>\n\nstruct Price { long long cents; };\nstruct Order { std::string symbol; Price limit; int quantity; };\n\nlong long notionalCents(const Order& o) {\n    return o.limit.cents * o.quantity;\n}\n\nint main() {\n    Order o{\"TSLA\", {24850}, 50};\n    std::cout << notionalCents(o) << '\\n';   // 1242500\n    return 0;\n}\n```\nThe function takes `const Order&` - no copy, no mutation - and integer multiplication keeps the result exact."
+  },
+  "independentExercise": {
+    "prompt": "Model two candidate orders and pick the larger notional. Order A: \"TSLA\", limit 24850 cents, quantity 50, Side::Buy. Order B: \"AAPL\", limit 19050 cents, quantity 100, Side::Sell. Using an `enum class Side`, a `struct Order`, and a `namespace desk`, write a full program that prints the symbol and notional in cents of the larger order. State the exact output.",
+    "hints": [
+      "A: 24850 x 50 = 1,242,500 cents. B: 19050 x 100 = 1,905,000 cents.",
+      "Write notionalCents(const Order&) once and compare the two results; bind the winner to a reference."
+    ],
+    "solution": "B is larger, so the output is `AAPL 1905000`.\n```cpp\n#include <iostream>\n#include <string>\n\nnamespace desk {\n    enum class Side { Buy, Sell };\n\n    struct Order {\n        std::string symbol;\n        long long limitCents;\n        int quantity;\n        Side side;\n    };\n\n    long long notionalCents(const Order& o) {\n        return o.limitCents * static_cast<long long>(o.quantity);\n    }\n}\n\nint main() {\n    desk::Order a{\"TSLA\", 24850, 50, desk::Side::Buy};\n    desk::Order b{\"AAPL\", 19050, 100, desk::Side::Sell};\n\n    const desk::Order& bigger =\n        desk::notionalCents(a) > desk::notionalCents(b) ? a : b;\n    std::cout << bigger.symbol << ' ' << desk::notionalCents(bigger) << '\\n';\n    return 0;\n}\n```\n$1{,}242{,}500 < 1{,}905{,}000$, so `bigger` binds to `b` and the program prints `AAPL 1905000` - computed exactly in integer cents."
+  },
+  "commonMistakes": [
+    "Accessing members of a pointer with dot syntax (o.quantity instead of o->quantity) - dot is for objects and references.",
+    "Expecting enum class values to convert to int implicitly: static_cast is required, and that strictness is a feature, not an obstacle.",
+    "Putting using namespace std; in a header - it forces every includer to inherit the collisions.",
+    "Storing a price as double inside a struct 'because it is easier': use long long cents for ledger-exact money.",
+    "Defining a struct type inside a .cpp when multiple files need it: struct definitions belong in headers (with include guards)."
+  ],
+  "realWorldApplication": "Exchange gateway SDKs are struct-and-enum libraries: fixed order structs, scoped venue enums, and vendor namespaces you must qualify - reading those headers is a daily task on the desk.",
+  "quantFinanceApplication": "The Order/Price model here - integer-cents prices, scoped Side and Venue enums, a namespace with a notional risk cap - is a miniature of a real order-management system's core types.",
+  "summary": [
+    "structs bundle related members and make function signatures type-safe; construct with braces, access with . (object/reference) or -> (pointer).",
+    "enum class creates scoped, strongly-typed value sets: no name leakage and no implicit conversion to int.",
+    "Namespaces partition names; qualify explicitly or use targeted using declarations - never a using directive in a header.",
+    "Money belongs in integer cents (long long) inside structs so notionals and PnL are exact.",
+    "const-reference parameters (const Order&) pass structs without copying - the default for read-only inputs."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "code-output",
+      "prompt": "What does this C++17 program print?",
+      "language": "cpp",
+      "code": "#include <iostream>\n\nstruct Price { long long cents; };\n\nint main() {\n    Price p{19050};\n    int qty = 100;\n    std::cout << p.cents * qty << '\\n';\n    return 0;\n}",
+      "answer": "1905000",
+      "explanation": "19050 cents x 100 = 1,905,000, printed without separators. Integer arithmetic on cents is exact - the whole point of the Price struct."
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "What does enum class add over a plain (unscoped) enum?",
+      "options": [
+        "Faster execution",
+        "Scoped names and no implicit conversion to int",
+        "Automatic serialisation to strings",
+        "Larger underlying values"
+      ],
+      "answerIndex": 1,
+      "explanation": "Scoped enums keep enumerators inside the enum's name (Side::Buy) and refuse implicit int conversions - accidentally mixing a Side with a share count becomes a compile error."
+    },
+    {
+      "id": "q3",
+      "type": "mcq",
+      "prompt": "Given `Order* o = &ord;` where Order has a member quantity, which expression correctly reads it?",
+      "options": [
+        "o.quantity",
+        "*o.quantity",
+        "o->quantity",
+        "o:quantity"
+      ],
+      "answerIndex": 2,
+      "explanation": "Through a pointer, use the arrow: o->quantity is shorthand for (*o).quantity. o.quantity does not compile because o is not an object or reference."
+    },
+    {
+      "id": "q4",
+      "type": "ms",
+      "prompt": "Which namespace practices are recommended?",
+      "options": [
+        "Qualifying names explicitly, e.g. risk::withinLimit(...)",
+        "A targeted using declaration, e.g. using risk::withinLimit;",
+        "A using directive in a header, e.g. using namespace std;",
+        "Reopening the same namespace across several .cpp files"
+      ],
+      "answerIndices": [
+        0,
+        1,
+        3
+      ],
+      "explanation": "Explicit qualification and targeted using declarations keep dependencies visible; a using directive in a header leaks into every includer. Reopening namespaces across files is standard library organisation."
+    },
+    {
+      "id": "q5",
+      "type": "numeric",
+      "prompt": "An order has limit 25750 cents and quantity 400. What is its notional in cents?",
+      "answer": 10300000,
+      "explanation": "25750 x 400 = 10,300,000 cents, i.e. \\$103,000.00 - exact because everything stayed in integer cents."
+    },
+    {
+      "id": "q6",
+      "type": "short",
+      "prompt": "In `struct Price { long long cents; };`, why is the field long long rather than double?",
+      "modelAnswer": "Cents are integers and long long arithmetic is exact; doubles cannot represent most decimal prices exactly (they are binary fractions), so a ledger of double prices accumulates representation error such as 0.1 + 0.2 = 0.30000000000000004.",
+      "keywords": [
+        "exact",
+        "binary",
+        "cents",
+        "double"
+      ],
+      "explanation": "Struct fields should carry the semantics you want: exactness for money, which integer cents give and binary doubles cannot."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "definition",
+      "front": "struct",
+      "back": "A user-defined type bundling named members; construct with brace initialisation, access with . (object/reference) or -> (pointer)."
+    },
+    {
+      "type": "definition",
+      "front": "enum class",
+      "back": "A scoped, strongly-typed enum: enumerators live inside the enum's name (Side::Buy) and never implicitly convert to int."
+    },
+    {
+      "type": "concept",
+      "front": "Dot vs arrow",
+      "back": "o.member for objects and references; ptr->member for pointers - shorthand for (*ptr).member."
+    },
+    {
+      "type": "concept",
+      "front": "Namespace discipline",
+      "back": "Qualify explicitly or use targeted using declarations; never a using directive in a header; namespaces may be reopened across files."
+    },
+    {
+      "type": "code-output",
+      "front": "Price p{19050}; int qty{100}; - what does p.cents * qty print?",
+      "back": "1905000 - integer cents times quantity stays exact (and prints without separators)."
+    }
+  ],
+  "references": [
+    {
+      "label": "cppreference — Structure declaration",
+      "url": "https://en.cppreference.com/w/cpp/language/struct"
+    },
+    {
+      "label": "cppreference — Scoped enumeration (enum class)",
+      "url": "https://en.cppreference.com/w/cpp/language/enum"
+    },
+    {
+      "label": "cppreference — Namespaces",
+      "url": "https://en.cppreference.com/w/cpp/language/namespace"
+    }
+  ],
+  "skills": [
+    "cpp"
+  ]
+}

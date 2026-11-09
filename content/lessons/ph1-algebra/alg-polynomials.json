@@ -1,0 +1,248 @@
+{
+  "id": "alg-polynomials",
+  "moduleId": "ph1-algebra",
+  "title": "Polynomials and Factorisation",
+  "estMinutes": 26,
+  "difficulty": "core",
+  "prereqs": [
+    "alg-quadratics"
+  ],
+  "objectives": [
+    "Identify polynomials by their definition, and state the degree and leading coefficient that drive end behaviour",
+    "Add and multiply polynomials accurately, keeping track of every term",
+    "Factor expressions using common factors, difference of squares, grouping and the factor theorem",
+    "Use the remainder theorem to evaluate divisions without long division"
+  ],
+  "motivation": "A payoff model turns position size into PnL through a cubic polynomial; a pricing engine approximates smooth functions with polynomial Taylor expansions. In both settings the productive questions are the same: where does the polynomial hit zero (break-evens, roots) and can its expression be rewritten more compactly (factorisation)? This lesson builds the algebra that later lessons - Taylor series, numerical root-finding - will assume you can do in your sleep.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "What counts as a polynomial"
+    },
+    {
+      "type": "p",
+      "md": "A **polynomial** is a sum of terms $a_k x^k$ in which the exponents are non-negative integers: $3x^4 - x^2 + 7$ qualifies, while $2^x$ (variable exponent) and $1/x$ (negative exponent) do not. The **degree** is the largest exponent present, and the **leading coefficient** is the coefficient of that term. Together they dictate end behaviour: a polynomial of odd degree with positive leading coefficient falls on the far left and rises on the far right, like an elongated S. These two numbers let you sketch the long-run shape of any model before computing a single point."
+    },
+    {
+      "type": "p",
+      "md": "Evaluating polynomials efficiently matters when you do it millions of times. The nested (Horner) form rewrites $2x^3 - x^2 + 4$ as $((2x - 1)x + 0)x + 4$ - a chain of multiply-adds with no explicit powers. Numerical libraries evaluate every polynomial exactly this way, and the same loop doubles as polynomial division machinery via the remainder theorem."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "def poly(coeffs, x):\n    result = 0\n    for c in coeffs:            # coeffs: highest degree first\n        result = result * x + c\n    return result\n\nprint(poly([2, -1, 0, 4], 3))   # 49, since 2*27 - 9 + 0 + 4 = 49",
+      "caption": "Horner evaluation: one pass over coefficients, no powers computed."
+    },
+    {
+      "type": "h2",
+      "text": "Arithmetic: adding and multiplying"
+    },
+    {
+      "type": "p",
+      "md": "Addition collects like terms - terms with the same exponent. Multiplication distributes every term of one factor across every term of the other, and degrees add: quadratic times linear gives cubic. Nothing here is conceptually deep; the errors are missed terms, so the discipline is systematic bookkeeping rather than cleverness."
+    },
+    {
+      "type": "steps",
+      "title": "Worked example: expand and simplify $(x + 3)(x - 2) + (x^2 - 4x + 1)$",
+      "items": [
+        "Expand the product: $(x + 3)(x - 2) = x^2 - 2x + 3x - 6 = x^2 + x - 6$.",
+        "Add the second polynomial: $x^2 + x - 6 + x^2 - 4x + 1$.",
+        "Collect like terms: $2x^2 - 3x - 5$.",
+        "Sanity check: quadratic plus quadratic is quadratic; constants $-6 + 1 = -5$ appear in the result as expected."
+      ]
+    },
+    {
+      "type": "h2",
+      "text": "Factoring: reversing the multiplication"
+    },
+    {
+      "type": "p",
+      "md": "Factoring matters because an equation of the form (product) $= 0$ splits into simple linear pieces - the zero-product property from the quadratics lesson. The toolkit below is ordered: each entry is cheaper to try than the next, so work down the list before resorting to numerical root-finding."
+    },
+    {
+      "type": "list",
+      "ordered": false,
+      "items": [
+        "**Common factor first, always:** $2x^3 - 8x = 2x(x^2 - 4) = 2x(x - 2)(x + 2)$ - every term contributes.",
+        "**Difference of squares:** $a^2 - b^2 = (a - b)(a + b)$, so $4x^2 - 25 = (2x - 5)(2x + 5)$. There is no matching rule for $a^2 + b^2$ over the reals.",
+        "**Grouping (four terms):** $x^3 - 3x^2 - 4x + 12 = x^2(x - 3) - 4(x - 3) = (x - 3)(x^2 - 4) = (x - 3)(x - 2)(x + 2)$.",
+        "**Factor theorem:** if $P(a) = 0$ then $(x - a)$ divides $P(x)$ exactly - test small integer divisors of the constant term."
+      ]
+    },
+    {
+      "type": "steps",
+      "title": "Worked example: factor $P(x) = x^3 + x^2 - 4x - 4$ completely",
+      "items": [
+        "Candidate roots divide the constant 4: $\\pm 1, \\pm 2, \\pm 4$. Try $x = -1$: $P(-1) = -1 + 1 + 4 - 4 = 0$, so $(x + 1)$ is a factor.",
+        "Split by grouping: $x^2(x + 1) - 4(x + 1) = (x + 1)(x^2 - 4)$.",
+        "Apply difference of squares: $P(x) = (x + 1)(x - 2)(x + 2)$.",
+        "Verify by expanding back: $(x + 1)(x^2 - 4) = x^3 + x^2 - 4x - 4$ as required."
+      ]
+    },
+    {
+      "type": "interactive",
+      "component": "FunctionPlotter",
+      "params": {
+        "fn": "x^3 - 3*x^2 - 4*x + 12",
+        "xmin": -3,
+        "xmax": 4.5,
+        "ymin": -12,
+        "ymax": 16
+      },
+      "caption": "The cubic from the grouping example crosses zero at exactly x = -2, 2 and 3 - the three roots its factored form promises."
+    },
+    {
+      "type": "h2",
+      "text": "The remainder theorem: division without dividing"
+    },
+    {
+      "type": "p",
+      "md": "Dividing a polynomial $P(x)$ by $(x - a)$ leaves a constant remainder, and that remainder equals $P(a)$. The factor theorem is the special case $P(a) = 0$. This converts 'is $(x - a)$ a factor?' into 'is this one evaluation zero?' - no long division required - and it is why Horner's loop above is simultaneously an evaluator and a division engine."
+    },
+    {
+      "type": "steps",
+      "title": "Worked example: remainder of $P(x) = x^3 - 2x + 5$ on division by $(x - 2)$",
+      "items": [
+        "Remainder $= P(2) = 8 - 4 + 5 = 9$. Since $9 \\neq 0$, $(x - 2)$ is not a factor.",
+        "Cross-check with genuine division: $(x - 2)(x^2 + 2x + 2) + 9 = x^3 + 2x^2 + 2x - 2x^2 - 4x - 4 + 9 = x^3 - 2x + 5$. Consistent."
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Difference of squares is a finance identity",
+      "md": "$(1 + r)(1 - r) = 1 - r^2$. An asset that gains 10% then loses 10% finishes at $1.10 \\times 0.90 = 0.99$ - permanently 1% below its start. That 'volatility drag' is the difference of squares in disguise, and it is why multiplicative returns, not additive ones, govern compounding (developed fully in the exponentials lesson)."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Factor $3x^2 - 12x - 15$ completely, and verify your factors by expanding back.",
+    "hints": [
+      "Every coefficient is divisible by 3 - take the common factor out first.",
+      "Then find two numbers with product $-5$ and sum $-4$.",
+      "Verification means multiplying your factors out and matching all three coefficients."
+    ],
+    "solution": "$3x^2 - 12x - 15 = 3(x^2 - 4x - 5) = 3(x - 5)(x + 1)$. Check: $(x - 5)(x + 1) = x^2 + x - 5x - 5 = x^2 - 4x - 5$, and multiplying by 3 recovers the original."
+  },
+  "independentExercise": {
+    "prompt": "A payoff model is $P(x) = x^3 - 6x^2 + 11x - 6$ (PnL in \\$1,000s, $x$ in lots). Use the factor theorem to factor $P$ completely, list every break-even volume (where $P = 0$), and compute $P(4)$ from your factors without expanding.",
+    "hints": [
+      "Test $x = 1$ first: you should get 0.",
+      "After dividing out $(x - 1)$, factor the remaining quadratic.",
+      "For $P(4)$, just multiply $(4-1)(4-2)(4-3)$ - no expansion needed."
+    ],
+    "solution": "$P(1) = 1 - 6 + 11 - 6 = 0$, so $(x - 1)$ is a factor. Dividing: $P(x) = (x - 1)(x^2 - 5x + 6) = (x - 1)(x - 2)(x - 3)$. Break-evens: $x = 1, 2, 3$ lots. $P(4) = (3)(2)(1) = 6$, i.e. \\$6,000 - and indeed $64 - 96 + 44 - 6 = 6$."
+  },
+  "commonMistakes": [
+    "Forgetting the common factor in some terms: $2x^3 - 8x = 2x(x^2 - 8x)$ is wrong - every term must contribute.",
+    "Writing $x^2 - 25 = (x - 5)^2$: it is $(x - 5)(x + 5)$; the square of a difference expands to $x^2 - 10x + 25$.",
+    "Sign errors in the factor theorem: $P(a) = 0$ gives the factor $(x - a)$, not $(x + a)$.",
+    "Declaring 'no factors' after testing only $x = 1$ - test all candidate divisors of the constant term, positive and negative."
+  ],
+  "realWorldApplication": "Polynomials power interpolation in computer graphics, error-correcting codes in communications, and computer algebra systems; Horner's scheme is the standard polynomial evaluation loop inside numerical libraries.",
+  "quantFinanceApplication": "Taylor expansions approximate pricing formulas by polynomials - option deltas and gammas are its coefficients - and break-even analysis of payoff models reduces to finding polynomial roots exactly as in the exercises above.",
+  "summary": [
+    "Polynomials have non-negative integer exponents; degree and leading coefficient determine end behaviour.",
+    "Add by collecting like terms; multiply by distributing every term across every term; degrees add under multiplication.",
+    "Factor in order: common factor, difference of squares, grouping, factor theorem.",
+    "Remainder theorem: dividing by $(x - a)$ leaves remainder $P(a)$; the factor theorem is the $P(a) = 0$ case."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "Which expression is NOT a polynomial?",
+      "options": [
+        "$3x^2 - x + 1$",
+        "$x^3 + 4x$",
+        "$2^x + 1$",
+        "$7$"
+      ],
+      "answerIndex": 2,
+      "explanation": "Polynomials require non-negative integer exponents on the variable. $2^x$ has the variable in the exponent, so it is exponential, not polynomial."
+    },
+    {
+      "id": "q2",
+      "type": "numeric",
+      "prompt": "What is the remainder when $x^3 - 2x + 5$ is divided by $(x - 2)$?",
+      "answer": 9,
+      "explanation": "Remainder theorem: evaluate $P(2) = 8 - 4 + 5 = 9$."
+    },
+    {
+      "id": "q3",
+      "type": "mcq",
+      "prompt": "Factor $4x^2 - 25$.",
+      "options": [
+        "$(2x - 5)^2$",
+        "$(2x - 5)(2x + 5)$",
+        "$(4x - 5)(x + 5)$",
+        "$(2x + 5)^2$"
+      ],
+      "answerIndex": 1,
+      "explanation": "Difference of squares: $(2x)^2 - 5^2 = (2x - 5)(2x + 5)$. Option $(2x-5)^2$ would expand to $4x^2 - 20x + 25$."
+    },
+    {
+      "id": "q4",
+      "type": "numeric",
+      "prompt": "Let $P(x) = x^3 + x^2 - 4x - 4$. What is $P(2)$?",
+      "answer": 0,
+      "explanation": "$8 + 4 - 8 - 4 = 0$, so $(x - 2)$ is a factor - consistent with $P(x) = (x + 1)(x - 2)(x + 2)$."
+    },
+    {
+      "id": "q5",
+      "type": "code-output",
+      "prompt": "What does this Python code print?",
+      "language": "python",
+      "code": "def poly(coeffs, x):\n    result = 0\n    for c in coeffs:\n        result = result * x + c\n    return result\n\nprint(poly([2, -1, 0, 4], 3))",
+      "answer": "49",
+      "explanation": "Horner evaluation of $2x^3 - x^2 + 4$ at $x = 3$: $2 \\cdot 27 - 9 + 4 = 49$."
+    },
+    {
+      "id": "q6",
+      "type": "short",
+      "prompt": "State the factor theorem in one sentence.",
+      "modelAnswer": "P(a) = 0 if and only if (x - a) is a factor of P(x); equivalently, the remainder on dividing P(x) by (x - a) is P(a).",
+      "keywords": [
+        "factor",
+        "remainder",
+        "P(a)",
+        "zero"
+      ],
+      "explanation": "The theorem links roots to factors and is the standard opening move for factoring cubics."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "formula",
+      "front": "Difference of squares",
+      "back": "$a^2 - b^2 = (a - b)(a + b)$; e.g. $4x^2 - 25 = (2x - 5)(2x + 5)$."
+    },
+    {
+      "type": "definition",
+      "front": "Factor theorem",
+      "back": "$P(a) = 0$ if and only if $(x - a)$ is a factor of $P(x)$."
+    },
+    {
+      "type": "definition",
+      "front": "Remainder theorem",
+      "back": "The remainder of $P(x)$ on division by $(x - a)$ equals $P(a)$."
+    },
+    {
+      "type": "concept",
+      "front": "Horner's scheme",
+      "back": "Evaluate a polynomial by nested multiply-adds: one pass over coefficients, no explicit powers - faster and numerically stabler."
+    }
+  ],
+  "references": [
+    {
+      "label": "OpenStax Algebra and Trigonometry 2e - Polynomial Functions",
+      "url": "https://openstax.org/details/books/algebra-and-trigonometry-2e"
+    },
+    {
+      "label": "Wolfram MathWorld - Horner's Rule",
+      "url": "https://mathworld.wolfram.com/HornersRule.html"
+    }
+  ],
+  "skills": [
+    "algebra"
+  ]
+}

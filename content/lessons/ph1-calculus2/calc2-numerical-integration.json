@@ -1,0 +1,224 @@
+{
+  "id": "calc2-numerical-integration",
+  "moduleId": "ph1-calculus2",
+  "title": "Numerical Integration",
+  "estMinutes": 26,
+  "difficulty": "core",
+  "prereqs": ["calc2-techniques"],
+  "objectives": [
+    "Explain why most practical integrals have no closed form and must be computed numerically",
+    "Implement the trapezoid rule and analyse its $O(h^2)$ error behaviour",
+    "Implement Simpson's rule and explain why it is exact for cubics",
+    "Estimate and compare truncation errors against exact values",
+    "Choose a method and a resolution $n$ to hit a stated accuracy budget"
+  ],
+  "motivation": "Try to antidifferentiate $e^{-x^2}$ - the very function that defines the normal distribution's CDF. No elementary antiderivative exists, and neither does one for most integrands a risk engine meets: payoff times empirical density, loss distributions, cumulative intensities. Analytic integration is the exception; numerical integration is the rule. The craft is knowing three or four quadrature rules, how fast each converges, and how to budget accuracy against computation cost.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "The rules: rectangles, trapezoids, parabolas"
+    },
+    {
+      "type": "p",
+      "md": "All quadrature rules approximate $\\int_a^b f(x)dx$ by summing simple shapes. The **trapezoid rule** joins sample points with straight lines - each slab of width $h = \\frac{b-a}{n}$ contributes $\\frac{h}{2}\\left[f(x_i) + f(x_{i+1})\\right]$. Summing telescopes into a clean formula:"
+    },
+    {
+      "type": "math",
+      "tex": "T_n = \\frac{h}{2}\\left[f(a) + 2\\sum_{i=1}^{n-1} f(a + ih) + f(b)\\right], \\qquad h = \\frac{b-a}{n}",
+      "caption": "Trapezoid rule - interior points counted twice"
+    },
+    {
+      "type": "p",
+      "md": "The **Simpson rule** upgrades each *pair* of slabs: instead of a straight line through three points, pass the unique parabola through them and integrate the parabola exactly. On even $n$ panels of width $h$ the weights alternate $1, 4, 2, 4, \\ldots, 2, 4, 1$:"
+    },
+    {
+      "type": "math",
+      "tex": "S_n = \\frac{h}{3}\\left[f(a) + 4f(x_1) + 2f(x_2) + 4f(x_3) + \\cdots + 4f(x_{n-1}) + f(b)\\right]",
+      "caption": "Simpson's rule - parabolas through triples of points"
+    },
+    {
+      "type": "h2",
+      "text": "A worked comparison with exact error accounting"
+    },
+    {
+      "type": "p",
+      "md": "Take $\\int_0^1 \\frac{dx}{1+x^2}$, whose exact value is $\\arctan 1 = \\frac{\\pi}{4} = 0.78539816\\ldots$ - a closed form we can audit the numerics against. With $n = 4$ panels, $h = 0.25$, the sample values are $f(0) = 1$, $f(0.25) = 0.941176$, $f(0.5) = 0.8$, $f(0.75) = 0.64$, $f(1) = 0.5$."
+    },
+    {
+      "type": "steps",
+      "title": "Hand computation, all three ways",
+      "items": [
+        "Trapezoid: $T_4 = \\frac{0.25}{2}\\left[1 + 2(0.941176 + 0.8 + 0.64) + 0.5\\right] = 0.125 \\times 6.262353 = 0.782794$.",
+        "Error: exact $-$ estimate $= 0.785398 - 0.782794 = 0.002604$.",
+        "Refine to $n = 8$: the same recipe gives $T_8 = 0.784747$, error $0.000651$.",
+        "Ratio of errors: $0.002604 / 0.000651 \\approx 4.0$ - halving $h$ quarters the error. That is the theoretical $O(h^2)$ law, $\\text{error} \\approx \\frac{(b-a)h^2}{12}\\max|f''|$, confirmed live.",
+        "Simpson ($n = 4$, weights $1,4,2,4,1$): $S_4 = \\frac{0.25}{3}\\left[1 + 4(0.941176) + 2(0.8) + 4(0.64) + 0.5\\right] = 0.083333 \\times 9.424706 = 0.785392$ - error $6.0 \\times 10^{-6}$, over 400 times smaller than $T_4$ at identical function-call count."
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "f = lambda x: 1 / (1 + x*x)\na, b, n = 0, 1, 4\nh = (b - a) / n\ns = f(a) + f(b) + 2 * sum(f(a + i*h) for i in range(1, n))\nprint(round(h/2 * s, 4))   # trapezoid n=4 -> 0.7828\n\n# Simpson needs an even n; n=4 here:\nsimp = h/3 * (f(a) + 4*f(a+h) + 2*f(a+2*h) + 4*f(a+3*h) + f(b))\nprint(round(simp, 6))      # -> 0.785392\nimport math\nprint(round(math.pi/4, 6)) # exact arctan(1) -> 0.785398",
+      "caption": "Three numbers tell the whole story: trapezoid off by ~0.0026, Simpson by ~0.000006, exact by definition."
+    },
+    {
+      "type": "interactive",
+      "component": "IntegralLab",
+      "params": {
+        "function": "1/(1+x*x)",
+        "a": 0,
+        "b": 1,
+        "n": 4
+      },
+      "caption": "Watch the panels refine: with n = 4 the trapezoid misses the curve's dip; push n up and watch the estimate lock onto 0.785398."
+    },
+    {
+      "type": "h2",
+      "text": "Why Simpson is so much better"
+    },
+    {
+      "type": "p",
+      "md": "The trapezoid rule is exact for straight lines and errs on curvature: on a convex interval the chords lie above the curve (overestimate below a minimum, underestimate above). Simpson fits parabolas, so it is exact for *any* quadratic - and, remarkably, for cubics too, because the cubic's signed error cancels within each pair of panels. Order of accuracy: trapezoid $O(h^2)$, Simpson $O(h^4)$ - so refining Simpson from $n$ to $2n$ cuts error roughly **sixteen-fold**, not four-fold. A clean demonstration: for $\\int_0^1 x^2 dx = \\frac{1}{3}$, the trapezoid with $n = 2$ gives $0.375$ (error $0.0417$), while Simpson with $n = 2$ gives exactly $\\frac{1}{3}$ - the integrand is a polynomial it can represent perfectly."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Why this matters for finance",
+      "md": "The standard normal CDF $\\Phi(z) = \\int_{-\\infty}^{z} \\frac{1}{\\sqrt{2\\pi}}e^{-t^2/2}dt$ has no elementary closed form, yet every Black-Scholes price calls it - so it is numerically integrated (or approximated by a rational polynomial) inside every pricing library. Expected payoffs $\\mathbb{E}[g(S)] = \\int g(s) f(s)\\,ds$ for realistic densities are the same story: quadrature is the analytic engine under the pricing, and error budgeting is a risk decision, not an afterthought."
+    },
+    {
+      "type": "p",
+      "md": "Practical budgeting: error behaves like $C\\,h^p$ with $p = 2$ (trapezoid) or $p = 4$ (Simpson), and cost like $1/h$ - function calls grow linearly as accuracy improves. To gain one more decimal digit with the trapezoid you pay $\\sqrt{10} \\approx 3.2\\times$ more calls; with Simpson, $10^{1/4} \\approx 1.8\\times$. Estimate $C$ empirically by comparing $T_n$ with $T_{2n}$ (the difference itself approximates the error), then choose $n$ to hit your tolerance. Stop refining when the last refinement moved the estimate by less than your tolerance - chasing more digits past the tolerance is wasted compute."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Compute the trapezoid estimate with $n = 2$ for $\\int_0^1 x^2\\,dx$, then the Simpson estimate with $n = 2$. The exact value is $\\frac{1}{3}$. Explain why one rule is perfect here and the other is not.",
+    "hints": [
+      "With $n = 2$: $h = 0.5$ and samples at $x = 0, 0.5, 1$ give $f = 0, 0.25, 1$.",
+      "Ask what curve class each rule integrates exactly."
+    ],
+    "solution": "Trapezoid: $T_2 = \\frac{0.5}{2}\\left[0 + 2(0.25) + 1\\right] = 0.375$ - error $0.0417$, since chords cut across the parabola's dip. Simpson: $S_2 = \\frac{0.5}{3}\\left[0 + 4(0.25) + 1\\right] = \\frac{2}{3} \\times \\frac{1}{2} = \\mathbf{1/3}$ exactly. Simpson passes a parabola through the three points, and the integrand *is* a parabola - so the fit is perfect."
+  },
+  "independentExercise": {
+    "prompt": "(a) Compute the trapezoid estimate of $\\int_0^1 e^{-x^2}\\,dx$ with $n = 5$ ($h = 0.2$), keeping 4 decimal places. The exact value is $\\frac{\\sqrt{\\pi}}{2}\\operatorname{erf}(1) = 0.7468$. (b) Compute the error. (c) If the error follows $Ch^2$, predict the error at $n = 10$ and the trapezoid value you would expect there.",
+    "hints": [
+      "Sample values: $e^{0} = 1$, $e^{-0.04}$, $e^{-0.16}$, $e^{-0.36}$, $e^{-0.64}$, $e^{-1}$.",
+      "Halving $h$ (doubling $n$) divides an $O(h^2)$ error by $4$."
+    ],
+    "solution": "(a) Trap sum: $0.1\\left[1 + 2(0.960789 + 0.852144 + 0.697676 + 0.527292) + 0.367879\\right] = 0.1 \\times 7.443683 = \\mathbf{0.7444}$. (b) Error $= 0.746824 - 0.744368 = 0.002456$. (c) At $n = 10$: error $\\approx 0.002456/4 = 0.000614$, so the estimate should land near $0.746824 - 0.000614 \\approx 0.7462$ (direct computation gives $0.746210$ - the $O(h^2)$ law holds)."
+  },
+  "commonMistakes": [
+    "Using Simpson's rule with an odd number of panels - it requires even $n$.",
+    "Counting interior trapezoid points once instead of twice in $T_n$.",
+    "Trusting $O(h^p)$ rates for functions with kinks or jumps - the smoothness assumption fails there.",
+    "Comparing two estimates at *different* $n$ and calling the difference 'the exact error'."
+  ],
+  "realWorldApplication": "Cumulative metrics from telemetry, energy billing from power curves, and any CDF evaluation inside a statistics library are numerical integrals. Understanding error order is what separates a defensible number from a silently wrong one.",
+  "quantFinanceApplication": "Black-Scholes calls $\\Phi$, a numerically integrated CDF, on every evaluation; expected payoffs under empirical densities are quadrature problems; and pricing engines budget quadrature resolution the way they budget Monte Carlo paths - by error tolerance against compute cost.",
+  "summary": [
+    "Most real integrands (including $e^{-x^2}$, the normal kernel) have no elementary antiderivative - quadrature is mandatory.",
+    "Trapezoid: $T_n = \\frac{h}{2}[f(a) + 2\\sum f(x_i) + f(b)]$, error $O(h^2)$ - halving $h$ quarters the error (verified: $0.002604 \\to 0.000651$).",
+    "Simpson: parabolas through triples, weights $1,4,2,4,\\ldots,4,1$ on even $n$; error $O(h^4)$, exact for cubics.",
+    "On $\\int_0^1 \\frac{dx}{1+x^2} = \\pi/4$: $T_4$ erred by $2.6\\times10^{-3}$, $S_4$ by $6.0\\times10^{-6}$.",
+    "Budget accuracy by comparing $n$ and $2n$ estimates; cost grows as $1/h$ while error shrinks as $h^p$."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "Why is numerical integration unavoidable in practice?",
+      "options": [
+        "The FTC is only an approximation",
+        "Most integrands, like $e^{-x^2}$, have no elementary antiderivative",
+        "Definite integrals always diverge",
+        "Computers cannot evaluate antiderivatives of polynomials"
+      ],
+      "answerIndex": 1,
+      "explanation": "Antiderivatives exist but are not expressible in closed form for most functions of interest (starting with the normal kernel), so the endpoint trick cannot be applied and quadrature must approximate the area directly."
+    },
+    {
+      "id": "q2",
+      "type": "numeric",
+      "prompt": "Trapezoid rule with $n = 4$ for $\\int_0^1 \\frac{dx}{1+x^2}$: what is the estimate (4 decimal places)?",
+      "answer": 0.7828,
+      "tolerance": 0.0005,
+      "explanation": "$T_4 = 0.125[1 + 2(0.941176 + 0.8 + 0.64) + 0.5] = 0.782794$; exact $\\pi/4 = 0.785398$, error $\\approx 0.0026$."
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "Simpson's rule with $n = 4$ for the same integral $\\int_0^1 \\frac{dx}{1+x^2}$ (4 decimal places)?",
+      "answer": 0.7854,
+      "tolerance": 0.0005,
+      "explanation": "$S_4 = \\frac{0.25}{3}[1 + 4(0.941176) + 2(0.8) + 4(0.64) + 0.5] = 0.785392$ - error only $6 \\times 10^{-6}$."
+    },
+    {
+      "id": "q4",
+      "type": "code-output",
+      "prompt": "What does this Python code print?",
+      "language": "python",
+      "code": "f = lambda x: 1 / (1 + x*x)\na, b, n = 0, 1, 4\nh = (b - a) / n\ns = f(a) + f(b) + 2 * sum(f(a + i*h) for i in range(1, n))\nprint(round(h/2 * s, 4))",
+      "answer": "0.7828",
+      "explanation": "It is the trapezoid estimate $T_4 = 0.782794$ rounded to 4 decimals - about 0.0026 below the exact $\\pi/4$."
+    },
+    {
+      "id": "q5",
+      "type": "mcq",
+      "prompt": "Which statement about Simpson's rule is correct?",
+      "options": [
+        "It works for any number of panels",
+        "It is exact for polynomials up to degree 3 and converges as $O(h^4)$",
+        "It is exact only for straight lines",
+        "It always overestimates convex integrals"
+      ],
+      "answerIndex": 1,
+      "explanation": "Parabolas through triples integrate quadratics exactly, and the cubic error cancels pairwise; halving $h$ cuts error ~16-fold. It requires even $n$."
+    },
+    {
+      "id": "q6",
+      "type": "short",
+      "prompt": "Your trapezoid estimates are 0.782794 at $n=4$ and 0.784747 at $n=8$. How do you estimate the remaining error at $n=8$, and roughly how many more refinements to reach a tolerance of $10^{-5}$?",
+      "modelAnswer": "The difference between successive estimates approximates the error at the finer resolution (about 0.000651); with O(h^2) error each halving divides the error by about 4, so roughly 2-3 more refinements (n = 32 to 64) reach 1e-5.",
+      "keywords": ["difference", "4", "refinements", "error"],
+      "explanation": "$T_{2n} - T_n \\approx$ error at $2n$ (Richardson-style estimate): $0.784747 - 0.782794 \\approx 0.00195$ predicts the $n=4$ error; at $n=8$ about $0.000651$ remains. Dividing by 4 repeatedly: $0.000651 \\to 0.000163 \\to 0.000041 \\to 0.000010$ - three more refinements ($n = 64$)."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "formula",
+      "front": "Trapezoid rule",
+      "back": "T_n = h/2 [f(a) + 2*sum(interior f) + f(b)], h = (b-a)/n; error O(h^2)."
+    },
+    {
+      "type": "formula",
+      "front": "Simpson's rule",
+      "back": "S_n = h/3 [f(a) + 4f(x1) + 2f(x2) + 4f(x3) + ... + f(b)] on even n; error O(h^4), exact for cubics."
+    },
+    {
+      "type": "concept",
+      "front": "Error-order meaning",
+      "back": "O(h^p): halving h multiplies error by 1/2^p - trapezoid 1/4, Simpson 1/16."
+    },
+    {
+      "type": "concept",
+      "front": "Estimating error without the exact answer",
+      "back": "Compare T_n and T_2n: their difference approximates the error at resolution 2n; refine until the change is below tolerance."
+    },
+    {
+      "type": "code-output",
+      "front": "Trapezoid n=4 of 1/(1+x^2) on [0,1] - value and exact comparison?",
+      "back": "0.7828 vs exact pi/4 = 0.7854; Simpson n=4 hits 0.785392, 400x better."
+    }
+  ],
+  "references": [
+    {
+      "label": "OpenStax Calculus Volume 2 - Numerical Integration (section in Ch. 3)",
+      "url": "https://openstax.org/details/books/calculus-volume-2"
+    },
+    {
+      "label": "Wikipedia - Simpson's rule",
+      "url": "https://en.wikipedia.org/wiki/Simpson%27s_rule"
+    }
+  ],
+  "skills": ["calculus", "numerical-analysis"]
+}

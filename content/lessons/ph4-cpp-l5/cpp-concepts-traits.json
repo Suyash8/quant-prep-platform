@@ -1,0 +1,240 @@
+{
+  "id": "cpp-concepts-traits",
+  "moduleId": "ph4-cpp-l5",
+  "title": "Concepts, Type Traits and SFINAE",
+  "estMinutes": 28,
+  "difficulty": "advanced",
+  "prereqs": ["cpp-templates"],
+  "objectives": [
+    "Query types at compile time with standard type traits and static_assert",
+    "Control overload sets with std::enable_if_t / SFINAE and explain the substitution-failure mechanism",
+    "Branch on type properties inside one function using C++17 if constexpr",
+    "Constrain templates with C++20 concepts (requires clauses and requires expressions) and predict which overload the more-constrained-wins rule selects"
+  ],
+  "motivation": "Templates accept every type - until an instantiation explodes with pages of errors from inside a header, and nothing in your API tells callers which types were intended. C++ grew two answers: type traits plus SFINAE (C++11 through C++17), which filter overloads with compile-time type queries, and concepts (C++20), which state constraints directly with readable diagnostics. You will write concepts for new code and read SFINAE for years, so this lesson teaches both and labels exactly which standard each feature requires.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Type traits: compile-time questions about types"
+    },
+    {
+      "type": "p",
+      "md": "A **type trait** is a question about a type that the compiler answers during compilation: `std::is_integral_v<T>`, `std::is_floating_point_v<T>`, `std::is_same_v<A, B>` - each collapses to `true` or `false` before any code runs. The `_v` variable-template forms need C++14 (the plain `::value` forms are C++11); everything shown here compiles under C++17. Traits matter inside templates, where a decision must be made *per instantiation*: assert a precondition with `static_assert`, or branch on the answer with `if constexpr`, the subject below."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "// C++17\n#include <iostream>\n#include <type_traits>\n\nstatic_assert(std::is_integral_v<int>);   // compile-time fact\n\ntemplate<typename T>\nint kind(T) {\n    return std::is_integral_v<T> ? 1 : 0; // queried per instantiation\n}\n\nint main() {\n    std::cout << kind(7) << kind(7.0) << kind('a');   // 101\n}",
+      "caption": "int is integral (1), double is not (0), and char IS an integral type (1)."
+    },
+    {
+      "type": "h2",
+      "text": "SFINAE: gating overloads with enable_if (C++14/17)"
+    },
+    {
+      "type": "p",
+      "md": "**SFINAE** - *substitution failure is not an error* - is the mechanism that overloads on traits. When the compiler substitutes arguments into a template's *signature* and hits something invalid - here `std::enable_if_t<false, int>` - it does not hard-error; it silently removes that overload from the candidate set and keeps resolving. Only if every candidate dies does it complain. Each `enable_if` below acts as a compile-time gatekeeper: for integral arguments the floating overload fails its substitution and vanishes from this call, and vice versa."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "// C++17 (enable_if_t is C++14)\n#include <iostream>\n#include <type_traits>\n\ntemplate<typename T, std::enable_if_t<std::is_integral_v<T>, int> = 0>\nconst char* pick(T) { return \"integral\"; }\n\ntemplate<typename T, std::enable_if_t<std::is_floating_point_v<T>, int> = 0>\nconst char* pick(T) { return \"floating\"; }\n\nint main() { std::cout << pick(3) << \" \" << pick(3.5) << \"\\n\"; }   // integral floating",
+      "caption": "Two templates, one viable candidate per call - decided during overload resolution."
+    },
+    {
+      "type": "callout",
+      "variant": "warn",
+      "title": "SFINAE is a filter, not a switch",
+      "md": "A failed substitution only removes a candidate from *one call's* overload resolution, and only the **signature** participates - never the body. Treating SFINAE as runtime behaviour, or expecting an `enable_if` failure to 'delete' a function for the whole program, leads to confidently wrong refactorings."
+    },
+    {
+      "type": "h2",
+      "text": "if constexpr: branch inside one function (C++17)"
+    },
+    {
+      "type": "p",
+      "md": "C++17's `if constexpr` evaluates its condition at compile time and **discards** the untaken branch - not merely skipped at runtime, but removed from instantiation entirely, so code valid only for the other kind of `T` is never even checked. Where SFINAE removes *whole overloads*, `if constexpr` selects *lines within one function*. Prefer it for bodies; keep `enable_if` where you need to control which overloads exist at all."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "// C++17\n#include <iostream>\n#include <type_traits>\n\ntemplate<typename T>\nT half(T x) {\n    if constexpr (std::is_integral_v<T>)\n        return x / 2;          // integer division\n    else\n        return x / T(2);       // true division\n}\n\nint main() {\n    std::cout << half(7) << \" \" << half(7.0) << \"\\n\";   // 3 3.5\n}",
+      "caption": "Per instantiation exactly one branch exists - half<int> never even compiles the else."
+    },
+    {
+      "type": "h2",
+      "text": "C++20 concepts: constraints as declarations"
+    },
+    {
+      "type": "p",
+      "md": "**Concepts** replace gatekeeper tricks with declarative constraints - this section is C++20 only. A **requires clause** states what a type must satisfy: `template<std::integral T>` or the abbreviated `void f(std::integral auto x)`. The standard concepts in `<concepts>` include `std::integral`, `std::floating_point`, `std::same_as`, `std::convertible_to` and `std::ranges::range`. A **requires expression** tests capabilities directly: `requires(T t) { t.size(); }` means *calling t.size() compiles*. When two overloads are both viable, the **more constrained one wins** - the rule that lets constrained specialisations compose instead of colliding. Failures are diagnosed at the call site with the violated concept named, instead of a wall of substitution noise."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "// C++20 - concepts\n#include <concepts>\n#include <iostream>\n\ntemplate<std::integral T>\nT half(T x) { return x / 2; }          // integer division\n\ntemplate<std::floating_point T>\nT half(T x) { return x / 2; }          // true division\n\nint main() {\n    std::cout << half(7) << \" \" << half(7.0) << \"\\n\";   // 3 3.5\n}",
+      "caption": "The constraints, not enable_if tricks, choose the overload - and half(7.5f) is a named-concept error for wrong intent."
+    },
+    {
+      "type": "interactive",
+      "component": "ComplexityCompare",
+      "params": {
+        "variants": [
+          { "name": "unconstrained template: error surfaces after the full substitution chain", "complexity": "O(instantiation depth)" },
+          { "name": "concept-constrained: rejected at the call site", "complexity": "O(1)" }
+        ],
+        "n": 8
+      },
+      "caption": "Concepts do not change what compiles - they change *where* a mistake is diagnosed: at the caller with a named violated concept, not after a chain of substitutions inside headers."
+    },
+    {
+      "type": "table",
+      "headers": ["Feature", "Minimum standard", "Typical role"],
+      "rows": [
+        ["std::is_integral etc. (::value)", "C++11", "compile-time type questions"],
+        ["_v trait forms, std::enable_if_t", "C++14", "gating overloads (SFINAE)"],
+        ["if constexpr", "C++17", "branching inside one template body"],
+        ["concepts, requires, std::integral/std::floating_point", "C++20", "declaring constraints with real diagnostics"]
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Constrain your price types",
+      "md": "A pricing function constrained to `std::floating_point` rejects an `int` price at compile time - exactly when an accidental integer basis-points conversion should be caught. Concepts turn a whole class of production unit bugs into build failures, at zero runtime cost."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "The lesson's `half` uses `if constexpr`. Explain step by step what the compiler does for (a) `half(7)`, (b) `half(7.0)`, and (c) `half(std::string{})` - and why (c) fails with exactly one error, even though the discarded branch also looks wrong.",
+    "hints": [
+      "The condition `std::is_integral_v<T>` is a constant expression evaluated per instantiation.",
+      "For T = std::string the kept branch is `x / T(2)` - ask whether `operator/` exists for std::string."
+    ],
+    "solution": "(a) `T = int`: `is_integral_v<int>` is true, so the **else branch is discarded** and never compiled; the function is effectively `return x / 2;` - 3.\n\n(b) `T = double`: condition false, the `return x / 2;` branch is discarded; kept is `x / T(2)` - 3.5.\n\n(c) `T = std::string`: condition false, so only `x / T(2)` is instantiated - and `std::string` has no `operator/`, giving **one clear error at that line**. The discarded integral branch (`x / 2`) is not compiled at all, so its nonsense never muddies the diagnostic. That is precisely `if constexpr`'s value: exactly one branch exists per instantiation, and the error points at the code that is real for this T."
+  },
+  "independentExercise": {
+    "prompt": "Write a `midpoint(T bid, T ask)` overload pair that only accepts floating-point types. (1) The C++17 way: one function template gated by `std::enable_if_t<std::is_floating_point_v<T>, int> = 0`, returning `(bid + ask) / 2`. (2) The C++20 way: the same function with a `std::floating_point` concept. Then answer: what exactly happens on `midpoint(99, 101)` in each version, and which two tokens of version 2 would not compile on a C++17 compiler?",
+    "hints": [
+      "For the C++17 gate the default template argument `= 0` follows the enable_if_t type in the parameter list.",
+      "With no viable overload, the failure is reported at the call - compare the quality of the two diagnostics."
+    ],
+    "solution": "C++17:\n\n```cpp\n// C++17\ntemplate<typename T, std::enable_if_t<std::is_floating_point_v<T>, int> = 0>\nT midpoint(T bid, T ask) { return (bid + ask) / 2; }\n```\n\nC++20:\n\n```cpp\n// C++20\ntemplate<std::floating_point T>\nT midpoint(T bid, T ask) { return (bid + ask) / 2; }\n```\n\nOn `midpoint(99, 101)` both versions produce **no viable overload**: C++17 kills the candidate because `enable_if_t<false, int>` is an invalid type in the signature (SFINAE), and C++20 rejects it because `int` violates `std::floating_point` - with a message naming the violated concept at the call site.\n\nThe C++20-only pieces are the concept name `std::floating_point` (from `<concepts>`) as a template-parameter constraint and that requires a C++20 compiler; the C++17 version needs only `<type_traits>` and `enable_if_t` (C++14)."
+  },
+  "commonMistakes": [
+    "Reaching for C++20 concepts while compiling with -std=c++17: requires clauses and std::integral/std::floating_point are C++20; the C++17 tools are traits, enable_if_t and if constexpr.",
+    "Assuming a failed enable_if deletes the function for the whole program: SFINAE only removes a candidate from one call's overload resolution, and only the signature participates.",
+    "Expecting if constexpr's untaken branch to still type-check: it is discarded entirely - that is the feature, and also why a 'harmless' branch can hide a missing overload.",
+    "Forgetting that char is an integral type: std::is_integral_v<char> is true, which surprises people writing character range checks.",
+    "Using SFINAE machinery where if constexpr is simpler: whole-overload filtering and in-body branching are different tools for different shapes of problem."
+  ],
+  "realWorldApplication": "Library authors - the STL, Eigen, ranges - constrain APIs with traits, enable_if and concepts so misuse fails at compile time with a named reason instead of a wall of template diagnostics.",
+  "quantFinanceApplication": "Constraining pricing and risk kernels to std::floating_point turns accidental integer prices or copy-pasted int conversions into build failures before they ever reach a blotter.",
+  "summary": [
+    "Type traits answer compile-time questions about types; the _v forms (C++14) read cleanly inside templates and static_assert.",
+    "SFINAE: a failed signature substitution removes an overload candidate instead of erroring - the pre-C++20 way to gate templates.",
+    "if constexpr (C++17) discards the untaken branch per instantiation - branch inside functions; enable_if still controls which overloads exist.",
+    "Concepts (C++20): requires clauses and requires expressions declare constraints with real diagnostics, and the more-constrained overload wins.",
+    "Label your features: traits C++11, _v forms and enable_if_t C++14, if constexpr C++17, concepts and std::integral/std::floating_point C++20."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "code-output",
+      "prompt": "What does this C++17 program print?",
+      "language": "cpp",
+      "code": "#include <iostream>\n#include <type_traits>\ntemplate<typename T> int kind(T) { return std::is_integral_v<T> ? 1 : 0; }\nint main() { std::cout << kind(7) << kind(7.0) << kind('a'); }",
+      "answer": "101",
+      "explanation": "int is integral (1), double is not (0), and **char is an integral type** in C++ (1) - char, signed char, unsigned char, short, int, long and friends all satisfy is_integral."
+    },
+    {
+      "id": "q2",
+      "type": "code-output",
+      "prompt": "What does this C++17 program print?",
+      "language": "cpp",
+      "code": "#include <iostream>\n#include <type_traits>\n\ntemplate<typename T, std::enable_if_t<std::is_integral_v<T>, int> = 0>\nconst char* pick(T) { return \"integral\"; }\n\ntemplate<typename T, std::enable_if_t<std::is_floating_point_v<T>, int> = 0>\nconst char* pick(T) { return \"floating\"; }\n\nint main() { std::cout << pick(3) << \" \" << pick(3.5); }",
+      "answer": "integral floating",
+      "explanation": "For `pick(3)`, T = int: the floating overload's `enable_if_t<false, int>` is an invalid type in its signature, so SFINAE silently drops it and the integral overload wins. Symmetrically for `pick(3.5)`."
+    },
+    {
+      "id": "q3",
+      "type": "mcq",
+      "prompt": "What exactly does SFINAE do when a substitution fails?",
+      "options": [
+        "Compilation stops with an error pointing into the template",
+        "That template is removed from the candidate set for this call, and overload resolution continues",
+        "The substitution is retried at runtime",
+        "The template is deleted for the entire program"
+      ],
+      "answerIndex": 1,
+      "explanation": "Substitution Failure Is Not An Error: an invalid substitution in a template signature merely drops that candidate from the current overload resolution. Only if every candidate fails does the compiler complain."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "In C++17's `if constexpr (std::is_integral_v<T>)`, what happens to the else branch when T = int?",
+      "options": [
+        "It is compiled and evaluated at runtime as usual",
+        "It is discarded: never compiled for this instantiation at all",
+        "It is compiled but removed later at link time",
+        "It causes a compile error"
+      ],
+      "answerIndex": 1,
+      "explanation": "if constexpr evaluates its condition at compile time and discards the untaken branch from the instantiation - code that would not compile for this T never participates."
+    },
+    {
+      "id": "q5",
+      "type": "mcq",
+      "prompt": "(C++20) Two viable overloads match a call: one constrained by concepts, one unconstrained. Which is selected?",
+      "options": [
+        "The unconstrained one, always",
+        "Ambiguous: compile error",
+        "The more constrained one wins",
+        "Whichever was declared first"
+      ],
+      "answerIndex": 2,
+      "explanation": "C++20 partial ordering of constraints: between equally viable candidates the more constrained one is preferred. This is what lets constrained specialisations compose instead of colliding."
+    },
+    {
+      "id": "q6",
+      "type": "ms",
+      "prompt": "Which statements about feature/standard requirements are correct?",
+      "options": [
+        "Type traits like std::is_integral exist from C++11 and the _v forms from C++14 - no C++20 needed",
+        "if constexpr requires C++17",
+        "requires clauses and std::integral require C++20",
+        "std::enable_if_t overloads require C++20"
+      ],
+      "answerIndices": [0, 1, 2],
+      "explanation": "enable_if_t is a C++14 alias - it is precisely the pre-concepts gating mechanism. C++20 adds concepts; it is not required for traits, enable_if_t (C++14) or if constexpr (C++17)."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "definition",
+      "front": "What does SFINAE stand for, and what does it mean?",
+      "back": "Substitution Failure Is Not An Error: an invalid substitution in a template signature removes that overload from the candidate set for this call instead of aborting compilation."
+    },
+    {
+      "type": "concept",
+      "front": "if constexpr vs a runtime if?",
+      "back": "if constexpr evaluates its condition at compile time and DISCARDS the untaken branch - it is never compiled for that instantiation. A runtime if compiles both branches and chooses at runtime."
+    },
+    {
+      "type": "concept",
+      "front": "Which overload wins when one is concept-constrained and the other is not? (C++20)",
+      "back": "The more constrained one, by partial ordering of constraints - this is what makes constrained specialisations compose."
+    },
+    {
+      "type": "code-output",
+      "front": "kind(7) << kind(7.0) << kind('a') where kind returns is_integral_v<T> ? 1 : 0",
+      "back": "101 - int is integral, double is not, and char IS an integral type."
+    }
+  ],
+  "references": [
+    { "label": "cppreference — Constraints and concepts (C++20)", "url": "https://en.cppreference.com/w/cpp/language/constraints" },
+    { "label": "cppreference — std::enable_if", "url": "https://en.cppreference.com/w/cpp/types/enable_if" },
+    { "label": "cppreference — if constexpr (C++17)", "url": "https://en.cppreference.com/w/cpp/language/if" },
+    { "label": "cppreference — Type traits library", "url": "https://en.cppreference.com/w/cpp/header/type_traits" }
+  ],
+  "skills": ["cpp-advanced"]
+}

@@ -1,0 +1,261 @@
+{
+  "id": "opt-greeks",
+  "moduleId": "ph7-options",
+  "title": "Delta, Gamma, Theta, Vega, Rho and Hedging",
+  "estMinutes": 28,
+  "difficulty": "core",
+  "prereqs": [
+    "opt-black-scholes"
+  ],
+  "objectives": [
+    "Write the Black-Scholes formulas for delta, gamma, theta, vega and rho",
+    "Compute all five Greeks numerically for one concrete option contract",
+    "Construct and rebalance a delta hedge for a multi-contract position",
+    "Explain the gamma-theta trade-off that defines market-making economics"
+  ],
+  "motivation": "A delta-hedged book is never finished: the stock moves, time passes, volatility breathes, and yesterday's hedge is today's exposure. The Greeks are the partial derivatives that turn that chaos into a budget - so many dollars per point of stock, per day of decay, per volatility point. We compute all five Greeks for one concrete contract, watch a delta hedge demand rebalancing through gamma, and connect gamma losses to theta earnings: the central trade-off of market making.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "The sensitivity budget"
+    },
+    {
+      "type": "p",
+      "md": "An option price $V$ is a function of five moving things: spot $S$, time $t$, volatility $\\sigma$, the rate $r$ - and of $S$ twice, since the sensitivities themselves move. The Greeks are its partial derivatives, and a Taylor expansion turns them into a PnL budget that a risk system can enforce position by position. Everything a desk knows about its book reduces to this line:"
+    },
+    {
+      "type": "math",
+      "tex": "dV \\;\\approx\\; \\Delta\\,dS \\;+\\; \\tfrac{1}{2}\\Gamma\\,(dS)^2 \\;+\\; \\Theta\\,dt \\;+\\; \\nu\\,d\\sigma \\;+\\; \\rho\\,dr",
+      "caption": "First-order in each driver, second-order in spot (gamma is delta's derivative)."
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Greek",
+        "Call formula (BS)",
+        "Meaning"
+      ],
+      "rows": [
+        [
+          "Delta $\\Delta$",
+          "$N(d_1)$",
+          "Share-equivalent per option; hedge ratio"
+        ],
+        [
+          "Gamma $\\Gamma$",
+          "$\\varphi(d_1)/(S\\sigma\\sqrt{T})$",
+          "Rate of change of delta; convexity per \\$1 move"
+        ],
+        [
+          "Theta $\\Theta$",
+          "$-S\\varphi(d_1)\\sigma/(2\\sqrt{T}) - rKe^{-rT}N(d_2)$",
+          "Decay per year (per day: divide by 365)"
+        ],
+        [
+          "Vega $\\nu$",
+          "$S\\varphi(d_1)\\sqrt{T}$",
+          "Price change per unit of volatility"
+        ],
+        [
+          "Rho $\\rho$",
+          "$KTe^{-rT}N(d_2)$",
+          "Price change per unit of the rate"
+        ]
+      ]
+    },
+    {
+      "type": "p",
+      "md": "Here $\\varphi$ is the standard normal density: $\\varphi(d) = e^{-d^2/2}/\\sqrt{2\\pi}$. Vega and rho are quoted per unit move - convert to per-percent by dividing by 100. Puts inherit the same gamma and vega but opposite delta ($N(d_1) - 1$) and rho."
+    },
+    {
+      "type": "steps",
+      "title": "All five Greeks: S = 100, K = 100, r = 5%, sigma = 20%, T = 1 (d1 = 0.35, d2 = 0.15)",
+      "items": [
+        "Density: $\\varphi(0.35) = 0.3989 \\times e^{-0.35^2/2} = 0.3989 \\times 0.9406 = 0.3752$.",
+        "Delta: $N(0.35) = 0.6368$ - each option behaves like 0.6368 shares.",
+        "Gamma: $0.3752/(100 \\times 0.20 \\times 1) = 0.0188$ per \\$1 move - delta gains 1.88 points per \\$10 rally.",
+        "Theta: $-100 \\times 0.3752 \\times 0.20/2 - 0.05 \\times 100 \\times 0.9512 \\times 0.5596 = -3.75 - 2.66 = -6.41$ per year $\\approx -\\$0.018$ per calendar day.",
+        "Vega: $100 \\times 0.3752 \\times 1 = 37.52$ per unit vol $= 0.375$ per volatility point (1%).",
+        "Rho: $100 \\times 1 \\times 0.9512 \\times 0.5596 = 53.23$ per unit rate $= 0.53$ per 1% rate rise."
+      ]
+    },
+    {
+      "type": "p",
+      "md": "The put's ledger for the same contract: delta $= 0.6368 - 1 = -0.3632$, gamma and vega identical to the call's, theta $-1.66$ per year (its financing term flips sign), rho $-0.42$ per 1%. Note how the two sides of the same strike are mirror images around the money - a fact desks exploit when building delta-neutral straddles."
+    },
+    {
+      "type": "interactive",
+      "component": "GreeksLab",
+      "params": {
+        "spot": 100,
+        "strike": 100,
+        "rate": 0.05,
+        "vol": 0.2,
+        "maturity": 1
+      },
+      "caption": "Move spot, time and volatility and watch each Greek respond - note how gamma and vega peak near the money while theta accelerates into expiry."
+    },
+    {
+      "type": "h2",
+      "text": "Delta hedging in practice"
+    },
+    {
+      "type": "p",
+      "md": "Delta hedging neutralizes first-order spot risk: hold $\\Delta \\times \\text{contract size}$ shares against each option position. But gamma guarantees the hedge decays. Sell 100 calls (delta 0.6368): short $100 \\times 100 \\times 0.6368 = 6{,}368 \\to$ about 6,368 shares. The stock rallies \\$1: each option's delta grows by gamma, $0.6368 + 0.0188 = 0.6556$, so the book now wants $6{,}556$ short shares - the hedger buys ~188 shares back. Rebalance again and again, and the pattern emerges: each rebalance buys high and sells low, bleeding the exact gamma PnL $\\tfrac{1}{2}\\Gamma(dS)^2$ - while theta quietly refunds the bleed. **Long gamma costs theta; short gamma earns theta.** That exchange rate is the market maker's business model: they sell convexity and harvest decay, managing the gap risk between hedges."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Where the risk concentrates",
+      "md": "Gamma and vega peak at the money, and gamma explodes as expiry approaches - an ATM option with a week left re-hedges violently. Vega matters around events (earnings, central banks) where implied vol jumps. Rho is the quiet one: material for long-dated options, negligible for weeklies."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Greeks bookkeeping traps",
+      "md": "Options trade in contracts of 100 shares - forgetting the multiplier is the classic error. Theta is quoted per year but paid daily; state the convention. Greeks are derivatives *at a point*: after a big move or a day of decay they are stale, so live books recompute and re-hedge on schedule, and discrete hedging always leaves gap risk between rebalances."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import math\nfrom statistics import NormalDist\n\nN, phi = NormalDist().cdf, lambda x: math.exp(-x * x / 2) / math.sqrt(2 * math.pi)\nS, K, r, sigma, T = 100, 100, 0.05, 0.20, 1.0\nd1 = (math.log(S / K) + (r + sigma ** 2 / 2) * T) / (sigma * math.sqrt(T))\nd2 = d1 - sigma * math.sqrt(T)\nprint(round(N(d1), 4))                       # delta 0.6368\nprint(round(phi(d1) / (S * sigma * math.sqrt(T)), 4))   # gamma 0.0188\nprint(round(S * phi(d1) * math.sqrt(T), 2))  # vega 37.52 per unit vol\nprint(round(-S * phi(d1) * sigma / (2 * math.sqrt(T)) - r * K * exp(-r * T) * N(d2), 2))  # theta -6.41/yr\nprint(round(K * T * math.exp(-r * T) * N(d2), 2))  # rho 53.23 per unit rate",
+      "caption": "The five Greeks of the worked contract - every number matches the hand arithmetic."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "You are short 50 contracts of the lesson's call (delta 0.6368, gamma 0.0188 per option, contract size 100). How many shares do you buy to delta-hedge? After the stock rises \\$2, what is your new delta exposure and how many shares must you trade to re-hedge?",
+    "hints": [
+      "Shares hedged = delta x contract size x contracts.",
+      "Each \\$1 of spot moves each option's delta by gamma."
+    ],
+    "solution": "Initial: short 50 contracts $= -50 \\times 100 \\times 0.6368 = -3{,}184$ shares of exposure, so buy 3,184 shares. After $+\\$: each delta gains $2 \\times 0.0188 = 0.0376 \\to 0.6744$; short exposure becomes $-50 \\times 100 \\times 0.6744 = -3{,}372$, so buy $3{,}372 - 3{,}184 = 188$ more shares. Note the direction: rallying stock made your short calls more equity-like, forcing the hedge to grow."
+  },
+  "independentExercise": {
+    "prompt": "A book is long 20 calls and short 10 puts of the same strike (call delta 0.6368, put delta -0.3632, both gamma 0.0188; contract size 100). Compute the position delta in share-equivalents, the number of shares to short to neutralize it, and the position gamma. If spot rises \\$1, what additional hedge trade is needed?",
+    "hints": [
+      "Add signed deltas: long calls positive, short puts positive (you are short a negative-delta instrument).",
+      "Gammas add the same way: long options contribute +gamma, short contribute -gamma."
+    ],
+    "solution": "Delta: $20 \\times 100 \\times 0.6368 + (-10) \\times 100 \\times (-0.3632) = 1273.6 + 363.2 = 1636.8$ share-equivalents long - short 1,637 shares to hedge. Gamma: $20 \\times 100 \\times 0.0188 - 10 \\times 100 \\times 0.0188 = 37.6 - 18.8 = 18.8$ per $1. After a \\$1 rally the book's delta grows to $1636.8 + 18.8 = 1655.6$, so the short hedge must grow too: short 1,656 shares, i.e. sell short about 19 additional shares."
+  },
+  "commonMistakes": [
+    "Forgetting the 100-share contract multiplier when sizing hedges.",
+    "Quoting theta per year in a daily PnL report (divide by 365, or 252 for trading days).",
+    "Treating Greeks as constants over large moves - second-order terms dominate once $dS$ is no longer small.",
+    "Assuming delta-hedging removes all risk: gamma, vega, theta and rho remain, and gap moves between rebalances are unhedged."
+  ],
+  "realWorldApplication": "Delta-one desks and option market makers run exactly this loop continuously; the gamma-theta exchange is why selling insurance-like options is profitable in calm markets and catastrophic in crashes.",
+  "quantFinanceApplication": "The Greeks are the sensitivities later used for VaR decomposition, stress testing and vol-surface risk bucketing; delta-hedged PnL attribution (gamma vs theta vs vega) is the standard daily report of any derivatives desk.",
+  "summary": [
+    "PnL budget: $dV \\approx \\Delta\\,dS + \\tfrac{1}{2}\\Gamma(dS)^2 + \\Theta\\,dt + \\nu\\,d\\sigma + \\rho\\,dr$.",
+    "Worked contract Greeks: $\\Delta = 0.6368$, $\\Gamma = 0.0188$, $\\Theta = -6.41$/yr, $\\nu = 0.375$/vol pt, $\\rho = 0.53$/1%.",
+    "Delta hedge: hold $\\Delta \\times 100$ shares per contract; gamma forces rebalancing - buy high, sell low.",
+    "Long gamma pays theta; short gamma earns theta - the defining trade-off of option market making.",
+    "Puts mirror calls: delta $N(d_1) - 1$, same gamma/vega, negative rho."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "numeric",
+      "prompt": "An option has delta 0.6368 and gamma 0.0188. Spot rises by \\$1. What is the new delta, to three decimals?",
+      "answer": 0.656,
+      "tolerance": 0.005,
+      "explanation": "$0.6368 + 1 \\times 0.0188 = 0.6556 \\approx 0.656$ - gamma is delta's slope."
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "Theta measures:",
+      "options": [
+        "PnL from the passage of time, all else fixed",
+        "PnL from a one-dollar stock move",
+        "PnL from a one-point volatility move",
+        "PnL from a rate change"
+      ],
+      "answerIndex": 0,
+      "explanation": "Theta is $\\partial V/\\partial t$: decay for long option holders, earnings for sellers. Vega covers vol moves, delta covers spot, rho covers rates."
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "An option has vega of 0.375 per volatility point. Implied vol jumps from 20% to 22%. Estimate the price change.",
+      "answer": 0.75,
+      "tolerance": 0.01,
+      "unit": "\\$",
+      "explanation": "$2 \\times 0.375 = 0.75$ - vega is linear in vol to first order."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "The gamma of a long vanilla option is:",
+      "options": [
+        "Always positive",
+        "Always negative",
+        "Positive for calls and negative for puts",
+        "Zero at expiry"
+      ],
+      "answerIndex": 0,
+      "explanation": "Both calls and puts gain convexity: $\\varphi(d_1)/(S\\sigma\\sqrt{T}) > 0$ for any long vanilla position. Short positions carry the negative."
+    },
+    {
+      "id": "q5",
+      "type": "ms",
+      "prompt": "Which statements about delta hedging are correct?",
+      "options": [
+        "Gamma makes the hedge ratio stale after any spot move, forcing rebalancing",
+        "A perfectly delta-hedged book is immune to volatility changes",
+        "A delta-hedged short option position loses theta",
+        "Delta hedging removes only first-order spot risk"
+      ],
+      "answerIndices": [
+        0,
+        3
+      ],
+      "explanation": "Gamma drives rebalancing (0) and hedging removes only the linear spot term (3). A delta-hedged book still has vega (1 wrong), and a delta-hedged *short* option position *earns* theta while paying gamma - 2 has it backwards."
+    },
+    {
+      "id": "q6",
+      "type": "numeric",
+      "prompt": "You are short 50 contracts (100 shares each) of an option with delta 0.6368. How many shares do you buy to be delta-neutral?",
+      "answer": 3184,
+      "tolerance": 2,
+      "unit": "shares",
+      "explanation": "$50 \\times 100 \\times 0.6368 = 3184$ - the short calls need an equal amount of long stock."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "formula",
+      "front": "Delta and gamma (BS call)",
+      "back": "$\\Delta = N(d_1)$; $\\Gamma = \\varphi(d_1)/(S\\sigma\\sqrt{T})$ - both peak at the money."
+    },
+    {
+      "type": "formula",
+      "front": "Vega and rho (BS call)",
+      "back": "$\\nu = S\\varphi(d_1)\\sqrt{T}$ per unit vol; $\\rho = KTe^{-rT}N(d_2)$ per unit rate. Puts: same vega/gamma, opposite rho, delta $N(d_1)-1$."
+    },
+    {
+      "type": "concept",
+      "front": "Gamma-theta trade-off",
+      "back": "Long gamma loses theta (rebalancing buys high, sells low); short gamma earns theta and bears convexity risk. The exchange rate is the market maker's PnL."
+    },
+    {
+      "type": "concept",
+      "front": "Hedge sizing",
+      "back": "Shares = delta x contract size (100) x contracts; re-hedge when gamma x (spot move) shifts the ratio materially."
+    }
+  ],
+  "references": [
+    {
+      "label": "Investopedia - Options Greeks",
+      "url": "https://www.investopedia.com/terms/g/greeks.asp"
+    },
+    {
+      "label": "Hull, Options, Futures and Other Derivatives - The Greek Letters (chapter resources)",
+      "url": "https://www.pearson.com/en-us/subject-catalog/p/options-futures-and-other-derivatives/P200000003504"
+    }
+  ],
+  "skills": [
+    "options"
+  ]
+}

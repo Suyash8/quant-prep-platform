@@ -1,0 +1,297 @@
+{
+  "id": "opt-binomial",
+  "moduleId": "ph7-options",
+  "title": "The Binomial Model",
+  "estMinutes": 28,
+  "difficulty": "core",
+  "prereqs": [
+    "opt-put-call-parity"
+  ],
+  "objectives": [
+    "Price a one-period option by exact replication with stock and bonds",
+    "Derive risk-neutral probabilities from the replication and use them for pricing",
+    "Price a two-period European option by backward induction and verify put-call parity on the tree",
+    "Identify American early exercise on a tree and value the early-exercise premium"
+  ],
+  "motivation": "Black-Scholes feels like magic until you watch prices get built node by node. The binomial model is that magic made visible: discretize time, let the stock jump up or down, and replicate the option with stock and bonds at every node. Risk-neutral probabilities then fall out of the replication - no forecast of the stock is ever needed - and American early exercise becomes a simple check at each node, which is why every serious pricing engine still keeps a tree in its drawer.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "One period: replication first"
+    },
+    {
+      "type": "p",
+      "md": "Setup: stock at $S_0 = 100$; over one period it moves up by factor $u = 1.2$ to 120 or down by $d = 0.8$ to 80; the risk-free rate is 5% per period (discrete compounding); price a European call with strike $K = 100$. The key idea is not to guess whether the stock rises - it is to *manufacture* the option's payoffs from a stock/bond portfolio, because two securities are exactly enough to match two states."
+    },
+    {
+      "type": "steps",
+      "title": "Exact replication of the one-period call",
+      "items": [
+        "Payoffs at expiry: up state $\\max(120 - 100, 0) = 20$; down state $\\max(80 - 100, 0) = 0$.",
+        "Hold $\\Delta$ shares and $B$ in bonds. Matching both states: $\\Delta \\times 120 + 1.05B = 20$ and $\\Delta \\times 80 + 1.05B = 0$.",
+        "Subtracting: $40\\Delta = 20$, so $\\Delta = 0.5$ shares.",
+        "From the down state: $1.05B = -0.5 \\times 80 = -40$, so $B = -38.0952$ (borrow \\$38.10).",
+        "Option value = replicating cost $= 0.5 \\times 100 - 38.0952 = $11.9048 \\approx \\$11.90$ - half a share financed with a \\$38.10 loan."
+      ]
+    },
+    {
+      "type": "math",
+      "tex": "p = \\frac{(1+r) - d}{u - d}, \\qquad C_0 = \\frac{p\\,C_u + (1-p)\\,C_d}{1+r}",
+      "caption": "The risk-neutral probability $p$ and the one-step pricing rule - algebraically identical to the replication, but no portfolio to construct."
+    },
+    {
+      "type": "steps",
+      "title": "Same price via risk-neutral probabilities",
+      "items": [
+        "$p = (1.05 - 0.8)/(1.2 - 0.8) = 0.25/0.40 = 0.625$.",
+        "$C_0 = (0.625 \\times 20 + 0.375 \\times 0)/1.05 = 12.50/1.05 = \\$11.90$ - identical, with no probabilities guessed."
+      ]
+    },
+    {
+      "type": "p",
+      "md": "$p = 0.625$ is not the probability the stock rises - it is the value that makes the stock's expected growth exactly $(1+r)$: $0.625 \\times 1.2 + 0.375 \\times 0.8 = 1.05$. Under $p$, *every* asset earns the risk-free rate, so an option's value is just its discounted expected payoff. The real-world probability never enters because replication already eliminated the risk; whether the stock is likely to rise 60% or 40% of the time, the arbitrage price is the same. This is the **risk-neutral valuation** principle, and it is the conceptual heart of all derivative pricing."
+    },
+    {
+      "type": "h2",
+      "text": "Two periods: backward induction"
+    },
+    {
+      "type": "p",
+      "md": "Run the same tree twice. Terminal stock prices: $S_{uu} = 144$, $S_{ud} = 96$, $S_{dd} = 64$, so call payoffs are 44, 0, 0. Work backwards: value each interior node by one more application of the pricing rule, then the root."
+    },
+    {
+      "type": "steps",
+      "title": "Backward induction on the two-period tree (p = 0.625, r = 5% per period)",
+      "items": [
+        "Node u ($S = 120$): $C_u = (0.625 \\times 44 + 0.375 \\times 0)/1.05 = 27.50/1.05 = 26.1905$.",
+        "Node d ($S = 80$): both children pay 0, so $C_d = 0$.",
+        "Root: $C_0 = (0.625 \\times 26.1905 + 0.375 \\times 0)/1.05 = 16.3690/1.05 = $15.5896 \\approx \\$.",
+        "Shortcut through the leaves: only $S_{uu}$ pays, so $C_0 = 0.625^2 \\times 44/1.05^2 = 0.390625 \\times 44/1.1025 = 15.5896$. Same answer - the tree is just disciplined bookkeeping."
+      ]
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Node",
+        "Stock",
+        "Call value",
+        "Put value (European)"
+      ],
+      "rows": [
+        [
+          "uu",
+          "144",
+          "44.00",
+          "0.00"
+        ],
+        [
+          "ud",
+          "96",
+          "0.00",
+          "4.00"
+        ],
+        [
+          "dd",
+          "64",
+          "0.00",
+          "36.00"
+        ],
+        [
+          "u",
+          "120",
+          "26.19",
+          "1.43"
+        ],
+        [
+          "d",
+          "80",
+          "0.00",
+          "15.24"
+        ],
+        [
+          "root",
+          "100",
+          "15.59",
+          "6.29"
+        ]
+      ]
+    },
+    {
+      "type": "steps",
+      "title": "The European put, and a free parity check",
+      "items": [
+        "Put payoffs: 0 / 4 / 36 at uu / ud / dd.",
+        "$P_u = (0.375 \\times 4)/1.05 = 1.4286$; $P_d = (0.625 \\times 4 + 0.375 \\times 36)/1.05 = 16/1.05 = 15.2381$.",
+        "$P_0 = (0.625 \\times 1.4286 + 0.375 \\times 15.2381)/1.05 = 6.6071/1.05 = $6.2925 \\approx \\$.",
+        "Parity check: $C - P = 15.5896 - 6.2925 = 9.2971$, and $S - K/(1+r)^2 = 100 - 90.7029 = 9.2971$. The tree satisfies put-call parity exactly - any model that does not is broken."
+      ]
+    },
+    {
+      "type": "p",
+      "md": "Now the American twist. At node d the European put is worth 15.2381, but exercising immediately yields $100 - 80 = 20$. An American holder would exercise, so the node's value is $\\max(20, 15.2381) = 20$, and the tree re-prices upward: $P_0^{\\text{Am}} = (0.625 \\times 1.4286 + 0.375 \\times 20)/1.05 = 8.3929/1.05 = \\$7.9932 \\approx \\$7.99$. The **early-exercise premium** is $7.99 - 6.29 = \\$1.70$. American calls on a non-dividend stock would show no such gap - consistent with the parity lesson - while American puts generally do."
+    },
+    {
+      "type": "interactive",
+      "component": "BinomialTreeLab",
+      "params": {
+        "spot": 100,
+        "strike": 100,
+        "u": 1.2,
+        "d": 0.8,
+        "rate": 0.05,
+        "periods": 2,
+        "option": "call"
+      },
+      "caption": "Step through the tree: watch $\\Delta$ at each node, then toggle to the put and see the American exercise flag fire at node d."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "From toy tree to real tree",
+      "md": "Real trees choose $u$ and $d$ from volatility, typically $u = e^{\\sigma\\sqrt{\\Delta t}}$, $d = 1/u$, and take $N$ steps. As $N$ grows the binomial price converges to Black-Scholes for European options - and handles American features, which Black-Scholes cannot, which is why production systems run both."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Match the rate to the step",
+      "md": "The per-period rate must match the step length: here one step was one year, so 5% per period. For weekly steps use $e^{r\\Delta t}$-style scaling. And never use a real-world probability in place of $p$ - it is derived from $u$, $d$ and $r$, not estimated from history."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "S, K, u, d, r = 100, 100, 1.2, 0.8, 0.05\np = (1 + r - d) / (u - d)                  # 0.625\n\ndef step(values):                          # one step of backward induction\n    return [(p * a + (1 - p) * b) / (1 + r) for a, b in zip(values, values[1:])]\n\nleaf = [max(s - K, 0) for s in (S * u * u, S * u * d, S * d * d)]  # [44, 0, 0]\nmid = step(leaf)                           # [26.19, 0.0]\nprint(round(step(mid)[0], 2))              # 15.59",
+      "caption": "The whole two-period engine: a list of leaves and one rolling step function."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "In the same one-period tree ($S = 100$, $u = 1.2$, $d = 0.8$, $r = 5\\%$, $K = 100$), price the European put two ways: directly with the risk-neutral probability, and by inferring it from the call price via put-call parity.",
+    "hints": [
+      "Put payoffs: up state $\\max(100 - 120, 0) = 0$; down state $\\max(100 - 80, 0) = 20$.",
+      "Parity with discrete compounding: $C - P = S - K/(1+r)$."
+    ],
+    "solution": "Direct: $P_0 = (1 - p) \\times 20/1.05 = 0.375 \\times 20/1.05 = 7.50/1.05 = \\$7.1429 \\approx \\$7.14$. Parity: $C - P = 100 - 100/1.05 = 4.7619$, so $P = 11.9048 - 4.7619 = \\$7.1429$. Both routes agree exactly, as they must."
+  },
+  "independentExercise": {
+    "prompt": "Price a two-period European call with $S = 100$, $u = 1.1$, $d = 0.9$, $r = 2\\%$ per period, $K = 100$, working node by node. Then check whether an American version would ever exercise early.",
+    "hints": [
+      "$p = (1.02 - 0.9)/(1.1 - 0.9)$.",
+      "Terminal prices: 121, 99, 81. Only the up-up node pays.",
+      "At node u compare the call's intrinsic value with its continuation value."
+    ],
+    "solution": "$p = 0.12/0.2 = 0.6$. Payoffs: $S_{uu} = 121 \\to 21$, $S_{ud} = 99 \\to 0$, $S_{dd} = 81 \\to 0$. $C_u = (0.6 \\times 21 + 0.4 \\times 0)/1.02 = 12.60/1.02 = 12.3529$; $C_d = 0$. $C_0 = (0.6 \\times 12.3529 + 0.4 \\times 0)/1.02 = 7.4118/1.02 = $7.2664 \\approx \\$. American check: node u intrinsic is $120 - 100 = 10 < 12.3529$ (continuation), node d intrinsic is 0 - so no early exercise and the American price equals the European \\$7.27."
+  },
+  "commonMistakes": [
+    "Using a real-world probability instead of the risk-neutral $p$ derived from $u$, $d$ and $r$.",
+    "Mismatching the discount rate with the step length (annual rate applied to a quarterly step).",
+    "Forgetting the early-exercise check at *every* interior node when pricing American options.",
+    "Recombining the tree incorrectly - $S_{ud}$ must equal $S_{du}$, or backward induction breaks."
+  ],
+  "realWorldApplication": "Binomial trees remain the workhorse for American-style and path-dependent products (convertibles, Bermudan swaptions) where closed forms do not exist, and they are the standard teaching vehicle for replication-based intuition.",
+  "quantFinanceApplication": "The risk-neutral pricing rule $C_0 = E^Q[\\text{payoff}]/(1+r)$ established here is the discrete ancestor of the continuous result $C = e^{-rT}E^Q[\\text{payoff}]$ used in Black-Scholes and Monte Carlo engines.",
+  "summary": [
+    "Two securities replicate two states: $\\Delta = 0.5$, $B = -38.0952$ gives $C_0 = 11.9048$ with no probability estimates.",
+    "Risk-neutral probability $p = ((1+r) - d)/(u - d) = 0.625$ makes every asset earn $r$; price = discounted expected payoff under $p$.",
+    "Two-period pricing is backward induction: value interior nodes first, then the root; shortcut $C_0 = p^2 \\times 44/1.05^2 = 15.5896$.",
+    "The tree satisfies put-call parity exactly: $C - P = 9.2971 = S - K/(1+r)^2$.",
+    "American puts exercise early when intrinsic beats continuation (node d: 20 vs 15.24), adding a \\$1.70 early-exercise premium."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "numeric",
+      "prompt": "One-period binomial: $S = 100$, $u = 1.1$, $d = 0.9$, $r = 2\\%$ per period, $K = 95$. What is the European call price? (Two decimals.)",
+      "answer": 8.82,
+      "tolerance": 0.05,
+      "unit": "\\$",
+      "explanation": "$p = (1.02 - 0.9)/0.2 = 0.6$; payoffs 15 and 0; $C = 0.6 \\times 15/1.02 = 9/1.02 = 8.8235$."
+    },
+    {
+      "id": "q2",
+      "type": "numeric",
+      "prompt": "With $u = 1.2$, $d = 0.8$ and $r = 5\\%$ per period, what is the risk-neutral probability $p$? (Three decimals.)",
+      "answer": 0.625,
+      "tolerance": 0.001,
+      "explanation": "$p = (1.05 - 0.8)/(1.2 - 0.8) = 0.25/0.40 = 0.625$ - the probability making the stock's expected growth exactly 1.05."
+    },
+    {
+      "id": "q3",
+      "type": "mcq",
+      "prompt": "The risk-neutral probability $p$ is defined as the value that makes:",
+      "options": [
+        "The stock's expected one-period return equal the risk-free rate",
+        "The stock's real-world probability of rising equal 50%",
+        "The option's payoff equal zero",
+        "The option's delta equal one"
+      ],
+      "answerIndex": 0,
+      "explanation": "$p$ is constructed so $p\\,u + (1-p)\\,d = 1 + r$. It is a pricing device from replication, not a forecast."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "In the two-period tree of the lesson, the American put differs from the European put because:",
+      "options": [
+        "At node d (S = 80) immediate exercise pays 20 versus a continuation value of 15.24",
+        "The risk-neutral probability changes for American options",
+        "American options have different payoffs at expiry",
+        "The discount rate is higher for American options"
+      ],
+      "answerIndex": 0,
+      "explanation": "Same $p$, same payoffs, same rate - the only difference is the $\\max(\\text{intrinsic}, \\text{continuation})$ check at each node, which fires only at node d here."
+    },
+    {
+      "id": "q5",
+      "type": "numeric",
+      "prompt": "In the lesson's two-period tree ($S = 100$, $u = 1.2$, $d = 0.8$, $r = 5\\%$ per period, $K = 100$), what is the European put price? (Two decimals.)",
+      "answer": 6.29,
+      "tolerance": 0.05,
+      "unit": "\\$",
+      "explanation": "$P_0 = (0.625 \\times 1.4286 + 0.375 \\times 15.2381)/1.05 = 6.6071/1.05 = 6.2925$. Cross-check: $C - P = 9.2971 = 100 - 100/1.1025$."
+    },
+    {
+      "id": "q6",
+      "type": "code-output",
+      "prompt": "What does this Python code print?",
+      "language": "python",
+      "code": "u, d, r = 1.2, 0.8, 0.05\np = (1 + r - d) / (u - d)\nprint(p)\nprint(round(p * 20 / (1 + r), 2))",
+      "answer": "0.625\n11.9",
+      "explanation": "$p = 0.25/0.4 = 0.625$ prints exactly; the one-period call is $0.625 \\times 20/1.05 = 11.9048$, which round(_, 2) displays as 11.9."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "formula",
+      "front": "Risk-neutral probability in a binomial step",
+      "back": "$p = ((1+r) - d)/(u - d)$ - makes the stock's expected growth equal $(1+r)$."
+    },
+    {
+      "type": "formula",
+      "front": "One-step binomial price",
+      "back": "$C_0 = [p\\,C_u + (1-p)\\,C_d]/(1+r)$ - discounted expected payoff under $p$."
+    },
+    {
+      "type": "formula",
+      "front": "Tree parameters from volatility",
+      "back": "$u = e^{\\sigma\\sqrt{\\Delta t}}$, $d = 1/u$; the tree converges to Black-Scholes as $\\Delta t \\to 0$."
+    },
+    {
+      "type": "concept",
+      "front": "American vs European on a tree",
+      "back": "At every interior node take max(intrinsic, continuation); the difference in values is the early-exercise premium (put-side mostly)."
+    }
+  ],
+  "references": [
+    {
+      "label": "Cox, Ross & Rubinstein (1979) - Option Pricing: A Simplified Approach (SSRN)",
+      "url": "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=3214165"
+    },
+    {
+      "label": "QuantStart - Pricing Options with Binomial Trees",
+      "url": "https://www.quantstart.com/articles/Options-Pricing-using-Binomial-Trees/"
+    }
+  ],
+  "skills": [
+    "options",
+    "pricing"
+  ]
+}

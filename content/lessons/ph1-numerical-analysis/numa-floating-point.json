@@ -1,0 +1,275 @@
+{
+  "id": "numa-floating-point",
+  "moduleId": "ph1-numerical-analysis",
+  "title": "Floating-Point Numbers and IEEE 754",
+  "estMinutes": 28,
+  "difficulty": "advanced",
+  "prereqs": [
+    "cf-binary-hex"
+  ],
+  "objectives": [
+    "Convert a finite decimal to its IEEE 754 binary64 representation, deriving sign, biased exponent and fraction fields by hand",
+    "Explain why decimals like 0.1 cannot be stored exactly and predict the printed result of 0.1 + 0.2",
+    "Use machine epsilon and ulp to reason about spacing of stored values and absorbed additions",
+    "Choose representation strategies (integer cents, tolerance comparison) that keep money arithmetic trustworthy"
+  ],
+  "motivation": "A reconciliation system compares a stored fill price of \\$42.17 times 100 against a settlement record of \\$4,217.00 and passes - by luck. The same system sums ten \\$0.10 fees and reports \\$0.9999999999999999. Whether a money calculation is exact is not an accident: it is decided by the IEEE 754 standard that governs every float your CPU can hold. This lesson opens that box, because every numerical method in this module lives inside it.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Real numbers are infinite; registers are finite"
+    },
+    {
+      "type": "p",
+      "md": "The real line contains uncountably many numbers, but a 64-bit register holds exactly $2^{64}$ bit patterns. Any floating-point system must therefore *round*: it keeps a finite menu of values and maps every real number to the nearest one. IEEE 754 (first standardized 1985, revised since) is the treaty that makes this mapping identical on every CPU, GPU and language you will ever use. Understanding it is not trivia - it is the physics of your compute environment."
+    },
+    {
+      "type": "p",
+      "md": "The format is scientific notation in base 2: every value is stored as $\\pm 1.f \\times 2^{e}$, where $f$ is the fraction and $e$ a biased exponent. Because the leading bit before the binary point is always 1 (for normalized numbers), it is *hidden* - not stored - and its slot is reused for an extra fraction bit. That trick buys one free digit of precision."
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Format",
+        "Total bits",
+        "Sign",
+        "Exponent",
+        "Fraction stored (incl. hidden)",
+        "Exponent bias"
+      ],
+      "rows": [
+        [
+          "binary32 (float)",
+          "32",
+          "1",
+          "8",
+          "24",
+          "127"
+        ],
+        [
+          "binary64 (double)",
+          "64",
+          "1",
+          "11",
+          "53",
+          "1023"
+        ]
+      ]
+    },
+    {
+      "type": "h2",
+      "text": "Decimal to binary, by hand"
+    },
+    {
+      "type": "p",
+      "md": "The integer part converts by repeated division by 2; the fractional part by repeated **doubling**, reading the integer part that spills out each time. This is the skill from cf-binary-hex pointed at fractional values, and it explains immediately which decimals are storable."
+    },
+    {
+      "type": "steps",
+      "title": "Worked example: encode 13.375 as a double",
+      "items": [
+        "Fractional part by doubling: $0.375 \\times 2 = 0.75$ (bit 0), $0.75 \\times 2 = 1.5$ (bit 1), $0.5 \\times 2 = 1.0$ (bit 1). So $0.375 = 0.011_2$ and $13.375 = 1101.011_2$.",
+        "Normalize: $1101.011_2 = 1.101011_2 \\times 2^{3}$.",
+        "Sign $s = 0$. Exponent field $= 1023 + 3 = 1026 = 10000000010_2$.",
+        "Fraction field: $101011$ followed by 46 zeros (the leading 1 is hidden).",
+        "Concatenate: `0 10000000010 10101100...0` = hexadecimal `0x402AC00000000000`."
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import struct\nprint(struct.pack(\">d\", 13.375).hex())   # 402ac00000000000\nprint(float.hex(13.375))                  # 0x1.acp+3  -> 1.ac * 2**3",
+      "caption": "Every mainstream machine agrees with your hand computation - that is the point of the standard."
+    },
+    {
+      "type": "h2",
+      "text": "Why 0.1 cannot be stored exactly"
+    },
+    {
+      "type": "math",
+      "tex": "0.1_{10} = 0.0001100110011\\ldots_2 = 1.100110011\\ldots_2 \\times 2^{-4}",
+      "caption": "The binary expansion of one tenth repeats forever: the denominator 10 = 2 x 5 carries the prime 5, which binary fractions cannot express."
+    },
+    {
+      "type": "p",
+      "md": "A decimal is stored exactly only if it is a **dyadic rational** $k/2^m$ - like 13.375, 0.375 or 0.25. Anything else ($0.1$, $0.2$, \\$42.17) gets rounded to 53 significant bits. The closest double to $0.1$ is slightly *above* it: $0.1000000000000000055511151231257827\\ldots$ That excess of about $5.6 \\times 10^{-18}$ is invisible when printed, but it drives everything that follows."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Price handling",
+      "md": "A price of \\$42.17 is not representable: the nearest double is approximately \\$42.16999999999999993. Multiplying by 100 happens to round back to exactly 4217.0 - the errors cancel by luck - but luck is not a settlement policy. Production systems store prices as **integer cents** (4217) or integer ticks, and reserve floats for model quantities like volatilities and correlations."
+    },
+    {
+      "type": "h2",
+      "text": "Rounding in action"
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "print(0.1 + 0.2)               # 0.30000000000000004\nprint(0.1 + 0.7)               # 0.7999999999999999\nprint(sum([0.1] * 10))         # 0.9999999999999999\nprint(2.0**53 == 2.0**53 + 1)  # True - integers above 2**53 collide\nprint(1e16 + 1 == 1e16)        # True - one dollar absorbed into ten quadrillion",
+      "caption": "Run it. Every line follows from the representation - none of it is a Python bug."
+    },
+    {
+      "type": "p",
+      "md": "Why does $0.1 + 0.2$ miss? Each operand rounds up slightly, so the exact sum of the stored values is $0.30000000000000001665\\ldots$ That number is also not a double, so it rounds again - this time to the double one ulp above $0.3$, which prints as $0.30000000000000004$. The **ulp** (unit in the last place) is the local spacing of doubles: $2^{e-52}$, so near \\$42.17 (between $2^5$ and $2^6$) spacing is $2^{-47} \\approx 7.1 \\times 10^{-15}$ dollars. Harmless per number; dangerous when accumulated, and fatal for \\$10^{16}-scale notional where the spacing reaches \\$2."
+    },
+    {
+      "type": "interactive",
+      "component": "MemoryLayout",
+      "params": {
+        "value": 13.375,
+        "type": "double"
+      },
+      "caption": "See the sign, exponent and fraction fields of a real double laid out byte by byte."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Never compare computed floats with ==",
+      "md": "Use a tolerance: `abs(a - b) <= 1e-9 * max(1.0, abs(a), abs(b))`, or Python's `math.isclose`. Exact equality is only safe for values that were assigned, never computed."
+    },
+    {
+      "type": "h2",
+      "text": "Epsilon and the precision budget"
+    },
+    {
+      "type": "p",
+      "md": "The **machine epsilon** is the gap between 1.0 and the next representable double: $2^{-52} \\approx 2.22 \\times 10^{-16}$, about 15-16 significant decimal digits. binary32 keeps 24 bits - about 7 digits - which is why float32 $0.1$ is $0.10000000149\\ldots$ and why ML frameworks tolerate that error while pricing libraries do not. Every later lesson in this module budgets error in units of epsilon."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Convert $0.6875$ to binary by repeated doubling, write it in normalized form $1.f \\times 2^e$, and give the exponent field of its binary64 encoding.",
+    "hints": [
+      "Double 0.6875 repeatedly and record the integer part that spills out each time.",
+      "After normalizing, the exponent will be negative - remember the bias 1023."
+    ],
+    "solution": "Doubling: $0.6875 \\times 2 = 1.375$ (bit 1, remainder $0.375$), $0.375 \\times 2 = 0.75$ (bit 0), $0.75 \\times 2 = 1.5$ (bit 1), $0.5 \\times 2 = 1.0$ (bit 1). So $0.6875 = 0.1011_2$ (check: $\\tfrac12 + \\tfrac18 + \\tfrac1{16} = 0.6875$). Normalized: $1.011_2 \\times 2^{-1}$. Exponent field $= 1023 - 1 = 1022 = 01111111110_2$. The double is `0x3FE6000000000000`."
+  },
+  "independentExercise": {
+    "prompt": "A market data feed quotes prices to one tenth of a cent (tick $= 0.0001$ dollars). Your team stores prices as doubles. (a) Explain why equality checks between two computed prices can fail even when the true prices match. (b) Recompute the round trip from the lesson motivation in integer ticks: buy 250 shares at \\$42.17, sell 100 at \\$43.05 and 150 at \\$41.90 - express every leg in ticks and compute PnL exactly.",
+    "hints": [
+      "Two different doubles can both be 'the closest double' to numbers computed along different paths.",
+      "One tick is $10^{-4}$ dollars: \\$42.17 = 421700 ticks."
+    ],
+    "solution": "(a) Each computation rounds to the nearest double, and two mathematically equal results can round along different paths to adjacent doubles; equality then reports false for a zero true difference. Compare with a tolerance, or avoid floats. (b) Buy: $-250 \\times 421700 = -105{,}425{,}000$ ticks. Sell 100 at \\$43.05: $+430{,}500 \\times 100 = +43{,}050{,}000$ ticks. Sell 150 at \\$41.90: $+41{,}900 \\times 150 = +6{,}285{,}000$ ticks. PnL $= 43{,}050{,}000 + 6{,}285{,}000 - 105{,}425{,}000 = +475{,}000$ ticks $= \\$47.50$ exactly - no rounding anywhere."
+  },
+  "commonMistakes": [
+    "Comparing computed floating-point values with == instead of a tolerance.",
+    "Assuming 0.1, 0.2 or any price with two decimal places is stored exactly.",
+    "Accumulating monetary totals in float32 (only ~7 digits) or in a double at 10^16 notional where ulp = 2 dollars.",
+    "Blaming the language for 0.1 + 0.2 != 0.3 - it is the IEEE 754 representation, identical everywhere.",
+    "Forgetting that printing hides the error: repr shows the shortest string that rounds back to the stored double."
+  ],
+  "realWorldApplication": "Every CPU, GPU, JSON parser and spreadsheet implements IEEE 754 identically; database DECIMAL columns, Java BigDecimal and Python's decimal module exist precisely to opt out of it for money.",
+  "quantFinanceApplication": "Matching engines and position keepers store prices and quantities as integers (cents or ticks); pricing libraries use doubles for model inputs but compare computed prices with tolerances, never with ==.",
+  "summary": [
+    "IEEE 754 stores $\\pm 1.f \\times 2^{e}$ with a hidden leading bit: binary64 has 53 significant bits, bias 1023.",
+    "Only dyadic rationals ($k/2^m$) are exact; 0.1, 0.2 and \\$42.17 all round, by about one ulp.",
+    "Machine epsilon $2^{-52} \\approx 2.22 \\times 10^{-16}$ sets the ~16-digit precision budget of a double.",
+    "Money belongs in integer cents or ticks; floats belong to model quantities, compared with tolerances."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "Which of these decimals is stored EXACTLY as a binary64 double?",
+      "options": [
+        "0.1",
+        "0.5",
+        "0.2",
+        "42.17"
+      ],
+      "answerIndex": 1,
+      "explanation": "$0.5 = 2^{-1}$ is a dyadic rational, so it is exact. 0.1, 0.2 and 42.17 have denominators with prime factors other than 2 and must be rounded."
+    },
+    {
+      "id": "q2",
+      "type": "numeric",
+      "prompt": "In the binary64 encoding of 13.375, what is the biased exponent field (the 11-bit integer)?",
+      "answer": 1026,
+      "explanation": "$13.375 = 1.101011_2 \\times 2^3$, and the field stores $1023 + 3 = 1026$."
+    },
+    {
+      "id": "q3",
+      "type": "mcq",
+      "prompt": "What does `print(0.1 + 0.2)` display in Python?",
+      "options": [
+        "0.3",
+        "0.30000000000000004",
+        "0.29999999999999999",
+        "0.3000000000000001"
+      ],
+      "answerIndex": 1,
+      "explanation": "The stored 0.1 and 0.2 are each slightly above their true values; the exact sum rounds to the double one ulp above 0.3, whose shortest repr is 0.30000000000000004."
+    },
+    {
+      "id": "q4",
+      "type": "code-output",
+      "prompt": "What exactly does this Python code print?",
+      "language": "python",
+      "code": "print(0.1 + 0.7)\nprint(sum([0.1] * 10))",
+      "answer": "0.7999999999999999\n0.9999999999999999",
+      "explanation": "double(0.1) is above 0.1 and double(0.7) below 0.7; their exact sum falls one rounding step short of double(0.8). Summing ten copies of double(0.1) ends at $1 - 2^{-53}$, which reprs as 0.9999999999999999."
+    },
+    {
+      "id": "q5",
+      "type": "numeric",
+      "prompt": "How many significant bits of precision does a binary64 double carry, counting the hidden leading bit?",
+      "answer": 53,
+      "explanation": "1 sign + 11 exponent + 52 stored fraction bits, plus the hidden leading 1 gives 53 significant bits (~15-16 decimal digits)."
+    },
+    {
+      "id": "q6",
+      "type": "ms",
+      "prompt": "Which practices keep monetary arithmetic trustworthy in production?",
+      "options": [
+        "Store prices and quantities as integer cents or ticks",
+        "Compare computed prices with ==",
+        "Round only at presentation, accumulate exactly",
+        "Accumulate fee totals in float32 for speed"
+      ],
+      "answerIndices": [
+        0,
+        2
+      ],
+      "explanation": "Integer arithmetic is exact; deferring rounding to presentation keeps totals correct. == fails on computed doubles, and float32 carries only ~7 digits - far too coarse for money at scale."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "definition",
+      "front": "What is an ulp?",
+      "back": "Unit in the last place: the spacing between adjacent doubles near a value, $2^{e-52}$ in binary64. It grows with magnitude - at 10^16 the spacing is 2."
+    },
+    {
+      "type": "formula",
+      "front": "IEEE 754 value layout",
+      "back": "$\\pm 1.f \\times 2^{E-\\text{bias}}$; binary64: 1 sign, 11 exponent (bias 1023), 52 fraction bits + hidden leading 1 = 53 significant bits."
+    },
+    {
+      "type": "concept",
+      "front": "Why is 0.1 not exact in binary?",
+      "back": "$0.1 = 1/(2 \\times 5)$: the factor 5 forces an infinitely repeating binary expansion $0.000110011\\ldots_2$, which must be rounded to 53 bits."
+    },
+    {
+      "type": "code-output",
+      "front": "What is 0.1 + 0.2 in Python?",
+      "back": "0.30000000000000004 - each operand rounds up, and the exact sum lands one ulp above 0.3."
+    }
+  ],
+  "references": [
+    {
+      "label": "Goldberg - What Every Computer Scientist Should Know About Floating-Point Arithmetic",
+      "url": "https://docs.oracle.com/cd/E19957-01/806-3568/ncg_goldberg.html"
+    },
+    {
+      "label": "Wikipedia - IEEE 754",
+      "url": "https://en.wikipedia.org/wiki/IEEE_754"
+    }
+  ],
+  "skills": [
+    "numerical-analysis",
+    "computer-fundamentals"
+  ]
+}

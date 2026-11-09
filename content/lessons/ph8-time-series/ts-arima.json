@@ -1,0 +1,246 @@
+{
+  "id": "ts-arima",
+  "moduleId": "ph8-time-series",
+  "title": "AR, MA, ARMA and ARIMA Models",
+  "estMinutes": 28,
+  "difficulty": "advanced",
+  "prereqs": ["ts-stationarity"],
+  "objectives": [
+    "Derive the mean, variance and autocorrelation function of an AR(1) process and compute them for given parameters",
+    "Derive the lag-1 autocorrelation of an MA(1) process and explain invertibility",
+    "Use ACF/PACF 'fingerprints' to identify plausible AR, MA or ARMA orders",
+    "Read ARIMA$(p, d, q)$ notation and outline the Box-Jenkins workflow including residual diagnostics"
+  ],
+  "motivation": "Yesterday's liquidity spread helps predict today's - but how much, and for how many lags? Autoregressive and moving-average models are the standard vocabulary for 'memory' in a series. Deriving their moments by hand (not just fitting them) is what lets you read an ACF plot and say *AR(1) with $\\phi \\approx 0.6$* before any software touches the data.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Two kinds of memory"
+    },
+    {
+      "type": "p",
+      "md": "An **AR** (autoregressive) model says today's value remembers *past values*: $X_t = c + \\phi X_{t-1} + \\varepsilon_t$. An **MA** (moving average) model says today's value remembers *past shocks*: $X_t = \\mu + \\varepsilon_t + \\theta \\varepsilon_{t-1}$. The distinction matters operationally: an AR memory decays smoothly over time, an MA memory dies after $q$ steps, because shocks wash through. Both assume the shocks $\\varepsilon_t$ are white noise with variance $\\sigma^2$ - stationary input, from the last lesson."
+    },
+    {
+      "type": "h2",
+      "text": "AR(1) moments, derived"
+    },
+    {
+      "type": "math",
+      "tex": "X_t = c + \\phi X_{t-1} + \\varepsilon_t, \\qquad |\\phi| < 1",
+      "caption": "AR(1); the $|\\phi| < 1$ condition keeps the process stationary"
+    },
+    {
+      "type": "steps",
+      "title": "Mean, variance and ACF from the equation",
+      "items": [
+        "Mean: take expectations, and $\\mathbb{E}[X_t] = \\mathbb{E}[X_{t-1}] = \\mu$ by stationarity: $\\mu = c + \\phi\\mu \\Rightarrow \\mu = \\dfrac{c}{1-\\phi}$.",
+        "Variance: write deviations $\\tilde{X}_t = \\phi\\tilde{X}_{t-1} + \\varepsilon_t$, square and take expectations: $\\gamma_0 = \\phi^2 \\gamma_0 + \\sigma^2 \\Rightarrow \\gamma_0 = \\dfrac{\\sigma^2}{1-\\phi^2}$.",
+        "Autocovariances: multiply the deviation equation by $\\tilde{X}_{t-k}$ and take expectations: $\\gamma_k = \\phi\\, \\gamma_{k-1}$, so $\\gamma_k = \\phi^k \\gamma_0$.",
+        "ACF: $\\rho_k = \\gamma_k / \\gamma_0 = \\phi^k$ - geometric decay, the AR(1) fingerprint."
+      ]
+    },
+    {
+      "type": "p",
+      "md": "Numbers, then: let $c = 2$, $\\phi = 0.6$, $\\sigma^2 = 4$. The mean is $\\mu = 2/(1 - 0.6) = 5$. The variance is $\\gamma_0 = 4/(1 - 0.36) = 4/0.64 = 6.25$, so the unconditional standard deviation is $2.5$. And the ACF decays as $0.6^k$: $\\rho_1 = 0.6$, $\\rho_2 = 0.36$, $\\rho_3 = 0.216$, $\\rho_4 = 0.130$. A series with those sample values is shouting 'AR(1), $\\phi \\approx 0.6$' at you."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Reading $\\phi$ in market terms",
+      "md": "$\\phi = 0.6$ means $60\\%$ of any deviation from the mean survives one period, $36\\%$ survives two, and so on - a half-life of $\\ln 0.5 / \\ln 0.6 \\approx 1.36$ periods. Mean-reverting spreads, order-flow imbalance and inventory positions are all modelled this way; $\\phi$ close to 1 means slow reversion, negative $\\phi$ means oscillation."
+    },
+    {
+      "type": "h2",
+      "text": "MA(1): one shock, then silence"
+    },
+    {
+      "type": "math",
+      "tex": "X_t = \\mu + \\varepsilon_t + \\theta\\,\\varepsilon_{t-1}, \\qquad \\rho_1 = \\frac{\\theta}{1+\\theta^2}, \\quad \\rho_k = 0 \\ (k \\ge 2)",
+      "caption": "MA(1): only lag-1 correlation, since a shock touches exactly two consecutive values"
+    },
+    {
+      "type": "p",
+      "md": "The derivation is short: $\\gamma_0 = \\sigma^2(1 + \\theta^2)$ (own shock plus yesterday's) and $\\gamma_1 = \\theta\\sigma^2$ (shared shock), so $\\rho_1 = \\theta/(1+\\theta^2)$ and everything beyond is zero. For $\\theta = 0.5$: $\\rho_1 = 0.5/1.25 = 0.4$, $\\rho_2 = 0$. The ACF **cuts off** after lag $q$ - that is the MA fingerprint, mirror-imaged against AR decay. Invertibility ($|\\theta| < 1$) guarantees a one-to-one map from the series back to its shocks, which is what estimation algorithms require."
+    },
+    {
+      "type": "table",
+      "headers": ["Model", "ACF", "PACF"],
+      "rows": [
+        ["AR(p)", "decays geometrically/exponentially", "cuts off after lag $p$"],
+        ["MA(q)", "cuts off after lag $q$", "decays gradually"],
+        ["ARMA(p, q)", "decays", "decays"]
+      ]
+    },
+    {
+      "type": "p",
+      "md": "These fingerprints are how identification works in practice: plot the sample ACF and PACF, look for which one cuts off and where. A series whose ACF decays but whose PACF drops to nothing after lag 2 is an AR(2) candidate; the reverse suggests MA. When both decay, mix: ARMA."
+    },
+    {
+      "type": "interactive",
+      "component": "RandomWalk",
+      "params": {
+        "n": 150,
+        "phi": 0.6,
+        "sigma": 2,
+        "mean": 5
+      },
+      "caption": "Simulated AR(1) with $\\phi = 0.6$: deviations from the mean of 5 persist for a few periods - the visual signature of the geometric ACF decay."
+    },
+    {
+      "type": "h2",
+      "text": "ARMA and ARIMA: the full notation"
+    },
+    {
+      "type": "p",
+      "md": "ARMA$(p, q)$ carries $p$ AR lags and $q$ MA lags simultaneously. ARIMA$(p, d, q)$ adds the differencing order $d$ from the stationarity lesson: difference the series $d$ times, then fit ARMA$(p, q)$ to the result. So **ARIMA$(1, 1, 0)$** means: today's price change depends on yesterday's price change with AR coefficient $\\phi$ - a random walk plus one mean-reversion term. The Box-Jenkins workflow makes the order choices disciplined:"
+    },
+    {
+      "type": "list",
+      "ordered": true,
+      "items": [
+        "**Stationarise**: difference (choose $d$) and remove seasonality until ADF and plots approve.",
+        "**Identify**: read ACF/PACF fingerprints for candidate $p$ and $q$.",
+        "**Estimate**: fit by maximum likelihood; compare candidates with AIC/BIC rather than raw likelihood.",
+        "**Diagnose**: residuals must be white noise - if the residual ACF still shows structure, the model is incomplete; go back to identify."
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import numpy as np\nfrom statsmodels.tsa.arima.model import ARIMA\nrng = np.random.default_rng(3)\neps = rng.normal(0, 2, 300)\nx = np.empty(300)\nx[0] = 5\nfor t in range(1, 300):\n    x[t] = 2 + 0.6 * x[t-1] + eps[t]      # the AR(1) from the lesson\nfit = ARIMA(x, order=(1, 0, 0)).fit()\nprint(round(fit.params[1], 2))             # ~0.6 - recovers phi\nprint(round(fit.params[0], 2), round((fit.params[0] / (1 - fit.params[1])), 2))\n# intercept ~2, implied mean ~5",
+      "caption": "Fitting recovers the generating parameters; the implied mean $c/(1-\\phi)$ lands near 5 - the derivation made testable."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Slowly decaying ACF = trouble",
+      "md": "If the sample ACF declines only gradually over many lags, the series probably still has a unit root - do not stack AR terms to chase the decay. Difference first (check with ADF), then re-examine. Fitting ARMA to levels of an I(1) series produces confident-looking nonsense."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "An AR(1) process has $c = 1$, $\\phi = 0.5$, $\\sigma^2 = 1$. Derive and compute: (a) the mean; (b) the variance; (c) $\\rho_2$ and $\\rho_3$; (d) the half-life of a deviation from the mean (first $k$ where $\\phi^k \\le 0.5$).",
+    "hints": [
+      "$\\mu = c/(1-\\phi)$.",
+      "$\\gamma_0 = \\sigma^2/(1-\\phi^2)$ with $\\phi^2 = 0.25$.",
+      "Half-life: compare $0.5^k$ with $0.5$."
+    ],
+    "solution": "(a) $\\mu = 1/(1 - 0.5) = 2$. (b) $\\gamma_0 = 1/(1 - 0.25) = 1/0.75 = 4/3 \\approx 1.33$. (c) $\\rho_k = 0.5^k$: $\\rho_2 = 0.25$, $\\rho_3 = 0.125$. (d) $0.5^1 = 0.5$, so the half-life is exactly $1$ period - half of any deviation is gone after one step."
+  },
+  "independentExercise": {
+    "prompt": "(a) For an MA(1) with $\\theta = 0.75$, compute $\\rho_1$ and $\\rho_2$. (b) A series has a sample ACF decaying gradually and a sample PACF that is near zero beyond lag 2. State the most plausible model. (c) For an AR(1) with $\\phi = -0.4$, compute $\\rho_1$ and $\\rho_2$ and describe the behaviour this implies.",
+    "hints": [
+      "$\\rho_1 = \\theta/(1 + \\theta^2)$ with $\\theta^2 = 0.5625$.",
+      "Match ACF/PACF patterns against the fingerprint table.",
+      "Negative $\\phi$ alternates the sign of $\\rho_k$."
+    ],
+    "solution": "(a) $\\rho_1 = 0.75/(1 + 0.5625) = 0.75/1.5625 = 0.48$; $\\rho_2 = 0$ - the MA cutoff. (b) PACF cuts off at $p = 2$ while the ACF decays: an **AR(2)**. (c) $\\rho_1 = -0.4$, $\\rho_2 = 0.16$: an oscillating, mean-reverting series where each deviation is followed by a partial over-correction in the opposite direction."
+  },
+  "commonMistakes": [
+    "Reporting the AR(1) mean as $c$ instead of $c/(1-\\phi)$ - the feedback amplifies the intercept.",
+    "Using $\\sigma^2/(1-\\phi)$ for the variance; it is $\\sigma^2/(1-\\phi^2)$.",
+    "Fitting AR terms to a slowly decaying ACF instead of differencing a unit-root series first.",
+    "Choosing $p, q$ by maximising in-sample likelihood instead of AIC/BIC - bigger models always 'win' on likelihood alone."
+  ],
+  "realWorldApplication": "Demand forecasting for supply chains and call-centre staffing are classic ARIMA applications; the same identification-by-ACF discipline applies before any software fit.",
+  "quantFinanceApplication": "Spread mean reversion in pairs trading, order-flow imbalance prediction and short-horizon liquidity models are all typically AR(1)-shaped; the derived half-life $\\ln 0.5/\\ln \\phi$ sets holding periods.",
+  "summary": [
+    "AR(1) with $|\\phi| < 1$: mean $c/(1-\\phi)$, variance $\\sigma^2/(1-\\phi^2)$, ACF $\\rho_k = \\phi^k$ - e.g. $c=2, \\phi=0.6, \\sigma^2=4$ gives mean 5, variance 6.25, $\\rho_1 = 0.6$.",
+    "MA(1): $\\rho_1 = \\theta/(1+\\theta^2)$ and $\\rho_k = 0$ for $k \\ge 2$; invertibility needs $|\\theta| < 1$.",
+    "Identification reads fingerprints: AR(p) - ACF decays, PACF cuts at $p$; MA(q) - the reverse; both decay means ARMA.",
+    "ARIMA$(p, d, q)$ differences $d$ times then fits ARMA$(p, q)$; Box-Jenkins finishes only when residuals are white noise."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "numeric",
+      "prompt": "An AR(1) has $c = 2$, $\\phi = 0.6$. What is the process mean?",
+      "answer": 5,
+      "tolerance": 0.01,
+      "explanation": "$\\mu = c/(1-\\phi) = 2/0.4 = 5$."
+    },
+    {
+      "id": "q2",
+      "type": "numeric",
+      "prompt": "The same AR(1) has $\\sigma^2 = 4$. What is the process variance?",
+      "answer": 6.25,
+      "tolerance": 0.01,
+      "explanation": "$\\gamma_0 = \\sigma^2/(1 - \\phi^2) = 4/(1 - 0.36) = 4/0.64 = 6.25$."
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "For that AR(1), what is $\\rho_2$?",
+      "answer": 0.36,
+      "tolerance": 0.01,
+      "explanation": "$\\rho_k = \\phi^k = 0.6^2 = 0.36$ - the geometric decay fingerprint."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "A series' sample ACF is essentially zero beyond lag 1, while its PACF decays gradually. The best candidate is:",
+      "options": [
+        "AR(1)",
+        "MA(1)",
+        "ARMA(1, 1)",
+        "ARIMA(0, 1, 1) on levels"
+      ],
+      "answerIndex": 1,
+      "explanation": "An ACF that cuts off after lag $q$ with a decaying PACF is the MA(q) fingerprint; here $q = 1$."
+    },
+    {
+      "id": "q5",
+      "type": "ms",
+      "prompt": "Which statements about ARIMA(1, 1, 0) are correct? Select all that apply.",
+      "options": [
+        "The series is differenced once before the AR term applies",
+        "It contains one AR parameter and no MA parameters",
+        "It models the level series directly with a linear trend",
+        "It is equivalent to ARMA(1, 0) applied to the differenced series"
+      ],
+      "answerIndices": [0, 1, 3],
+      "explanation": "The 'I(1)' means one differencing; $(1, 0)$ gives one AR term and no MA terms, applied to the differenced data. Nothing in it fits a trend to levels."
+    },
+    {
+      "id": "q6",
+      "type": "short",
+      "prompt": "What must be true of the residuals of a fitted ARMA model before the model is accepted, and what does failure indicate?",
+      "modelAnswer": "The residuals must be white noise (no significant autocorrelation); remaining structure indicates the model has not captured all the memory in the series and its order must be revisited.",
+      "keywords": ["white noise", "residual", "autocorrelation"],
+      "explanation": "Box-Jenkins closes with the diagnostic step: ARMA is complete exactly when the leftover shocks are unpredictable."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "formula",
+      "front": "AR(1) mean",
+      "back": "$\\mu = c/(1-\\phi)$; the feedback $\\phi$ scales the intercept up."
+    },
+    {
+      "type": "formula",
+      "front": "AR(1) variance and ACF",
+      "back": "$\\gamma_0 = \\sigma^2/(1-\\phi^2)$; $\\rho_k = \\phi^k$ (geometric decay)."
+    },
+    {
+      "type": "formula",
+      "front": "MA(1) autocorrelation",
+      "back": "$\\rho_1 = \\theta/(1+\\theta^2)$, $\\rho_k = 0$ for $k \\ge 2$; invertibility requires $|\\theta| < 1$."
+    },
+    {
+      "type": "concept",
+      "front": "ACF/PACF fingerprints",
+      "back": "AR(p): ACF decays, PACF cuts at $p$. MA(q): ACF cuts at $q$, PACF decays. Both decay: ARMA(p, q)."
+    }
+  ],
+  "references": [
+    {
+      "label": "Hyndman & Athanasopoulos, fpp3 - ARIMA models",
+      "url": "https://otexts.com/fpp3/non-seasonal-arima.html"
+    },
+    {
+      "label": "statsmodels - ARIMA documentation",
+      "url": "https://www.statsmodels.org/stable/generated/statsmodels.tsa.arima.model.ARIMA.html"
+    }
+  ],
+  "skills": ["time-series"]
+}

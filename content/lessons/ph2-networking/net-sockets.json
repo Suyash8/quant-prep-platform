@@ -1,0 +1,271 @@
+{
+  "id": "net-sockets",
+  "moduleId": "ph2-networking",
+  "title": "Socket Programming",
+  "estMinutes": 27,
+  "difficulty": "core",
+  "prereqs": [
+    "net-tcp-udp"
+  ],
+  "objectives": [
+    "Use the Linux socket API: socket, bind, listen, accept for TCP servers and socket, bind, recvfrom/sendto for UDP",
+    "Explain network byte order and why htons/htonl are mandatory before filling address structures",
+    "Join a UDP multicast group with IP_ADD_MEMBERSHIP and receive feed packets",
+    "Contrast blocking and non-blocking I/O (O_NONBLOCK, epoll) and justify event loops in trading gateways"
+  ],
+  "motivation": "Everything your trading system sends and receives flows through sockets - file descriptors returned by a handful of C calls that have been stable since the 1980s. Feed handlers, gateways and matching engines are all variations on two templates (TCP accept loop, UDP datagram loop) plus one refinement (event-driven, non-blocking I/O). Write these 30 lines correctly once and every subsequent system is a variation on them.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "What a socket is"
+    },
+    {
+      "type": "p",
+      "md": "On Linux a **socket is a file descriptor**: an integer handle into the kernel naming one endpoint of a communication path - protocol family, local address/port and (for TCP) the remote peer. Because it is a file descriptor, ordinary `read`, `write` and `close` work on it; the kernel turns those calls into segment transmission. The API splits by transport: TCP servers create a listening socket and harvest one connected socket per client; UDP programs create one datagram socket and talk to anyone. One subtlety bites everyone once: multi-byte fields in address structures must be in **network byte order** (big-endian), so ports and addresses pass through `htons`/`htonl` before use."
+    },
+    {
+      "type": "code",
+      "lang": "c",
+      "code": "#include <arpa/inet.h>\n#include <netinet/in.h>\n#include <sys/socket.h>\n#include <unistd.h>\n\nint main(void) {\n    int srv = socket(AF_INET, SOCK_STREAM, 0);          /* TCP socket */\n    int yes = 1;\n    setsockopt(srv, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof yes);\n\n    struct sockaddr_in addr = {0};\n    addr.sin_family = AF_INET;\n    addr.sin_addr.s_addr = htonl(INADDR_ANY);           /* all local interfaces */\n    addr.sin_port = htons(9000);                        /* network byte order! */\n\n    bind(srv, (struct sockaddr *)&addr, sizeof addr);   /* claim IP:port */\n    listen(srv, 16);                                    /* accept queue depth */\n\n    int cli = accept(srv, NULL, NULL);                  /* one fd per client */\n    char buf[256];\n    ssize_t n = read(cli, buf, sizeof buf);             /* blocks until data */\n    if (n > 0) write(cli, buf, (size_t)n);              /* echo it back */\n    close(cli);\n    close(srv);\n    return 0;\n}",
+      "caption": "The canonical TCP echo server: socket → setsockopt → bind → listen → accept → read/write → close. SO_REUSEADDR lets you restart without waiting out the TIME_WAIT state."
+    },
+    {
+      "type": "p",
+      "md": "Two details deserve emphasis. First, `accept` returns a *new* descriptor per client - the listening socket keeps listening while each connected socket serves its client; production servers either thread per connection or (better, as below) poll many descriptors. Second, `read` returning 0 means the peer closed the connection, not an error - a distinction every gateway's shutdown logic must handle."
+    },
+    {
+      "type": "h2",
+      "text": "UDP and multicast group membership"
+    },
+    {
+      "type": "p",
+      "md": "A UDP socket binds to a local port and then receives datagrams from anyone, with `recvfrom` telling you the sender if you ask. For a market-data feed you additionally ask the network to deliver the **multicast group** - `IP_ADD_MEMBERSHIP` tells the NIC and switches 'I want packets addressed to this group address'. Feed handlers on one host also set `SO_REUSEADDR`/`SO_REUSEPORT` so several processes (e.g. a strategy and a recorder) can all bind the same group and each receive every packet."
+    },
+    {
+      "type": "code",
+      "lang": "c",
+      "code": "int fd = socket(AF_INET, SOCK_DGRAM, 0);                /* UDP socket */\nstruct sockaddr_in addr = {0};\naddr.sin_family = AF_INET;\naddr.sin_port = htons(10000);\naddr.sin_addr.s_addr = htonl(INADDR_ANY);\nbind(fd, (struct sockaddr *)&addr, sizeof addr);\n\nstruct ip_mreq mreq;\ninet_pton(AF_INET, \"239.1.1.10\", &mreq.imr_multiaddr);  /* group address */\nmreq.imr_interface.s_addr = htonl(INADDR_ANY);          /* NIC to join on */\nsetsockopt(fd, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof mreq);\n\nchar buf[1500];\nssize_t n = recvfrom(fd, buf, sizeof buf, 0, NULL, NULL); /* one datagram */",
+      "caption": "Joining a multicast feed: bind a UDP port, register group membership, then recvfrom one datagram at a time - gaps are your job (sequence numbers), not the kernel's."
+    },
+    {
+      "type": "interactive",
+      "component": "TerminalSteps",
+      "params": {
+        "steps": [
+          {
+            "cmd": "nc -l 8080",
+            "out": [
+              "listening on 0.0.0.0:8080 …"
+            ],
+            "note": "netcat as a one-line server: it accept()s, then echoes what arrives."
+          },
+          {
+            "cmd": "echo \"BUY 100 AAPL\" | nc localhost 8080",
+            "out": [
+              "(server side prints:) BUY 100 AAPL"
+            ],
+            "note": "The client connect()s, writes bytes, closes. That is the essence of a socket."
+          },
+          {
+            "cmd": "ss -tn state established",
+            "out": [
+              "Recv-Q  Send-Q  Local Address:Port   Peer Address:Port",
+              "0      0       127.0.0.1:52314     127.0.0.1:8080"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "h2",
+      "text": "Blocking, non-blocking and readiness"
+    },
+    {
+      "type": "p",
+      "md": "By default `read`/`accept` **block**: the thread sleeps until data arrives, which is perfect for a dedicated feed-handler thread and terrible when one thread must watch hundreds of connections. The fix is **non-blocking mode** (`O_NONBLOCK` via `fcntl`) plus a readiness mechanism: `poll`/`epoll` tell you which of thousands of descriptors are readable *before* you read. An event loop then handles whatever is ready and never stalls on one slow peer - this is how gateways multiplex dozens of venues on a handful of threads. On a non-blocking socket with nothing to read, `recv` returns -1 with `errno == EAGAIN`/`EWOULDBLOCK`: not an error, just 'nothing now'."
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Call",
+        "Purpose"
+      ],
+      "rows": [
+        [
+          "socket()",
+          "Create an endpoint and return its file descriptor"
+        ],
+        [
+          "bind()",
+          "Claim a local IP:port for the socket"
+        ],
+        [
+          "listen()",
+          "Mark a TCP socket passive and size the accept queue"
+        ],
+        [
+          "accept()",
+          "Harvest one connected fd per incoming TCP client"
+        ],
+        [
+          "connect()",
+          "Initiate a TCP connection to a server"
+        ],
+        [
+          "recvfrom() / sendto()",
+          "Per-datagram UDP receive/send with peer address"
+        ],
+        [
+          "epoll_wait()",
+          "Sleep until any of many descriptors is ready"
+        ]
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "TCP_NODELAY: the one option to remember",
+      "md": "TCP batches small writes (Nagle's algorithm) until acknowledgments arrive - fine for bulk data, fatal for quote-sized messages that must leave *now*. Gateways set `setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &yes, sizeof yes)` on order-entry connections, disabling Nagle. A missing TCP_NODELAY has silently added hundreds of microseconds to production order paths; it is the first thing to check when small messages linger."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "(a) List the system calls a TCP echo server makes, in order, from process start to after serving one client. (b) Explain what SO_REUSEADDR is for. (c) The server sets `addr.sin_port = 9000;` *without* htons on a little-endian x86 machine. Port 9000 is 0x2328 - what port number, in decimal, will the kernel actually bind, and what happens to clients?",
+    "hints": [
+      "The order is: create, configure, bind, listen, accept, I/O, close.",
+      "Without htons, the 16-bit value 0x2328 is stored byte-swapped, and the kernel reads it as 0x2823."
+    ],
+    "solution": "(a) socket → setsockopt(SO_REUSEADDR) → bind → listen → accept → read → write → close ×2. (b) SO_REUSEADDR permits rebinding a port still in TIME_WAIT from a previous connection, so restarts work without a wait. (c) $0x2328$ stored little-endian and reinterpreted big-endian-style is $0x2823 = 10275$, so the kernel binds port **10275**; clients connecting to 9000 get connection refused. This is exactly why htons is mandatory."
+  },
+  "independentExercise": {
+    "prompt": "(a) Rewrite the TCP echo server as a UDP echo server: which calls disappear, which change, and what replaces accept? (b) A market-data frame arrives inside one 1500-byte Ethernet frame with IPv4 and UDP headers. What is the maximum payload per datagram? (c) Two processes on the same host must each receive every multicast packet on port 10000 - which socket options make that possible?",
+    "hints": [
+      "UDP is connectionless: no listening, no accepting, no per-client fds.",
+      "Subtract header sizes from the 1500-byte MTU.",
+      "Think about what two binds to the same port conflict over, and what SO_REUSEPORT changes."
+    ],
+    "solution": "(a) Drop listen and accept entirely; keep socket (SOCK_DGRAM) and bind; replace read/write with `recvfrom(fd, buf, n, 0, &src, &len)` and `sendto(fd, buf, n, 0, &src, len)` echoing to the sender's address; no per-client fd exists. (b) $1500 - 20$ (IPv4) $- 8$ (UDP) $= 1472$ bytes of payload per unfragmented datagram. (c) Set SO_REUSEADDR (and/or SO_REUSEPORT on Linux) on both sockets before binding, and have each process join the group with IP_ADD_MEMBERSHIP - both then receive every packet."
+  },
+  "commonMistakes": [
+    "Skipping htons/htonl on ports and addresses - the code compiles and silently binds or connects to a byte-swapped value.",
+    "Treating `read == 0` as an error instead of a peer disconnect, or treating `errno == EAGAIN` on a non-blocking socket as fatal.",
+    "Sending small order messages over TCP without TCP_NODELAY and wondering where the tens of microseconds went.",
+    "Assuming one recvfrom returns a whole 'message' - UDP preserves datagram boundaries but you must size buffers to the largest legal datagram (1472 bytes per unfragmented Ethernet frame)."
+  ],
+  "realWorldApplication": "Every network service you use - nginx, Redis, Kafka brokers, DNS daemons - is one of these two loops (TCP accept loop or UDP datagram loop) with epoll at industrial strength; the API has been stable for 40 years and is the same on macOS and every BSD.",
+  "quantFinanceApplication": "A production feed handler is exactly the UDP snippet above plus sequence checking, a gap-recovery TCP channel and SO_REUSEPORT so strategy and recorder processes share the group; order gateways are the TCP snippet plus TCP_NODELAY, epoll and one persistent connection per venue.",
+  "summary": [
+    "Sockets are file descriptors; TCP servers use socket/setsockopt/bind/listen/accept (new fd per client), UDP programs use socket/bind/recvfrom/sendto with no accept at all.",
+    "Multi-byte fields must be converted to network byte order: htons(9000) on little-endian x86, else you bind 0x2823 = 10275.",
+    "Multicast membership = IP_ADD_MEMBERSHIP on a bound UDP socket; SO_REUSEPORT lets several processes each receive the full feed.",
+    "Blocking I/O sleeps until data; O_NONBLOCK + epoll lets one thread watch thousands of descriptors and never stall on a slow peer - the gateway pattern.",
+    "Set TCP_NODELAY on latency-critical TCP connections to disable Nagle batching of small messages."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "Which call hands a TCP server a NEW file descriptor for each incoming client connection?",
+      "options": [
+        "socket()",
+        "bind()",
+        "accept()",
+        "listen()"
+      ],
+      "answerIndex": 2,
+      "explanation": "accept() blocks until a client completes the handshake and returns a connected fd dedicated to that client; the listening socket continues accepting others."
+    },
+    {
+      "id": "q2",
+      "type": "numeric",
+      "prompt": "One 1500-byte Ethernet frame carries an IPv4 header (20 bytes) and UDP header (8 bytes). What is the maximum UDP payload per unfragmented datagram, in bytes?",
+      "answer": 1472,
+      "explanation": "$1500 - 20 - 8 = 1472$ bytes; datagrams larger than this get IP-fragmented, adding loss amplification on real networks."
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "Port 9000 (hex 0x2328) is assigned with `sin_port = 9000` and NO htons on a little-endian machine. The kernel interprets the stored bytes as big-endian 0x2823. What decimal port gets bound?",
+      "answer": 10275,
+      "explanation": "$0x2823 = 2 \\times 4096 + 8 \\times 256 + 2 \\times 16 + 3 = 10275$ - clients asking for 9000 find nothing listening."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "A socket is set non-blocking and recv() is called with no datagram queued. What happens?",
+      "options": [
+        "It returns -1 with errno set to EAGAIN/EWOULDBLOCK",
+        "It returns 0",
+        "It blocks until data arrives",
+        "It returns NULL"
+      ],
+      "answerIndex": 0,
+      "explanation": "Non-blocking recv reports 'nothing available' as -1 + EAGAIN/EWOULDBLOCK; returning 0 means EOF (peer closed a TCP stream), and blocking forever is exactly what non-blocking mode disables."
+    },
+    {
+      "id": "q5",
+      "type": "ms",
+      "prompt": "Which statements about the socket API are true?",
+      "options": [
+        "htons converts a port from host to network byte order",
+        "TCP_NODELAY disables Nagle's batching of small writes",
+        "listen() accepts a connection and returns a client fd",
+        "bind() is optional for a UDP sender that does not need a fixed local port"
+      ],
+      "answerIndices": [
+        0,
+        1,
+        3
+      ],
+      "explanation": "htons and TCP_NODELAY are correct. accept() (not listen) returns client fds, and an unbound UDP sender simply gets an ephemeral port from the kernel on first send."
+    },
+    {
+      "id": "q6",
+      "type": "code-output",
+      "prompt": "What does this Python snippet print (it emulates the byte-order bug: pack a port little-endian, then read it big-endian)?",
+      "language": "python",
+      "code": "import struct\nprint(struct.unpack(\">H\", struct.pack(\"<H\", 9000))[0])",
+      "answer": "10275",
+      "explanation": "9000 = 0x2328 packs little-endian as bytes 0x28 0x23; reading those bytes big-endian gives 0x2823 = 10275 - the same number the buggy C bind would use."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "definition",
+      "front": "What is a socket?",
+      "back": "A file descriptor naming one endpoint of a communication path (protocol, local addr:port, remote peer); read/write/close work on it like a file."
+    },
+    {
+      "type": "formula",
+      "front": "Max unfragmented UDP payload on Ethernet",
+      "back": "MTU 1500 − 20 (IPv4) − 8 (UDP) = 1472 bytes per datagram."
+    },
+    {
+      "type": "concept",
+      "front": "Blocking vs non-blocking recv",
+      "back": "Blocking: thread sleeps until data. Non-blocking (O_NONBLOCK): returns -1 with EAGAIN/EWOULDBLOCK when empty; pair with epoll to watch many fds from one thread."
+    },
+    {
+      "type": "code-output",
+      "front": "sin_port = 9000 without htons on x86 binds which port?",
+      "back": "0x2823 = 10275 - the byte-swapped value; always use htons/htonl for ports and addresses."
+    }
+  ],
+  "references": [
+    {
+      "label": "man7 - socket(2), accept(2), recvfrom(2) Linux man pages",
+      "url": "https://man7.org/linux/man-pages/man2/socket.2.html"
+    },
+    {
+      "label": "Beej's Guide to Network Programming",
+      "url": "https://beej.us/guide/bgnet/"
+    },
+    {
+      "label": "man7 - epoll(7)",
+      "url": "https://man7.org/linux/man-pages/man7/epoll.7.html"
+    }
+  ],
+  "skills": [
+    "networking",
+    "low-latency"
+  ]
+}

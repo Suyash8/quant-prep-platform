@@ -1,0 +1,219 @@
+{
+  "id": "qalg-streaming",
+  "moduleId": "ph5-quant-algorithms",
+  "title": "Streaming Algorithms and Running Statistics",
+  "estMinutes": 27,
+  "difficulty": "advanced",
+  "prereqs": ["ds-advanced-structures"],
+  "objectives": [
+    "Explain why one-pass, bounded-memory algorithms are mandatory for tick-rate data",
+    "Derive and apply Welford's recurrence for running mean and variance, and verify it numerically",
+    "Maintain rolling-window sums and maxima with a deque in O(1) amortised time per element",
+    "Diagnose the numerical instability of the naive sum-of-squares variance formula"
+  ],
+  "motivation": "An execution algorithm receives tens of thousands of ticks per second and must report the running mean, realised volatility and rolling VWAP continuously - with no time to re-read history and no memory to store it. The two-pass textbook variance formula also fails silently on such streams due to floating-point cancellation. This lesson builds the statistically correct, numerically stable, constant-memory toolkit that production market-data pipelines actually use.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "The streaming constraint"
+    },
+    {
+      "type": "p",
+      "md": "A **streaming algorithm** sees each element exactly once, in arrival order, and maintains its answer in memory that does not grow with the data. For market data this is not an optimisation but a necessity: yesterday's ticks are terabytes, and the decision uses *right now*. Two families cover most needs: **running aggregates** over everything seen so far (mean, variance, max) and **rolling aggregates** over a fixed recent window (rolling VWAP, rolling volatility). Both must update in $O(1)$ - or $O(\\log k)$ at worst - per tick."
+    },
+    {
+      "type": "h2",
+      "text": "Welford's online variance"
+    },
+    {
+      "type": "p",
+      "md": "The textbook formula $\\sigma^2 = \\frac{1}{n}\\sum x_i^2 - \\bar{x}^2$ subtracts two large, nearly equal numbers - **catastrophic cancellation** that destroys precision when the mean dominates the spread (exactly the case for prices, where $\\bar{x} \\approx 100$ and deviations are basis points). **Welford's method** updates the mean first, then accumulates the sum of squared deviations $M_2$ using the *old* and *new* means, which keeps every intermediate quantity the size of the deviations themselves."
+    },
+    {
+      "type": "math",
+      "tex": "\\bar{x}_n = \\bar{x}_{n-1} + \\frac{x_n - \\bar{x}_{n-1}}{n}, \\qquad M_{2,n} = M_{2,n-1} + (x_n - \\bar{x}_{n-1})(x_n - \\bar{x}_n)",
+      "caption": "Population variance = $M_2/n$; sample variance = $M_2/(n-1)$."
+    },
+    {
+      "type": "steps",
+      "title": "Hand-verified trace on the stream [4, 8, 6]",
+      "items": [
+        "$x_1 = 4$: $n=1$, $\\bar{x} = 4$, $M_2 = 0$ (a single point has no spread).",
+        "$x_2 = 8$: $\\delta = 8-4 = 4$; $\\bar{x} = 4 + 4/2 = 6$; $M_2 = 0 + 4 \\times (8-6) = 8$.",
+        "$x_3 = 6$: $\\delta = 6-6 = 0$; $\\bar{x} = 6 + 0/3 = 6$; $M_2 = 8 + 0 \\times 0 = 8$.",
+        "Check against two-pass: mean 6, squared deviations $4 + 4 + 0 = 8$. Population variance $8/3 \\approx 2.6667$; sample variance $8/2 = 4$."
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "def welford(xs):\n    \"\"\"Return (n, mean, m2) for a stream, one pass, O(1) memory.\"\"\"\n    n, mean, m2 = 0, 0.0, 0.0\n    for x in xs:\n        n += 1\n        delta = x - mean           # deviation from the OLD mean\n        mean += delta / n          # new mean\n        m2 += delta * (x - mean)   # (x - old_mean) * (x - new_mean)\n    return n, mean, m2\n\nn, mean, m2 = welford([4.0, 8.0, 6.0])\nprint(mean, round(m2 / (n - 1), 4))   # sample variance",
+      "caption": "Welford: numerically stable, one pass. Prints 6.0 4.0 - matching the hand trace."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Realised volatility is Welford with returns",
+      "md": "Feeding *returns* (not prices!) into Welford gives running realised volatility tick by tick. Prices are non-stationary (mean drifts), so variance of raw prices is meaningless; variance of returns is the risk metric. Same recurrence, better inputs."
+    },
+    {
+      "type": "h2",
+      "text": "Rolling-window aggregates"
+    },
+    {
+      "type": "p",
+      "md": "For a **fixed window** of the last $k$ elements, sums update with one enter and one leave per tick (the sliding-window pattern). Window **maxima** need more care: sums cannot be un-summed for a maximum, so a **monotone deque** keeps indices whose values are decreasing - each new element pops every smaller index off the back (they can never be a future maximum), the front is the current maximum, and expired indices drop off the front. Every index is pushed and popped at most once, so $n$ elements cost $O(n)$ amortised."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "from collections import deque\n\nx = [3, 1, 4, 1, 5]\nk = 2\ndq, out = deque(), []           # dq holds indices, values decreasing\nfor i, v in enumerate(x):\n    while dq and x[dq[-1]] <= v:\n        dq.pop()                # smaller values can never win again\n    dq.append(i)\n    if dq[0] <= i - k:\n        dq.popleft()            # front fell out of the window\n    if i >= k - 1:\n        out.append(x[dq[0]])\nprint(out)                       # window maxima of size 2",
+      "caption": "Monotone deque: O(1) amortised rolling maximum. Prints [3, 4, 4, 5]."
+    },
+    {
+      "type": "p",
+      "md": "Rolling variance over a window is the one place to be careful: naive add/subtract of $x^2$ values into running sums reintroduces cancellation over long windows. Production code either recomputes the window's Welford state from scratch periodically, or maintains per-window sums with periodic drift correction. Correctness here is a numerical-analysis problem as much as an algorithms problem - which is why these two disciplines travel together."
+    },
+    {
+      "type": "interactive",
+      "component": "RandomWalk",
+      "params": {
+        "steps": 120,
+        "drift": 0.0,
+        "volatility": 1.0,
+        "seed": 11
+      },
+      "caption": "A tick stream to watch: running mean and Welford variance absorb it in O(1) per tick; imagine a rolling 20-tick window sliding along."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Apply Welford's recurrence by hand to the stream $[10, 2]$: after each element write $n$, $\\bar{x}$ and $M_2$; then give the sample variance and verify it against the two-pass formula.",
+    "hints": [
+      "At $n=1$ the mean is the element itself and $M_2 = 0$.",
+      "At $n=2$: $\\delta = x_2 - \\bar{x}_1$, then update mean, then accumulate $M_2$ with the *new* mean."
+    ],
+    "solution": "$x_1 = 10$: $n=1$, $\\bar{x}=10$, $M_2=0$. $x_2 = 2$: $\\delta = 2-10 = -8$; $\\bar{x} = 10 + (-8)/2 = 6$; $M_2 = 0 + (-8)(2-6) = 32$. Sample variance $= M_2/(n-1) = 32/1 = 32$. Two-pass check: mean 6, squared deviations $(10-6)^2 + (2-6)^2 = 16+16 = 32$. Match."
+  },
+  "independentExercise": {
+    "prompt": "A rolling maximum of window size $k=3$ must be maintained over the price stream $[2, 7, 1, 6, 4, 5]$. (a) List the window maxima in order. (b) Trace the monotone deque: after each element, write the indices it holds. (c) State the amortised cost per element and why.",
+    "hints": [
+      "A window of size 3 ends at indices 2, 3, 4, 5.",
+      "A new element pops every index at its back whose value is smaller or equal."
+    ],
+    "solution": "(a) Maxima: $[7, 7, 6, 6]$ for windows $[2,7,1], [7,1,6], [1,6,4], [6,4,5]$. (b) Deque of *values* after each element: $[2]$; $[7]$ (7 pops 2); $[7,1]$ - window full, max 7; $[7,6]$ (6 pops 1), max 7; $[6,4]$ (index of 7 expires from the front), max 6; $[6,5]$ (5 pops 4), max 6. (c) $O(1)$ amortised: every index is pushed exactly once and popped at most once, so the total work over $n$ elements is $O(n)$."
+  },
+  "commonMistakes": [
+    "Computing variance via $\\frac{1}{n}\\sum x_i^2 - \\bar{x}^2$ on price streams - cancellation wrecks the result; use Welford.",
+    "Feeding prices instead of returns into realised-volatility computations.",
+    "Forgetting to expire the deque front when it falls outside the window, yielding stale maxima.",
+    "Pushing equal values without popping them, growing the deque to window size every time.",
+    "Dividing $M_2$ by $n$ when the sample variance is wanted (divide by $n-1$), or before $n \\ge 2$."
+  ],
+  "realWorldApplication": "Telemetry and monitoring systems compute running means/percentiles over metric streams; network routers track windowed packet rates; any dashboard 'moving average' is a rolling aggregate with these exact update rules.",
+  "quantFinanceApplication": "Execution and market-making systems maintain running and rolling mean/variance/VWAP of tick data in O(1) per tick; realised volatility feeds directly into spread placement and inventory risk limits.",
+  "summary": [
+    "Streaming algorithms process each element once with memory that does not grow with the data - a hard requirement at tick rate.",
+    "Welford's recurrence updates mean and $M_2$ in one stable pass: population variance $M_2/n$, sample $M_2/(n-1)$.",
+    "The naive $\\sum x_i^2 - \\bar{x}^2$ formula suffers catastrophic cancellation when the mean dominates the deviations.",
+    "Rolling sums update with one enter and one leave; rolling maxima use a monotone deque at $O(1)$ amortised per element.",
+    "Long-running incremental window statistics need periodic recomputation to cap floating-point drift."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "code-output",
+      "prompt": "What does this Welford implementation print?",
+      "language": "python",
+      "code": "def welford(xs):\n    n, mean, m2 = 0, 0.0, 0.0\n    for x in xs:\n        n += 1\n        delta = x - mean\n        mean += delta / n\n        m2 += delta * (x - mean)\n    return n, mean, m2\n\nn, mean, m2 = welford([4.0, 8.0, 6.0])\nprint(mean, round(m2 / (n - 1), 4))",
+      "answer": "6.0 4.0",
+      "explanation": "Trace: after 4: mean 4, M2 0; after 8: mean 6, M2 8; after 6: mean 6, M2 8. Sample variance $= 8/(3-1) = 4.0$."
+    },
+    {
+      "id": "q2",
+      "type": "numeric",
+      "prompt": "For the stream [4, 8, 6], what is the population variance (divide $M_2$ by $n$)? Give 4 decimal places.",
+      "answer": 2.6667,
+      "tolerance": 0.001,
+      "explanation": "Mean 6, $M_2 = 8$, population variance $8/3 = 2.6667$. The sample variance would be $8/2 = 4$."
+    },
+    {
+      "id": "q3",
+      "type": "mcq",
+      "prompt": "Why is Welford's method preferred over the two-pass or sum-of-squares formulas for streaming price data?",
+      "options": [
+        "It is asymptotically faster, $O(1)$ vs $O(n)$",
+        "It avoids subtracting two large nearly-equal numbers, which causes catastrophic cancellation",
+        "It works without storing any state at all",
+        "It requires the data to be sorted"
+      ],
+      "answerIndex": 1,
+      "explanation": "All formulas are $O(n)$; the difference is numerical: Welford keeps intermediates at deviation scale, so precision survives when $\\bar{x} \\gg$ deviations. It still needs the running $(n, \\bar{x}, M_2)$ state."
+    },
+    {
+      "id": "q4",
+      "type": "code-output",
+      "prompt": "What does this monotone-deque rolling maximum print?",
+      "language": "python",
+      "code": "from collections import deque\n\nx = [3, 1, 4, 1, 5]\nk = 2\ndq, out = deque(), []\nfor i, v in enumerate(x):\n    while dq and x[dq[-1]] <= v:\n        dq.pop()\n    dq.append(i)\n    if dq[0] <= i - k:\n        dq.popleft()\n    if i >= k - 1:\n        out.append(x[dq[0]])\nprint(out)",
+      "answer": "[3, 4, 4, 5]",
+      "explanation": "Windows of size 2: $[3,1] \\to 3$, $[1,4] \\to 4$, $[4,1] \\to 4$, $[1,5] \\to 5$. Each index enters the deque once and leaves at most once."
+    },
+    {
+      "id": "q5",
+      "type": "numeric",
+      "prompt": "After processing the stream [4, 8, 6], what is Welford's $M_2$ accumulator?",
+      "answer": 8,
+      "explanation": "It accumulates the sum of squared deviations: $(4-6)^2 + (8-6)^2 + (6-6)^2 = 8$, built up incrementally as $0 + 8 + 0$."
+    },
+    {
+      "id": "q6",
+      "type": "ms",
+      "prompt": "Which statistics can be maintained exactly in O(1) or O(log n) time per stream element?",
+      "options": [
+        "Running mean",
+        "Running variance via Welford's recurrence",
+        "Running maximum",
+        "Count of distinct values seen, in O(1) memory"
+      ],
+      "answerIndices": [0, 1, 2],
+      "explanation": "Mean, Welford variance and max all update in O(1) per element. An exact distinct-value count needs memory proportional to the number of distinct values - streaming algorithms only approximate it."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "formula",
+      "front": "Welford update step",
+      "back": "$\\delta = x - \\bar{x}_{old}$; $\\bar{x} \\mathrel{+}= \\delta/n$; $M_2 \\mathrel{+}= \\delta\\,(x - \\bar{x}_{new})$. Variance: $M_2/n$ (population) or $M_2/(n-1)$ (sample)."
+    },
+    {
+      "type": "concept",
+      "front": "Why does the naive variance formula fail on streams?",
+      "back": "$\\frac{1}{n}\\sum x_i^2 - \\bar{x}^2$ subtracts two nearly equal large numbers - catastrophic cancellation - so a few rounding errors can swamp the true variance."
+    },
+    {
+      "type": "concept",
+      "front": "Monotone deque invariant for rolling max",
+      "back": "Indices stored have strictly decreasing values; the front is the window max. A new element pops all smaller-or-equal indices (they can never win), and expired indices leave the front."
+    },
+    {
+      "type": "definition",
+      "front": "Streaming algorithm",
+      "back": "Processes each element exactly once, in arrival order, using memory bounded independently of stream length - typically O(1) or O(log n) per element updates."
+    }
+  ],
+  "references": [
+    {
+      "label": "Wikipedia - Algorithms for calculating variance (Welford's method)",
+      "url": "https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance"
+    },
+    {
+      "label": "Wikipedia - Streaming algorithm",
+      "url": "https://en.wikipedia.org/wiki/Streaming_algorithm"
+    },
+    {
+      "label": "Wikipedia - Sliding window maximum / monotonic queue",
+      "url": "https://en.wikipedia.org/wiki/Sliding_window_maximum"
+    }
+  ],
+  "skills": ["algorithms", "dsa"]
+}

@@ -1,0 +1,241 @@
+{
+  "id": "tsmd-connectivity",
+  "moduleId": "ph10-trading-systems",
+  "title": "Exchange Connectivity, Sessions and Reconciliation",
+  "estMinutes": 26,
+  "difficulty": "advanced",
+  "prereqs": [
+    "tsmd-matching-strategy"
+  ],
+  "objectives": [
+    "Describe the session lifecycle: logon, sequence negotiation, heartbeats, logout and day rollover",
+    "Detect a dead or stalled session and recover with resend or snapshot strategies",
+    "Explain replay semantics and why re-apply must be idempotent",
+    "Reconcile firm records against venue statements and classify breaks"
+  ],
+  "motivation": "Networks fail on a schedule nobody controls: a switch reboots, a venue pauses multicast, a WAN link flaps. The desk's protection is not luck - it is session discipline: heartbeats that detect silence, sequence numbers that measure exactly what was missed, replay that recovers it, and end-of-day reconciliation that proves the firm's books match the venue's.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "A session is also a state machine"
+    },
+    {
+      "type": "p",
+      "md": "Order and market-data sessions are state machines layered on TCP: **logon** (authenticate, agree a heartbeat interval, and agree whether sequence numbers reset), **established** (messages flow under monotonic sequence numbers), **logout**, and **day rollover** - most venues reset sequences at the start of the trading day, and yesterday's numbers mean nothing today. Both sides remember 'the last sequence I sent / received'; that shared memory is what makes recovery cheap and exact."
+    },
+    {
+      "type": "h2",
+      "text": "Heartbeats: measuring silence"
+    },
+    {
+      "type": "p",
+      "md": "A quiet session is not a healthy session - TCP will happily stay half-dead. Sessions therefore exchange **heartbeats** every few seconds (venues commonly use intervals of 10-30 seconds; the exact value is negotiated at logon). If no message - data or heartbeat - arrives within roughly one to two intervals, the client sends a **test request** demanding an immediate heartbeat; if that also goes unanswered, the session is declared dead and re-established. The expensive part is not the reconnect - it is every order quoted in the dark while the link was silently gone."
+    },
+    {
+      "type": "interactive",
+      "component": "PacketJourney",
+      "params": {}
+    },
+    {
+      "type": "callout",
+      "variant": "warn",
+      "title": "Quote guard",
+      "md": "Serious desks gate order flow on session health: if the order session or the data feed is suspect, pull quotes first and debug second. Reconnecting is routine; trading blind is the incident."
+    },
+    {
+      "type": "h2",
+      "text": "Recovery: resend or snapshot"
+    },
+    {
+      "type": "p",
+      "md": "On reconnect the client says 'I processed up to sequence $s$', and the venue resends from $s + 1$. For small gaps that resend is the whole fix. For large gaps - or market data, where a full book is cheaper to reload than to replay - load a **snapshot**, note its sequence, then re-apply live deltas newer than it. Two disciplines make replay safe: **idempotency** (re-applied fills must not double-count; key on execution and order IDs) and **ordering** (park live messages until the backfill finishes)."
+    },
+    {
+      "type": "steps",
+      "title": "Sizing a replay",
+      "items": [
+        "You last processed sequence 1,205; on reconnect the venue reports its last sent sequence is 1,260.",
+        "Missed messages: $1{,}260 - 1{,}205 = 55$ (sequences 1,206 through 1,260).",
+        "At roughly 150 bytes each: $55 \\times 150 = 8{,}250$ bytes - trivial bandwidth, but the *book* is wrong until all 55 are applied.",
+        "The fix is bounded and fast only because the gap was detected instantly - which is what sequence numbers are for."
+      ]
+    },
+    {
+      "type": "h2",
+      "text": "End-of-day reconciliation"
+    },
+    {
+      "type": "p",
+      "md": "Every evening the firm's capture log is compared against the venue's official records - fills, positions, cash. Mismatches are **breaks**, and each one is a story: a fill missed during a disconnect, a duplicate applied, a sign flipped, a symbol mapped wrong. Venues also run a **drop copy** - an independent, read-only feed of the firm's orders sent straight to the risk system - so risk sees what actually reached the market even if the primary session or OMS is compromised."
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Symbol",
+        "Our position",
+        "Venue statement",
+        "Status"
+      ],
+      "rows": [
+        [
+          "ABC",
+          "+500",
+          "+500",
+          "match"
+        ],
+        [
+          "DEF",
+          "-200",
+          "-250",
+          "break of 50"
+        ],
+        [
+          "GHI",
+          "0",
+          "+100",
+          "break of 100"
+        ]
+      ]
+    },
+    {
+      "type": "p",
+      "md": "Two breaks, 150 shares in total, must be explained before the next session. Breaks are not 'adjusted away' - they are investigated until the cause is named, because an unexplained break means either the firm's ledger or the venue's is wrong, and you do not yet know which."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "You last processed sequence 500. On reconnect the venue reports last sent $= 640$. (a) How many messages will be replayed? (b) If each averages 200 bytes, how many bytes arrive? (c) Your book already applied everything up to 500 - what two properties must your re-apply logic have?",
+    "hints": [
+      "Replay covers everything after the last processed sequence.",
+      "Resends can repeat messages you already hold; think dedupe and ordering."
+    ],
+    "solution": "(a) $640 - 500 = 140$ messages (sequences 501-640). (b) $140 \\times 200 = 28{,}000$ bytes. (c) **Idempotency** - if the replay overlaps anything already applied, execution/order IDs must dedupe it - and **ordering** - live messages arriving during the replay are parked until the backfill completes."
+  },
+  "independentExercise": {
+    "prompt": "Reconcile four symbols (ours vs venue): ABC +1,000 vs +1,000; BBB -400 vs -350; CCC +250 vs +250; DDD 0 vs -150. (a) Which symbols break? (b) What is the total absolute break size in shares? (c) For BBB, which direction does the investigation go: a fill we missed, or a duplicate we applied?",
+    "hints": [
+      "A break is the difference between the two ledgers.",
+      "The venue shows more selling than we captured on BBB - what does that suggest?"
+    ],
+    "solution": "(a) BBB and DDD. (b) BBB: $|-400 - (-350)| = 50$; DDD: $|0 - (-150)| = 150$; total $200$ shares. (c) BBB: the venue shows 50 more sold than we captured - consistent with a sell fill missed during a disconnect; replay that session and look for the missing execution report before assuming an error on either side."
+  },
+  "commonMistakes": [
+    "Treating 'TCP is connected' as 'the session is healthy' - only heartbeats and sequence flow prove liveness.",
+    "Re-applying replayed fills without ID dedupe - positions and PnL double-count.",
+    "Resetting sequence numbers mid-day without both sides agreeing - recovery then returns the wrong messages.",
+    "Adjusting the book to match the venue statement instead of finding the break's cause."
+  ],
+  "realWorldApplication": "FIX session protocol implementations - open-source and proprietary - run exactly this machinery on every desk, and exchange onboarding tests verify heartbeat, resend and reconciliation behaviour before a firm may trade.",
+  "quantFinanceApplication": "PnL is only credible if positions reconcile; quant research replaying a trading day needs gap-free, deduplicated session logs - the artifacts this discipline produces.",
+  "summary": [
+    "Sessions: logon (credentials, heartbeat, sequence policy) -> established -> logout; sequences reset on day rollover by agreement.",
+    "Heartbeats and test requests convert silent failure into a detectable event within seconds (intervals commonly 10-30 s, negotiated).",
+    "Recovery: small gap -> resend from last sequence + 1; large gap -> snapshot, then re-apply newer deltas; always idempotent.",
+    "End-of-day reconciliation compares capture log vs venue ledger; breaks are root-caused, never adjusted; drop copies give risk an independent view."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "On reconnect you find a small sequence gap. What is the best response?",
+      "options": [
+        "Request a resend of the missing sequence range",
+        "Restart the whole application",
+        "Ignore the gap and continue with live messages",
+        "Re-logon with a different account"
+      ],
+      "answerIndex": 0,
+      "explanation": "Small gaps are exactly what resend requests exist for; ignoring the gap corrupts the book, and a restart is a far bigger hammer than needed."
+    },
+    {
+      "id": "q2",
+      "type": "numeric",
+      "prompt": "You last processed sequence 3,300. On reconnect the venue reports its last sent sequence is 3,352. How many messages must be replayed?",
+      "answer": 52,
+      "explanation": "Sequences 3,301-3,352 inclusive: $3{,}352 - 3{,}300 = 52$ messages."
+    },
+    {
+      "id": "q3",
+      "type": "ms",
+      "prompt": "Which of these are part of sound session management?",
+      "options": [
+        "Negotiate the heartbeat interval at logon",
+        "Resume from the last processed sequence number",
+        "Make re-applied replays idempotent with ID dedupe",
+        "Keep quoting while the session is suspect"
+      ],
+      "answerIndices": [
+        0,
+        1,
+        2
+      ],
+      "explanation": "Heartbeats, sequence resumption and idempotent replay are the discipline. Quoting on a suspect session is how desks trade against a dead market."
+    },
+    {
+      "id": "q4",
+      "type": "numeric",
+      "prompt": "At reconciliation your ledger shows a flat position in XYZ but the venue statement shows short 300. What is the break size (absolute)?",
+      "answer": 300,
+      "explanation": "$|0 - (-300)| = 300$ shares - every break needs a named cause, such as a missed sell fill during a disconnect."
+    },
+    {
+      "id": "q5",
+      "type": "short",
+      "prompt": "What is a drop copy and why do firms want one?",
+      "modelAnswer": "A drop copy is an independent, read-only feed of the firm's orders sent directly to the risk system, so risk can verify what actually reached the venue even if the primary session or OMS is broken - a last-line input for kill-switch decisions.",
+      "keywords": [
+        "risk",
+        "independent",
+        "order"
+      ],
+      "explanation": "It is independence that matters: the copy travels a different path than the trading session, so a compromised session cannot hide what it sent."
+    },
+    {
+      "id": "q6",
+      "type": "mcq",
+      "prompt": "The negotiated heartbeat interval is 10 s (illustrative). No message of any kind has arrived for 22 s. Best next action?",
+      "options": [
+        "Wait another 10 s - TCP will recover by itself",
+        "Send a test request demanding an immediate heartbeat, and treat further silence as a dead session",
+        "Send a new order to test the link",
+        "Log off gracefully and go home"
+      ],
+      "answerIndex": 1,
+      "explanation": "22 s is beyond two intervals: send a test request now. If it goes unanswered, the session is dead - reconnect and resume from the last sequence. Testing with orders is how desks accidentally trade on dead links."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "definition",
+      "front": "Heartbeat",
+      "back": "A periodic do-nothing message proving the session is alive; silence beyond ~1-2 intervals triggers a test request, then reconnect."
+    },
+    {
+      "type": "formula",
+      "front": "Replay count",
+      "back": "last sent - last processed = number of messages to replay (sequences lastProcessed+1 .. lastSent)."
+    },
+    {
+      "type": "concept",
+      "front": "Resend vs snapshot",
+      "back": "Small gap: retransmit the range. Large gap: load a snapshot at sequence S, then apply live deltas with sequence > S."
+    },
+    {
+      "type": "definition",
+      "front": "Break (reconciliation)",
+      "back": "A mismatch between the firm's ledger and the venue's official record; it must be root-caused, not adjusted."
+    }
+  ],
+  "references": [
+    {
+      "label": "FIX Trading Community - session layer specification",
+      "url": "https://www.fixtrading.org/"
+    },
+    {
+      "label": "Wikipedia - Financial Information eXchange (FIX)",
+      "url": "https://en.wikipedia.org/wiki/Financial_Information_eXchange"
+    }
+  ],
+  "skills": [
+    "trading-systems"
+  ]
+}
