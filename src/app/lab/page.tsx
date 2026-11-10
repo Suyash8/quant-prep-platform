@@ -158,7 +158,7 @@ const FORMULAS: Record<string, { tex: string; label: string }> = {
   FloatErrorLab: { tex: String.raw`0.1+0.2\neq 0.3`, label: 'Binary floating point' },
 };
 
-const USED = new Set<string>(Object.keys(REGISTRY));
+const USED_COUNT = GROUPS.reduce((n, g) => n + g.components.length, 0);
 
 // static Tailwind spans for the grid remainder filler (dynamic strings don't compile)
 const FILLER_SPAN: Record<number, string> = {
@@ -195,7 +195,7 @@ export default async function LabPage({ searchParams }: { searchParams: Promise<
         <div>
           <h1>Interactive labs</h1>
           <p className="page-sub">
-            {USED.size} interactive laboratories, free to explore without any lesson context — every visualization is
+            {USED_COUNT} interactive laboratories, free to explore without any lesson context — every visualization is
             computed from real formulas in your browser.
           </p>
         </div>
@@ -258,7 +258,7 @@ export default async function LabPage({ searchParams }: { searchParams: Promise<
                     <Dices />
                   </span>
                   <h2>Other labs</h2>
-                  <span className="chip tnum ml-auto">{USED.size - 1}</span>
+                  <span className="chip tnum ml-auto">{USED_COUNT - 1}</span>
                 </div>
                 <ul className="space-y-2">
                   {others.map((o, i) => {
@@ -314,16 +314,17 @@ export default async function LabPage({ searchParams }: { searchParams: Promise<
                     aria-current={isActive ? 'true' : undefined}
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <span className="h-9 w-9 rounded-xl bg-surface-2 border-2 border-border text-[13px] font-black tnum flex items-center justify-center" style={isActive ? { borderColor: 'var(--info)', color: 'var(--info)' } : undefined}>
+                      <span className={`icon-tile icon-tile-sm ${g.tile} !text-[13px] font-black tnum`} style={isActive ? { outline: '2px solid var(--info)' } : undefined}>
                         {num}
                       </span>
+                      <span className="chip hidden sm:inline-flex">{g.domain}</span>
                       {isActive && <span className="chip chip-info">viewing</span>}
                     </div>
                     <div className="flex-1 min-w-0">
                       <h3 className="font-bold tracking-tight">{pretty(c.name)}</h3>
                       <p className="mt-1.5 text-xs text-muted font-semibold leading-relaxed line-clamp-3">{c.caption}</p>
                     </div>
-                    <span className="btn3d btn3d-sm mt-auto w-full">
+                    <span className="btn3d btn3d-ghost btn3d-sm mt-auto w-full">
                       Launch
                       <ArrowUpRight className="h-3.5 w-3.5" />
                     </span>

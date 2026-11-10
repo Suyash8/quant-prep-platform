@@ -17,9 +17,12 @@
  * gVisor/Docker sandbox and keep the same HTTP contract (see README).
  */
 import { spawn } from 'node:child_process';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+
+const GPP_PATH = process.env.CXX_BIN ?? (existsSync('/usr/bin/g++') ? '/usr/bin/g++' : 'g++');
+const PYTHON_PATH = process.env.PYTHON_BIN ?? (existsSync('/usr/bin/python3') ? '/usr/bin/python3' : 'python3');
 
 const PORT = 3010;
 const HOST = '127.0.0.1';
@@ -57,7 +60,7 @@ interface RunOneResult {
 function runOnce(cmd: string[], cwd: string, stdin: string, wallMs: number, memMB: number, cpuSec: number): Promise<RunOneResult> {
   return new Promise(resolve => {
     const started = Date.now();
-    const bash = `ulimit -v ${Math.min(Math.max(memMB, 64), 1024) * 1024}; ulimit -t ${cpuSec}; ulimit -u 768; ulimit -f 65536; exec env -i PATH=/usr/bin:/bin ${cmd.map(a => `'${a.replace(/'/g, `'\\''`)}'`).join(' ')}`;
+    const bash = `ulimit -v ${Math.min(Math.max(memMB, 64), 1024) * 1024}; ulimit -t ${cpuSec}; ulimit -f 65536; exec env -i PATH=/usr/bin:/bin ${cmd.map(a => `'${a.replace(/'/g, `'\\''`)}'`).join(' ')}`;
     const child = spawn('/bin/bash', ['-c', bash], { cwd, stdio: ['pipe', 'pipe', 'pipe'] });
     let out = '', err = '';
     let outBytes = 0, errBytes = 0;
@@ -102,7 +105,7 @@ interface CompileResult { ok: boolean; stderr: string; binaryPath?: string; time
 async function compileCpp(dir: string, code: string, std: 'c++17' | 'c++20'): Promise<CompileResult> {
   const src = path.join(dir, 'main.cpp');
   writeFileSync(src, code);
-  const r = await runOnce(['/usr/bin/g++', `-std=${std}`, '-O2', '-pipe', '-DONLINE_JUDGE', '-o', 'main', 'main.cpp'], dir, '', 30000, 512, 20);
+  const r = await runOnce([GPP_PATH, `-std=${std}`, '-O2', '-pipe', '-DONLINE_JUDGE', '-o', 'main', 'main.cpp'], dir, '', 30000, 512, 20);
   return { ok: r.exitCode === 0, stderr: r.stderr, binaryPath: r.exitCode === 0 ? path.join(dir, 'main') : undefined, timeMs: r.timeMs };
 }
 
@@ -110,7 +113,7 @@ async function runProgram(dir: string, kind: 'cpp' | 'python', stdin: string, wa
   if (kind === 'cpp') {
     return runOnce(['./main'], dir, stdin, wallMs, memMB, Math.ceil(wallMs / 1000) + 2);
   }
-  return runOnce(['/home/z/.venv/bin/python3', '-I', 'main.py'], dir, stdin, wallMs, memMB, Math.ceil(wallMs / 1000) + 2);
+  return runOnce([PYTHON_PATH, '-I', 'main.py'], dir, stdin, wallMs, memMB, Math.ceil(wallMs / 1000) + 2);
 }
 
 interface TestSpec { input: string; expected: string }

@@ -185,22 +185,9 @@ export function DrillTrainer({ history }: { history: { mode: string; level: numb
     ? 'anim-pop-in mt-4 px-4 py-2 rounded-2xl text-sm font-extrabold bg-accent-soft text-accent-deep dark:text-accent'
     : 'anim-shake mt-4 px-4 py-2 rounded-2xl text-sm font-extrabold bg-danger-soft text-danger';
 
-  // weak-area detection from history
-  const byMode = history.reduce<Record<string, { c: number; t: number }>>((m, h) => {
-    m[h.mode] = m[h.mode] ?? { c: 0, t: 0 };
-    m[h.mode].c += h.correct; m[h.mode].t += h.total;
-    return m;
-  }, {});
-  const weak = Object.entries(byMode)
-    .filter(([, v]) => v.t >= 10 && v.c / v.t < 0.8)
-    .sort((a, b) => a[1].c / a[1].t - b[1].c / b[1].t)
-    .slice(0, 3);
-
   return (
-    <div className="space-y-6">
-      <div className="grid lg:grid-cols-[1fr_320px] gap-6">
-      <div className="qf-card overflow-hidden">
-        {/* config / HUD */}
+    <div className="qf-card overflow-hidden">
+      {/* config / HUD */}
         <div className="px-5 py-4 border-b bg-surface-2/40 flex flex-wrap items-center gap-3">
           {running ? (
             <>
@@ -289,68 +276,6 @@ export function DrillTrainer({ history }: { history: { mode: string; level: numb
             </div>
           )}
         </div>
-      </div>
-
-      {/* history panel */}
-      <div className="space-y-4">
-        <div className="qf-card-flat p-4">
-          <h2 className="text-xs font-black uppercase tracking-[0.12em] text-faint mb-3">Weak areas detected</h2>
-          {weak.length > 0 ? (
-            <ul className="text-xs space-y-1.5">
-              {weak.map(([m, v]) => (
-                <li key={m} className="flex justify-between items-center gap-2">
-                  <span className="capitalize font-bold">{m}</span>
-                  <span className="chip chip-warning tnum">{Math.round((v.c / v.t) * 100)}%</span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-xs text-faint">{history.length > 0 ? 'All practiced modes are above 80% accuracy.' : 'No history yet — practice a few sessions to unlock weak-area detection.'}</p>
-          )}
-        </div>
-        <div className="qf-card-flat p-4">
-          <h2 className="text-xs font-black uppercase tracking-[0.12em] text-faint mb-3">Recent sessions</h2>
-          <ul className="space-y-2.5">
-            {history.slice(0, 8).map((h, i) => {
-              const acc = h.total ? Math.round((h.correct / h.total) * 100) : 0;
-              return (
-                <li key={i}>
-                  <div className="flex items-baseline justify-between gap-2 text-xs font-extrabold">
-                    <span className="capitalize">{h.mode} · L{h.level}</span>
-                    <span className="text-faint tnum text-[11px]">{h.correct}/{h.total} · {Math.round(h.avgMs)}ms</span>
-                  </div>
-                  <div className="mt-1 h-2 rounded-full bg-surface-3 overflow-hidden">
-                    <div
-                      className={`h-full rounded-full ${acc >= 80 ? 'bg-accent' : acc >= 60 ? 'bg-warning' : 'bg-danger'}`}
-                      style={{ width: `${acc}%` }}
-                    />
-                  </div>
-                </li>
-              );
-            })}
-            {history.length === 0 && <li className="text-faint text-xs font-semibold">No sessions yet.</li>}
-          </ul>
-        </div>
-      </div>
-      </div>
-
-      {/* training tips — full-width strip */}
-      <div className="qf-card-flat p-5">
-        <h2 className="text-xs font-black uppercase tracking-[0.12em] text-faint mb-3">Training tips</h2>
-        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          {[
-            'Break numbers apart: 47 × 6 = 40×6 + 7×6.',
-            'Percentages via 10% blocks: 35% = 10%×3 + 5%.',
-            'Left-to-right addition beats right-to-left under pressure.',
-            'Stop calculating when estimation answers the question.',
-          ].map(t => (
-            <p key={t} className="text-xs font-semibold text-muted leading-relaxed flex gap-2.5 rounded-xl bg-surface-2/50 border border-border/60 px-3 py-2.5">
-              <Zap className="h-3.5 w-3.5 text-warning shrink-0 mt-0.5" />
-              {t}
-            </p>
-          ))}
-        </div>
-      </div>
     </div>
   );
 }

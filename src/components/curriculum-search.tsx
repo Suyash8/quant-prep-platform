@@ -32,7 +32,7 @@ export function CurriculumSearch({ lessons }: { lessons: SearchRow[] }) {
           <input
             value={q} onChange={e => setQ(e.target.value)}
             placeholder="Search lessons, modules, phases… (e.g. eigenvalue, order book, virtual destructor)"
-            className="w-full h-10 pl-9 pr-8 rounded-lg border bg-surface text-sm"
+            className="qf-input h-10 py-0 pl-9 pr-8 text-sm"
             aria-label="Search curriculum"
           />
           {q && (
@@ -43,7 +43,7 @@ export function CurriculumSearch({ lessons }: { lessons: SearchRow[] }) {
         </div>
         <select
           value={filter} onChange={e => setFilter(e.target.value as typeof filter)}
-          className="h-10 px-3 rounded-lg border bg-surface text-sm"
+          className="qf-select-sm h-10"
           aria-label="Filter lessons"
         >
           <option value="all">All</option>

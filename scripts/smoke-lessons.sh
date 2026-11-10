@@ -2,7 +2,7 @@
 # Render smoke test: every lesson must return HTTP 200 (not 500) for the authed test user.
 # Throttled: gentle pacing so the dev server is never overwhelmed.
 set -u
-cd /home/z/my-project
+cd "$(dirname "$0")/.."
 curl -s -c /tmp/smoke.jar -X POST http://localhost:3000/api/auth/login -H "Content-Type: application/json" \
   -d '{"email":"e2e@test.dev","password":"e2etest12345"}' -o /dev/null
 

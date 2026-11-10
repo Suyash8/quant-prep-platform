@@ -79,6 +79,9 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ action: st
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'unknown';
     if (msg.startsWith('RUNNER_UNAVAILABLE')) {
+      if (process.env.VERCEL === '1') {
+        return NextResponse.json({ error: 'Code execution is not available on this serverless deployment yet. Lessons, quizzes and everything else work normally — run code locally or point CODE_RUNNER_URL at a runner host.' }, { status: 503 });
+      }
       return NextResponse.json({ error: 'The code runner service is starting up - try again in a few seconds.' }, { status: 503 });
     }
     return NextResponse.json({ error: 'Runner failure. If this persists, restart the application.' }, { status: 500 });

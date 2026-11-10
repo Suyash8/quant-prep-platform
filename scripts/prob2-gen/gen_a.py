@@ -2,7 +2,7 @@
 """Generate problems 1-4: bst-validate, portfolio-variance, longest-increasing-subsequence, course-schedule."""
 import json, os
 
-OUT = "/home/z/my-project/content/problems"
+OUT = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../content/problems'))
 os.makedirs(OUT, exist_ok=True)
 
 def p(md): return {"type": "p", "md": md}

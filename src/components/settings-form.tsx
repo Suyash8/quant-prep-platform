@@ -4,7 +4,7 @@ import * as React from 'react';
 import { useTheme } from 'next-themes';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
-import { Target, UserRound, Palette, ShieldCheck, LogOut, Monitor, Sun, Moon, Flame, Zap, Star, Trophy } from 'lucide-react';
+import { Target, UserRound, Palette, ShieldCheck, LogOut, Monitor, Sun, Moon, Flame, Zap, Star, Trophy, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export function SettingsForm({ user }: { user: { name: string; email: string; role: string; memberSince?: string | Date } }) {
@@ -62,7 +62,6 @@ export function SettingsForm({ user }: { user: { name: string; email: string; ro
       {/* gamification summary + daily goal */}
       {gamed && (
         <section className="qf-card p-5 lg:col-span-2 relative overflow-hidden">
-          <div className="absolute -right-10 -top-10 h-36 w-36 rounded-full bg-warning-soft" aria-hidden />
           <div className="relative">
             <div className="flex items-center gap-3 flex-wrap">
               <span className="icon-tile-gold h-11 w-11"><Target className="h-6 w-6" /></span>
@@ -80,23 +79,28 @@ export function SettingsForm({ user }: { user: { name: string; email: string; ro
             <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
               {[20, 50, 100, 200].map(xp => {
                 const active = gamed.dailyGoalXp === xp;
+                const vibe = xp === 20 ? 'casual' : xp === 50 ? 'regular' : xp === 100 ? 'serious' : 'intense';
                 return (
                   <button
                     key={xp}
                     onClick={() => setGoal(xp)}
                     disabled={goalBusy}
+                    aria-pressed={active}
                     className={cn(
-                      'press rounded-2xl border-2 p-3 text-center transition-all',
+                      'press rounded-2xl border-2 p-3 text-center relative transition-all',
                       active
                         ? 'border-accent bg-accent-soft shadow-[0_4px_0_0_var(--accent-deep)] -translate-y-0.5'
                         : 'border-border bg-surface hover:bg-surface-2 hover:border-border-strong',
                     )}
                   >
+                    {active && (
+                      <span className="absolute -top-2 -right-2 h-6 w-6 rounded-full bg-accent text-white flex items-center justify-center shadow-[0_2px_0_0_var(--accent-deep)]" aria-hidden>
+                        <Zap className="h-3.5 w-3.5" strokeWidth={2.75} />
+                      </span>
+                    )}
                     <span className={cn('block text-lg font-black tnum', active && 'text-accent-deep dark:text-accent')}>{xp}</span>
                     <span className="block text-[11px] font-extrabold text-muted">XP / day</span>
-                    <span className="block text-[10px] font-bold text-faint">
-                      {xp === 20 ? 'casual' : xp === 50 ? 'regular' : xp === 100 ? 'serious' : 'intense'}
-                    </span>
+                    <span className="block text-[10px] font-bold text-faint">{vibe}</span>
                   </button>
                 );
               })}
@@ -118,8 +122,12 @@ export function SettingsForm({ user }: { user: { name: string; email: string; ro
           <span className="text-xs font-extrabold text-muted uppercase tracking-wide">Display name</span>
           <div className="flex gap-2 mt-1.5">
             <input value={name} onChange={e => setName(e.target.value)} className="qf-input flex-1" aria-label="Display name" />
-            <button onClick={saveName} disabled={busy || name === user.name} className="btn3d btn3d-sm shrink-0 disabled:opacity-40 disabled:shadow-none disabled:translate-y-0">
-              Save
+            <button
+              onClick={saveName}
+              disabled={busy || name === user.name}
+              className={cn('btn3d btn3d-sm shrink-0', name === user.name && !busy && 'btn3d-ghost')}
+            >
+              {busy ? 'Saving…' : name === user.name ? (<><Check className="h-3.5 w-3.5" /> Saved</>) : 'Save'}
             </button>
           </div>
         </label>
@@ -215,6 +223,20 @@ export function SettingsForm({ user }: { user: { name: string; email: string; ro
             <dt className="text-muted">Signed in as</dt>
             <dd className="truncate max-w-[180px]">{user.email}</dd>
           </div>
+          {gamed && (
+            <div className="rounded-xl bg-surface-2/60 px-3 py-2">
+              <div className="flex items-center justify-between gap-3">
+                <dt className="text-muted">Today</dt>
+                <dd className="tnum">{gamed.todayXp} / {gamed.dailyGoalXp} XP</dd>
+              </div>
+              <div className="prog-track mt-2">
+                <div
+                  className={cn('prog-fill', gamed.todayXp >= gamed.dailyGoalXp ? 'prog-fill-gold' : '')}
+                  style={{ width: `${Math.min(100, Math.round((gamed.todayXp / Math.max(gamed.dailyGoalXp, 1)) * 100))}%` }}
+                />
+              </div>
+            </div>
+          )}
         </dl>
         <button onClick={logout} className="btn3d btn3d-sm btn3d-ghost !border-danger/40 !text-danger hover:!bg-danger-soft mt-4 w-full">
           <LogOut className="h-4 w-4" /> Sign out

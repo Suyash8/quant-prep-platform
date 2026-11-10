@@ -160,9 +160,9 @@ export default async function AnalyticsPage() {
                 <span className={'icon-tile-sm ' + t.tile}>
                   <Icon />
                 </span>
-                <div className={valueCls + ' mt-3'}>{t.value}</div>
+                <div className={valueCls + ' mt-3 !text-xl whitespace-nowrap'}>{t.value}</div>
                 <div className="stat-label mt-1">{t.label}</div>
-                {t.chip ? <span className={(t.chipCls ?? 'chip') + ' mt-2 self-start'}>{t.chip}</span> : null}
+                {t.chip ? <span className={(t.chipCls ?? 'chip') + ' mt-2 self-start whitespace-nowrap'}>{t.chip}</span> : null}
               </div>
             );
           })}
@@ -181,16 +181,16 @@ export default async function AnalyticsPage() {
             <div className="flex items-end gap-1.5 h-44">
               {days.map(d => {
                 const pct = (d.minutes / maxMinutes) * 100;
-                const barHeight = d.minutes > 0 ? Math.max(4, pct) + '%' : '4px';
+                const barHeight = d.minutes > 0 ? Math.max(6, pct) + '%' : '6px';
                 const barCls =
                   d.minutes > 0
-                    ? 'w-full rounded-t-lg bg-accent hover:brightness-110 transition-all'
-                    : 'w-full rounded-t-lg bg-surface-3';
+                    ? 'w-full rounded-t-lg bg-accent xp-stripes hover:brightness-110 hover:scale-x-110 transition-all'
+                    : 'w-full rounded-full bg-surface-3';
                 const barTitle = d.day + ': ' + d.minutes + ' min';
                 return (
                   <div key={d.day} className="flex-1 h-full flex flex-col items-center gap-1 min-w-0" title={barTitle}>
-                    <span className={`text-[9px] font-black tnum leading-none ${d.minutes > 0 ? 'text-muted' : 'text-transparent'}`}>{d.minutes}m</span>
-                    <div className="w-full flex-1 flex items-end">
+                    {d.minutes > 0 && <span className="text-[9px] font-black tnum leading-none text-muted">{d.minutes}m</span>}
+                    <div className="w-full flex-1 flex items-end justify-center">
                       <div className={barCls} style={{ height: barHeight }} />
                     </div>
                     <span className="text-[10px] font-bold text-faint leading-none">{weekdayLetter(d.day)}</span>
@@ -278,7 +278,7 @@ export default async function AnalyticsPage() {
         </div>
 
         {/* revision + bottlenecks */}
-        <div className="mt-6 grid md:grid-cols-2 gap-6 items-start">
+        <div className="mt-6 grid md:grid-cols-2 gap-6 items-stretch">
           <section className="qf-card p-5 anim-slide-up" style={slideDelay(3)}>
             <div className="section-head">
               <span className="icon-tile-sm icon-tile-violet">
@@ -305,18 +305,18 @@ export default async function AnalyticsPage() {
             </ul>
           </section>
 
-          <section className="qf-card p-5 anim-slide-up" style={slideDelay(4)}>
+          <section className="qf-card p-5 anim-slide-up flex flex-col" style={slideDelay(4)}>
             <div className="section-head">
               <span className="icon-tile-sm icon-tile-info">
                 <Target />
               </span>
               <h2>Bottleneck analysis</h2>
             </div>
-            <ul className="space-y-2.5">
+            <ul className="space-y-2.5 flex-1">
               {bottlenecks.map((b, i) => {
                 const isClean = b.startsWith('No bottlenecks');
                 return (
-                  <li key={i} className="flex items-start gap-2.5 text-sm">
+                  <li key={i} className="flex items-start gap-2.5 text-sm rounded-xl bg-surface-2/50 border border-border/60 px-3 py-2.5">
                     {isClean ? (
                       <CircleCheck className="h-4 w-4 mt-0.5 text-accent shrink-0" />
                     ) : (
@@ -327,7 +327,25 @@ export default async function AnalyticsPage() {
                 );
               })}
             </ul>
+            <Link href="/revision" className="btn3d btn3d-sm btn3d-ghost mt-4 self-start">
+              <Repeat className="h-3.5 w-3.5" /> Clear them in revision
+            </Link>
           </section>
+        </div>
+
+        {/* closing CTA — keep the momentum */}
+        <div className="mt-8 qf-card p-4 flex items-center gap-3.5 flex-wrap anim-slide-up">
+          <span className="icon-tile icon-tile-sm icon-tile-accent shrink-0">
+            <Flame />
+          </span>
+          <p className="flex-1 min-w-[220px] text-sm font-semibold text-muted">
+            {streakDays > 0
+              ? `You are on a ${streakDays}-day streak — one lesson today keeps it alive.`
+              : 'Start a new streak today — one focused lesson is enough.'}
+          </p>
+          <Link href="/dashboard" className="btn3d btn3d-sm shrink-0">
+            Continue learning
+          </Link>
         </div>
       </div>
     </AppShell>

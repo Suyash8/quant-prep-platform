@@ -6,9 +6,9 @@
  */
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
-import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const ROOT = '/home/z/my-project';
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const OUT = path.join(ROOT, 'content', 'problems');
 const TMP = path.join(ROOT, 'scripts', 'prob3-gen', 'tmp');
 fs.mkdirSync(OUT, { recursive: true });

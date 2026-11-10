@@ -5,7 +5,7 @@ import { listCompanies, getCompany, getMatrix, getMap } from '@/lib/content';
 import { AppShell, PublicHeader } from '@/components/app-shell';
 import { ApplicationTracker } from '@/components/application-tracker';
 import {
-  ArrowRight, BarChart3, Briefcase, Building2, ClipboardList, Compass, FileText, Layers,
+  ArrowRight, BarChart3, Briefcase, Building2, ChevronRight, ClipboardList, Compass, FileText, Layers,
   ListChecks, MapPin, Route, ShieldCheck, Table2, Target,
 } from 'lucide-react';
 
@@ -194,18 +194,18 @@ export default async function CareerPage() {
             <h2>Requirements matrix</h2>
             <span className="chip ml-auto tnum">Updated {matrix.generatedAt}</span>
           </div>
-          <div className="mb-3 flex flex-wrap items-center gap-1.5 text-xs">
+          <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
             <span className="text-faint font-bold">Legend:</span>
-            <span className="chip chip-danger">essential</span>
-            <span className="chip chip-warning">frequently required</span>
-            <span className="chip chip-accent">role-dependent</span>
-            <span className="chip">varies by seat</span>
+            <span className="matrix-cell matrix-essential" style={{ height: '1.25rem', minWidth: '3.5rem' }}>essential</span>
+            <span className="matrix-cell matrix-frequent" style={{ height: '1.25rem', minWidth: '3.5rem' }}>frequent</span>
+            <span className="matrix-cell matrix-role" style={{ height: '1.25rem', minWidth: '3.5rem' }}>role-dep.</span>
+            <span className="matrix-cell matrix-varies" style={{ height: '1.25rem', minWidth: '3.5rem' }}>varies</span>
           </div>
           <div className="qf-card p-2 sm:p-4 overflow-x-auto thin-scroll">
             <table className="qf-table">
               <thead>
                 <tr>
-                  <th>Skill</th>
+                  <th className="sticky left-0 bg-surface z-10">Skill</th>
                   <th>Asset managers</th>
                   <th>Banks</th>
                   <th>Prop trading</th>
@@ -216,15 +216,15 @@ export default async function CareerPage() {
               <tbody>
                 {matrix.rows.map(r => (
                   <tr key={r.skill}>
-                    <td className="font-bold capitalize" title={r.note ?? undefined}>
+                    <td className="font-bold capitalize sticky left-0 bg-surface z-10" title={r.note ?? undefined}>
                       {r.skill.replace(/-/g, ' ')}
                       {r.note && <span className="ml-1.5 text-faint" title={r.note}>ⓘ</span>}
                     </td>
                     {['assetManagers', 'banks', 'propTrading', 'hedgeFunds', 'marketData'].map(k => {
                       const v = r[k as keyof typeof r] as string;
-                      const cls = v === 'essential' ? 'chip-danger' : v === 'frequently required' ? 'chip-warning' : v === 'role-dependent' ? 'chip-accent' : '';
-                      const cellChip = cls ? 'chip ' + cls : 'chip';
-                      return <td key={k}><span className={cellChip}>{v}</span></td>;
+                      const cls = v === 'essential' ? 'matrix-essential' : v === 'frequently required' ? 'matrix-frequent' : v === 'role-dependent' ? 'matrix-role' : 'matrix-varies';
+                      const label = v === 'frequently required' ? 'freq' : v === 'role-dependent' ? 'role' : v === 'varies by seat' ? 'varies' : v;
+                      return <td key={k}><span className={'matrix-cell ' + cls} title={v}>{label}</span></td>;
                     })}
                   </tr>
                 ))}
@@ -234,40 +234,50 @@ export default async function CareerPage() {
         </section>
       )}
 
-      {/* Company profiles */}
+      {/* Company profiles — grouped by category for scannable rhythm */}
       <section className="mt-10">
         <div className="section-head">
           <span className="icon-tile icon-tile-sm icon-tile-gold"><Building2 /></span>
           <h2>Company preparation profiles</h2>
           <span className="chip ml-auto">{companies.length} firms</span>
         </div>
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {enriched.map((c, i) => (
-            <div
-              key={c.slug}
-              className="qf-card p-5 flex flex-col anim-slide-up hover:-translate-y-0.5 hover:shadow-lg transition-all"
-              style={{ animationDelay: SLIDE_DELAYS[i % SLIDE_DELAYS.length] }}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <span className={`icon-tile ${AVATAR_TILES[i % AVATAR_TILES.length]}`}>
-                  <span className="font-black text-xl">{c.name.charAt(0)}</span>
-                </span>
-                <span className="chip">{CATEGORY_LABEL[c.category] ?? c.category}</span>
+        <div className="space-y-6">
+          {Object.entries(CATEGORY_LABEL).flatMap(([cat, label]) => {
+            const firms = enriched.filter(c => c.category === cat);
+            if (!firms.length) return [];
+            return [(
+              <div key={cat}>
+                <div className="flex items-center gap-2.5 mb-2.5 px-1">
+                  <h3 className="text-xs font-black uppercase tracking-[0.12em] text-muted">{label}</h3>
+                  <span className="flex-1 h-0.5 rounded-full bg-border" />
+                  <span className="text-[11px] font-black text-faint tnum">{firms.length} firms</span>
+                </div>
+                <div className="qf-card-flat divide-y">
+                  {firms.map((c, i) => (
+                    <Link
+                      key={c.slug}
+                      href={`/career/${c.slug}`}
+                      className="row-card !py-3.5 anim-slide-up group hover:bg-surface-2/50 transition-colors"
+                      style={{ animationDelay: SLIDE_DELAYS[i % SLIDE_DELAYS.length] }}
+                    >
+                      <span className={`icon-tile ${AVATAR_TILES[i % AVATAR_TILES.length]}`}>
+                        <span className="font-black text-lg">{c.name.charAt(0)}</span>
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-center gap-2 flex-wrap">
+                          <span className="text-[15px] font-bold group-hover:text-accent-deep dark:group-hover:text-accent transition-colors">{c.name}</span>
+                          <span className="chip hidden sm:inline-flex"><MapPin className="h-3 w-3" /> {c.roles} roles</span>
+                          <span className="chip hidden md:inline-flex"><Layers className="h-3 w-3" /> {c.areas} areas</span>
+                        </span>
+                        <span className="block mt-0.5 text-xs text-muted font-semibold truncate">{COMPANY_BLURB[c.slug] ?? CATEGORY_DESC[c.category] ?? 'Quantitative hiring preparation profile.'}</span>
+                      </span>
+                      <ChevronRight className="h-5 w-5 shrink-0 text-faint transition-transform group-hover:translate-x-0.5 group-hover:text-accent" />
+                    </Link>
+                  ))}
+                </div>
               </div>
-              <h3 className="mt-3 font-extrabold tracking-tight text-lg">{c.name}</h3>
-              <p className="mt-0.5 text-sm text-muted leading-snug">{COMPANY_BLURB[c.slug] ?? CATEGORY_DESC[c.category] ?? 'Quantitative hiring preparation profile.'}</p>
-              <div className="mt-3 flex flex-wrap gap-1.5">
-                <span className="chip"><MapPin className="h-3 w-3" /> {c.roles} roles</span>
-                <span className="chip"><Layers className="h-3 w-3" /> {c.areas} areas</span>
-                <span className="chip"><Route className="h-3 w-3" /> {c.tracks} tracks</span>
-              </div>
-              <div className="mt-auto pt-4">
-                <Link href={`/career/${c.slug}`} className="btn3d btn3d-sm w-full sm:w-auto">
-                  Explore roles <ArrowRight className="h-3.5 w-3.5" />
-                </Link>
-              </div>
-            </div>
-          ))}
+            )];
+          })}
         </div>
       </section>
 

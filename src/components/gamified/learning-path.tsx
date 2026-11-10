@@ -74,13 +74,13 @@ function darken(hex: string, f = 0.72): string {
 /** Desktop-only zigzag offsets (mobile stays a clean straight column). */
 const OFFSETS = [
   'sm:translate-x-0',
-  'sm:translate-x-[70px]',
-  'sm:translate-x-[120px]',
-  'sm:translate-x-[70px]',
+  'sm:translate-x-[80px]',
+  'sm:translate-x-[140px]',
+  'sm:translate-x-[80px]',
   'sm:translate-x-0',
-  'sm:translate-x-[-70px]',
-  'sm:translate-x-[-120px]',
-  'sm:translate-x-[-70px]',
+  'sm:translate-x-[-80px]',
+  'sm:translate-x-[-140px]',
+  'sm:translate-x-[-80px]',
 ];
 
 export function LearningPath({
@@ -475,8 +475,9 @@ function ModuleTrail({
         </div>
         <span className="chip tnum shrink-0">{modDone}/{mod.lessons.length}</span>
       </div>
-      {/* trail sits on a soft band so the winding path reads as intentional */}
-      <div className="relative flex flex-col items-center rounded-[44px] bg-surface-2/45 dark:bg-surface-2/25 border-2 border-dashed border-border/70 px-6 py-8">
+      {/* trail sits on a soft band so the winding path reads as intentional —
+          band width hugs the zigzag so there are no dead margins */}
+      <div className="relative flex flex-col items-center rounded-[44px] bg-surface-2/45 dark:bg-surface-2/25 border-2 border-dashed border-border/70 px-4 sm:px-6 py-8 max-w-[300px] sm:max-w-[500px] mx-auto w-full">
         <Trail mod={mod} progress={progress} passed={passed} phaseColor={phaseColor} currentLessonId={currentLessonId} />
       </div>
     </div>
@@ -507,8 +508,8 @@ function Trail({
             {!last && (
               <span
                 aria-hidden
-                className={cn('absolute top-[84px] bottom-0 w-[8px] rounded', passed.has(lesson.id) ? '' : 'bg-surface-3')}
-                style={passed.has(lesson.id) ? { background: phaseColor } : undefined}
+                className={cn('absolute top-[82px] bottom-0 w-[26px] rounded-full', passed.has(lesson.id) ? '' : 'bg-surface-3')}
+                style={passed.has(lesson.id) ? { background: phaseColor, opacity: 0.55 } : undefined}
               />
             )}
             <PathNode

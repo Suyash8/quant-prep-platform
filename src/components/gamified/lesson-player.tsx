@@ -214,7 +214,7 @@ export function LessonPlayer({
             <X className="h-5 w-5" />
           </button>
           <div className="flex-1 h-5 gauge-track" role="progressbar" aria-valuenow={progressPct} aria-valuemin={0} aria-valuemax={100}>
-            <div className="gauge-fill bg-accent xp-stripes" style={{ width: `${progressPct}%` }} />
+            <div className="gauge-fill bg-accent xp-stripes !rounded-full" style={{ width: `${progressPct}%`, minWidth: progressPct > 0 ? '18px' : undefined }} />
           </div>
           {hud && (
             <span className="hidden sm:inline-flex hud-pill !py-1 shrink-0" title="Day streak">
@@ -307,7 +307,7 @@ export function LessonPlayer({
             id="player-primary"
             onClick={primaryAction.onClick}
             disabled={primaryAction.disabled || submitting}
-            className={cn('btn3d flex-1 !py-4 text-lg', !hasFeedback && isQuiz ? 'btn3d-blue' : '')}
+            className={cn('btn3d btn3d-player flex-1', !hasFeedback && isQuiz ? 'btn3d-blue' : '')}
           >
             {submitting ? 'Scoring…' : primaryAction.label}
             {!isQuiz && <ChevronRight className="h-6 w-6" />}
@@ -440,30 +440,32 @@ function CardBody({
 
 function IntroCard({ card }: { card: Extract<PlayerCard, { kind: 'intro' }> }) {
   return (
-    <div className="text-center py-4">
-      <div className="mx-auto h-20 w-20 rounded-3xl bg-accent-soft flex items-center justify-center anim-bob">
-        <GraduationCap className="h-10 w-10 text-accent" />
+    <div className="py-2">
+      <div className="mx-auto h-16 w-16 rounded-3xl bg-accent-soft flex items-center justify-center anim-bob">
+        <GraduationCap className="h-8 w-8 text-accent" />
       </div>
-      <h1 className="mt-5 text-2xl sm:text-3xl font-black tracking-tight">{card.title}</h1>
-      <p className="mt-1 text-sm font-bold text-faint uppercase tracking-wide">{moduleLabel()}</p>
-      <div className="mt-4 flex flex-wrap justify-center gap-2">
+      <h1 className="mt-4 text-2xl sm:text-[1.7rem] font-black tracking-tight">{card.title}</h1>
+      <p className="mt-1 text-xs font-bold text-faint uppercase tracking-[0.14em]">Lesson briefing</p>
+      <div className="mt-3 flex flex-wrap justify-center gap-2">
         <span className="chip chip-info"><Clock className="h-3 w-3" /> ~{card.estMinutes} min</span>
         <span className="chip chip-warning"><Target className="h-3 w-3" /> {card.difficulty}</span>
       </div>
-      <div className="mt-6 text-left rounded-2xl border-2 border-transparent bg-accent-soft p-4">
-        <p className="text-xs font-extrabold uppercase tracking-wide text-accent-deep dark:text-accent mb-1.5">Why this matters</p>
-        <p className="text-sm leading-relaxed font-semibold"><ClientMd text={card.motivation} /></p>
-      </div>
-      <div className="mt-4 text-left rounded-2xl border-2 border-border bg-surface p-4">
-        <p className="text-xs font-extrabold uppercase tracking-wide text-faint mb-2">By the end you can</p>
-        <ul className="space-y-2">
-          {card.objectives.map((o, i) => (
-            <li key={i} className="flex gap-2.5 items-start text-sm">
-              <span className="h-5 w-5 shrink-0 rounded-full bg-info-soft text-info-strong dark:text-info text-[10px] font-black flex items-center justify-center mt-0.5">{i + 1}</span>
-              <span><ClientMd text={o} /></span>
-            </li>
-          ))}
-        </ul>
+      <div className="mt-5 grid gap-3 md:grid-cols-2 md:text-left">
+        <div className="text-left rounded-2xl border-2 border-transparent bg-accent-soft p-4">
+          <p className="text-xs font-extrabold uppercase tracking-wide text-accent-deep dark:text-accent mb-1.5">Why this matters</p>
+          <p className="text-sm leading-relaxed font-semibold"><ClientMd text={card.motivation} /></p>
+        </div>
+        <div className="text-left rounded-2xl border-2 border-border bg-surface-2/60 p-4">
+          <p className="text-xs font-extrabold uppercase tracking-wide text-faint mb-2">By the end you can</p>
+          <ul className="space-y-2">
+            {card.objectives.map((o, i) => (
+              <li key={i} className="flex gap-2.5 items-start text-sm">
+                <span className="h-5 w-5 shrink-0 rounded-full bg-info-soft text-info-strong dark:text-info text-[10px] font-black flex items-center justify-center mt-0.5">{i + 1}</span>
+                <span><ClientMd text={o} /></span>
+              </li>
+            ))}
+          </ul>
+        </div>
       </div>
       {card.skills.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-1.5 justify-center">
@@ -472,7 +474,6 @@ function IntroCard({ card }: { card: Extract<PlayerCard, { kind: 'intro' }> }) {
       )}
     </div>
   );
-  function moduleLabel() { return 'Lesson briefing'; }
 }
 
 function ExerciseCard({ card, done, onDone }: {

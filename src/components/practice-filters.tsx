@@ -2,7 +2,11 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { CheckCircle2, ChevronRight, CirclePlay, Clock, RotateCcw, Search, Zap } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import {
+  CheckCircle2, ChevronRight, CirclePlay, Clock, Dices, Hash, Braces, Repeat, Search, TreePine,
+  Network, Layers, Sigma, Cpu, Zap, Server, LineChart, Rocket, RotateCcw, Search as SearchIcon,
+} from 'lucide-react';
 
 interface Row {
   slug: string; title: string; difficulty: string; category: string; tags: string[];
@@ -15,11 +19,37 @@ const CATEGORIES = [
   'systems-design', 'quant-finance',
 ];
 
+// per-category icons — visual rhythm instead of 28 identical play buttons
+const CATEGORY_ICON: Record<string, typeof CirclePlay> = {
+  fundamentals: CirclePlay,
+  'arrays-strings': Braces,
+  hashing: Hash,
+  recursion: Repeat,
+  'binary-search': Search,
+  trees: TreePine,
+  graphs: Network,
+  'dynamic-programming': Layers,
+  advanced: Rocket,
+  mathematics: Sigma,
+  probability: Dices,
+  'cpp-internals': Cpu,
+  concurrency: Zap,
+  'systems-design': Server,
+  'quant-finance': LineChart,
+};
+
 export function PracticeFilters({ problems }: { problems: Row[] }) {
+  const router = useRouter();
   const [q, setQ] = React.useState('');
   const [difficulty, setDifficulty] = React.useState('all');
   const [category, setCategory] = React.useState('all');
   const [status, setStatus] = React.useState('all');
+
+  function surpriseMe() {
+    const pool = problems.filter(p => p.status !== 'solved');
+    const pick = (pool.length ? pool : problems)[Math.floor(Math.random() * (pool.length || problems.length))];
+    if (pick) router.push(`/practice/${pick.slug}`);
+  }
 
   const rows = problems.filter(p =>
     (difficulty === 'all' || p.difficulty === difficulty) &&
@@ -83,7 +113,10 @@ export function PracticeFilters({ problems }: { problems: Row[] }) {
           <option value="attempted">Attempted ({counts.attempted})</option>
           <option value="new">Untried</option>
         </select>
-        <span className="tnum ml-auto text-xs font-bold text-faint">{rows.length} shown</span>
+        <span className="tnum ml-auto text-xs font-bold text-faint hidden sm:block">{rows.length} shown</span>
+        <button onClick={surpriseMe} className="btn3d btn3d-gold btn3d-sm ml-auto sm:ml-0 shrink-0">
+          <Dices className="h-3.5 w-3.5" /> Surprise me
+        </button>
       </div>
 
       <div className="mt-4 space-y-5">
@@ -127,11 +160,12 @@ export function PracticeFilters({ problems }: { problems: Row[] }) {
 function ProblemRow({ p, delay }: { p: Row; delay: string }) {
   const tileCls = p.difficulty === 'easy' ? 'icon-tile-accent' : p.difficulty === 'medium' ? 'icon-tile-gold' : 'icon-tile-danger';
   const diffChip = p.difficulty === 'easy' ? 'chip chip-success' : p.difficulty === 'medium' ? 'chip chip-warning' : 'chip chip-danger';
+  const RowIcon = CATEGORY_ICON[p.category] ?? CirclePlay;
   const solved = p.status === 'solved';
   const attempted = p.status === 'attempted';
   return (
     <Link href={`/practice/${p.slug}`} className="row-card group anim-slide-up" style={{ animationDelay: delay }}>
-      <span className={'icon-tile ' + tileCls}><CirclePlay strokeWidth={2.5} /></span>
+      <span className={'icon-tile ' + tileCls}><RowIcon strokeWidth={2.5} /></span>
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-2">
           <span className="truncate text-[15px] font-bold transition-colors group-hover:text-accent-deep dark:group-hover:text-accent">{p.title}</span>

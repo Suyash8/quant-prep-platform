@@ -43,22 +43,6 @@ export function AssessmentPlayer({ assessment, compactIntro = false }: { assessm
   const allQuestions = React.useMemo(() => assessment.sections.flatMap(s => s.questions), [assessment.sections]);
   const total = allQuestions.length;
 
-  React.useEffect(() => {
-    if (!started || result) return;
-    const t = setInterval(() => {
-      setSecondsLeft(s => {
-        if (s <= 1) {
-          clearInterval(t);
-          toast.info('Time is up — submitting automatically.');
-          setTimeout(() => submitRef.current?.(), 100);
-          return 0;
-        }
-        return s - 1;
-      });
-    }, 1000);
-    return () => clearInterval(t);
-  }, [started, result]);
-
   async function submit() {
     setBusy(true);
     try {
@@ -83,6 +67,22 @@ export function AssessmentPlayer({ assessment, compactIntro = false }: { assessm
 
   const submitRef = React.useRef(submit);
   React.useEffect(() => { submitRef.current = submit; });
+
+  React.useEffect(() => {
+    if (!started || result) return;
+    const t = setInterval(() => {
+      setSecondsLeft(s => {
+        if (s <= 1) {
+          clearInterval(t);
+          toast.info('Time is up — submitting automatically.');
+          setTimeout(() => submitRef.current?.(), 100);
+          return 0;
+        }
+        return s - 1;
+      });
+    }, 1000);
+    return () => clearInterval(t);
+  }, [started, result]);
 
   function retake() {
     setAnswers({});

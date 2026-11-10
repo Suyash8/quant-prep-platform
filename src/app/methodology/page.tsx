@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { getCurrentUser } from '@/lib/auth';
 import { getRegistry, getMap } from '@/lib/content';
 import { AppShell, PublicHeader } from '@/components/app-shell';
-import { Brain, Repeat, Layers, Gauge, ClipboardCheck, ListChecks, GraduationCap, ArrowRight, BookCheck } from 'lucide-react';
+import { Brain, Repeat, Layers, Gauge, ClipboardCheck, ListChecks, GraduationCap, ArrowRight, BookCheck, Target, PencilLine, MessageSquareText, RefreshCcw } from 'lucide-react';
 
 export const metadata = { title: 'Methodology — QuantFoundry' };
 
@@ -23,6 +23,14 @@ export default async function MethodologyPage() {
 
   const lessonParts = ['Title & estimated time', 'Prerequisites (enforced)', 'Learning objectives', 'A real motivating problem', 'Intuitive explanation', 'Formal explanation', 'Visual/interactive demonstration', 'Step-by-step derivation', 'Worked examples with verified numbers', 'Guided exercise', 'Independent exercise', 'Coding implementation where applicable', 'Common mistakes', 'Real-world application', 'Quantitative finance application', 'Knowledge check (server-scored)', 'Summary', 'Flashcards created', 'Further practice links', 'References'];
 
+  // the 20 parts grouped into 4 phases with distinct visual identity
+  const partPhases = [
+    { title: 'Set up', icon: Target, tile: 'icon-tile-info', from: 0, to: 5 },
+    { title: 'Practice', icon: PencilLine, tile: 'icon-tile-accent', from: 5, to: 12 },
+    { title: 'Feedback', icon: MessageSquareText, tile: 'icon-tile-warning', from: 12, to: 16 },
+    { title: 'Retention', icon: RefreshCcw, tile: 'icon-tile-violet', from: 16, to: 20 },
+  ];
+
   const body = (
     <div className="max-w-4xl mx-auto px-4 lg:px-6 py-8">
       <header className="page-hero">
@@ -39,21 +47,46 @@ export default async function MethodologyPage() {
         actual engineering work.
       </p>
 
-      <div className="mt-7 grid gap-4">
-        {principles.map((p, i) => (
-          <div key={p.title} className="qf-card-flat p-5 flex gap-4 hover:border-[var(--border-strong)] transition-colors">
-            <span className={`icon-tile ${p.tile} h-12 w-12`}>
-              <p.icon className="h-6 w-6" strokeWidth={2.5} />
-            </span>
-            <div className="min-w-0">
-              <h2 className="font-extrabold tracking-tight flex items-center gap-2">
-                {p.title}
-                <span className="text-[10px] font-black text-faint tnum">0{i + 1}</span>
-              </h2>
-              <p className="mt-1 text-sm text-muted leading-relaxed font-semibold">{p.desc}</p>
+      <div className="mt-7">
+        {/* feature principle — the headline idea gets hero treatment */}
+        {(() => {
+          const hero = principles[0];
+          const HeroIcon = hero.icon;
+          return (
+            <div className="qf-card p-6 flex gap-4 anim-slide-up relative overflow-hidden">
+              <div className="absolute -right-10 -top-12 h-36 w-36 rounded-full bg-accent-soft" aria-hidden />
+              <div className="relative flex gap-4">
+                <span className={`icon-tile ${hero.tile} h-14 w-14 shrink-0`}>
+                  <HeroIcon className="h-7 w-7" strokeWidth={2.5} />
+                </span>
+                <div className="min-w-0">
+                  <h2 className="text-lg font-black tracking-tight flex items-center gap-2">
+                    {hero.title}
+                    <span className="text-[10px] font-black text-faint tnum">01</span>
+                  </h2>
+                  <p className="mt-1.5 text-sm text-muted leading-relaxed font-semibold">{hero.desc}</p>
+                </div>
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })()}
+        {/* remaining four in a 2×2 rhythm grid */}
+        <div className="mt-4 grid sm:grid-cols-2 gap-4">
+          {principles.slice(1).map((p, i) => (
+            <div key={p.title} className="qf-card-flat p-5 flex gap-4 hover:border-[var(--border-strong)] transition-colors anim-slide-up">
+              <span className={`icon-tile ${p.tile} h-12 w-12 shrink-0`}>
+                <p.icon className="h-6 w-6" strokeWidth={2.5} />
+              </span>
+              <div className="min-w-0">
+                <h2 className="font-extrabold tracking-tight flex items-center gap-2">
+                  {p.title}
+                  <span className="text-[10px] font-black text-faint tnum">0{i + 2}</span>
+                </h2>
+                <p className="mt-1 text-sm text-muted leading-relaxed font-semibold">{p.desc}</p>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
       <section className="mt-10">
@@ -64,14 +97,28 @@ export default async function MethodologyPage() {
             <p className="text-xs font-bold text-muted">Every lesson follows the same 20-part structure so you always know where you are</p>
           </div>
         </div>
-        <ol className="mt-4 grid sm:grid-cols-2 gap-2">
-          {lessonParts.map((t, i) => (
-            <li key={t} className="flex items-center gap-2.5 rounded-xl bg-surface-2/50 border border-border/60 px-3 py-2 text-sm font-bold">
-              <span className="h-6 w-6 shrink-0 rounded-lg bg-accent text-white text-[11px] font-black tnum flex items-center justify-center">{i + 1}</span>
-              <span className="min-w-0 truncate">{t}</span>
-            </li>
-          ))}
-        </ol>
+        <div className="mt-4 grid sm:grid-cols-2 gap-3">
+          {partPhases.map(ph => {
+            const PhIcon = ph.icon;
+            return (
+              <div key={ph.title} className="rounded-2xl border-2 border-border bg-surface p-3.5">
+                <div className="flex items-center gap-2 mb-2.5">
+                  <span className={`icon-tile icon-tile-sm ${ph.tile} !h-7 !w-7`}><PhIcon className="h-4 w-4" /></span>
+                  <h3 className="text-xs font-black uppercase tracking-[0.1em]">{ph.title}</h3>
+                  <span className="text-[10px] font-black text-faint tnum ml-auto">{ph.to - ph.from} parts</span>
+                </div>
+                <ol className="space-y-1.5">
+                  {lessonParts.slice(ph.from, ph.to).map((t, j) => (
+                    <li key={t} className="flex items-center gap-2.5 rounded-xl bg-surface-2/50 border border-border/60 px-2.5 py-1.5 text-[13px] font-bold">
+                      <span className="h-5 w-5 shrink-0 rounded-lg bg-accent text-white text-[10px] font-black tnum flex items-center justify-center">{ph.from + j + 1}</span>
+                      <span className="min-w-0 truncate">{t}</span>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            );
+          })}
+        </div>
       </section>
 
       <section className="mt-10">
@@ -106,10 +153,10 @@ export default async function MethodologyPage() {
             NumPy documentation, PostgreSQL and Linux docs — and never substitute for the lesson itself.
           </p>
           <div className="mt-5 flex flex-wrap gap-3">
-            <Link href="/curriculum" className="btn3d btn3d-sm">
+            <Link href="/curriculum" className="btn3d">
               Browse the curriculum <ArrowRight className="h-4 w-4" />
             </Link>
-            <Link href="/diagnostic" className="btn3d btn3d-sm btn3d-blue">
+            <Link href="/diagnostic" className="btn3d btn3d-ghost">
               Take the diagnostic
             </Link>
           </div>

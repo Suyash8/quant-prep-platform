@@ -1,12 +1,17 @@
 /**
  * Runner client used by Next.js API routes.
  * Ensures the code-runner mini-service is up (spawns it if needed) and proxies jobs.
+ *
+ * On serverless hosts (Vercel) there is no long-lived local process to spawn, so the
+ * runner is disabled unless CODE_RUNNER_URL points at an external deployment. Set
+ * CODE_RUNNER_URL in the hosting provider's env vars to re-enable code execution.
  */
 import 'server-only';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 
-const RUNNER_URL = 'http://127.0.0.1:3010';
+const RUNNER_URL = process.env.CODE_RUNNER_URL ?? 'http://127.0.0.1:3010';
+const IS_SERVERLESS = process.env.VERCEL === '1';
 let starting = false;
 
 async function ping(): Promise<boolean> {
@@ -20,6 +25,8 @@ async function ping(): Promise<boolean> {
 
 export async function ensureRunner(): Promise<boolean> {
   if (await ping()) return true;
+  // Serverless: we cannot spawn the mini-service; only an external CODE_RUNNER_URL works.
+  if (IS_SERVERLESS) return false;
   if (starting) {
     for (let i = 0; i < 40; i++) {
       await new Promise(r => setTimeout(r, 250));

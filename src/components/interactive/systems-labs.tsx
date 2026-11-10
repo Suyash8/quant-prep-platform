@@ -106,14 +106,20 @@ export function PipePipeline({ params }: { params: Record<string, unknown> }) {
 /* ---------------- PermissionBits: rwx calculator ---------------- */
 const RWX = ['read', 'write', 'execute'];
 export function PermissionBits({ params }: { params: Record<string, unknown> }) {
-  const [bits, setBits] = React.useState([6, 4, 4]); // owner group other as 0-7
+  const initial = (params.initialOctal as string) ?? '644';
+  const parseInitial = (init: string) => {
+    if (init.length === 3 && /^[0-7]{3}$/.test(init)) return init.split('').map(c => parseInt(c, 8));
+    return [6, 4, 4];
+  };
+  const [bits, setBits] = React.useState(() => parseInitial(initial));
+  const [prevInitial, setPrevInitial] = React.useState(initial);
+  if (prevInitial !== initial) {
+    setPrevInitial(initial);
+    setBits(parseInitial(initial));
+  }
   const owners = ['owner', 'group', 'other'];
   const octal = bits.map(b => b.toString(8)).join('');
   const sym = bits.map(b => `${b & 4 ? 'r' : '-'}${b & 2 ? 'w' : '-'}${b & 1 ? 'x' : '-'}`).join('');
-  const initial = (params.initialOctal as string) ?? '644';
-  React.useEffect(() => {
-    if (initial.length === 3 && /^[0-7]{3}$/.test(initial)) setBits(initial.split('').map(c => parseInt(c, 8)));
-  }, [initial]);
   return (
     <LabFrame title="Permission bits: who can do what"
       caption="chmod 755 = owner rwx, group r-x, other r-x. The leading digit (setuid/setuid/sticky) is omitted here for clarity.">

@@ -72,82 +72,49 @@ export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
       <div className="pointer-events-none absolute -left-20 top-10 h-56 w-56 rounded-full bg-accent-soft blur-2xl" aria-hidden />
       <div className="pointer-events-none absolute -right-16 bottom-8 h-56 w-56 rounded-full bg-info-soft blur-2xl" aria-hidden />
 
-      <div className="w-full max-w-4xl relative grid lg:grid-cols-[1fr_320px] gap-8 items-center">
-        {/* the form */}
-        <div className="w-full max-w-sm mx-auto lg:mx-0 lg:justify-self-end">
-          <div className="text-center mb-7">
-            <span className="mx-auto h-14 w-14 rounded-3xl bg-accent text-white flex items-center justify-center shadow-[0_5px_0_0_var(--accent-deep)] anim-bob">
-              <Sigma className="h-7 w-7" aria-hidden />
-            </span>
-            <h1 className="mt-4 text-2xl font-black tracking-tight">
-              {mode === 'register' ? 'Create your account' : 'Welcome back'}
-            </h1>
-            <p className="mt-1 text-sm font-semibold text-muted">
-              {mode === 'register'
-                ? 'Takes thirty seconds — then the diagnostic finds your starting point.'
-                : 'Pick up where you left off — streaks are waiting.'}
-            </p>
-          </div>
-          <form onSubmit={submit} className="qf-card p-6 space-y-4">
-            {mode === 'register' && (
-              <div>
-                <label htmlFor="name" className="text-sm font-extrabold">Name</label>
-                <input
-                  id="name" type="text" required minLength={2} value={name}
-                  onChange={e => setName(e.target.value)}
-                  className="qf-input mt-1.5 !h-12"
-                  autoComplete="name"
-                />
-              </div>
-            )}
-            <div>
-              <label htmlFor="email" className="text-sm font-extrabold">Email</label>
-              <input
-                id="email" type="email" required value={email}
-                onChange={e => setEmail(e.target.value)}
-                className="qf-input mt-1.5 !h-12"
-                autoComplete="email"
-              />
-            </div>
-            <div>
-              <label htmlFor="password" className="text-sm font-extrabold">Password</label>
-              <input
-                id="password" type="password" required minLength={mode === 'register' ? 8 : 1}
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                className="qf-input mt-1.5 !h-12"
-                autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
-                aria-describedby={mode === 'register' ? 'pw-hint' : undefined}
-              />
-              {mode === 'register' && (
-                <p id="pw-hint" className="mt-1.5 text-xs font-semibold text-faint">At least 8 characters.</p>
-              )}
-            </div>
-            {error && (
-              <p role="alert" className="text-sm font-bold text-danger bg-danger-soft rounded-xl px-3 py-2 anim-shake">{error}</p>
-            )}
-            <button type="submit" disabled={busy} className="btn3d w-full !py-3.5">
-              {busy ? 'Working…' : mode === 'register' ? 'Create account' : 'Sign in'}
-            </button>
-            <p className="text-sm text-center font-semibold text-muted">
-              {mode === 'register' ? (
-                <>Already have an account? <Link href="/login" className="text-info hover:underline font-extrabold">Sign in</Link></>
-              ) : (
-                <>New here? <Link href="/register" className="text-info hover:underline font-extrabold">Create an account</Link></>
-              )}
-            </p>
-          </form>
-        </div>
-
-        {/* the pitch panel */}
+      <div className="w-full max-w-4xl relative grid lg:grid-cols-[1fr_400px] gap-8 items-center">
+        {/* the pitch panel — fills the left half with real content */}
         <aside className="hidden lg:block">
-          <div className="qf-card-flat p-6 relative overflow-hidden">
+          <div className="qf-card-flat p-6 relative overflow-hidden bg-dots">
             <div className="absolute -right-8 -top-8 h-28 w-28 rounded-full bg-accent-soft" aria-hidden />
             <div className="relative">
-              <p className="text-[11px] font-black uppercase tracking-[0.14em] text-faint">
+              <div className="flex items-center gap-3">
+                <span className="h-11 w-11 rounded-2xl bg-accent text-white flex items-center justify-center shadow-[0_4px_0_0_var(--accent-deep)]">
+                  <Sigma className="h-6 w-6" aria-hidden />
+                </span>
+                <div>
+                  <p className="font-black tracking-tight text-lg leading-none">QuantFoundry</p>
+                  <p className="text-[11px] font-bold text-faint uppercase tracking-[0.12em] mt-1">Quant dev, built properly</p>
+                </div>
+              </div>
+
+              {mode === 'login' ? (
+                <div className="mt-5 flex flex-wrap gap-2">
+                  <span className="hud-pill"><Flame className="h-4 w-4 text-flame anim-flame" /> 7-day streak</span>
+                  <span className="hud-pill"><Zap className="h-4 w-4 text-warning" /> 1,480 XP</span>
+                  <span className="hud-pill"><Trophy className="h-4 w-4 text-violet" /> Level 4</span>
+                </div>
+              ) : (
+                <div className="mt-5 grid grid-cols-3 gap-2.5">
+                  <div className="stat-tile !p-3 text-center">
+                    <p className="stat-value !text-xl tnum">283</p>
+                    <p className="stat-label">lessons</p>
+                  </div>
+                  <div className="stat-tile !p-3 text-center">
+                    <p className="stat-value !text-xl tnum">40+</p>
+                    <p className="stat-label">live labs</p>
+                  </div>
+                  <div className="stat-tile !p-3 text-center">
+                    <p className="stat-value !text-xl tnum">25</p>
+                    <p className="stat-label">code problems</p>
+                  </div>
+                </div>
+              )}
+
+              <p className="mt-5 text-[11px] font-black uppercase tracking-[0.14em] text-faint">
                 {mode === 'register' ? 'What you get' : 'While you were away'}
               </p>
-              <ul className="mt-4 space-y-3.5">
+              <ul className="mt-3.5 space-y-3.5">
                 {perks.map(p => (
                   <li key={p.text} className="flex items-start gap-3">
                     <span className="h-8 w-8 shrink-0 rounded-xl bg-accent-soft text-accent-deep dark:text-accent flex items-center justify-center">
@@ -170,6 +137,75 @@ export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
             </div>
           </div>
         </aside>
+
+        {/* the form */}
+        <div className="w-full max-w-sm mx-auto lg:mx-0 lg:justify-self-start">
+          <div className="text-center mb-7">
+            <span className="mx-auto h-14 w-14 rounded-3xl bg-accent text-white flex items-center justify-center shadow-[0_5px_0_0_var(--accent-deep)] anim-bob">
+              <Sigma className="h-7 w-7" aria-hidden />
+            </span>
+            <h1 className="mt-4 text-2xl font-black tracking-tight">
+              {mode === 'register' ? 'Create your account' : 'Welcome back'}
+            </h1>
+            <p className="mt-1 text-sm font-semibold text-muted">
+              {mode === 'register'
+                ? 'Takes thirty seconds — then the diagnostic finds your starting point.'
+                : 'Pick up where you left off — streaks are waiting.'}
+            </p>
+          </div>
+          <form onSubmit={submit} className="qf-card p-6 space-y-4">
+            {mode === 'register' && (
+              <div>
+                <label htmlFor="name" className="text-sm font-extrabold">Name</label>
+                <input
+                  id="name" type="text" required minLength={2} value={name}
+                  onChange={e => setName(e.target.value)}
+                  className="qf-input mt-1.5 !h-12"
+                  placeholder="Ada Lovelace"
+                  autoComplete="name"
+                />
+              </div>
+            )}
+            <div>
+              <label htmlFor="email" className="text-sm font-extrabold">Email</label>
+              <input
+                id="email" type="email" required value={email}
+                onChange={e => setEmail(e.target.value)}
+                className="qf-input mt-1.5 !h-12"
+                placeholder="you@example.com"
+                autoComplete="email"
+              />
+            </div>
+            <div>
+              <label htmlFor="password" className="text-sm font-extrabold">Password</label>
+              <input
+                id="password" type="password" required minLength={mode === 'register' ? 8 : 1}
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                className="qf-input mt-1.5 !h-12"
+                placeholder="••••••••"
+                autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
+                aria-describedby={mode === 'register' ? 'pw-hint' : undefined}
+              />
+              {mode === 'register' && (
+                <p id="pw-hint" className="mt-1.5 text-xs font-bold text-muted">At least 8 characters.</p>
+              )}
+            </div>
+            {error && (
+              <p role="alert" className="text-sm font-bold text-danger bg-danger-soft rounded-xl px-3 py-2 anim-shake">{error}</p>
+            )}
+            <button type="submit" disabled={busy} className="btn3d w-full !py-3.5 text-base">
+              {busy ? 'Working…' : mode === 'register' ? 'Create account' : 'Sign in'}
+            </button>
+            <p className="text-sm text-center font-semibold text-muted">
+              {mode === 'register' ? (
+                <>Already have an account? <Link href="/login" className="text-accent-deep dark:text-accent hover:underline font-extrabold">Sign in</Link></>
+              ) : (
+                <>New here? <Link href="/register" className="text-accent-deep dark:text-accent hover:underline font-extrabold">Create an account</Link></>
+              )}
+            </p>
+          </form>
+        </div>
       </div>
     </div>
   );

@@ -71,14 +71,58 @@ export default async function DrillsPage() {
         </header>
 
         <div className="grid lg:grid-cols-3 gap-6 items-start">
-          {/* session starter — DrillTrainer keeps all session logic, XP toasts and hud-refresh */}
-          <div className="lg:col-span-2 min-w-0 [&>div]:grid-cols-1 [&>div>div:last-child]:hidden">
+          {/* left column: the trainer + session history (balanced heights) */}
+          <div className="lg:col-span-2 min-w-0 space-y-6">
             <DrillTrainer
               history={history.map(h => ({
                 mode: h.mode, level: h.level, correct: h.correct, total: h.total, avgMs: h.avgMs,
                 createdAt: h.createdAt.toISOString(),
               }))}
             />
+
+            {/* recent sessions — full history, comfortably wide */}
+            <section className="qf-card p-5 anim-slide-up">
+              <div className="section-head">
+                <span className="icon-tile-sm icon-tile-info">
+                  <History />
+                </span>
+                <h2>Recent sessions</h2>
+                <span className="chip tnum ml-auto">{sessionsLogged} logged</span>
+              </div>
+              {sessionsLogged === 0 ? (
+                <div className="qf-empty">
+                  <span className="empty-emoji">⚡</span>
+                  <p className="text-sm font-black">No sessions yet</p>
+                  <p className="mt-1 text-xs text-faint font-semibold">Finish a timed drill and it lands here.</p>
+                </div>
+              ) : (
+                <div className="grid sm:grid-cols-2 gap-x-6 gap-y-2.5">
+                  {history.slice(0, 10).map((h, i) => {
+                    const Icon = MODE_ICONS[h.mode] ?? Shuffle;
+                    const tile = MODE_TILES[i % MODE_TILES.length];
+                    const pct = h.total ? Math.round((h.correct / h.total) * 100) : 0;
+                    const chipCls = pct >= 80 ? 'chip chip-success tnum' : pct >= 60 ? 'chip chip-warning tnum' : 'chip chip-danger tnum';
+                    const fillCls = pct < 40 ? 'prog-fill-danger' : pct < 70 ? 'prog-fill-gold' : '';
+                    const dateLabel = h.createdAt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+                    return (
+                      <div key={h.id} className="row-card anim-slide-up" style={popDelay(i + 2)}>
+                        <span className={'icon-tile-sm ' + tile}>
+                          <Icon />
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-bold">{cap(h.mode)} · L{h.level}</p>
+                          <p className="text-xs text-muted font-semibold tnum">{dateLabel} · {Math.round(h.avgMs)}ms avg</p>
+                        </div>
+                        <div className="prog-track w-16 hidden sm:block shrink-0">
+                          <div className={'prog-fill ' + fillCls} style={{ width: Math.max(pct, 2) + '%' }} />
+                        </div>
+                        <span className={chipCls + ' shrink-0'}>{h.correct}/{h.total}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
           </div>
 
           {/* side rail */}
@@ -112,50 +156,6 @@ export default async function DrillsPage() {
                         <div className="prog-track h-2.5">
                           <div className={'prog-fill ' + fillCls} style={{ width: Math.max(pct, 2) + '%' }} />
                         </div>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </section>
-
-            {/* recent sessions */}
-            <section className="qf-card p-5 anim-slide-up" style={popDelay(1)}>
-              <div className="section-head">
-                <span className="icon-tile-sm icon-tile-info">
-                  <History />
-                </span>
-                <h2>Recent sessions</h2>
-                <span className="chip tnum ml-auto">{sessionsLogged}</span>
-              </div>
-              {sessionsLogged === 0 ? (
-                <div className="qf-empty">
-                  <span className="empty-emoji">⚡</span>
-                  <p className="text-sm font-black">No sessions yet</p>
-                  <p className="mt-1 text-xs text-faint font-semibold">Finish a timed drill and it lands here.</p>
-                </div>
-              ) : (
-                <ul className="space-y-2">
-                  {history.slice(0, 6).map((h, i) => {
-                    const Icon = MODE_ICONS[h.mode] ?? Shuffle;
-                    const tile = MODE_TILES[i % MODE_TILES.length];
-                    const pct = h.total ? Math.round((h.correct / h.total) * 100) : 0;
-                    const chipCls = pct >= 80 ? 'chip chip-success tnum' : pct >= 60 ? 'chip chip-warning tnum' : 'chip chip-danger tnum';
-                    const fillCls = pct < 40 ? 'prog-fill-danger' : pct < 70 ? 'prog-fill-gold' : '';
-                    const dateLabel = h.createdAt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-                    return (
-                      <li key={h.id} className="row-card anim-slide-up" style={popDelay(i + 2)}>
-                        <span className={'icon-tile-sm ' + tile}>
-                          <Icon />
-                        </span>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-bold truncate">{cap(h.mode)} · L{h.level}</p>
-                          <p className="text-xs text-muted font-semibold">{dateLabel}</p>
-                        </div>
-                        <div className="prog-track w-20 hidden sm:block shrink-0">
-                          <div className={'prog-fill ' + fillCls} style={{ width: Math.max(pct, 2) + '%' }} />
-                        </div>
-                        <span className={chipCls + ' shrink-0'}>{h.correct}/{h.total}</span>
                       </li>
                     );
                   })}

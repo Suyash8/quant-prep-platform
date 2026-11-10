@@ -142,8 +142,8 @@ export function CodeWorkspace({ slug, stubs, examples, timeLimitMs }: WorkspaceP
                 value={language}
                 onChange={e => switchLang(e.target.value)}
                 aria-label="Language"
-                className="cursor-pointer rounded-lg border px-2.5 py-1 font-mono text-[11px] font-bold text-slate-200 outline-none transition-colors hover:border-accent"
-                style={{ background: PANEL_BG, borderColor: PANEL_BORDER }}
+                style={{ background: PANEL_BG, borderColor: PANEL_BORDER, appearance: 'none', WebkitAppearance: 'none', backgroundImage: "url(\"data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'right 0.5rem center' }}
+                className="cursor-pointer rounded-lg border-2 py-1 pl-2.5 pr-7 font-mono text-[11px] font-bold text-slate-200 outline-none transition-colors hover:border-accent"
               >
                 {LANGS.filter(l => l.id in stubs).map(l => <option key={l.id} value={l.id}>{l.label}</option>)}
               </select>
