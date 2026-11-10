@@ -8,7 +8,7 @@ import { db } from '@/lib/db';
 import { AppShell } from '@/components/app-shell';
 import { DrillTrainer } from '@/components/drill-trainer';
 
-export const metadata = { title: 'Drills — QuantFoundry' };
+export const metadata = { title: 'Drills. QuantFoundry' };
 
 const MODE_ICONS: Record<string, LucideIcon> = {
   addition: Plus,
@@ -38,6 +38,8 @@ export default async function DrillsPage() {
   const history = await db.drillSession.findMany({ where: { userId: user.id }, orderBy: { createdAt: 'desc' }, take: 20 });
 
   // weak areas: aggregate accuracy per mode (same rule as the trainer)
+
+
   const byMode = new Map<string, { c: number; t: number }>();
   for (const h of history) {
     const e = byMode.get(h.mode) ?? { c: 0, t: 0 };
@@ -54,8 +56,8 @@ export default async function DrillsPage() {
   const bestAcc = history.reduce((m, h) => Math.max(m, h.total ? h.correct / h.total : 0), 0);
   const bestAccPct = sessionsLogged ? Math.round(bestAcc * 100) : null;
   const pageSub = sessionsLogged
-    ? sessionsLogged + ' sessions logged · best accuracy ' + bestAccPct + '% — accuracy and speed both count.'
-    : 'Timed mental arithmetic — accuracy and speed both count. Your sessions land here.';
+    ? sessionsLogged + ' sessions logged · best accuracy ' + bestAccPct + '%, accuracy and speed both count.'
+    : 'Timed mental arithmetic, accuracy and speed both count. Your sessions land here.';
 
   return (
     <AppShell user={{ name: user.name, email: user.email, role: user.role }} isAdmin={user.role === 'admin'}>
@@ -80,7 +82,7 @@ export default async function DrillsPage() {
               }))}
             />
 
-            {/* recent sessions — full history, comfortably wide */}
+            {/* recent sessions, full history, comfortably wide */}
             <section className="qf-card p-5 anim-slide-up">
               <div className="section-head">
                 <span className="icon-tile-sm icon-tile-info">
@@ -136,7 +138,7 @@ export default async function DrillsPage() {
                 <h2>Weak areas</h2>
               </div>
               {weak.length === 0 ? (
-                <div className="qf-empty">
+                <div className="qf-empty !py-8">
                   <span className="empty-emoji">💪</span>
                   <p className="text-sm font-black">Drill more to reveal your weak spots</p>
                   <p className="mt-1 text-xs text-faint font-semibold">After 10+ answers in a mode, accuracy tracking kicks in.</p>
@@ -179,7 +181,7 @@ export default async function DrillsPage() {
                 <p className="text-sm font-black leading-snug">+5 XP per session · +2 per correct · daily cap 15</p>
               </div>
               <p className="mt-3 text-xs text-muted font-semibold leading-relaxed">
-                Every saved session counts toward your daily goal and level — short consistent reps beat marathon cramming.
+                Every saved session counts toward your daily goal and level, short consistent reps beat marathon cramming.
               </p>
             </section>
 
@@ -192,10 +194,12 @@ export default async function DrillsPage() {
                 <h2>Training tips</h2>
               </div>
               <ul className="space-y-2">
-                {TIPS.map(t => (
-                  <li key={t} className="flex items-start gap-2 text-xs text-muted font-semibold leading-relaxed">
-                    <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-accent shrink-0" aria-hidden />
-                    {t}
+                {TIPS.map((t, i) => (
+                  <li key={t} className="flex items-start gap-2.5 rounded-xl bg-surface-2/50 border border-border/60 px-3 py-2">
+                    <span className={'icon-tile-sm !h-6 !w-6 !rounded-lg ' + MODE_TILES[i % MODE_TILES.length]}>
+                      <Lightbulb className="!h-3.5 !w-3.5" />
+                    </span>
+                    <span className="text-xs text-muted font-semibold leading-relaxed">{t}</span>
                   </li>
                 ))}
               </ul>

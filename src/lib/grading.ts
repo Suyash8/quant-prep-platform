@@ -2,6 +2,8 @@ import type { QuizQuestion } from '@/lib/content';
 
 function norm(s: string): string {
   // Line-aware: trim each line, collapse intra-line whitespace, drop trailing blank lines.
+
+
   return s.replace(/\r\n/g, '\n')
     .split('\n')
     .map(l => l.trim().replace(/[ \t]+/g, ' '))
@@ -49,6 +51,8 @@ export function gradeAnswer(q: QuizQuestion, a: unknown): boolean {
 
 export function sanitizedForClient(q: QuizQuestion) {
   // strip all answer material before sending to the browser
+
+
   const { answerIndex, answerIndices, answer, tolerance, modelAnswer, keywords, ...safe } = q as QuizQuestion & Record<string, unknown>;
   return safe;
 }

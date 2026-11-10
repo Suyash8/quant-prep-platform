@@ -10,19 +10,18 @@ agent-browser eval "(function(){var e=document.querySelector('input[type=email]'
 sleep 0.4
 agent-browser click "button[type=submit]" >/dev/null 2>&1; sleep 3
 
-shot(){ agent-browser open "$BASE$2" >/dev/null 2>&1; sleep 2.2; agent-browser screenshot "$OUT/$1.png" --full >/dev/null 2>&1; echo "$1:$( [ -s "$OUT/$1.png" ] && echo OK || echo FAIL )"; }
+shot(){ agent-browser open "$BASE$2" >/dev/null 2>&1; sleep 3.5; agent-browser screenshot "$OUT/$1.png" --full >/dev/null 2>&1; echo "$1:$( [ -s "$OUT/$1.png" ] && echo OK || echo FAIL )"; }
 
-ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 # Get real IDs from content map + companies (skip missing files gracefully)
 LESSON=$(python3 -c "
 import json
-m=json.load(open('${ROOT_DIR}/content/map/curriculum.json'))
+m=json.load(open('/home/z/my-project/content/map/curriculum.json'))
 l=m['phases'][0]['modules'][0]['lessons'][0]
 print(l['id'] if isinstance(l,dict) else l)" 2>/dev/null)
-PROB=$(ls "${ROOT_DIR}/content/problems"/*.json 2>/dev/null | head -1 | xargs -r basename | sed 's/\.json$//')
-ASSESS=$(ls "${ROOT_DIR}/content/assessments"/*.json 2>/dev/null | head -1 | xargs -r basename | sed 's/\.json$//')
-PROJ=$(ls "${ROOT_DIR}/content/projects"/*.json 2>/dev/null | head -1 | xargs -r basename | sed 's/\.json$//')
-CAREER=$(ls "${ROOT_DIR}/content/companies"/*.json 2>/dev/null | grep -v matrix | head -1 | xargs -r basename | sed 's/\.json$//')
+PROB=$(ls /home/z/my-project/content/problems/*.json 2>/dev/null | head -1 | xargs -r basename | sed 's/\.json$//')
+ASSESS=$(ls /home/z/my-project/content/assessments/*.json 2>/dev/null | head -1 | xargs -r basename | sed 's/\.json$//')
+PROJ=$(ls /home/z/my-project/content/projects/*.json 2>/dev/null | head -1 | xargs -r basename | sed 's/\.json$//')
+CAREER=$(ls /home/z/my-project/content/companies/*.json 2>/dev/null | grep -v matrix | head -1 | xargs -r basename | sed 's/\.json$//')
 echo "IDs: lesson=$LESSON prob=$PROB assess=$ASSESS proj=$PROJ career=$CAREER"
 
 shot landing /

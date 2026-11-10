@@ -4,37 +4,107 @@
   "title": "Instruction Sets, Registers and Pipelines",
   "estMinutes": 26,
   "difficulty": "core",
-  "prereqs": ["cf-execution-model"],
+  "prereqs": [
+    "cf-execution-model"
+  ],
   "objectives": [
     "Explain what an instruction set architecture (ISA) is and how compiled C++ maps onto registers and instructions",
     "Name the roles of the main x86-64 registers (RAX, RDI, RSI, RDX, RSP, RIP) and trace a small function through them",
     "Compute pipeline throughput and latency for a k-stage pipeline with no stalls",
     "Classify stalls into data, structural and control hazards and explain why control hazards are the costliest"
   ],
-  "motivation": "A profiler says your pricing hot path spends 12 ms where you budgeted 4 ms. Before you can reason about that gap you must know what the CPU actually does all day: it fetches, decodes and executes instructions drawn from a fixed instruction set, using registers as scratch space and a pipeline to overlap work. This lesson builds that mental model - the foundation for the cache, branch-prediction and SIMD lessons that follow.",
+  "motivation": "A profiler says your pricing hot path spends 12 ms where you budgeted 4 ms. Before you can reason about that gap you must know what the CPU actually does all day: it fetches, decodes and executes instructions drawn from a fixed instruction set, using registers as scratch space and a pipeline to overlap work. This lesson builds that mental model, the foundation for the cache, branch-prediction and SIMD lessons that follow.",
   "blocks": [
-    { "type": "h2", "text": "From C++ to the machine's own language" },
-    { "type": "p", "md": "A C++ compiler translates your source into **machine code**: a sequence of instructions in the CPU's **instruction set architecture** (ISA). The ISA is a contract - which registers exist, how instructions are encoded as bytes, and what each one does. x86-64 (Intel/AMD servers) and ARM64 (AWS Graviton, Apple Silicon) are different ISAs: the same C++ compiles to different bytes but identical behaviour. Nothing in the ISA knows about 'variables' - there are only registers, memory addresses and operations on them." },
-    { "type": "code", "lang": "cpp", "code": "long add3(long a, long b, long c) {\n    return a + b * c;\n}", "caption": "Three lines of C++; all that survives compilation is register arithmetic." },
-    { "type": "code", "lang": "text", "code": "add3(long, long, long):\n        mov     rax, rsi        ; rax = b\n        imul    rax, rdx        ; rax = b * c\n        add     rax, rdi        ; rax = a + b*c\n        ret", "caption": "x86-64 output at -O2 (System V ABI): arguments arrive in rdi, rsi, rdx; the result leaves in rax." },
-    { "type": "p", "md": "The **registers** are the CPU's named scratch slots, inside the core with sub-nanosecond access. RAX typically holds arithmetic results and the return value; RDI, RSI and RDX carry the first integer arguments; RSP tracks the stack; RIP holds the address of the instruction currently being fetched. Values a function uses often live entirely in registers - memory is touched only to load inputs, spill overflow, or store results. So when you ask 'how long does this code run', you are really asking two smaller questions: how many instructions does it execute, and where do their operands live?" },
-    { "type": "table", "headers": ["Register", "Usual role (x86-64, System V)"], "rows": [
-      ["RAX", "Arithmetic accumulator; holds the return value"],
-      ["RDI, RSI, RDX", "First, second and third integer arguments"],
-      ["RSP", "Stack pointer - top of the current stack frame"],
-      ["RIP", "Instruction pointer - address of the next instruction to fetch"]
-    ] },
-    { "type": "h2", "text": "Fetch, decode, execute - pipelined" },
-    { "type": "p", "md": "Every instruction passes through stages: **fetch** from the instruction cache, **decode** into internal operations, **execute** on a functional unit, then **write back** the result. A naive machine would finish one instruction before starting the next. A **pipeline** overlaps them like an assembly line: while instruction 6 executes, instruction 5 writes back, instruction 4 computes its address, and instruction 7 is already being fetched. Once the pipe is full, one instruction *completes* every cycle, even though each individual instruction still travels through all five stages." },
-    { "type": "steps", "title": "Worked example: pipelined vs serial at 4 GHz", "items": [
-      "A 5-stage pipeline processes $n = 1000$ instructions. The first completes after 5 cycles; afterwards one completes per cycle: $5 + 999 = 1004$ cycles total.",
-      "At 4 GHz one cycle is $0.25$ ns, so the pipelined run takes $1004 \\times 0.25 \\approx 251$ ns.",
-      "Serial execution would need $1000 \\times 5 = 5000$ cycles $\\approx 1250$ ns - the pipeline bought a $\\approx 5\\times$ throughput gain for free.",
-      "The gain survives only while the pipe stays full. Anything that leaves the next instruction or its operands unknown forces a **stall**."
-    ] },
-    { "type": "p", "md": "Three hazard families cause stalls. A **data hazard** appears when an instruction needs a result still being computed - mostly hidden by forwarding paths and register renaming. A **structural hazard** appears when two instructions need the same functional unit in the same cycle. The **control hazard** is the expensive one: at a conditional branch the CPU does not know which instruction to fetch next until the branch resolves, which is many cycles downstream. Waiting is unacceptable, so the core *guesses* the next address - hardware branch prediction, the subject of a later lesson in this module." },
-    { "type": "callout", "variant": "quant", "title": "Convert budgets into cycles", "md": "At 4 GHz a 10 µs decision budget is $40{,}000$ cycles - roughly tens of thousands of machine instructions at around one completion per cycle. This arithmetic is how hot-path owners decide whether a pricing update fits before the next tick arrives, and why performance engineers read assembly rather than trusting source-level intuition." },
-    { "type": "interactive", "component": "MemoryLayout", "params": { "segments": ["stack", "heap", "data", "text"] }, "caption": "The loader maps your program into segments; the instruction pointer walks the text segment, one machine instruction at a time." }
+    {
+      "type": "h2",
+      "text": "From C++ to the machine's own language"
+    },
+    {
+      "type": "p",
+      "md": "A C++ compiler translates your source into **machine code**: a sequence of instructions in the CPU's **instruction set architecture** (ISA). The ISA is a contract, which registers exist, how instructions are encoded as bytes, and what each one does. x86-64 (Intel/AMD servers) and ARM64 (AWS Graviton, Apple Silicon) are different ISAs: the same C++ compiles to different bytes but identical behaviour. Nothing in the ISA knows about 'variables', there are only registers, memory addresses and operations on them."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "long add3(long a, long b, long c) {\n    return a + b * c;\n}",
+      "caption": "Three lines of C++; all that survives compilation is register arithmetic."
+    },
+    {
+      "type": "code",
+      "lang": "text",
+      "code": "add3(long, long, long):\n        mov     rax, rsi        ; rax = b\n        imul    rax, rdx        ; rax = b * c\n        add     rax, rdi        ; rax = a + b*c\n        ret",
+      "caption": "x86-64 output at -O2 (System V ABI): arguments arrive in rdi, rsi, rdx; the result leaves in rax."
+    },
+    {
+      "type": "p",
+      "md": "The **registers** are the CPU's named scratch slots, inside the core with sub-nanosecond access. RAX typically holds arithmetic results and the return value; RDI, RSI and RDX carry the first integer arguments; RSP tracks the stack; RIP holds the address of the instruction currently being fetched. Values a function uses often live entirely in registers, memory is touched only to load inputs, spill overflow, or store results. So when you ask 'how long does this code run', you are really asking two smaller questions: how many instructions does it execute, and where do their operands live?"
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Register",
+        "Usual role (x86-64, System V)"
+      ],
+      "rows": [
+        [
+          "RAX",
+          "Arithmetic accumulator; holds the return value"
+        ],
+        [
+          "RDI, RSI, RDX",
+          "First, second and third integer arguments"
+        ],
+        [
+          "RSP",
+          "Stack pointer, top of the current stack frame"
+        ],
+        [
+          "RIP",
+          "Instruction pointer, address of the next instruction to fetch"
+        ]
+      ]
+    },
+    {
+      "type": "h2",
+      "text": "Fetch, decode, execute, pipelined"
+    },
+    {
+      "type": "p",
+      "md": "Every instruction passes through stages: **fetch** from the instruction cache, **decode** into internal operations, **execute** on a functional unit, then **write back** the result. A naive machine would finish one instruction before starting the next. A **pipeline** overlaps them like an assembly line: while instruction 6 executes, instruction 5 writes back, instruction 4 computes its address, and instruction 7 is already being fetched. Once the pipe is full, one instruction *completes* every cycle, even though each individual instruction still travels through all five stages."
+    },
+    {
+      "type": "steps",
+      "title": "Worked example: pipelined vs serial at 4 GHz",
+      "items": [
+        "A 5-stage pipeline processes $n = 1000$ instructions. The first completes after 5 cycles; afterwards one completes per cycle: $5 + 999 = 1004$ cycles total.",
+        "At 4 GHz one cycle is $0.25$ ns, so the pipelined run takes $1004 \\times 0.25 \\approx 251$ ns.",
+        "Serial execution would need $1000 \\times 5 = 5000$ cycles $\\approx 1250$ ns, the pipeline bought a $\\approx 5\\times$ throughput gain for free.",
+        "The gain survives only while the pipe stays full. Anything that leaves the next instruction or its operands unknown forces a **stall**."
+      ]
+    },
+    {
+      "type": "p",
+      "md": "Three hazard families cause stalls. A **data hazard** appears when an instruction needs a result still being computed, mostly hidden by forwarding paths and register renaming. A **structural hazard** appears when two instructions need the same functional unit in the same cycle. The **control hazard** is the expensive one: at a conditional branch the CPU does not know which instruction to fetch next until the branch resolves, which is many cycles downstream. Waiting is unacceptable, so the core *guesses* the next address, hardware branch prediction, the subject of a later lesson in this module."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Convert budgets into cycles",
+      "md": "At 4 GHz a 10 µs decision budget is $40{,}000$ cycles, roughly tens of thousands of machine instructions at around one completion per cycle. This arithmetic is how hot-path owners decide whether a pricing update fits before the next tick arrives, and why performance engineers read assembly rather than trusting source-level intuition."
+    },
+    {
+      "type": "interactive",
+      "component": "MemoryLayout",
+      "params": {
+        "segments": [
+          "stack",
+          "heap",
+          "data",
+          "text"
+        ]
+      },
+      "caption": "The loader maps your program into segments; the instruction pointer walks the text segment, one machine instruction at a time."
+    }
   ],
   "guidedExercise": {
     "prompt": "A hot loop body contains 2 ALU instructions and the loop overhead costs 3 more (increment, compare, jump). The loop runs 2,000,000 iterations. (a) Count the total instructions executed. (b) At 4 GHz with IPC 1 (one instruction completing per cycle), how long does the loop take in milliseconds? (c) What would a superscalar core with IPC 3 achieve?",
@@ -42,7 +112,7 @@
       "The overhead instructions run every iteration, not once per loop.",
       "Time = instructions / (IPC × clock rate)."
     ],
-    "solution": "(a) $5 \\times 2{,}000{,}000 = 10{,}000{,}000$ instructions. (b) At IPC 1 that is $10^7$ cycles: $10^7 / (4 \\times 10^9 \\ \\text{Hz}) = 2.5$ ms. (c) At IPC 3: $10^7 / 3 \\approx 3.33 \\times 10^6$ cycles $\\approx 0.83$ ms - the superscalar core roughly triples throughput while the instructions are independent."
+    "solution": "(a) $5 \\times 2{,}000{,}000 = 10{,}000{,}000$ instructions. (b) At IPC 1 that is $10^7$ cycles: $10^7 / (4 \\times 10^9 \\ \\text{Hz}) = 2.5$ ms. (c) At IPC 3: $10^7 / 3 \\approx 3.33 \\times 10^6$ cycles $\\approx 0.83$ ms, the superscalar core roughly triples throughput while the instructions are independent."
   },
   "independentExercise": {
     "prompt": "A 5-stage pipelined core runs a function of 1,000,000 instructions. 4% of those instructions are branches, and 1 in 5 of the branches is mispredicted, flushing the pipeline for 18 cycles each time. (a) How many mispredicts occur? (b) How many cycles does the function take in total, including the 4-cycle pipeline fill? (c) Convert the total to microseconds at 4 GHz.",
@@ -54,9 +124,9 @@
   },
   "commonMistakes": [
     "Equating the ISA with the implementation: x86-64 is the contract, while Zen 4 or Raptor Lake are microarchitectures that implement the same contract differently.",
-    "Assuming one C++ statement maps to one instruction - a single line may compile to dozens of instructions or be folded away entirely at -O2.",
+    "Assuming one C++ statement maps to one instruction, a single line may compile to dozens of instructions or be folded away entirely at -O2.",
     "Forgetting loop overhead (increment, compare, jump) when estimating instruction counts for hot loops.",
-    "Believing all program data lives in registers - only the hottest values do; everything else is loaded from and stored back to memory."
+    "Believing all program data lives in registers, only the hottest values do; everything else is loaded from and stored back to memory."
   ],
   "realWorldApplication": "Compiler engineers, profiler authors and performance consultants work at exactly this level daily: deciding whether a function is ALU-bound or load-bound means reading the instruction mix the compiler emitted, not the source code.",
   "quantFinanceApplication": "Order-gateway and pricing hot paths are budgeted in cycles at fixed clock rates; translating a 10 µs tick-to-trade slice into roughly 40,000 cycles is the everyday arithmetic that decides whether a new feature fits.",
@@ -64,14 +134,19 @@
     "The ISA (x86-64, ARM64) is the contract between compiler and CPU: registers, instruction encodings and their semantics.",
     "Hot values live in registers with sub-nanosecond access: RAX returns results, RDI/RSI/RDX carry arguments, RIP walks the text segment.",
     "A $k$-stage pipeline completes instruction $n$ after about $(k-1) + n$ cycles, giving near-one-instruction-per-cycle throughput.",
-    "Hazards - data, structural and control - stall the pipeline; control hazards from branches are the costliest and motivate hardware prediction."
+    "Hazards, data, structural and control, stall the pipeline; control hazards from branches are the costliest and motivate hardware prediction."
   ],
   "quiz": [
     {
       "id": "q1",
       "type": "mcq",
       "prompt": "In the x86-64 System V calling convention, where must a callee place its integer return value?",
-      "options": ["RAX", "RDI", "RSP", "RIP"],
+      "options": [
+        "RAX",
+        "RDI",
+        "RSP",
+        "RIP"
+      ],
       "answerIndex": 0,
       "explanation": "The caller expects the result in RAX. RDI, RSI and RDX carry the first three integer arguments in; RSP manages the stack; RIP holds the next instruction address."
     },
@@ -93,7 +168,7 @@
         "Two instructions needing the multiplier in the same cycle"
       ],
       "answerIndex": 1,
-      "explanation": "Control hazards come from not knowing *which* instruction to fetch next - exactly the conditional-branch case. The others are a data hazard, a memory stall and a structural hazard."
+      "explanation": "Control hazards come from not knowing *which* instruction to fetch next, exactly the conditional-branch case. The others are a data hazard, a memory stall and a structural hazard."
     },
     {
       "id": "q4",
@@ -113,8 +188,11 @@
         "Hazards can force stalls that reduce throughput below one completion per cycle",
         "Every stage always finishes in one cycle regardless of cache misses"
       ],
-      "answerIndices": [0, 2],
-      "explanation": "Pipelines overlap work but leave the ISA untouched, and hazards - including memory stalls from cache misses - break the one-completion-per-cycle ideal."
+      "answerIndices": [
+        0,
+        2
+      ],
+      "explanation": "Pipelines overlap work but leave the ISA untouched, and hazards, including memory stalls from cache misses, break the one-completion-per-cycle ideal."
     },
     {
       "id": "q6",
@@ -127,15 +205,43 @@
     }
   ],
   "flashcards": [
-    { "type": "definition", "front": "What is an instruction set architecture (ISA)?", "back": "The CPU's contract with software: the registers, instruction encodings and their semantics. x86-64 and ARM64 are different ISAs; Zen 4 and Raptor Lake are different implementations of the same x86-64 ISA." },
-    { "type": "formula", "front": "Cycles for n instructions through a k-stage pipeline with no stalls", "back": "$(k - 1) + n$ cycles: fill the pipe once, then one instruction completes per cycle." },
-    { "type": "concept", "front": "Name the three pipeline hazard families", "back": "Data (operand not ready yet), structural (two instructions need the same unit), control (next fetch address unknown - conditional branches)." },
-    { "type": "code-output", "front": "What does the instruction `lea rax, [rdi + rsi]` compute?", "back": "rax = rdi + rsi - address arithmetic reused as a fast three-operand add." }
+    {
+      "type": "definition",
+      "front": "What is an instruction set architecture (ISA)?",
+      "back": "The CPU's contract with software: the registers, instruction encodings and their semantics. x86-64 and ARM64 are different ISAs; Zen 4 and Raptor Lake are different implementations of the same x86-64 ISA."
+    },
+    {
+      "type": "formula",
+      "front": "Cycles for n instructions through a k-stage pipeline with no stalls",
+      "back": "$(k - 1) + n$ cycles: fill the pipe once, then one instruction completes per cycle."
+    },
+    {
+      "type": "concept",
+      "front": "Name the three pipeline hazard families",
+      "back": "Data (operand not ready yet), structural (two instructions need the same unit), control (next fetch address unknown, conditional branches)."
+    },
+    {
+      "type": "code-output",
+      "front": "What does the instruction `lea rax, [rdi + rsi]` compute?",
+      "back": "rax = rdi + rsi, address arithmetic reused as a fast three-operand add."
+    }
   ],
   "references": [
-    { "label": "Agner Fog - Optimization manuals (instruction tables, microarchitecture)", "url": "https://www.agner.org/optimize/" },
-    { "label": "Compiler Explorer - see what your compiler emits", "url": "https://godbolt.org/" },
-    { "label": "Wikipedia - Instruction set architecture", "url": "https://en.wikipedia.org/wiki/Instruction_set_architecture" }
+    {
+      "label": "Agner Fog: Optimization manuals (instruction tables, microarchitecture)",
+      "url": "https://www.agner.org/optimize/"
+    },
+    {
+      "label": "Compiler Explorer: see what your compiler emits",
+      "url": "https://godbolt.org/"
+    },
+    {
+      "label": "Wikipedia: Instruction set architecture",
+      "url": "https://en.wikipedia.org/wiki/Instruction_set_architecture"
+    }
   ],
-  "skills": ["computer-architecture", "cpp-performance"]
+  "skills": [
+    "computer-architecture",
+    "cpp-performance"
+  ]
 }

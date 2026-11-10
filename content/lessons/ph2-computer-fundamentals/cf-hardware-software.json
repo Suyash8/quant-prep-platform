@@ -11,7 +11,7 @@
     "Order the memory hierarchy by speed and cost and explain why the gap between CPU and main memory shapes software design",
     "Distinguish system software from application software and place the kernel, compilers and trading applications in that stack"
   ],
-  "motivation": "Your backtest just doubled its speed after someone moved a data structure - and nothing about the algorithm changed. To reason about performance at all you need a mental model of the machine that runs your code: what the hardware actually does, where data sits, and which layer of software is responsible when something is slow or broken. This lesson builds that model before we descend into binary, integers and program execution.",
+  "motivation": "Your backtest just doubled its speed after someone moved a data structure, and nothing about the algorithm changed. To reason about performance at all you need a mental model of the machine that runs your code: what the hardware actually does, where data sits, and which layer of software is responsible when something is slow or broken. This lesson builds that model before we descend into binary, integers and program execution.",
   "blocks": [
     {
       "type": "h2",
@@ -23,7 +23,7 @@
     },
     {
       "type": "p",
-      "md": "The physical recipe has three main parts. The **central processing unit (CPU)** executes instructions: it contains the **control unit** that decides what to do next, the **arithmetic logic unit (ALU)** that does the arithmetic, and **registers** - a few dozen tiny, extremely fast storage cells holding the values currently being worked on. **Main memory (RAM)** holds the running program and its data as a flat array of addressable bytes: byte 0, byte 1, byte 2, and so on up to the installed size. **Input/output (I/O)** devices - disks, network cards, keyboards - move data in and out. A modern server packs many CPU cores onto one chip; each core is an independent executor with its own registers."
+      "md": "The physical recipe has three main parts. The **central processing unit (CPU)** executes instructions: it contains the **control unit** that decides what to do next, the **arithmetic logic unit (ALU)** that does the arithmetic, and **registers**, a few dozen tiny, extremely fast storage cells holding the values currently being worked on. **Main memory (RAM)** holds the running program and its data as a flat array of addressable bytes: byte 0, byte 1, byte 2, and so on up to the installed size. **Input/output (I/O)** devices, disks, network cards, keyboards, move data in and out. A modern server packs many CPU cores onto one chip; each core is an independent executor with its own registers."
     },
     {
       "type": "interactive",
@@ -32,21 +32,45 @@
         "totalBytes": 16,
         "bytesPerRow": 8
       },
-      "caption": "Main memory is a flat array of addressable bytes - address 0 first, then 1, 2, 3... Programs name locations by those numeric addresses."
+      "caption": "Main memory is a flat array of addressable bytes, address 0 first, then 1, 2, 3... Programs name locations by those numeric addresses."
     },
     {
       "type": "p",
-      "md": "Because speed differs enormously between these parts, engineers rank them in a **memory hierarchy**: registers answer in under a nanosecond, main memory in roughly a hundred, an SSD in tens of microseconds, the network in tens to hundreds of microseconds. Each level down is larger and cheaper per byte, but slower - and the gap between the top and the bottom is a factor of thousands. Most performance engineering, including in trading systems, is the art of keeping the data a computation needs as high in this hierarchy as possible."
+      "md": "Because speed differs enormously between these parts, engineers rank them in a **memory hierarchy**: registers answer in under a nanosecond, main memory in roughly a hundred, an SSD in tens of microseconds, the network in tens to hundreds of microseconds. Each level down is larger and cheaper per byte, but slower, and the gap between the top and the bottom is a factor of thousands. Most performance engineering, including in trading systems, is the art of keeping the data a computation needs as high in this hierarchy as possible."
     },
     {
       "type": "table",
-      "headers": ["Component", "Role", "Rough scale (modern servers)"],
+      "headers": [
+        "Component",
+        "Role",
+        "Rough scale (modern servers)"
+      ],
       "rows": [
-        ["CPU core", "Fetches and executes instructions", "~10^9 clock cycles per second"],
-        ["Registers", "Hold values in active use", "dozens per core, sub-nanosecond access"],
-        ["Main memory (RAM)", "Working storage for programs and data", "gigabytes, ~100 ns access"],
-        ["SSD storage", "Persistent data", "terabytes, ~100 microseconds"],
-        ["Network", "Other machines", "~10-100 microseconds inside a datacentre"]
+        [
+          "CPU core",
+          "Fetches and executes instructions",
+          "~10^9 clock cycles per second"
+        ],
+        [
+          "Registers",
+          "Hold values in active use",
+          "dozens per core, sub-nanosecond access"
+        ],
+        [
+          "Main memory (RAM)",
+          "Working storage for programs and data",
+          "gigabytes, ~100 ns access"
+        ],
+        [
+          "SSD storage",
+          "Persistent data",
+          "terabytes, ~100 microseconds"
+        ],
+        [
+          "Network",
+          "Other machines",
+          "~10-100 microseconds inside a datacentre"
+        ]
       ]
     },
     {
@@ -55,18 +79,18 @@
     },
     {
       "type": "p",
-      "md": "A CPU core lives in a loop called the **fetch-decode-execute cycle**. It fetches the instruction its **program counter (PC)** points at, decodes what that instruction wants, executes it (often in the ALU), and moves the PC forward. A 3 GHz core ticks 3 billion cycles per second, and with pipelining a modern core can retire one to four instructions per cycle - so 'billions of small operations per second, per core' is the right mental scale."
+      "md": "A CPU core lives in a loop called the **fetch-decode-execute cycle**. It fetches the instruction its **program counter (PC)** points at, decodes what that instruction wants, executes it (often in the ALU), and moves the PC forward. A 3 GHz core ticks 3 billion cycles per second, and with pipelining a modern core can retire one to four instructions per cycle, so 'billions of small operations per second, per core' is the right mental scale."
     },
     {
       "type": "steps",
       "title": "Worked example: one line of trading code",
       "items": [
         "The statement `position += qty * price;` becomes several machine instructions.",
-        "Load `qty` from RAM into a register - around 100 ns if it is not already in cache.",
-        "Load `price` into another register - another potential ~100 ns.",
-        "Multiply inside the ALU - well under 1 ns.",
-        "Add the product to `position`, already in a register - again under 1 ns.",
-        "Store the result back to RAM - one more trip across the hierarchy."
+        "Load `qty` from RAM into a register, around 100 ns if it is not already in cache.",
+        "Load `price` into another register, another potential ~100 ns.",
+        "Multiply inside the ALU, well under 1 ns.",
+        "Add the product to `position`, already in a register, again under 1 ns.",
+        "Store the result back to RAM, one more trip across the hierarchy."
       ]
     },
     {
@@ -85,22 +109,22 @@
     },
     {
       "type": "p",
-      "md": "Hardware alone can do nothing useful; software arranges itself in layers. **Firmware** is the first code that runs when a machine powers on, waking enough of the hardware to find an operating system. The **operating system (OS) kernel** - Linux on nearly every trading server - then referees everything: it schedules which programs get CPU time, gives each program its own private memory, and is the only software allowed to talk directly to devices. Above it sit **libraries** (reusable code such as a market-data parsing library), **compilers and interpreters** (programs that turn your source code into something executable), and finally **applications** - your backtester, your feed handler, the exchange's matching engine."
+      "md": "Hardware alone can do nothing useful; software arranges itself in layers. **Firmware** is the first code that runs when a machine powers on, waking enough of the hardware to find an operating system. The **operating system (OS) kernel**. Linux on nearly every trading server, then referees everything: it schedules which programs get CPU time, gives each program its own private memory, and is the only software allowed to talk directly to devices. Above it sit **libraries** (reusable code such as a market-data parsing library), **compilers and interpreters** (programs that turn your source code into something executable), and finally **applications**, your backtester, your feed handler, the exchange's matching engine."
     },
     {
       "type": "list",
       "ordered": false,
       "items": [
-        "**System software**: kernel, device drivers, compilers, shells - software whose job is to make the machine usable by other software.",
-        "**Application software**: programs serving users or businesses - a strategy engine, a risk dashboard, a spreadsheet.",
-        "**The boundary is enforced**: applications cannot touch devices or other processes' memory directly; they must ask the kernel - a preview of the system-call lesson later in this phase."
+        "**System software**: kernel, device drivers, compilers, shells, software whose job is to make the machine usable by other software.",
+        "**Application software**: programs serving users or businesses, a strategy engine, a risk dashboard, a spreadsheet.",
+        "**The boundary is enforced**: applications cannot touch devices or other processes' memory directly; they must ask the kernel, a preview of the system-call lesson later in this phase."
       ]
     },
     {
       "type": "code",
       "lang": "bash",
       "code": "uname -sr            # kernel currently running, e.g. 'Linux 6.8.0'\nlscpu | head -n 12   # CPU model, cores and clock speed of this machine\nfree -h              # installed RAM in human-readable units",
-      "caption": "Three commands to meet your machine. Output varies by box - run them."
+      "caption": "Three commands to meet your machine. Output varies by box, run them."
     },
     {
       "type": "p",
@@ -113,7 +137,7 @@
       "Register access is faster than RAM, which is faster than any persistent device.",
       "The ALU does arithmetic in well under a nanosecond."
     ],
-    "solution": "Fastest first: (3) register access, sub-nanosecond; (2) ALU checksum, order of a nanosecond; (1) RAM reads, order of 100 ns each; (4) the SSD append, order of 100 microseconds - thousands of times slower than everything else. The pattern generalises: compute cheaply, but every trip down the memory hierarchy is expensive."
+    "solution": "Fastest first: (3) register access, sub-nanosecond; (2) ALU checksum, order of a nanosecond; (1) RAM reads, order of 100 ns each; (4) the SSD append, order of 100 microseconds, thousands of times slower than everything else. The pattern generalises: compute cheaply, but every trip down the memory hierarchy is expensive."
   },
   "independentExercise": {
     "prompt": "A backtest loop runs 1,000,000,000 iterations. Each iteration spends 100 ns waiting on one main-memory access and 5 ns on arithmetic. (1) Estimate the total runtime in seconds. (2) After restructuring so the access hits cache in 4 ns (arithmetic unchanged), estimate the new runtime and the speedup factor.",
@@ -124,12 +148,12 @@
     "solution": "(1) Per iteration: 100 + 5 = 105 ns; total = 10^9 x 105 ns = 1.05 x 10^11 ns = 105 s. (2) Per iteration: 4 + 5 = 9 ns; total = 9 x 10^9 ns = 9 s. Speedup = 105 / 9, about 11.7x. The memory access, not the arithmetic, was the bottleneck."
   },
   "commonMistakes": [
-    "Judging performance by CPU speed alone - memory movement usually dominates real workloads.",
+    "Judging performance by CPU speed alone, memory movement usually dominates real workloads.",
     "Treating RAM and disk as interchangeable: RAM is volatile working memory, SSDs are persistent and thousands of times slower.",
-    "Thinking applications talk to hardware directly - every device access is arbitrated by the kernel.",
+    "Thinking applications talk to hardware directly, every device access is arbitrated by the kernel.",
     "Forgetting that the compiler, the shell and the OS kernel are themselves just programs running on the same hardware."
   ],
-  "realWorldApplication": "Production systems are tuned against this hierarchy daily: hot order-path data is kept cache-resident, reference data in RAM, historical ticks on SSD, archives on cold storage - each choice traceable to the latency scales in this lesson.",
+  "realWorldApplication": "Production systems are tuned against this hierarchy daily: hot order-path data is kept cache-resident, reference data in RAM, historical ticks on SSD, archives on cold storage, each choice traceable to the latency scales in this lesson.",
   "quantFinanceApplication": "Latency budgets are expressed in exactly these units: 10 microseconds is roughly 30,000 cycles at 3 GHz, which is why 'where does this byte live' is a trading decision, not a detail.",
   "summary": [
     "A computer is a stored-program machine: instructions live in memory as ordinary bytes, which is what makes software possible.",
@@ -181,15 +205,22 @@
         "The g++ compiler",
         "A market-data feed handler"
       ],
-      "answerIndices": [0, 2],
+      "answerIndices": [
+        0,
+        2
+      ],
       "explanation": "The kernel and compilers exist to make the machine usable by other software; the library and the feed handler serve an application's business purpose."
     },
     {
       "id": "q5",
       "type": "short",
       "prompt": "In one or two sentences, why does the stored-program concept matter?",
-      "modelAnswer": "Instructions are stored in the same memory as data, so a computer changes behaviour by loading new bytes rather than being rewired. That is what makes software - swappable, updatable programs - possible at all.",
-      "keywords": ["memory", "data", "instruction"],
+      "modelAnswer": "Instructions are stored in the same memory as data, so a computer changes behaviour by loading new bytes rather than being rewired. That is what makes software, swappable, updatable programs, possible at all.",
+      "keywords": [
+        "memory",
+        "data",
+        "instruction"
+      ],
       "explanation": "The single idea that programs are just data in memory underlies compilers, operating systems and everything built on them."
     }
   ],
@@ -202,7 +233,7 @@
     {
       "type": "concept",
       "front": "Describe the fetch-decode-execute cycle.",
-      "back": "Fetch the instruction at the program counter, decode what it requests, execute it (often in the ALU), advance the PC - repeated billions of times per second."
+      "back": "Fetch the instruction at the program counter, decode what it requests, execute it (often in the ALU), advance the PC, repeated billions of times per second."
     },
     {
       "type": "concept",
@@ -217,7 +248,7 @@
   ],
   "references": [
     {
-      "label": "Wikipedia - Von Neumann architecture",
+      "label": "Wikipedia: Von Neumann architecture",
       "url": "https://en.wikipedia.org/wiki/Von_Neumann_architecture"
     },
     {
@@ -225,5 +256,7 @@
       "url": "https://gist.github.com/jboner/2841832"
     }
   ],
-  "skills": ["computer-fundamentals"]
+  "skills": [
+    "computer-fundamentals"
+  ]
 }

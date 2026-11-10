@@ -40,6 +40,8 @@ export function BlackScholesLab({ params }: { params: Record<string, unknown> })
   const isCall = ((params.type as string) ?? 'call') === 'call';
   const bs = blackScholes(S, K, r, vol, T, isCall);
   // price curve across spot
+
+
   const Smin = Math.max(K * 0.4, 1), Smax = K * 1.6;
   const priceSeries: { s: number; p: number; pay: number }[] = [];
   for (let i = 0; i <= 200; i++) {
@@ -140,7 +142,7 @@ export function GreeksLab({ params }: { params: Record<string, unknown> }) {
     { label: 'Rho ρ/1% rate', value: bs.rho, desc: 'sensitivity to interest rate' },
   ];
   return (
-    <LabFrame title="The Greeks (European call)" caption="Move spot/vol/maturity and watch second-order behaviour: gamma is largest near the strike with short maturity — exactly where hedging is hardest.">
+    <LabFrame title="The Greeks (European call)" caption="Move spot/vol/maturity and watch second-order behaviour: gamma is largest near the strike with short maturity, exactly where hedging is hardest.">
       <div className="grid sm:grid-cols-5 gap-2 mb-3">
         {grid.map(g => (
           <div key={g.label} className="border rounded-lg p-2.5 text-center" title={g.desc}>
@@ -206,6 +208,8 @@ export function EfficientFrontier({ params }: { params: Record<string, unknown> 
   const [rho, setRho] = React.useState((params.rho as number) ?? 0.3);
   const [wA, setWA] = React.useState(0.5);
   const rA = 8, rB = 4; // % expected returns
+
+
   const vol = (w: number) => Math.sqrt((w * sigmaA) ** 2 + ((1 - w) * sigmaB) ** 2 + 2 * w * (1 - w) * rho * sigmaA * sigmaB);
   const ret = (w: number) => w * rA + (1 - w) * rB;
   const maxSig = Math.max(sigmaA, sigmaB) * 1.1;
@@ -218,7 +222,7 @@ export function EfficientFrontier({ params }: { params: Record<string, unknown> 
   }
   const cur = { v: vol(wA), r: ret(wA) };
   return (
-    <LabFrame title="Two-asset efficient frontier" caption={`At w_A=${(wA * 100).toFixed(0)}%: σ=${fmt(cur.v, 2)}%, E[r]=${fmt(cur.r, 2)}%. Note the dip: with ρ<1, blending assets beats holding either alone — the mathematical heart of diversification.`}>
+    <LabFrame title="Two-asset efficient frontier" caption={`At w_A=${(wA * 100).toFixed(0)}%: σ=${fmt(cur.v, 2)}%, E[r]=${fmt(cur.r, 2)}%. Note the dip: with ρ<1, blending assets beats holding either alone, the mathematical heart of diversification.`}>
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto">
         <line x1={P} y1={mapY(3)} x2={W - P} y2={mapY(3)} stroke={FAINT} />
         <polyline fill="none" stroke={MUTED} strokeWidth={1.2} strokeDasharray="4 3" points={pts.join(' ')} />
@@ -256,6 +260,8 @@ export function BinomialTreeLab({ params }: { params: Record<string, unknown> })
     const dt = 1 / periods;
     const R = Math.exp(rate * dt);
     const p = (R - d) / (u - d); // risk-neutral
+
+
     for (let i = 0; i <= periods; i++) {
       const level: { s: number; v: number }[] = [];
       for (let j = 0; j <= i; j++) {
@@ -271,6 +277,8 @@ export function BinomialTreeLab({ params }: { params: Record<string, unknown> })
         const s = levels[i][j].s;
         const intrinsic = isCall ? Math.max(s - K, 0) : Math.max(K - s, 0);
         levels[i][j].v = cont; // European for the lab; lesson covers American
+
+
       }
     }
     return { levels, p };
@@ -352,7 +360,7 @@ export function OrderBookVisual({ params }: { params: Record<string, unknown> })
   const maxQty = Math.max(...bids.map(b => b[1]), ...asks.map(a => a[1]), 1);
   const rowH = 26;
   return (
-    <LabFrame title="Limit order book (Level 2 depth)" caption={`Best bid ${fmt(bestBid)} × ${fmt(bids[0]?.[1] ?? 0, 0)} — best ask ${fmt(bestAsk)} × ${fmt(asks[0]?.[1] ?? 0, 0)}. Spread ${fmt(spread)}, mid ${fmt(mid)}.`}>
+    <LabFrame title="Limit order book (Level 2 depth)" caption={`Best bid ${fmt(bestBid)} × ${fmt(bids[0]?.[1] ?? 0, 0)}, best ask ${fmt(bestAsk)} × ${fmt(asks[0]?.[1] ?? 0, 0)}. Spread ${fmt(spread)}, mid ${fmt(mid)}.`}>
       <div className="grid grid-cols-2 gap-4 max-w-md mx-auto text-xs">
         <div>
           <div className="text-center font-medium mb-1 text-success">Bids</div>
@@ -448,7 +456,7 @@ function simulate(orders: { side: string; qty: number; price: number }[]) {
         if (fill < o.qty) bids.push({ price: o.price, qty: o.qty - fill, seq });
       } else {
         bids.push({ price: o.price, qty: o.qty, seq });
-        note = 'no cross — resting on bid side';
+        note = 'no cross, resting on bid side';
       }
     } else {
       bids.sort((a, b) => b.price - a.price || a.seq - b.seq);
@@ -460,7 +468,7 @@ function simulate(orders: { side: string; qty: number; price: number }[]) {
         if (fill < o.qty) asks.push({ price: o.price, qty: o.qty - fill, seq });
       } else {
         asks.push({ price: o.price, qty: o.qty, seq });
-        note = 'no cross — resting on ask side';
+        note = 'no cross, resting on ask side';
       }
     }
     return { trade, note };

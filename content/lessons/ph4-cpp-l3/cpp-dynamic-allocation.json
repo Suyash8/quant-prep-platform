@@ -4,14 +4,16 @@
   "title": "Dynamic Allocation: new, delete and malloc",
   "estMinutes": 27,
   "difficulty": "core",
-  "prereqs": ["cpp-storage-duration"],
+  "prereqs": [
+    "cpp-storage-duration"
+  ],
   "objectives": [
     "Explain the two-step mechanics of new (allocation then construction) and delete (destruction then release)",
     "Compare malloc/free with new/delete across construction, type safety and failure behaviour",
     "Apply the matching rules (new/delete, new[]/delete[], malloc/free) and explain why mixing them is undefined behaviour",
     "Handle allocation failure correctly using std::bad_alloc and std::nothrow"
   ],
-  "motivation": "Order books, ring buffers and price caches are all sized at runtime, so real systems allocate on the heap constantly. C++ hands you two allocation families - the C legacy malloc/free and the C++ new/delete expressions - and every ownership bug in the next lessons traces back to a misunderstanding of exactly one of them. Getting allocation mechanics, matching rules and failure modes right is the price of admission for everything that follows.",
+  "motivation": "Order books, ring buffers and price caches are all sized at runtime, so real systems allocate on the heap constantly. C++ hands you two allocation families, the C legacy malloc/free and the C++ new/delete expressions, and every ownership bug in the next lessons traces back to a misunderstanding of exactly one of them. Getting allocation mechanics, matching rules and failure modes right is the price of admission for everything that follows.",
   "blocks": [
     {
       "type": "h2",
@@ -19,22 +21,46 @@
     },
     {
       "type": "p",
-      "md": "**malloc** comes from C: you ask for a number of raw bytes, it returns a void* to uninitialised memory (or a null pointer on failure), and nothing else happens - no constructor runs, no type is recorded. **new** is a C++ expression that does two things: it allocates enough bytes for the type (with correct alignment) and then *runs the constructor*, returning a properly typed T*. Correspondingly **free** just releases bytes, while **delete** runs the destructor first and then releases. A useful mental model: new = operator new (a malloc-like raw allocator) + constructor; delete = destructor + operator delete."
+      "md": "**malloc** comes from C: you ask for a number of raw bytes, it returns a void* to uninitialised memory (or a null pointer on failure), and nothing else happens, no constructor runs, no type is recorded. **new** is a C++ expression that does two things: it allocates enough bytes for the type (with correct alignment) and then *runs the constructor*, returning a properly typed T*. Correspondingly **free** just releases bytes, while **delete** runs the destructor first and then releases. A useful mental model: new = operator new (a malloc-like raw allocator) + constructor; delete = destructor + operator delete."
     },
     {
       "type": "table",
-      "headers": ["Property", "malloc / free", "new / delete"],
+      "headers": [
+        "Property",
+        "malloc / free",
+        "new / delete"
+      ],
       "rows": [
-        ["Returns", "void* to raw bytes", "T* to a constructed object"],
-        ["Constructs objects", "no", "yes"],
-        ["Failure behaviour", "returns NULL, sets errno", "throws std::bad_alloc"],
-        ["Size argument", "you count the bytes", "compiler computes sizeof(T)"],
-        ["Release", "free(ptr)", "delete ptr (dtor runs first)"]
+        [
+          "Returns",
+          "void* to raw bytes",
+          "T* to a constructed object"
+        ],
+        [
+          "Constructs objects",
+          "no",
+          "yes"
+        ],
+        [
+          "Failure behaviour",
+          "returns NULL, sets errno",
+          "throws std::bad_alloc"
+        ],
+        [
+          "Size argument",
+          "you count the bytes",
+          "compiler computes sizeof(T)"
+        ],
+        [
+          "Release",
+          "free(ptr)",
+          "delete ptr (dtor runs first)"
+        ]
       ]
     },
     {
       "type": "h2",
-      "text": "What new actually does - and what delete undoes"
+      "text": "What new actually does, and what delete undoes"
     },
     {
       "type": "p",
@@ -52,7 +78,7 @@
     },
     {
       "type": "p",
-      "md": "Plain new does not return null on failure - it **throws std::bad_alloc**. Writing `if (p == nullptr)` after a plain new is dead code. If you want the C-style contract, ask for it explicitly with `new (std::nothrow)`, which returns a null pointer on failure and lets you check. malloc keeps its C behaviour: NULL plus errno. One further subtlety: requesting zero bytes with new is legal and returns a unique, valid, non-null pointer that must still be deleted."
+      "md": "Plain new does not return null on failure, it **throws std::bad_alloc**. Writing `if (p == nullptr)` after a plain new is dead code. If you want the C-style contract, ask for it explicitly with `new (std::nothrow)`, which returns a null pointer on failure and lets you check. malloc keeps its C behaviour: NULL plus errno. One further subtlety: requesting zero bytes with new is legal and returns a unique, valid, non-null pointer that must still be deleted."
     },
     {
       "type": "code",
@@ -64,15 +90,15 @@
       "type": "callout",
       "variant": "pitfall",
       "title": "Mixing families is undefined behaviour",
-      "md": "free()ing a pointer you got from new skips the destructor and confuses two different allocators; delete-ing malloc'd memory corrupts the heap. The matching rules are absolute: new\u2194delete, new[]\u2194delete[], malloc\u2194free. Using plain delete on a new[] array is a classic silent corruption: the cookie is ignored, only one element is destroyed, and the rest of the heap degrades unpredictably."
+      "md": "free()ing a pointer you got from new skips the destructor and confuses two different allocators; delete-ing malloc'd memory corrupts the heap. The matching rules are absolute: new↔delete, new[]↔delete[], malloc↔free. Using plain delete on a new[] array is a classic silent corruption: the cookie is ignored, only one element is destroyed, and the rest of the heap degrades unpredictably."
     },
     {
       "type": "h2",
-      "text": "When to reach for the heap - and when not to"
+      "text": "When to reach for the heap, and when not to"
     },
     {
       "type": "p",
-      "md": "Dynamic allocation is the right tool when the size is known only at runtime, when the object must outlive the scope that creates it, or when the data is too big for the stack. But the default answer in modern C++ is neither new nor malloc - it is a container or smart pointer that calls new for you. `std::vector<Fill>` gives you runtime sizing with automatic cleanup; `std::unique_ptr<Fill>` (next lessons) gives you single-owner heap objects with zero manual deletes. Raw new/delete in application code is a code smell, kept only for library internals and interfacing with C."
+      "md": "Dynamic allocation is the right tool when the size is known only at runtime, when the object must outlive the scope that creates it, or when the data is too big for the stack. But the default answer in modern C++ is neither new nor malloc, it is a container or smart pointer that calls new for you. `std::vector<Fill>` gives you runtime sizing with automatic cleanup; `std::unique_ptr<Fill>` (next lessons) gives you single-owner heap objects with zero manual deletes. Raw new/delete in application code is a code smell, kept only for library internals and interfacing with C."
     },
     {
       "type": "callout",
@@ -85,9 +111,41 @@
       "component": "MemoryLayout",
       "params": {
         "regions": [
-          { "name": "stack frame: main", "objects": [{ "label": "p (8 B pointer)", "size": 8 }, { "label": "names (8 B pointer)", "size": 8 }] },
-          { "name": "heap: new int(42)", "objects": [{ "label": "int object (4 B)", "size": 4 }] },
-          { "name": "heap: new string[3]", "objects": [{ "label": "cookie: element count (hidden)", "size": 8 }, { "label": "std::string x3 (32 B each)", "size": 96 }] }
+          {
+            "name": "stack frame: main",
+            "objects": [
+              {
+                "label": "p (8 B pointer)",
+                "size": 8
+              },
+              {
+                "label": "names (8 B pointer)",
+                "size": 8
+              }
+            ]
+          },
+          {
+            "name": "heap: new int(42)",
+            "objects": [
+              {
+                "label": "int object (4 B)",
+                "size": 4
+              }
+            ]
+          },
+          {
+            "name": "heap: new string[3]",
+            "objects": [
+              {
+                "label": "cookie: element count (hidden)",
+                "size": 8
+              },
+              {
+                "label": "std::string x3 (32 B each)",
+                "size": 96
+              }
+            ]
+          }
         ]
       },
       "caption": "new[] hides an element-count cookie in front of the array; delete[] reads it to know how many destructors to run."
@@ -100,7 +158,7 @@
       "An exception skips every statement between the allocation and the end of the function.",
       "If the answer to (c) is no, the resource must be bound to something whose destructor runs during unwinding."
     ],
-    "solution": "(a) The caller owns it: the function transfers ownership on return, which must be documented (or better, expressed in the type - return `std::unique_ptr<double[]>`). (b) The exception propagates out of process() and `buf` is simply lost: the heap block is unreachable but never freed - a **leak on every feed error**, and in a storm of feed errors the process dies of memory exhaustion. (c) Not robustly: you could wrap the call in try/catch, delete buf, and rethrow - but every future edit of the function must preserve that pattern; one early return added later re-opens the leak. (d) Return `std::vector<double>(n)` or `std::unique_ptr<double[]> buf = std::make_unique<double[]>(n)`: the destructor runs during stack unwinding, so no path can leak. This is RAII, formalised two lessons ahead."
+    "solution": "(a) The caller owns it: the function transfers ownership on return, which must be documented (or better, expressed in the type, return `std::unique_ptr<double[]>`). (b) The exception propagates out of process() and `buf` is simply lost: the heap block is unreachable but never freed, a **leak on every feed error**, and in a storm of feed errors the process dies of memory exhaustion. (c) Not solidly: you could wrap the call in try/catch, delete buf, and rethrow, but every future edit of the function must preserve that pattern; one early return added later re-opens the leak. (d) Return `std::vector<double>(n)` or `std::unique_ptr<double[]> buf = std::make_unique<double[]>(n)`: the destructor runs during stack unwinding, so no path can leak. This is RAII, formalised two lessons ahead."
   },
   "independentExercise": {
     "prompt": "An instrument cache holds up to N = 500,000 PriceLevel structs, where `struct PriceLevel { double px; long qty; };` (double: 8 bytes, long: 8 bytes). (a) How many bytes does `new PriceLevel[N]` request for the elements? (b) How many bytes does the equivalent malloc call request? (c) Which expression releases the new[] allocation correctly? (d) State precisely what goes wrong if plain `delete` (no brackets) is used instead. (e) On failure, what does `new PriceLevel[N]` do versus `new (std::nothrow) PriceLevel[N]`?",
@@ -109,20 +167,20 @@
       "(b) malloc takes the byte count you compute yourself.",
       "(e) plain new throws a specific exception type on failure."
     ],
-    "solution": "(a) 500,000 \u00d7 16 = **8,000,000 bytes** (about 7.63 MiB). (b) The same 8,000,000 bytes - malloc is given `500000 * sizeof(PriceLevel)`; the difference is not size but that no constructors run and you get a void*. (c) `delete[] levels;` - the array form must match the array form. (d) Undefined behaviour: without the brackets only the *first* element (or none, for POD) is considered destroyed, the cookie is ignored, and the heap state becomes corrupted - typically crashing later, somewhere unrelated. (e) Plain new throws **std::bad_alloc** on failure; the nothrow form returns nullptr, which is the only version where a null check is meaningful."
+    "solution": "(a) 500,000 × 16 = **8,000,000 bytes** (about 7.63 MiB). (b) The same 8,000,000 bytes, malloc is given `500000 * sizeof(PriceLevel)`; the difference is not size but that no constructors run and you get a void*. (c) `delete[] levels;` - the array form must match the array form. (d) Undefined behaviour: without the brackets only the *first* element (or none, for POD) is considered destroyed, the cookie is ignored, and the heap state becomes corrupted - typically crashing later, somewhere unrelated. (e) Plain new throws **std::bad_alloc** on failure; the nothrow form returns nullptr, which is the only version where a null check is meaningful."
   },
   "commonMistakes": [
     "Checking for nullptr after a plain new: plain new throws std::bad_alloc instead of returning null; the check is dead code.",
-    "Pairing new[] with delete (no brackets), or free() with new - mismatched release is undefined behaviour.",
+    "Pairing new[] with delete (no brackets), or free() with new, mismatched release is undefined behaviour.",
     "Believing delete is 'the same as free plus nothing': delete runs the destructor first, which is the entire point for class types.",
-    "Computing malloc sizes by hand and forgetting alignment - new aligns automatically, malloc requires you to request aligned sizes yourself.",
+    "Computing malloc sizes by hand and forgetting alignment, new aligns automatically, malloc requires you to request aligned sizes yourself.",
     "Requesting zero elements and assuming the pointer is null: new T[0] is valid, non-null, and must still be delete[]'d."
   ],
-  "realWorldApplication": "Every runtime-sized structure in a trading system - message buffers, book levels, fill logs - is born from new or a container that calls it. Understanding allocation mechanics is required reading before touching a memory pool or a custom allocator.",
-  "quantFinanceApplication": "A market-data gateway pre-allocates a 64 MB message buffer with new[] at start-up: one 64 MB bad_alloc consideration at boot, zero allocations on the hot path afterwards - allocation policy *is* latency policy.",
+  "realWorldApplication": "Every runtime-sized structure in a trading system, message buffers, book levels, fill logs, is born from new or a container that calls it. Understanding allocation mechanics is required reading before touching a memory pool or a custom allocator.",
+  "quantFinanceApplication": "A market-data gateway pre-allocates a 64 MB message buffer with new[] at start-up: one 64 MB bad_alloc consideration at boot, zero allocations on the hot path afterwards, allocation policy *is* latency policy.",
   "summary": [
     "new = allocate + construct (returns T*, throws std::bad_alloc); delete = destruct + release; malloc/free handle raw bytes with a NULL failure contract.",
-    "Matching rules are absolute: new\u2194delete, new[]\u2194delete[], malloc\u2194free - mixing them is undefined behaviour.",
+    "Matching rules are absolute: new↔delete, new[]↔delete[], malloc↔free, mixing them is undefined behaviour.",
     "new[] records the element count (the cookie) so delete[] runs every element's destructor exactly once.",
     "std::nothrow (or try/catch around bad_alloc) is the correct way to handle allocation failure; checking a plain new against nullptr is dead code.",
     "Prefer containers and smart pointers, which perform dynamic allocation internally with guaranteed cleanup; raw new/delete belongs in library internals."
@@ -157,14 +215,14 @@
       "language": "cpp",
       "code": "#include <iostream>\nint main() {\n    int* a = new int[3]{};\n    a[1] = 5;\n    std::cout << a[0] << a[1] << a[2] << \"\\n\";\n    delete[] a;\n    int* b = new int{9};\n    std::cout << *b << \"\\n\";\n    delete b;\n}",
       "answer": "050\n9",
-      "explanation": "new int[3]{} value-initialises every element to 0, so after a[1] = 5 the elements are 0, 5, 0 - printed as 050. The single object new int{9} is value-initialised to 9."
+      "explanation": "new int[3]{} value-initialises every element to 0, so after a[1] = 5 the elements are 0, 5, 0, printed as 050. The single object new int{9} is value-initialised to 9."
     },
     {
       "id": "q4",
       "type": "numeric",
       "prompt": "On a platform where sizeof(int) == 4, how many bytes does the element storage of `new int[100]` occupy (ignore any implementation cookie)?",
       "answer": 400,
-      "explanation": "100 elements \u00d7 4 bytes = 400 bytes. Implementations may add a hidden cookie for the element count, but the elements themselves occupy 400 bytes."
+      "explanation": "100 elements × 4 bytes = 400 bytes. Implementations may add a hidden cookie for the element count, but the elements themselves occupy 400 bytes."
     },
     {
       "id": "q5",
@@ -172,12 +230,12 @@
       "prompt": "An array was created with `auto* s = new std::string[10];`. Which release is correct, and what happens with the wrong one?",
       "options": [
         "delete s; the wrong one merely leaks",
-        "delete[] s; plain delete is undefined behaviour - only one element is destroyed and the heap may corrupt",
+        "delete[] s; plain delete is undefined behaviour, only one element is destroyed and the heap may corrupt",
         "free(s); free is the universal release for heap blocks",
         "Both delete and delete[] are fine for arrays of POD types only"
       ],
       "answerIndex": 1,
-      "explanation": "new[] must pair with delete[]: the bracket form reads the element-count cookie and destroys all 10 strings. Plain delete destroys (at most) one and releases the block once - undefined behaviour with real consequences for non-trivial types."
+      "explanation": "new[] must pair with delete[]: the bracket form reads the element-count cookie and destroys all 10 strings. Plain delete destroys (at most) one and releases the block once, undefined behaviour with real consequences for non-trivial types."
     },
     {
       "id": "q6",
@@ -189,7 +247,10 @@
         "new[] records the element count so delete[] can destroy all elements",
         "A plain new expression returns nullptr when the heap is exhausted"
       ],
-      "answerIndices": [0, 2],
+      "answerIndices": [
+        0,
+        2
+      ],
       "explanation": "delete on null is a guaranteed no-op, and the new[] cookie is what makes delete[] destroy every element. malloc memory pairs with free, and plain new throws std::bad_alloc on exhaustion rather than returning null."
     }
   ],
@@ -202,12 +263,12 @@
     {
       "type": "concept",
       "front": "The matching rules for allocation families",
-      "back": "new \u2194 delete, new[] \u2194 delete[], malloc \u2194 free. Any cross-pairing is undefined behaviour."
+      "back": "new ↔ delete, new[] ↔ delete[], malloc ↔ free. Any cross-pairing is undefined behaviour."
     },
     {
       "type": "code-output",
       "front": "What does `delete p;` do when p is nullptr?",
-      "back": "Nothing - a guaranteed safe no-op. That is why setting pointers to null after delete makes double deletes harmless."
+      "back": "Nothing, a guaranteed safe no-op. That is why setting pointers to null after delete makes double deletes harmless."
     },
     {
       "type": "definition",
@@ -216,9 +277,20 @@
     }
   ],
   "references": [
-    { "label": "cppreference — new expression", "url": "https://en.cppreference.com/w/cpp/language/new" },
-    { "label": "cppreference — delete expression", "url": "https://en.cppreference.com/w/cpp/language/delete" },
-    { "label": "cppreference — std::malloc", "url": "https://en.cppreference.com/w/cpp/memory/c/malloc" }
+    {
+      "label": "cppreference, new expression",
+      "url": "https://en.cppreference.com/w/cpp/language/new"
+    },
+    {
+      "label": "cppreference, delete expression",
+      "url": "https://en.cppreference.com/w/cpp/language/delete"
+    },
+    {
+      "label": "cppreference, std::malloc",
+      "url": "https://en.cppreference.com/w/cpp/memory/c/malloc"
+    }
   ],
-  "skills": ["cpp-memory"]
+  "skills": [
+    "cpp-memory"
+  ]
 }

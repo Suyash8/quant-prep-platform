@@ -46,9 +46,8 @@ export default async function ProblemPage({ params }: { params: Promise<{ slug: 
 
   return (
     <AppShell user={{ name: user.name, email: user.email, role: user.role }} isAdmin={user.role === 'admin'}>
-      <div className="flex flex-col lg:flex-row">
-        <div className="w-full lg:h-[calc(100vh-3.5rem)] lg:w-[46%] lg:overflow-y-auto thin-scroll border-r-2 border-border">
-          <div className="space-y-5 p-4 sm:p-5 lg:p-6">
+      <div className="max-w-6xl mx-auto">
+        <div className="p-4 sm:p-5 lg:p-6 space-y-5">
             {/* Statement panel */}
             <section className="qf-card p-5 sm:p-6">
               <div className="flex flex-wrap items-center gap-2">
@@ -149,15 +148,15 @@ export default async function ProblemPage({ params }: { params: Promise<{ slug: 
               </section>
             )}
 
-            <div className="pb-2">
+            <div className="pb-1">
               <Link href="/practice" className="btn3d btn3d-ghost btn3d-sm">
                 <ArrowLeft className="h-4 w-4" /> All problems
               </Link>
             </div>
           </div>
-        </div>
 
-        <div className="w-full lg:h-[calc(100vh-3.5rem)] lg:w-[54%]">
+        {/* workspace, full width below the statement, nothing clipped */}
+        <div className="px-4 pb-10 sm:px-5 lg:px-6">
           <CodeWorkspace slug={slug} stubs={stubs} examples={examples} timeLimitMs={problem.timeLimitMs} />
         </div>
       </div>

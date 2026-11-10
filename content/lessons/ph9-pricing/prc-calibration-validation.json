@@ -14,7 +14,7 @@
     "Calibrate a model to a multi-strike volatility surface and quantify fit with RMS error and vega-weighted sensitivities",
     "Run a model validation checklist covering assumption review, numerical convergence, P&L attribution and stress behaviour"
   ],
-  "motivation": "A broker sends your desk five option quotes. Black-Scholes is a forward machine - inputs in, price out - but the desk's day runs backwards: prices in, model parameters out. The volatility that makes the model reproduce each quote is the implied volatility, and the previous lesson built a surface out of exactly these numbers. Here we build the machinery underneath: a solver fast enough for intraday recalibration, a fallback that never diverges, and the validation checklist that decides whether anyone should trust the model at all.",
+  "motivation": "A broker sends your desk five option quotes. Black-Scholes is a forward machine, inputs in, price out, but the desk's day runs backwards: prices in, model parameters out. The volatility that makes the model reproduce each quote is the implied volatility, and the previous lesson built a surface out of exactly these numbers. Here we build the machinery underneath: a solver fast enough for intraday recalibration, a fallback that never diverges, and the validation checklist that decides whether anyone should trust the model at all.",
   "blocks": [
     {
       "type": "h2",
@@ -22,16 +22,16 @@
     },
     {
       "type": "p",
-      "md": "Black-Scholes is a *forward* problem: hand the model $S$, $K$, $r$, $T$ and a volatility $\\sigma$, and it returns a price. The market runs the other way: it hands you a traded price, and you need the model input that reproduces it. That inversion is the **implied volatility** - the unique $\\sigma$ solving $C_{\\mathrm{BS}}(\\sigma) = C_{\\mathrm{market}}$. There is no closed form for $\\sigma$, so this is a numerical root-finding problem - the same Newton-Raphson machinery from numerical analysis, pointed at a pricing function."
+      "md": "Black-Scholes is a *forward* problem: hand the model $S$, $K$, $r$, $T$ and a volatility $\\sigma$, and it returns a price. The market runs the other way: it hands you a traded price, and you need the model input that reproduces it. That inversion is the **implied volatility**, the unique $\\sigma$ solving $C_{\\mathrm{BS}}(\\sigma) = C_{\\mathrm{market}}$. There is no closed form for $\\sigma$, so this is a numerical root-finding problem, the same Newton-Raphson machinery from numerical analysis, pointed at a pricing function."
     },
     {
       "type": "math",
       "tex": "C_{\\mathrm{BS}}(\\sigma) = S\\,N(d_1) - K e^{-rT} N(d_2), \\quad d_{1,2} = \\frac{\\ln(S/K) + (r \\pm \\tfrac{1}{2}\\sigma^2)T}{\\sigma\\sqrt{T}}, \\quad \\text{vega} = \\frac{\\partial C_{\\mathrm{BS}}}{\\partial \\sigma} = S\\sqrt{T}\\,\\varphi(d_1)",
-      "caption": "The pricing map and its derivative. Newton's update: sigma_{n+1} = sigma_n - (C_BS(sigma_n) - C_market) / vega(sigma_n)."
+      "caption": "The pricing map and its derivative. Newton's update: sigma_{n+1} = sigma_n, (C_BS(sigma_n). C_market) / vega(sigma_n)."
     },
     {
       "type": "p",
-      "md": "Two facts make the inversion well-posed. First, the call price is **strictly increasing** in $\\sigma$ because vega $> 0$ for every $\\sigma > 0$: more uncertainty, more option value, so the root is unique. Second, no-arbitrage traps the price in the band $S - Ke^{-rT} < C_{\\mathrm{BS}} < S$. For our benchmark ($S=100$, $K=100$, $r=5\\%$, $T=1$) the band is $(4.8771,\\ 100)$, since $Ke^{-rT} = 95.1229$. Any quote inside it has exactly one implied vol; any quote outside it has none, and no solver should even try - a crossed or stale quote is a data problem, not a numerical one."
+      "md": "Two facts make the inversion well-posed. First, the call price is **strictly increasing** in $\\sigma$ because vega $> 0$ for every $\\sigma > 0$: more uncertainty, more option value, so the root is unique. Second, no-arbitrage traps the price in the band $S - Ke^{-rT} < C_{\\mathrm{BS}} < S$. For our benchmark ($S=100$, $K=100$, $r=5\\%$, $T=1$) the band is $(4.8771,\\ 100)$, since $Ke^{-rT} = 95.1229$. Any quote inside it has exactly one implied vol; any quote outside it has none, and no solver should even try, a crossed or stale quote is a data problem, not a numerical one."
     },
     {
       "type": "interactive",
@@ -109,7 +109,7 @@
       "type": "callout",
       "variant": "quant",
       "title": "Quadratic convergence, visible",
-      "md": "Watch the error shrink: $\\sigma$ starts $0.300$ away from the root, then the miss is $0.002260$, then $0.000001$, then below print precision. Each Newton step roughly squares the error, which is why a healthy solve costs three or four pricing calls - and why a solve suddenly needing fifty is a symptom, not bad luck."
+      "md": "Watch the error shrink: $\\sigma$ starts $0.300$ away from the root, then the miss is $0.002260$, then $0.000001$, then below print precision. Each Newton step roughly squares the error, which is why a healthy solve costs three or four pricing calls, and why a solve suddenly needing fifty is a symptom, not bad luck."
     },
     {
       "type": "h2",
@@ -174,7 +174,7 @@
     },
     {
       "type": "p",
-      "md": "One solved strike is a point; the desk needs a surface, so the same inversion runs once per strike and expiry. To keep every number checkable, the quotes below are **hypothetical, generated with Black-Scholes itself** at the implied vols listed - a controlled experiment, not market data. Running the solver on each quote recovers them exactly: RMS pricing error $0.00$. Note the smile: wings at 23.5% and 22.8% vol, ATM at 20%. A flat 20% vol would misprice this surface with RMS vol error $\\sqrt{\\tfrac{0.035^2 + 0.015^2 + 0 + 0.01^2 + 0.028^2}{5}} = 0.0216$, i.e. **2.16 vol points** - that is the fitting job in one number."
+      "md": "One solved strike is a point; the desk needs a surface, so the same inversion runs once per strike and expiry. To keep every number checkable, the quotes below are **hypothetical, generated with Black-Scholes itself** at the implied vols listed, a controlled experiment, not market data. Running the solver on each quote recovers them exactly: RMS pricing error $0.00$. Note the smile: wings at 23.5% and 22.8% vol, ATM at 20%. A flat 20% vol would misprice this surface with RMS vol error $\\sqrt{\\tfrac{0.035^2 + 0.015^2 + 0 + 0.01^2 + 0.028^2}{5}} = 0.0216$, i.e. **2.16 vol points**, that is the fitting job in one number."
     },
     {
       "type": "table",
@@ -235,7 +235,7 @@
       "ordered": false,
       "items": [
         "**Assumption review.** Black-Scholes assumes lognormal dynamics, constant $r$ and $\\sigma$, no dividends, continuous hedging and frictionless trading. Name where each bends: a smile with skew means the market's implied distribution has fatter tails than lognormal, so constant-$\\sigma$ pricing is already a documented approximation.",
-        "**Numerical convergence.** Re-price with a tighter solver tolerance, finer time grids, more Monte Carlo paths: the answer must stabilise. Log solver iterations - the benchmark needed four; a jump to fifty on the same surface flags vega death or a bad quote.",
+        "**Numerical convergence.** Re-price with a tighter solver tolerance, finer time grids, more Monte Carlo paths: the answer must stabilise. Log solver iterations, the benchmark needed four; a jump to fifty on the same surface flags vega death or a bad quote.",
         "**P&L attribution.** Revalue yesterday's book with today's inputs and explain the change. With delta $2{,}000$ shares and spot up $0.80$, delta P&L predicts $2{,}000 \\times 0.80 = 1{,}600$; if the desk booked $1{,}712$, the unprocessed $$ = \\$112 must be attributed to gamma, vega and theta. Persistent unexplained P&L means the model misdescribes the market, whatever its in-sample fit.",
         "**Stress behaviour.** Push inputs to extremes: as $\\sigma \\to 0$ the price must floor at $S - Ke^{-rT} = 4.8771$, never NaN; deep OTM short-dated quotes must route through the bisection fallback; a ten-sigma spot move should degrade gracefully, not explode."
       ]
@@ -244,7 +244,7 @@
       "type": "callout",
       "variant": "warn",
       "title": "Calibrated is not validated",
-      "md": "A model that reprices its calibration set perfectly has passed a necessary but insufficient test - the solver reproduces the very inputs you fitted to. Validation lives out of sample: held-out strikes and expiries, weeks of P&L attribution, stress runs. If the smile shifts tomorrow and your calibrated surface does not follow, no number of in-sample decimal places will save you."
+      "md": "A model that reprices its calibration set perfectly has passed a necessary but insufficient test, the solver reproduces the very inputs you fitted to. Validation lives out of sample: held-out strikes and expiries, weeks of P&L attribution, stress runs. If the smile shifts tomorrow and your calibrated surface does not follow, no number of in-sample decimal places will save you."
     },
     {
       "type": "h2",
@@ -260,21 +260,21 @@
       "type": "code",
       "lang": "cpp",
       "code": "// implied_vol.cpp - C++17 reference: Newton-Raphson implied volatility\n// with a bracketed bisection fallback. Compile: g++ -std=c++17 -O2 implied_vol.cpp\n#include <cmath>\n#include <cstdio>\n#include <stdexcept>\n\nconstexpr double kPi = std::acos(-1.0);\n\ndouble normCdf(double x) { return 0.5 * std::erfc(-x / std::sqrt(2.0)); }\ndouble normPdf(double x) { return std::exp(-0.5 * x * x) / std::sqrt(2.0 * kPi); }\n\nstruct Quote { double price, vega; };\n\nQuote bsCall(double S, double K, double r, double T, double sigma) {\n    double d1 = (std::log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * std::sqrt(T));\n    double d2 = d1 - sigma * std::sqrt(T);\n    double price = S * normCdf(d1) - K * std::exp(-r * T) * normCdf(d2);\n    return {price, S * std::sqrt(T) * normPdf(d1)};\n}\n\ndouble impliedVol(double price, double S, double K, double r, double T,\n                  double sigma0 = 0.5, double tol = 1e-10, int maxIter = 50) {\n    const double lo = 1e-9, hi = 5.0;\n    double pLo = bsCall(S, K, r, T, lo).price, pHi = bsCall(S, K, r, T, hi).price;\n    if (price <= pLo || price >= pHi)\n        throw std::invalid_argument(\"quote outside no-arbitrage band (S - K e^-rT, S)\");\n\n    double sigma = sigma0;\n    for (int it = 0; it < maxIter; ++it) {\n        Quote q = bsCall(S, K, r, T, sigma);\n        double nxt = sigma - (q.price - price) / q.vega;      // Newton step\n        if (q.vega < 1e-8 || nxt <= lo || nxt >= hi) break;   // safeguard -> bisection\n        std::printf(\"  newton  it=%d  sigma=%.6f  price=%.6f  resid=%+.6f  vega=%.4f\\n\",\n                    it, sigma, q.price, q.price - price, q.vega);\n        sigma = nxt;\n        if (std::fabs(q.price - price) < tol) return sigma;\n    }\n    std::printf(\"  falling back to bisection\\n\");\n    double a = lo, b = hi;\n    for (int it = 0; it < 200; ++it) {\n        double mid = 0.5 * (a + b);\n        if (bsCall(S, K, r, T, mid).price > price) b = mid; else a = mid;\n        if (b - a < 1e-12) break;\n    }\n    return 0.5 * (a + b);\n}\n\nint main() {\n    double vol = impliedVol(10.4506, 100.0, 100.0, 0.05, 1.0);\n    std::printf(\"sigma* = %.6f\\n\", vol);\n    double vol2 = impliedVol(0.0100, 100.0, 180.0, 0.05, 0.05);\n    std::printf(\"deep OTM: sigma* = %.6f\\n\", vol2);\n}",
-      "caption": "Same algorithm in C++17 - identical trace, sigma* = 0.200000, deep-OTM demo recovers 0.872877 (compiled with g++ -std=c++17 -O2 and run to verify)."
+      "caption": "Same algorithm in C++17, identical trace, sigma* = 0.200000, deep-OTM demo recovers 0.872877 (compiled with g++ -std=c++17 -O2 and run to verify)."
     },
     {
       "type": "ref",
       "items": [
         {
-          "label": "Wikipedia - Newton's method (convergence theory)",
+          "label": "Wikipedia: Newton's method (convergence theory)",
           "url": "https://en.wikipedia.org/wiki/Newton%27s_method"
         },
         {
-          "label": "cppreference - std::erf / std::erfc",
+          "label": "cppreference: std::erf / std::erfc",
           "url": "https://en.cppreference.com/w/cpp/numeric/math/erf"
         },
         {
-          "label": "Gatheral - The Volatility Surface: A Practitioner's Guide (Wiley)",
+          "label": "Gatheral: The Volatility Surface: A Practitioner's Guide (Wiley)",
           "url": "https://www.wiley.com/en-us/The+Volatility+Surface%3A+A+Practitioner%27s+Guide-p-9780471792512"
         }
       ]
@@ -289,7 +289,7 @@
     "solution": "Residual $= 14.2313 - 14.6813 = -0.4500$ (model below quote), so the correction is positive: $\\sigma_1 = 0.30 - \\tfrac{-0.45}{37.9433} = 0.30 + 0.011860 = 0.311860$. Solving to machine precision with bisection gives $\\sigma^{*} = 0.311861$ - a single Newton step already lands within $10^{-6}$ of the root."
   },
   "independentExercise": {
-    "prompt": "A 1-year $K=90$ call ($S=100$, $r=0.05$) is quoted at 17.20; the model at $\\sigma = 0.215$ prices it at 17.1154 with vega 28.2669. (a) Compute one Newton step. (b) The desk then revises the quote down by 0.20 to 17.00 - estimate the implied-vol move with vega alone, without re-solving.",
+    "prompt": "A 1-year $K=90$ call ($S=100$, $r=0.05$) is quoted at 17.20; the model at $\\sigma = 0.215$ prices it at 17.1154 with vega 28.2669. (a) Compute one Newton step. (b) The desk then revises the quote down by 0.20 to 17.00, estimate the implied-vol move with vega alone, without re-solving.",
     "hints": [
       "Residual $= 17.1154 - 17.20 = -0.0846$; divide by vega for the correction.",
       "Vega is $\\partial C / \\partial \\sigma$, so $\\Delta\\sigma \\approx \\Delta C_{\\mathrm{mkt}} / \\text{vega}$."
@@ -300,11 +300,11 @@
     "Iterating Newton on a quote outside the no-arbitrage band $(S - Ke^{-rT},\\ S)$ - there is no root, so the solver wanders forever. Reject the quote first, then solve.",
     "Forgetting the $e^{-rT}$ discount on the strike, or pairing $d_1$'s cumulative normal with the wrong leg of the price formula.",
     "Trusting Newton where vega is tiny (deep OTM, very short maturity) without a bracketed bisection fallback and an iterate clamp.",
-    "Calling a model validated because it reprices the strikes it was calibrated on - in-sample fit proves the solver, not the model.",
+    "Calling a model validated because it reprices the strikes it was calibrated on, in-sample fit proves the solver, not the model.",
     "Equal-weighting all strikes in calibration: low-vega wings carry huge vol uncertainty for tiny price noise and should be down-weighted."
   ],
-  "realWorldApplication": "Every options desk, risk system and VAR engine turns traded prices into implied vols at the start of each day; a calibrated surface plus a documented validation checklist - assumptions, convergence, P&L attribution, stress - is exactly what model-risk policies require before a model may quote or hedge.",
-  "quantFinanceApplication": "The solver pattern shown here - Newton with vega, a clamp plus bisection safeguard, and a no-arbitrage band check - mirrors what production libraries such as QuantLib implement in their implied-volatility helpers: invert each quote, fit the surface, then reprice daily and attribute P&L.",
+  "realWorldApplication": "Every options desk, risk system and VAR engine turns traded prices into implied vols at the start of each day; a calibrated surface plus a documented validation checklist, assumptions, convergence, P&L attribution, stress, is exactly what model-risk policies require before a model may quote or hedge.",
+  "quantFinanceApplication": "The solver pattern shown here. Newton with vega, a clamp plus bisection safeguard, and a no-arbitrage band check, mirrors what production libraries such as QuantLib implement in their implied-volatility helpers: invert each quote, fit the surface, then reprice daily and attribute P&L.",
   "summary": [
     "Implied volatility is the inverse problem: find $\\sigma$ with $C_{\\mathrm{BS}}(\\sigma) = C_{\\mathrm{market}}$; vega $> 0$ guarantees monotonicity and the band $(S - Ke^{-rT},\\ S)$ guarantees existence.",
     "Newton-Raphson with vega as the derivative converges quadratically: from 0.50, the benchmark quote solved to 0.200000 in three corrections, error $0.30 \\to 0.0023 \\to 10^{-6}$.",
@@ -321,10 +321,10 @@
         "the $\\sigma$ that makes the Black-Scholes price equal the observed market price",
         "the annualised standard deviation of the option's recent log returns",
         "the model's unbiased forecast of future realised volatility",
-        "the risk-free rate adjusted for the option's leverage"
+        "the risk-free rate adjusted for the option's use"
       ],
       "answerIndex": 0,
-      "explanation": "Implied vol is defined by inversion: solve $C_{\\mathrm{BS}}(\\sigma) = C_{\\mathrm{market}}$. It need not equal historical or future realised volatility - it is the market's current consensus priced through the model."
+      "explanation": "Implied vol is defined by inversion: solve $C_{\\mathrm{BS}}(\\sigma) = C_{\\mathrm{market}}$. It need not equal historical or future realised volatility, it is the market's current consensus priced through the model."
     },
     {
       "id": "q2",
@@ -390,12 +390,12 @@
     {
       "type": "formula",
       "front": "Newton-Raphson update for implied volatility",
-      "back": "sigma_{n+1} = sigma_n - (C_BS(sigma_n) - C_mkt) / vega(sigma_n), with vega = S*sqrt(T)*phi(d1)."
+      "back": "sigma_{n+1} = sigma_n, (C_BS(sigma_n). C_mkt) / vega(sigma_n), with vega = S*sqrt(T)*phi(d1)."
     },
     {
       "type": "concept",
       "front": "Bracket rule for the bisection fallback",
-      "back": "Find a, b with C_BS(a) < quote < C_BS(b). The call price rises monotonically from S - K*e^(-rT) to nearly S, so a just above 0 and b large (e.g. 5) brackets any in-band quote."
+      "back": "Find a, b with C_BS(a) < quote < C_BS(b). The call price rises monotonically from S. K*e^(-rT) to nearly S, so a just above 0 and b large (e.g. 5) brackets any in-band quote."
     },
     {
       "type": "concept",
@@ -405,20 +405,20 @@
     {
       "type": "formula",
       "front": "Bisection width after n halvings",
-      "back": "(b - a)/2^n. From [0.05, 1.0], 12 iterations leave width 0.95/2^12 = 0.000232."
+      "back": "(b, a)/2^n. From [0.05, 1.0], 12 iterations leave width 0.95/2^12 = 0.000232."
     }
   ],
   "references": [
     {
-      "label": "Wikipedia - Newton's method (quadratic convergence)",
+      "label": "Wikipedia: Newton's method (quadratic convergence)",
       "url": "https://en.wikipedia.org/wiki/Newton%27s_method"
     },
     {
-      "label": "Gatheral - The Volatility Surface: A Practitioner's Guide (Wiley)",
+      "label": "Gatheral: The Volatility Surface: A Practitioner's Guide (Wiley)",
       "url": "https://www.wiley.com/en-us/The+Volatility+Surface%3A+A+Practitioner%27s+Guide-p-9780471792512"
     },
     {
-      "label": "cppreference - std::erf / std::erfc",
+      "label": "cppreference: std::erf / std::erfc",
       "url": "https://en.cppreference.com/w/cpp/numeric/math/erf"
     }
   ],

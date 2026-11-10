@@ -52,7 +52,7 @@ export function ProbabilitySimulator({ params }: { params: Record<string, unknow
     : experiment === 'dice' ? `Expected mean: ${(((params.sides as number) ?? 6) + 1) / 2}`
     : `Expected return: ${fmt(((params.pBull as number) ?? 0.3) * ((params.rBull as number) ?? 0.02) + (1 - ((params.pBull as number) ?? 0.3)) * ((params.rBear as number) ?? -0.01), 4)}`;
   return (
-    <LabFrame title="Probability simulator" caption={`Empirical mean: ${fmt(result.mean, 4)}. ${expected}. As trials grow the empirical distribution converges — that IS the law of large numbers.`}>
+    <LabFrame title="Probability simulator" caption={`Empirical mean: ${fmt(result.mean, 4)}. ${expected}. As trials grow the empirical distribution converges, that IS the law of large numbers.`}>
       <div className="flex items-end gap-4">
         <svg viewBox={`0 0 ${W} 150`} className="flex-1 h-36">
           {keys.map((k, i) => {
@@ -83,6 +83,8 @@ export function DistributionViewer({ params }: { params: Record<string, unknown>
   const [mu, setMu] = React.useState((params.mu as number) ?? 0);
   const [sigma, setSigma] = React.useState((params.sigma as number) ?? 1);
   const [shade, setShade] = React.useState(2); // shade P(-shade, shade) in sigmas
+
+
   const toX = (x: number) => P + ((x - (mu - 4 * sigma)) / (8 * sigma || 1)) * (W - 2 * P);
   const toY = (p: number) => H - P - (p / 0.45) * (H - 2 * P);
   const pts: string[] = [];
@@ -142,7 +144,7 @@ export function RandomWalk({ params }: { params: Record<string, unknown> }) {
   const toX = (i: number) => P + (i / n) * (W - 2 * P);
   const toY = (v: number) => H - P - ((v - minY) / (maxY - minY || 1)) * (H - 2 * P);
   return (
-    <LabFrame title="Random walks (discrete)" caption="Each step is an independent random increment. Var grows linearly in time — the standard deviation grows like √t, the square-root-of-time rule." >
+    <LabFrame title="Random walks (discrete)" caption="Each step is an independent random increment. Var grows linearly in time, the standard deviation grows like √t, the square-root-of-time rule." >
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto">
         <line x1={P} y1={H - P} x2={W - P} y2={H - P} stroke={FAINT} />
         {data.map((walk, p) => (
@@ -170,6 +172,8 @@ export function BrownianMotion({ params }: { params: Record<string, unknown> }) 
     const rand = rng(seed);
     const norm = gaussian(rand);
     // GBM: dS = μS dt + σS dW  (Euler-Maruyama), S0 = 100
+
+
     const s: number[] = [100];
     for (let i = 1; i <= steps; i++) {
       const S = s[i - 1];
@@ -206,11 +210,13 @@ export function ConfidenceIntervalLab({ params }: { params: Record<string, unkno
   const half = z * se;
   const significant = Math.abs(diff) > half;
   // plotting window in units of se
+
+
   const lo = Math.min(diff - 2.5 * half, -half) - 0.2 * se;
   const hi = Math.max(diff + 2.5 * half, half) + 0.2 * se;
   const toX = (v: number) => P + ((v - lo) / (hi - lo || 1)) * (W - 2 * P);
   return (
-    <LabFrame title="Confidence interval vs zero" caption={`${Math.round(conf * 100)}% CI: [${fmt(diff - half, 4)}, ${fmt(diff + half, 4)}] (z=${fmt(z, 3)}, SE=${fmt(se, 4)}). The interval ${significant ? 'excludes' : 'contains'} zero — so at this level the difference is ${significant ? 'statistically detectable' : 'not distinguishable from noise'}.`}>
+    <LabFrame title="Confidence interval vs zero" caption={`${Math.round(conf * 100)}% CI: [${fmt(diff - half, 4)}, ${fmt(diff + half, 4)}] (z=${fmt(z, 3)}, SE=${fmt(se, 4)}). The interval ${significant ? 'excludes' : 'contains'} zero, so at this level the difference is ${significant ? 'statistically detectable' : 'not distinguishable from noise'}.`}>
       <svg viewBox={`0 0 ${W} 110`} className="w-full h-auto">
         <line x1={P} y1={62} x2={W - P} y2={62} stroke={FAINT} />
         <line x1={toX(0)} y1={30} x2={toX(0)} y2={94} stroke={MUTED} strokeDasharray="3 3" />
@@ -284,6 +290,8 @@ export function NormalConvergence({ params }: { params: Record<string, unknown> 
     for (let t = 0; t < trials; t++) {
       let s = 0;
       for (let i = 0; i < sampleSize; i++) s += rand(); // Uniform(0,1)
+
+
       means.push(s / sampleSize);
     }
     return means;
@@ -307,7 +315,7 @@ export function NormalConvergence({ params }: { params: Record<string, unknown> 
     bell.push(`${P + (i / 200) * (W - 2 * P)},${toY(c)}`);
   }
   return (
-    <LabFrame title="Central limit theorem in action" caption={`Distribution of means of ${sampleSize} Uniform(0,1) draws over ${trials.toLocaleString()} trials — empirical mean ${fmt(mean, 4)}, sd ${fmt(sd, 4)} (CLT predicts sd ${fmt(1 / Math.sqrt(12) / Math.sqrt(sampleSize), 4)}). The bell shape emerges regardless of the source distribution.`}>
+    <LabFrame title="Central limit theorem in action" caption={`Distribution of means of ${sampleSize} Uniform(0,1) draws over ${trials.toLocaleString()} trials, empirical mean ${fmt(mean, 4)}, sd ${fmt(sd, 4)} (CLT predicts sd ${fmt(1 / Math.sqrt(12) / Math.sqrt(sampleSize), 4)}). The bell shape emerges regardless of the source distribution.`}>
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto">
         {hist.map((c, i) => (
           <rect key={i} x={P + i * bw} y={toY(c)} width={bw - 1} height={H - P - toY(c)} fill={ACCENT} opacity={0.55} />
@@ -337,6 +345,8 @@ export function RegressionLab({ params }: { params: Record<string, unknown> }) {
       data.push([x, Math.sin(x) + (rand() * 2 - 1) * noise]);
     }
     // least squares polynomial fit via normal equations (deg <= 9, Gaussian elimination)
+
+
     const d = Math.min(deg, 9);
     const A: number[][] = Array.from({ length: d + 1 }, () => new Array(d + 2).fill(0));
     for (let r = 0; r <= d; r++) {
@@ -373,7 +383,7 @@ export function RegressionLab({ params }: { params: Record<string, unknown> }) {
     fitPath.push(`${toX(x)},${toY(pts.predict(x))}`);
   }
   return (
-    <LabFrame title="Least-squares fit" caption={`Degree ${deg} polynomial: R² = ${fmt(r2, 4)}. Push the degree high and R² keeps rising on the sample — that is overfitting, not understanding. Compare with the validation behaviour discussed in the lesson.`}>
+    <LabFrame title="Least-squares fit" caption={`Degree ${deg} polynomial: R² = ${fmt(r2, 4)}. Push the degree high and R² keeps rising on the sample, that is overfitting, not understanding. Compare with the validation behaviour discussed in the lesson.`}>
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto">
         <line x1={P} y1={toY(0)} x2={W - P} y2={toY(0)} stroke={FAINT} />
         {pts.data.map(([x, y], i) => <circle key={i} cx={toX(x)} cy={toY(y)} r={3} fill={MUTED} />)}

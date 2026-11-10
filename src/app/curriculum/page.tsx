@@ -7,7 +7,7 @@ import { Lock, Circle, CircleDot, CheckCircle2, Award, Map as MapIcon, List } fr
 import { CurriculumSearch } from '@/components/curriculum-search';
 import { LearningPath, resolvePhaseColor } from '@/components/gamified/learning-path';
 
-export const metadata = { title: 'Curriculum — QuantFoundry' };
+export const metadata = { title: 'Curriculum. QuantFoundry' };
 
 export default async function CurriculumPage({ searchParams }: { searchParams: Promise<{ view?: string }> }) {
   const { view } = await searchParams;
@@ -28,6 +28,8 @@ export default async function CurriculumPage({ searchParams }: { searchParams: P
   const totalEst = allLessons.filter(l => published.has(l.id)).reduce((n, l) => n + l.estMinutes, 0);
 
   // the recommended next lesson gets the START bubble on the path
+
+
   let currentLessonId: string | undefined;
   if (user) {
     currentLessonId = graph.order
@@ -42,7 +44,7 @@ export default async function CurriculumPage({ searchParams }: { searchParams: P
       <header className="mb-6">
         <h1 className="text-2xl font-black tracking-tight">The path</h1>
         <p className="mt-2 text-muted text-sm max-w-3xl leading-relaxed font-semibold">
-          {reg.lessons.length} published lessons across {map.phases.length} phases — roughly {Math.round(totalEst / 60)} hours of core lesson time,
+          {reg.lessons.length} published lessons across {map.phases.length} phases, roughly {Math.round(totalEst / 60)} hours of core lesson time,
           sequenced by a prerequisite graph. Every lesson is fully authored: intuition, formal treatment, interactive labs, exercises and a server-scored knowledge check.
         </p>
         {user && (

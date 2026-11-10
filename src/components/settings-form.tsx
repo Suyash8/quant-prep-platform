@@ -4,7 +4,7 @@ import * as React from 'react';
 import { useTheme } from 'next-themes';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
-import { Target, UserRound, Palette, ShieldCheck, LogOut, Monitor, Sun, Moon, Flame, Zap, Star, Trophy, Check } from 'lucide-react';
+import { Target, UserRound, Palette, ShieldCheck, LogOut, Monitor, Sun, Moon, Flame, Zap, Star, Trophy, Check, Accessibility, Keyboard, Sigma } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export function SettingsForm({ user }: { user: { name: string; email: string; role: string; memberSince?: string | Date } }) {
@@ -125,7 +125,7 @@ export function SettingsForm({ user }: { user: { name: string; email: string; ro
             <button
               onClick={saveName}
               disabled={busy || name === user.name}
-              className={cn('btn3d btn3d-sm shrink-0', name === user.name && !busy && 'btn3d-ghost')}
+              className='btn3d btn3d-sm shrink-0'
             >
               {busy ? 'Saving…' : name === user.name ? (<><Check className="h-3.5 w-3.5" /> Saved</>) : 'Save'}
             </button>
@@ -170,16 +170,24 @@ export function SettingsForm({ user }: { user: { name: string; email: string; ro
             );
           })}
         </div>
-        <p className="mt-4 text-xs font-semibold text-muted leading-relaxed bg-surface-2/60 rounded-xl px-3 py-2.5">
-          Reduced-motion preferences are respected, everything is keyboard-navigable with visible focus rings, and
-          mathematics stays selectable and searchable.
-        </p>
+        <ul className="mt-4 grid gap-2 text-xs font-semibold">
+          {[
+            { icon: Accessibility, text: 'Reduced-motion preferences are respected, animations tone down automatically.' },
+            { icon: Keyboard, text: 'Everything is keyboard-navigable with visible focus rings.' },
+            { icon: Sigma, text: 'Mathematics stays selectable, copyable and searchable.' },
+          ].map(row => (
+            <li key={row.text} className="flex items-center gap-2.5 rounded-xl bg-surface-2/60 border border-border/50 px-3 py-2.5">
+              <row.icon className="h-4 w-4 text-violet shrink-0" />
+              <span className="leading-relaxed">{row.text}</span>
+            </li>
+          ))}
+        </ul>
       </section>
 
       {/* privacy */}
       <section className="qf-card p-5 flex flex-col">
         <div className="flex items-center gap-3">
-          <span className="icon-tile-blue h-11 w-11"><ShieldCheck className="h-6 w-6" /></span>
+          <span className="icon-tile icon-tile-info h-11 w-11"><ShieldCheck className="h-6 w-6" /></span>
           <div>
             <h2 className="font-black">Data &amp; privacy</h2>
             <p className="text-xs font-semibold text-muted">Your data stays in this deployment</p>
@@ -187,10 +195,10 @@ export function SettingsForm({ user }: { user: { name: string; email: string; ro
         </div>
         <ul className="mt-4 space-y-2 text-sm font-semibold flex-1">
           {[
-            { k: 'Storage', v: 'This deployment’s own database — nothing leaves it' },
+            { k: 'Storage', v: 'This deployment’s own database, nothing leaves it' },
             { k: 'Passwords', v: 'Salted scrypt hashes, never plain text' },
             { k: 'Sessions', v: 'httpOnly cookies with signed ids' },
-            { k: 'Third parties', v: 'None — no analytics, no trackers, no ads' },
+            { k: 'Third parties', v: 'None, no analytics, no trackers, no ads' },
           ].map(row => (
             <li key={row.k} className="flex items-center justify-between gap-3 rounded-xl bg-surface-2/60 px-3 py-2">
               <span className="text-muted shrink-0">{row.k}</span>

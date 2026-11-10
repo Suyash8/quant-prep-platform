@@ -5,8 +5,7 @@ import { useEffect } from 'react';
 /**
  * Registers the service worker. In production the SW provides full offline
  * support (static assets + visited pages). In development it runs in a
- * dev-safe mode: network-first navigation with the offline notice only —
- * no asset caching, so Fast Refresh and recompiles behave normally.
+ * dev-safe mode: network-first navigation with the offline notice only, * no asset caching, so Fast Refresh and recompiles behave normally.
  */
 export function ServiceWorkerRegistrar() {
   useEffect(() => {
@@ -17,7 +16,7 @@ export function ServiceWorkerRegistrar() {
       navigator.serviceWorker
         .register(`/sw.js${isDev ? '?mode=dev' : ''}`, { scope: '/' })
         .catch(() => {
-          /* registration failure is non-fatal — the app works without offline support */
+          /* registration failure is non-fatal, the app works without offline support */
         });
     };
     if (document.readyState === 'complete') onLoad();

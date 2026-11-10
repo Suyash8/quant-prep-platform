@@ -45,7 +45,7 @@
     },
     {
       "type": "p",
-      "md": "After each event, print the top of book: the best bid, the best ask, and the spread (best ask minus best bid). Each of the three fields is printed as dollars with exactly 2 decimal places (integer cents divided by 100, e.g. 1005 -> 10.05). If a side has no resting orders print a single dash - in its place; the spread is printed only when both sides are present, otherwise it is also -."
+      "md": "After each event, print the top of book: the best bid, the best ask, and the spread (best ask minus best bid). Each of the three fields is printed as dollars with exactly 2 decimal places (integer cents divided by 100, e.g. 1005 -> 10.05). If a side has no resting orders print a single dash, in its place; the spread is printed only when both sides are present, otherwise it is also -."
     },
     {
       "type": "callout",
@@ -55,7 +55,7 @@
     }
   ],
   "inputFormat": "Line 1: the integer n (number of events). Each of the next n lines contains four whitespace-separated tokens: T side price qty where T is A or C, side is B or S, price is an integer number of cents (1 <= price <= 10^6), and qty is a positive integer (1 <= qty <= 10^6).",
-  "outputFormat": "Print n lines, one per event, in order. Each line has three space-separated fields: BEST_BID BEST_ASK SPREAD. Each field is either dollars with exactly 2 decimals (from integer cents) or the single character -. The spread field is - unless both a best bid and a best ask exist, in which case it is (best ask cents - best bid cents) printed as dollars with 2 decimals.",
+  "outputFormat": "Print n lines, one per event, in order. Each line has three space-separated fields: BEST_BID BEST_ASK SPREAD. Each field is either dollars with exactly 2 decimals (from integer cents) or the single character -. The spread field is, unless both a best bid and a best ask exist, in which case it is (best ask cents, best bid cents) printed as dollars with 2 decimals.",
   "constraints": [
     "1 <= n <= 3000",
     "1 <= price <= 10^6 (integer cents), 1 <= qty <= 10^6",
@@ -66,12 +66,12 @@
     {
       "input": "6\nA B 1000 100\nA S 1005 200\nA S 1003 50\nC S 1005 200\nA B 1002 10\nC B 1002 10\n",
       "output": "10.00 - -\n10.00 10.05 0.05\n10.00 10.03 0.03\n10.00 10.03 0.03\n10.02 10.03 0.01\n10.00 10.03 0.03\n",
-      "explanation": "1) bid 1000, no ask -> 10.00 - -. 2) ask 1005 -> 10.00 10.05 0.05. 3) better ask 1003 -> 10.00 10.03 0.03. 4) the 1005 ask is cancelled away; best ask still 1003. 5) better bid 1002 -> 10.02 10.03 0.01. 6) that bid is cancelled -> back to 10.00 10.03 0.03."
+      "explanation": "1) bid 1000, no ask -> 10.00, -. 2) ask 1005 -> 10.00 10.05 0.05. 3) better ask 1003 -> 10.00 10.03 0.03. 4) the 1005 ask is cancelled away; best ask still 1003. 5) better bid 1002 -> 10.02 10.03 0.01. 6) that bid is cancelled -> back to 10.00 10.03 0.03."
     },
     {
       "input": "5\nA B 1000 10\nA S 1002 10\nC B 1000 10\nC S 1002 10\nA B 999 5\n",
       "output": "10.00 - -\n10.00 10.02 0.02\n- 10.02 -\n- - -\n9.99 - -\n",
-      "explanation": "Bid 1000 arrives (no ask). Ask 1002 arrives -> spread 0.02. Bid 1000 cancelled -> bid side empty. Ask 1002 cancelled -> both sides empty. Bid 999 -> 9.99 - -."
+      "explanation": "Bid 1000 arrives (no ask). Ask 1002 arrives -> spread 0.02. Bid 1000 cancelled -> bid side empty. Ask 1002 cancelled -> both sides empty. Bid 999 -> 9.99, -."
     }
   ],
   "hints": [
@@ -94,12 +94,12 @@
       "items": [
         "Apply the event to the appropriate side map (accumulate on A, subtract on C, erase the key when the quantity reaches 0).",
         "best bid = max key of bids (if any), best ask = min key of asks (if any).",
-        "Emit the three fields: missing side -> '-', spread = best ask - best bid in cents only when both exist."
+        "Emit the three fields: missing side -> '-', spread = best ask, best bid in cents only when both exist."
       ]
     },
     {
       "type": "p",
-      "md": "With the stated limits (n <= 3000), scanning the key set of each map per event costs at most O(n * L) where L is the number of live price levels \u2014 a few million operations, far under the limit. For much larger inputs you would keep an ordered map per side (best = begin()/rbegin(), O(log L) per event) or a heap with lazy deletion of cancelled levels; both are standard order-book techniques."
+      "md": "With the stated limits (n <= 3000), scanning the key set of each map per event costs at most O(n * L) where L is the number of live price levels, a few million operations, far under the limit. For much larger inputs you would keep an ordered map per side (best = begin()/rbegin(), O(log L) per event) or a heap with lazy deletion of cancelled levels; both are standard order-book techniques."
     },
     {
       "type": "h2",
@@ -113,22 +113,22 @@
       "type": "callout",
       "variant": "pitfall",
       "title": "Common bugs",
-      "md": "1) Forgetting to delete a level when its quantity reaches 0 (a cancelled level would still be reported as the best price). 2) Printing '-' for the spread even when both sides exist. 3) Treating a cancel at a price with several accumulated adds as removing the whole level \u2014 the cancel only removes the stated quantity."
+      "md": "1) Forgetting to delete a level when its quantity reaches 0 (a cancelled level would still be reported as the best price). 2) Printing '-' for the spread even when both sides exist. 3) Treating a cancel at a price with several accumulated adds as removing the whole level, the cancel only removes the stated quantity."
     }
   ],
   "solutions": {
-    "python": "import sys\n\ndef main():\n    data = sys.stdin.buffer.read().split()\n    n = int(data[0])\n    bids = {}  # price in cents -> resting quantity\n    asks = {}\n    out = []\n\n    def fmt(c):\n        return f\"{c // 100}.{c % 100:02d}\"\n\n    idx = 1\n    for _ in range(n):\n        typ = data[idx].decode(); side = data[idx + 1].decode()\n        price = int(data[idx + 2]); qty = int(data[idx + 3])\n        idx += 4\n        book = bids if side == \"B\" else asks\n        book[price] = book.get(price, 0) + (qty if typ == \"A\" else -qty)\n        if book[price] == 0:\n            del book[price]\n        bb = max(bids) if bids else None\n        ba = min(asks) if asks else None\n        if bb is None and ba is None:\n            out.append(\"- - -\")\n        elif ba is None:\n            out.append(f\"{fmt(bb)} - -\")\n        elif bb is None:\n            out.append(f\"- {fmt(ba)} -\")\n        else:\n            out.append(f\"{fmt(bb)} {fmt(ba)} {fmt(ba - bb)}\")\n    sys.stdout.write(\"\\n\".join(out) + \"\\n\")\n\nmain()\n",
-    "cpp": "#include <bits/stdc++.h>\nusing namespace std;\n\nstatic string fmt(long long c) {\n    char buf[32];\n    snprintf(buf, sizeof(buf), \"%lld.%02lld\", c / 100, c % 100);\n    return string(buf);\n}\n\nint main() {\n    int n;\n    if (scanf(\"%d\", &n) != 1) return 0;\n    map<long long, long long, greater<long long>> bids; // begin() = best (highest) bid\n    map<long long, long long> asks;                     // begin() = best (lowest) ask\n    string out;\n    for (int i = 0; i < n; i++) {\n        char t[4], s[4];\n        long long price, qty;\n        scanf(\"%3s %3s %lld %lld\", t, s, &price, &qty);\n        if (s[0] == 'B') {\n            if (t[0] == 'A') bids[price] += qty;\n            else { bids[price] -= qty; if (bids[price] == 0) bids.erase(price); }\n        } else {\n            if (t[0] == 'A') asks[price] += qty;\n            else { asks[price] -= qty; if (asks[price] == 0) asks.erase(price); }\n        }\n        bool hb = !bids.empty(), ha = !asks.empty();\n        out += hb ? fmt(bids.begin()->first) : \"-\";\n        out += \" \";\n        out += ha ? fmt(asks.begin()->first) : \"-\";\n        out += \" \";\n        out += (hb && ha) ? fmt(asks.begin()->first - bids.begin()->first) : \"-\";\n        out += \"\\n\";\n    }\n    fputs(out.c_str(), stdout);\n    return 0;\n}\n"
+    "python": "import sys\n\ndef main():\n data = sys.stdin.buffer.read().split()\n n = int(data[0])\n bids = {} # price in cents -> resting quantity\n asks = {}\n out = []\n\n def fmt(c):\n return f\"{c // 100}.{c % 100:02d}\"\n\n idx = 1\n for _ in range(n):\n typ = data[idx].decode(); side = data[idx + 1].decode()\n price = int(data[idx + 2]); qty = int(data[idx + 3])\n idx += 4\n book = bids if side == \"B\" else asks\n book[price] = book.get(price, 0) + (qty if typ == \"A\" else -qty)\n if book[price] == 0:\n del book[price]\n bb = max(bids) if bids else None\n ba = min(asks) if asks else None\n if bb is None and ba is None:\n out.append(\"-, -\")\n elif ba is None:\n out.append(f\"{fmt(bb)}, -\")\n elif bb is None:\n out.append(f\"- {fmt(ba)} -\")\n else:\n out.append(f\"{fmt(bb)} {fmt(ba)} {fmt(ba, bb)}\")\n sys.stdout.write(\"\\n\".join(out) + \"\\n\")\n\nmain()\n",
+    "cpp": "#include <bits/stdc++.h>\nusing namespace std;\n\nstatic string fmt(long long c) {\n char buf[32];\n snprintf(buf, sizeof(buf), \"%lld.%02lld\", c / 100, c % 100);\n return string(buf);\n}\n\nint main() {\n int n;\n if (scanf(\"%d\", &n) != 1) return 0;\n map<long long, long long, greater<long long>> bids; // begin() = best (highest) bid\n map<long long, long long> asks; // begin() = best (lowest) ask\n string out;\n for (int i = 0; i < n; i++) {\n char t[4], s[4];\n long long price, qty;\n scanf(\"%3s %3s %lld %lld\", t, s, &price, &qty);\n if (s[0] == 'B') {\n if (t[0] == 'A') bids[price] += qty;\n else { bids[price] -= qty; if (bids[price] == 0) bids.erase(price); }\n } else {\n if (t[0] == 'A') asks[price] += qty;\n else { asks[price] -= qty; if (asks[price] == 0) asks.erase(price); }\n }\n bool hb = !bids.empty(), ha = !asks.empty();\n out += hb ? fmt(bids.begin()->first) : \"-\";\n out += \" \";\n out += ha ? fmt(asks.begin()->first) : \"-\";\n out += \" \";\n out += (hb && ha) ? fmt(asks.begin()->first, bids.begin()->first) : \"-\";\n out += \"\\n\";\n }\n fputs(out.c_str(), stdout);\n return 0;\n}\n"
   },
   "tests": [
     {
       "input": "6\nA B 1000 100\nA S 1005 200\nA S 1003 50\nC S 1005 200\nA B 1002 10\nC B 1002 10\n",
-      "expected": "10.00 - -\n10.00 10.05 0.05\n10.00 10.03 0.03\n10.00 10.03 0.03\n10.02 10.03 0.01\n10.00 10.03 0.03\n",
+      "expected": "10.00, -\n10.00 10.05 0.05\n10.00 10.03 0.03\n10.00 10.03 0.03\n10.02 10.03 0.01\n10.00 10.03 0.03\n",
       "hidden": false
     },
     {
       "input": "5\nA B 1000 10\nA S 1002 10\nC B 1000 10\nC S 1002 10\nA B 999 5\n",
-      "expected": "10.00 - -\n10.00 10.02 0.02\n- 10.02 -\n- - -\n9.99 - -\n",
+      "expected": "10.00, -\n10.00 10.02 0.02\n- 10.02 -\n- - -\n9.99, -\n",
       "hidden": false
     },
     {
@@ -138,17 +138,17 @@
     },
     {
       "input": "3\nA B 500 10\nA B 500 20\nC B 500 30\n",
-      "expected": "5.00 - -\n5.00 - -\n- - -\n",
+      "expected": "5.00, -\n5.00, -\n- - -\n",
       "hidden": true
     },
     {
       "input": "5\nA B 100 10\nA B 105 10\nA B 103 10\nA S 110 10\nA S 106 10\n",
-      "expected": "1.00 - -\n1.05 - -\n1.05 - -\n1.05 1.10 0.05\n1.05 1.06 0.01\n",
+      "expected": "1.00, -\n1.05, -\n1.05, -\n1.05 1.10 0.05\n1.05 1.06 0.01\n",
       "hidden": true
     },
     {
       "input": "3\nA B 1000 10\nA S 1000 10\nA B 995 5\n",
-      "expected": "10.00 - -\n10.00 10.00 0.00\n10.00 10.00 0.00\n",
+      "expected": "10.00, -\n10.00 10.00 0.00\n10.00 10.00 0.00\n",
       "hidden": true
     },
     {

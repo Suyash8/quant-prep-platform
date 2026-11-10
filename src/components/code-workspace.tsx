@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { recordProblemAttempt } from '@/lib/client/local-state';
 import { CheckCircle2, FileCode2, Loader2, Play, RotateCcw, Send, Terminal, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -20,7 +21,7 @@ const LANGS = [
   { id: 'python', label: 'Python 3' },
 ] as const;
 
-/* Dark panel palette (GitHub-dark style — always dark, both themes) */
+/* Dark panel palette (GitHub-dark style, always dark, both themes) */
 const PANEL_BG = '#0d1117';
 const PANEL_HEADER_BG = '#161b22';
 const PANEL_BORDER = '#26303d';
@@ -91,8 +92,12 @@ export function CodeWorkspace({ slug, stubs, examples, timeLimitMs }: WorkspaceP
         window.dispatchEvent(new CustomEvent('qf:hud-refresh'));
       }
       const v = (data as SubmitResult).verdict;
-      if (v === 'passed') toast.success(`All tests passed (${(data as SubmitResult).passed}/${(data as SubmitResult).total}).`);
-      else if (v === 'compile_error') toast.error('Compilation failed — check the compiler output.');
+      if (v === 'passed') {
+        // v3: mirror the solve locally so the dashboard and problem list update instantly
+        recordProblemAttempt(slug, 'passed');
+        toast.success(`All tests passed (${(data as SubmitResult).passed}/${(data as SubmitResult).total}).`);
+      }
+      else if (v === 'compile_error') toast.error('Compilation failed, check the compiler output.');
       else toast.warning(`${(data as SubmitResult).passed}/${(data as SubmitResult).total} tests passed.`);
     } catch { toast.error('Network error.'); } finally { setBusy(null); }
   }
@@ -128,7 +133,7 @@ export function CodeWorkspace({ slug, stubs, examples, timeLimitMs }: WorkspaceP
     : 'rounded-lg border border-[#26303d] px-2 py-1 text-[10px] font-extrabold uppercase tracking-wide text-slate-400 transition-colors hover:border-accent hover:text-accent';
 
   return (
-    <div className="flex h-[calc(100vh-3.5rem)] min-h-0 flex-col">
+    <div className="flex min-h-[640px] lg:h-[700px] min-w-0 flex-col">
       <div className="flex min-h-0 flex-1 flex-col bg-surface-2/40 lg:flex-row">
         {/* Editor panel */}
         <div className="flex min-h-0 flex-1 flex-col p-2.5 sm:p-3 lg:p-4">
@@ -215,7 +220,7 @@ export function CodeWorkspace({ slug, stubs, examples, timeLimitMs }: WorkspaceP
                   </div>
                   {examples.length > 0 && (
                     <div>
-                      <p className="font-sans text-[10px] font-black uppercase tracking-[0.14em] text-slate-500 mb-2">Example inputs — click to load into stdin</p>
+                      <p className="font-sans text-[10px] font-black uppercase tracking-[0.14em] text-slate-500 mb-2">Example inputs, click to load into stdin</p>
                       <div className="space-y-2">
                         {examples.map((ex, i) => (
                           <button
@@ -313,7 +318,7 @@ export function CodeWorkspace({ slug, stubs, examples, timeLimitMs }: WorkspaceP
                             <span className={'text-[10px] font-extrabold uppercase ' + (r.passed ? 'text-accent' : 'text-danger')}>{statusLabel}</span>
                           )}
                           <span className="tnum ml-auto rounded-full px-2 py-0.5 text-[10px] font-bold text-slate-400" style={{ background: PANEL_HEADER_BG }}>
-                            {r.timeMs !== undefined ? r.timeMs + ' ms' : '—'}
+                            {r.timeMs !== undefined ? r.timeMs + ' ms' : ', '}
                           </span>
                         </div>
                         {failed && (

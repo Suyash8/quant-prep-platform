@@ -4,30 +4,72 @@
   "title": "Branch Prediction and Out-of-Order Execution",
   "estMinutes": 26,
   "difficulty": "core",
-  "prereqs": ["arch-cache-hierarchy"],
+  "prereqs": [
+    "arch-cache-hierarchy"
+  ],
   "objectives": [
     "Explain why conditional branches create control hazards and quantify the cost of a mispredict (~15-20 cycles)",
     "Describe how 2-bit saturating counters and history-based predictors learn branch behaviour",
     "Explain speculative and out-of-order execution: predicted-path execution, the reorder buffer, and in-order retirement",
     "Estimate the runtime gap between predictable and unpredictable branches in a hot loop"
   ],
-  "motivation": "Famous experiments show that sorting an array before running a branchy counting loop can speed it up several-fold - same data, same arithmetic, different branch pattern. In trading systems the hot path is full of conditionals (risk checks, order-state machines), so whether the hardware can guess them determines whether your decision logic meets its budget. This lesson explains the guessing machinery and what happens when it is wrong.",
+  "motivation": "Famous experiments show that sorting an array before running a branchy counting loop can speed it up several-fold, same data, same arithmetic, different branch pattern. In trading systems the hot path is full of conditionals (risk checks, order-state machines), so whether the hardware can guess them determines whether your decision logic meets its budget. This lesson explains the guessing machinery and what happens when it is wrong.",
   "blocks": [
-    { "type": "h2", "text": "Why branches are hard for a pipeline" },
-    { "type": "p", "md": "The pipeline from the last lesson only earns its throughput if the core always knows what to fetch next. At a **conditional branch** it does not: the next fetch address depends on a comparison that resolves deep in the pipe, roughly 15-20 cycles later. Stalling until then would waste most of the pipeline, so the core instead *predicts* - it guesses taken or not-taken and the target address, then keeps fetching down that path. When the guess is right, speculation was free. When it is wrong, the young instructions on the wrong path are squashed and refetch starts from the correct address: the **mispredict penalty**, typically 15-20 cycles, about 4-5 ns at 4 GHz. Unlike a cache miss, a mispredict costs time without ever touching memory - it is pure lost pipeline work." },
-    { "type": "h2", "text": "How predictors learn" },
-    { "type": "p", "md": "The simplest scheme remembers the last outcome. Better: a **2-bit saturating counter** with states strongly-taken, weakly-taken, weakly-not-taken, strongly-not-taken. Only two consecutive surprises move the prediction, so a loop branch that is taken 99 times then falls through once does not get permanently flipped by the exit. Modern designs are far stronger: they correlate outcomes with recent global and per-branch history (pattern history tables) and track several long patterns per branch (TAGE-style predictors), exceeding 95% accuracy on real workloads. What no predictor can beat is a *fair coin*: branches driven by data with no exploitable pattern, such as `if (random_a > random_b)`, sit at 50% no matter how clever the hardware." },
-    { "type": "code", "lang": "cpp", "code": "#include <vector>\n\nlong count_above(const std::vector<int>& v, int threshold) {\n    long n = 0;\n    for (int x : v)\n        if (x >= threshold)      // unpredictable on unsorted data\n            ++n;\n    return n;\n}", "caption": "On unsorted uniform data the branch is a ~50% coin flip; on data sorted ascending it is taken for a prefix and then never taken - a pattern any predictor learns. Published experiments report several-fold speedups for the sorted case; the exact factor depends on machine and data." },
-    { "type": "interactive", "component": "RandomWalk", "params": { "steps": 60, "pUp": 0.5 }, "caption": "A fair-coin branch looks like this walk: no trend, no period, nothing to learn. Predictors profit when outcomes are biased or periodic; against a coin they lose ~half the time by design." },
-    { "type": "h2", "text": "Speculation and out-of-order execution" },
-    { "type": "p", "md": "Modern cores go further than predicting: they **speculate**, executing ahead down the predicted path before knowing whether it is correct. Results land in the **reorder buffer (ROB)** rather than the architectural state; instructions **retire** (commit) strictly in program order, so speculation is invisible to software - wrong-path work is simply discarded, leaving no trace. Meanwhile an **out-of-order** engine examines a window of decoded instructions, uses **register renaming** to eliminate false dependencies (two instructions reusing the same register name are given separate physical registers), and dispatches ready instructions to whichever execution units are free. That is how superscalar cores reach an IPC above 1: independent work fills the units even while one instruction waits on memory or on the branch resolver." },
-    { "type": "steps", "title": "Worked example: the cost of unpredictability", "items": [
-      "A hot loop runs $10{,}000{,}000$ iterations with one data-dependent branch each. Correct-path work costs $\\approx 1$ ns per iteration: $10$ ms in total either way.",
-      "Unsorted data: the branch is a coin flip, so $\\approx 5{,}000{,}000$ mispredicts. At $5$ ns penalty each: $25$ ms of lost pipeline work. Total $\\approx 35$ ms.",
-      "Sorted data: the branch flips once, so $\\approx 1\\%$ mispredicts $= 100{,}000 \\times 5$ ns $= 0.5$ ms. Total $\\approx 10.5$ ms.",
-      "Same loop, same arithmetic: the branch pattern alone changed the runtime by a factor of $35 / 10.5 \\approx 3.3\\times$."
-    ] },
-    { "type": "callout", "variant": "quant", "title": "Predictability is a performance feature", "md": "In an order handler, group checks so common outcomes are contiguous in history and rare paths are rare - the predictor learns steady states. Branchless tricks (conditional moves) can help on coin-flip branches, but compilers decide and you must measure with `perf stat -e branch-misses` before believing any of it. Predictable branches cost almost nothing; optimizing the unpredictable ones is where the money is." }
+    {
+      "type": "h2",
+      "text": "Why branches are hard for a pipeline"
+    },
+    {
+      "type": "p",
+      "md": "The pipeline from the last lesson only earns its throughput if the core always knows what to fetch next. At a **conditional branch** it does not: the next fetch address depends on a comparison that resolves deep in the pipe, roughly 15-20 cycles later. Stalling until then would waste most of the pipeline, so the core instead *predicts*, it guesses taken or not-taken and the target address, then keeps fetching down that path. When the guess is right, speculation was free. When it is wrong, the young instructions on the wrong path are squashed and refetch starts from the correct address: the **mispredict penalty**, typically 15-20 cycles, about 4-5 ns at 4 GHz. Unlike a cache miss, a mispredict costs time without ever touching memory, it is pure lost pipeline work."
+    },
+    {
+      "type": "h2",
+      "text": "How predictors learn"
+    },
+    {
+      "type": "p",
+      "md": "The simplest scheme remembers the last outcome. Better: a **2-bit saturating counter** with states strongly-taken, weakly-taken, weakly-not-taken, strongly-not-taken. Only two consecutive surprises move the prediction, so a loop branch that is taken 99 times then falls through once does not get permanently flipped by the exit. Modern designs are far stronger: they correlate outcomes with recent global and per-branch history (pattern history tables) and track several long patterns per branch (TAGE-style predictors), exceeding 95% accuracy on real workloads. What no predictor can beat is a *fair coin*: branches driven by data with no exploitable pattern, such as `if (random_a > random_b)`, sit at 50% no matter how clever the hardware."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <vector>\n\nlong count_above(const std::vector<int>& v, int threshold) {\n    long n = 0;\n    for (int x : v)\n        if (x >= threshold)      // unpredictable on unsorted data\n            ++n;\n    return n;\n}",
+      "caption": "On unsorted uniform data the branch is a ~50% coin flip; on data sorted ascending it is taken for a prefix and then never taken, a pattern any predictor learns. Published experiments report several-fold speedups for the sorted case; the exact factor depends on machine and data."
+    },
+    {
+      "type": "interactive",
+      "component": "RandomWalk",
+      "params": {
+        "steps": 60,
+        "pUp": 0.5
+      },
+      "caption": "A fair-coin branch looks like this walk: no trend, no period, nothing to learn. Predictors profit when outcomes are biased or periodic; against a coin they lose ~half the time by design."
+    },
+    {
+      "type": "h2",
+      "text": "Speculation and out-of-order execution"
+    },
+    {
+      "type": "p",
+      "md": "Modern cores go further than predicting: they **speculate**, executing ahead down the predicted path before knowing whether it is correct. Results land in the **reorder buffer (ROB)** rather than the architectural state; instructions **retire** (commit) strictly in program order, so speculation is invisible to software, wrong-path work is simply discarded, leaving no trace. Meanwhile an **out-of-order** engine examines a window of decoded instructions, uses **register renaming** to eliminate false dependencies (two instructions reusing the same register name are given separate physical registers), and dispatches ready instructions to whichever execution units are free. That is how superscalar cores reach an IPC above 1: independent work fills the units even while one instruction waits on memory or on the branch resolver."
+    },
+    {
+      "type": "steps",
+      "title": "Worked example: the cost of unpredictability",
+      "items": [
+        "A hot loop runs $10{,}000{,}000$ iterations with one data-dependent branch each. Correct-path work costs $\\approx 1$ ns per iteration: $10$ ms in total either way.",
+        "Unsorted data: the branch is a coin flip, so $\\approx 5{,}000{,}000$ mispredicts. At $5$ ns penalty each: $25$ ms of lost pipeline work. Total $\\approx 35$ ms.",
+        "Sorted data: the branch flips once, so $\\approx 1\\%$ mispredicts $= 100{,}000 \\times 5$ ns $= 0.5$ ms. Total $\\approx 10.5$ ms.",
+        "Same loop, same arithmetic: the branch pattern alone changed the runtime by a factor of $35 / 10.5 \\approx 3.3\\times$."
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Predictability is a performance feature",
+      "md": "In an order handler, group checks so common outcomes are contiguous in history and rare paths are rare, the predictor learns steady states. Branchless tricks (conditional moves) can help on coin-flip branches, but compilers decide and you must measure with `perf stat -e branch-misses` before believing any of it. Predictable branches cost almost nothing; optimizing the unpredictable ones is where the money is."
+    }
   ],
   "guidedExercise": {
     "prompt": "A branch's 2-bit counter starts in the *weakly-taken* state. The outcome pattern is T T N T T N T T N T T N (T = taken, N = not taken). Track the counter state after every outcome and count the mispredictions over these 12 outcomes.",
@@ -35,7 +77,7 @@
       "Taken is predicted in states weakly/strongly taken; not-taken in weakly/strongly not-taken.",
       "Each outcome nudges the counter one step toward its own side (or holds it at the extreme)."
     ],
-    "solution": "Start weakly-taken. T: predicted taken, correct, state $\\to$ strongly-taken. T: correct, stays strongly-taken. N: predicted taken, **mispredict 1**, state $\\to$ weakly-taken. T: correct, $\\to$ strongly-taken. T: correct. N: **mispredict 2**, $\\to$ weakly-taken. T: correct, $\\to$ strongly-taken. T: correct. N: **mispredict 3**, $\\to$ weakly-taken. T: correct. T: correct. N: **mispredict 4**. Total: **4 mispredictions in 12 outcomes** - the counter settles into a steady state where every N costs one flush."
+    "solution": "Start weakly-taken. T: predicted taken, correct, state $\\to$ strongly-taken. T: correct, stays strongly-taken. N: predicted taken, **mispredict 1**, state $\\to$ weakly-taken. T: correct, $\\to$ strongly-taken. T: correct. N: **mispredict 2**, $\\to$ weakly-taken. T: correct, $\\to$ strongly-taken. T: correct. N: **mispredict 3**, $\\to$ weakly-taken. T: correct. T: correct. N: **mispredict 4**. Total: **4 mispredictions in 12 outcomes**, the counter settles into a steady state where every N costs one flush."
   },
   "independentExercise": {
     "prompt": "A branch executes 4,000,000 times with a 40% mispredict rate. Each mispredict costs 18 cycles of pipeline flush, and the core runs at 4 GHz. (a) Compute the number of mispredicts. (b) Compute the total flush time in milliseconds. (c) If reordering the code drops the mispredict rate to 5%, what is the new flush time?",
@@ -43,18 +85,18 @@
       "Flush time = mispredicts × penalty cycles × seconds per cycle.",
       "At 4 GHz one cycle is 0.25 ns."
     ],
-    "solution": "(a) $4{,}000{,}000 \\times 0.4 = 1{,}600{,}000$ mispredicts. (b) $1{,}600{,}000 \\times 18 = 28{,}800{,}000$ cycles; $\\times 0.25\\ \\text{ns} = 7{,}200{,}000\\ \\text{ns} = 7.2$ ms. (c) At 5%: $200{,}000 \\times 18 = 3{,}600{,}000$ cycles $= 0.9$ ms - the reordering alone saved 6.3 ms of pure pipeline loss."
+    "solution": "(a) $4{,}000{,}000 \\times 0.4 = 1{,}600{,}000$ mispredicts. (b) $1{,}600{,}000 \\times 18 = 28{,}800{,}000$ cycles; $\\times 0.25\\ \\text{ns} = 7{,}200{,}000\\ \\text{ns} = 7.2$ ms. (c) At 5%: $200{,}000 \\times 18 = 3{,}600{,}000$ cycles $= 0.9$ ms, the reordering alone saved 6.3 ms of pure pipeline loss."
   },
   "commonMistakes": [
-    "Believing out-of-order execution changes what the program does - the reorder buffer commits results in program order, so wrong-path speculation leaves no observable trace.",
-    "Assuming every branch is equally expensive - a well-predicted branch costs essentially nothing; only mispredicts pay the 15-20 cycle flush.",
+    "Believing out-of-order execution changes what the program does, the reorder buffer commits results in program order, so wrong-path speculation leaves no observable trace.",
+    "Assuming every branch is equally expensive, a well-predicted branch costs essentially nothing; only mispredicts pay the 15-20 cycle flush.",
     "Measuring branch behaviour in an unoptimized debug build, where extra branches and no inlining distort the pattern.",
     "Replacing a predictable branch with branchless arithmetic and declaring victory without checking `perf stat -e branch-misses` and wall time."
   ],
   "realWorldApplication": "CPU vendors compete on predictor accuracy precisely because real code is branchy: interpreters, state machines and virtualized workloads all live or die by speculation, and the same machinery is what made the Spectre-class vulnerabilities possible.",
   "quantFinanceApplication": "A gateway's per-order risk checks are a branchy state machine run millions of times a day; keeping the common path contiguous and rare rejections rare lets the predictor hide nearly all of it, while a coin-flip check inside the tick loop can add milliseconds per million ticks.",
   "summary": [
-    "A mispredicted branch squashes ~15-20 cycles of speculative work (~4-5 ns at 4 GHz) and never touched memory - it is pure lost pipeline throughput.",
+    "A mispredicted branch squashes ~15-20 cycles of speculative work (~4-5 ns at 4 GHz) and never touched memory, it is pure lost pipeline throughput.",
     "2-bit saturating counters tolerate single surprises; history-based (TAGE-style) predictors exceed 95% accuracy but cannot beat a fair-coin branch stuck at 50%.",
     "Speculative, out-of-order execution executes ahead down the predicted path, keeps results in the reorder buffer, and retires in program order; register renaming removes false dependencies so IPC can exceed 1.",
     "Sort-before-branching is the canonical demo: identical arithmetic, a 3x-plus runtime difference, entirely from branch predictability."
@@ -72,7 +114,12 @@
       "id": "q2",
       "type": "mcq",
       "prompt": "A 2-bit counter starting in weakly-taken sees the repeating pattern T T N. Once settled, how many mispredictions occur per 6 outcomes?",
-      "options": ["1", "2", "3", "4"],
+      "options": [
+        "1",
+        "2",
+        "3",
+        "4"
+      ],
       "answerIndex": 1,
       "explanation": "The counter parks in strongly-taken between the T's, so each N mispredicts once per 3 outcomes: 2 mispredictions per 6."
     },
@@ -99,7 +146,10 @@
         "Wrong-path speculative writes become visible to other cores",
         "Branch prediction changes the program's architectural semantics"
       ],
-      "answerIndices": [0, 1],
+      "answerIndices": [
+        0,
+        1
+      ],
       "explanation": "Renaming gives contended register names separate physical storage, and superscalar issue lets several instructions retire per cycle. Speculation is discarded on mispredict and never changes semantics."
     },
     {
@@ -107,7 +157,10 @@
       "type": "short",
       "prompt": "Which hardware structure caches a branch's target address so the predicted path can be fetched immediately?",
       "modelAnswer": "The branch target buffer (BTB) remembers the target address of recently executed branches so fetch can start down the predicted path without waiting for decode.",
-      "keywords": ["branch target buffer", "BTB"],
+      "keywords": [
+        "branch target buffer",
+        "BTB"
+      ],
       "explanation": "The BTB answers 'where would this branch go last time?' at fetch time; the taken/not-taken guess comes from the predictor proper."
     },
     {
@@ -121,15 +174,43 @@
     }
   ],
   "flashcards": [
-    { "type": "formula", "front": "Total mispredict time", "back": "mispredicts × ~15-20 flush cycles × cycle time (0.25 ns at 4 GHz). A 40%-unpredictable branch over 4M executions costs ~7 ms." },
-    { "type": "definition", "front": "What is speculative execution?", "back": "Executing ahead down the *predicted* path before branch outcomes are known; results wait in the reorder buffer and are discarded if the guess was wrong." },
-    { "type": "definition", "front": "What does a 2-bit saturating counter do?", "back": "Predicts from one of four states (strong/weak taken or not-taken); it takes two consecutive surprises to flip, tolerating one-off exceptions like loop exits." },
-    { "type": "concept", "front": "Why can sorting data speed up a branchy loop?", "back": "Sorting turns a coin-flip branch into a biased one (all-taken prefix, then never-taken), collapsing mispredicts from ~50% to ~1% and eliminating most flush time." }
+    {
+      "type": "formula",
+      "front": "Total mispredict time",
+      "back": "mispredicts × ~15-20 flush cycles × cycle time (0.25 ns at 4 GHz). A 40%-unpredictable branch over 4M executions costs ~7 ms."
+    },
+    {
+      "type": "definition",
+      "front": "What is speculative execution?",
+      "back": "Executing ahead down the *predicted* path before branch outcomes are known; results wait in the reorder buffer and are discarded if the guess was wrong."
+    },
+    {
+      "type": "definition",
+      "front": "What does a 2-bit saturating counter do?",
+      "back": "Predicts from one of four states (strong/weak taken or not-taken); it takes two consecutive surprises to flip, tolerating one-off exceptions like loop exits."
+    },
+    {
+      "type": "concept",
+      "front": "Why can sorting data speed up a branchy loop?",
+      "back": "Sorting turns a coin-flip branch into a biased one (all-taken prefix, then never-taken), collapsing mispredicts from ~50% to ~1% and eliminating most flush time."
+    }
   ],
   "references": [
-    { "label": "Wikipedia - Branch predictor (2-bit counters, TAGE)", "url": "https://en.wikipedia.org/wiki/Branch_predictor" },
-    { "label": "Agner Fog - Optimizing subroutines in assembly language (branch prediction chapters)", "url": "https://www.agner.org/optimize/" },
-    { "label": "Wikipedia - Out-of-order execution and the reorder buffer", "url": "https://en.wikipedia.org/wiki/Out-of-order_execution" }
+    {
+      "label": "Wikipedia: Branch predictor (2-bit counters, TAGE)",
+      "url": "https://en.wikipedia.org/wiki/Branch_predictor"
+    },
+    {
+      "label": "Agner Fog: Optimizing subroutines in assembly language (branch prediction chapters)",
+      "url": "https://www.agner.org/optimize/"
+    },
+    {
+      "label": "Wikipedia: Out-of-order execution and the reorder buffer",
+      "url": "https://en.wikipedia.org/wiki/Out-of-order_execution"
+    }
   ],
-  "skills": ["computer-architecture", "cpp-performance"]
+  "skills": [
+    "computer-architecture",
+    "cpp-performance"
+  ]
 }

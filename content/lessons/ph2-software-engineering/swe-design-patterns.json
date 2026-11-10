@@ -11,9 +11,9 @@
     "Design function and class APIs that are hard to misuse: explicit types, validated inputs, clear error paths, stable surfaces",
     "State the five SOLID principles and give a concrete finance-system example of each",
     "Recognise and apply Strategy, Observer, Adapter, Factory and Facade in trading-system contexts",
-    "Refactor branching logic into polymorphism where it buys extension without modification - and know when NOT to"
+    "Refactor branching logic into polymorphism where it buys extension without modification, and know when NOT to"
   ],
-  "motivation": "The fee calculator worked perfectly for two years - then the desk added a bps fee model, and the change touched a 300-line if/else chain in the middle of order handling, with a missed branch found by the reconciler a week later. The cost was not the math; it was an API and structure that made extension dangerous. This lesson is about designing the seams of a system - APIs that cannot be misused, principles that guide where code should change, and the handful of patterns that recur in every trading codebase.",
+  "motivation": "The fee calculator worked perfectly for two years, then the desk added a bps fee model, and the change touched a 300-line if/else chain in the middle of order handling, with a missed branch found by the reconciler a week later. The cost was not the math; it was an API and structure that made extension dangerous. This lesson is about designing the seams of a system. APIs that cannot be misused, principles that guide where code should change, and the handful of patterns that recur in every trading codebase.",
   "blocks": [
     {
       "type": "h2",
@@ -21,7 +21,7 @@
     },
     {
       "type": "p",
-      "md": "An API is a promise, and its quality shows under change and misuse. Design rules that pay for themselves: **make invalid states unrepresentable** - a `Side` enum beats a string that might say 'buy', 'BUY' or 'B'; **state units and types in the signature** (`int quantity`, `double price`) instead of in a comment; **make the happy path obvious and the error path explicit** - return a result or throw a specific exception, never a magic `-1`; **keep the surface small** - every public function is a promise you must keep through refactors; and **name for the domain** - `apply_fill` says more than `process`. Versioning belongs to the same discipline: a public API added to is easy, changed is expensive, so get the first version minimal and right."
+      "md": "An API is a promise, and its quality shows under change and misuse. Design rules that pay for themselves: **make invalid states unrepresentable**, a `Side` enum beats a string that might say 'buy', 'BUY' or 'B'; **state units and types in the signature** (`int quantity`, `double price`) instead of in a comment; **make the happy path obvious and the error path explicit**, return a result or throw a specific exception, never a magic `-1`; **keep the surface small**, every public function is a promise you must keep through refactors; and **name for the domain** - `apply_fill` says more than `process`. Versioning belongs to the same discipline: a public API added to is easy, changed is expensive, so get the first version minimal and right."
     },
     {
       "type": "code",
@@ -37,11 +37,11 @@
       "type": "list",
       "ordered": false,
       "items": [
-        "**S - Single Responsibility**: one reason to change per class. PnL *math* lives in a calculator, not inside the class that also loads positions from the database - a change in storage must never risk the arithmetic.",
-        "**O - Open/Closed**: open for extension, closed for modification. A new fee model should arrive as a *new class*, not as an edit inside the order-handling switch - which is exactly the incident in the motivation.",
-        "**L - Liskov Substitution**: any subclass must honour the base contract. A `SimulatedFeed : MarketDataFeed` that silently returns stale prices breaks every consumer that trusts the interface's promise of 'latest'.",
-        "**I - Interface Segregation**: many small interfaces beat one fat one. A listener that only wants trade prints should implement `TradeListener`, not implement eight empty methods of an `AllMarketDataListener`.",
-        "**D - Dependency Inversion**: depend on abstractions. The order router depends on a `MarketDataFeed` *interface*; a vendor SDK becomes an implementation detail swapped behind an Adapter - and replaced by a fake in tests."
+        "**S. Single Responsibility**: one reason to change per class. PnL *math* lives in a calculator, not inside the class that also loads positions from the database, a change in storage must never risk the arithmetic.",
+        "**O. Open/Closed**: open for extension, closed for modification. A new fee model should arrive as a *new class*, not as an edit inside the order-handling switch, which is exactly the incident in the motivation.",
+        "**L. Liskov Substitution**: any subclass must honour the base contract. A `SimulatedFeed : MarketDataFeed` that silently returns stale prices breaks every consumer that trusts the interface's promise of 'latest'.",
+        "**I. Interface Segregation**: many small interfaces beat one fat one. A listener that only wants trade prints should implement `TradeListener`, not implement eight empty methods of an `AllMarketDataListener`.",
+        "**D. Dependency Inversion**: depend on abstractions. The order router depends on a `MarketDataFeed` *interface*; a vendor SDK becomes an implementation detail swapped behind an Adapter, and replaced by a fake in tests."
       ]
     },
     {
@@ -85,7 +85,7 @@
     },
     {
       "type": "p",
-      "md": "**Strategy** in C++ is a small interface plus a `std::unique_ptr` to the implementation, held by a context class that knows nothing about concrete fees. The cost is one virtual call per event - irrelevant at desk scale, measurable only in the innermost latency loops, where patterns give way to branches measured with benchmarks. The refactor below is the canonical shape:"
+      "md": "**Strategy** in C++ is a small interface plus a `std::unique_ptr` to the implementation, held by a context class that knows nothing about concrete fees. The cost is one virtual call per event, irrelevant at desk scale, measurable only in the innermost latency loops, where patterns give way to branches measured with benchmarks. The refactor below is the canonical shape:"
     },
     {
       "type": "code",
@@ -95,16 +95,16 @@
     },
     {
       "type": "p",
-      "md": "Patterns are vocabulary, not goals. Their value is that a name — \"strategy\", \"observer\", \"adapter\" — compresses a design decision into one word your team already understands, and their danger is that pattern-driven design produces architecture astronautics: four abstract classes to print a number. The professional filter is always the same: **what variation does this pattern buy me, and do I actually need that variation?**"
+      "md": "Patterns are vocabulary, not goals. Their value is that a name. \"strategy\", \"observer\", \"adapter\", compresses a design decision into one word your team already understands, and their danger is that pattern-driven design produces architecture astronautics: four abstract classes to print a number. The professional filter is always the same: **what variation does this pattern buy me, and do I actually need that variation?**"
     },
     {
       "type": "steps",
       "title": "The Strategy pattern, in a pricing-engine context",
       "items": [
         "The variation you need: multiple pricing models (binomial tree, Black-Scholes, Monte Carlo) selected at runtime by instrument type.",
-        "Wrong turn: a `price()` function with a `switch (model)` over enum values, duplicated at every call site — every new model edits every switch.",
+        "Wrong turn: a `price()` function with a `switch (model)` over enum values, duplicated at every call site, every new model edits every switch.",
         "Strategy: an abstract interface `Pricer { double price(const Option&) const; }`, one concrete class per model, and the *caller depends only on the interface*. Adding a model becomes adding a file, not editing a web of switches.",
-        "The cost you accepted: one virtual call per pricing (a pointer chase the CPU cannot inline) and one more layer to read. For a hot loop pricing a million options, that cost is real — and the fix is *not* to abandon the pattern but to hoist the dispatch out of the inner loop, or to use CRTP/templates for static polymorphism where the model is known at compile time.",
+        "The cost you accepted: one virtual call per pricing (a pointer chase the CPU cannot inline) and one more layer to read. For a hot loop pricing a million options, that cost is real, and the fix is *not* to abandon the pattern but to hoist the dispatch out of the inner loop, or to use CRTP/templates for static polymorphism where the model is known at compile time.",
         "The general lesson: patterns trade runtime indirection (or compile-time complexity) for changeability. The trade is good exactly when the variation is real, and waste when it is speculative."
       ]
     },
@@ -153,13 +153,13 @@
       "type": "callout",
       "variant": "info",
       "title": "SOLID, honestly stated",
-      "md": "Single responsibility, open-closed, Liskov, interface segregation, dependency inversion — five heuristics that all reduce to: *depend on abstractions, keep responsibilities separable, and do not promise more than you honour*. They are heuristics, not laws; a 30-line script obeying all five is worse than a 30-line script that ignores them. The time to reach for them is when change hurts — that pain, not a checklist, is the signal."
+      "md": "Single responsibility, open-closed, Liskov, interface segregation, dependency inversion, five heuristics that all reduce to: *depend on abstractions, keep responsibilities separable, and do not promise more than you honour*. They are heuristics, not laws; a 30-line script obeying all five is worse than a 30-line script that ignores them. The time to reach for them is when change hurts, that pain, not a checklist, is the signal."
     },
     {
       "type": "callout",
       "variant": "pitfall",
       "title": "Patterns are vocabulary, not goals",
-      "md": "A two-branch if/else is clearer than a Strategy hierarchy; a Singleton 'for convenience' creates global state that makes tests order-dependent and parallelism fragile - prefer injecting instances. Reach for a pattern when you have the *recurring variation* it solves, not to decorate code. The failure mode is a framework of one-use abstractions nobody dares simplify."
+      "md": "A two-branch if/else is clearer than a Strategy hierarchy; a Singleton 'for convenience' creates global state that makes tests order-dependent and parallelism fragile, prefer injecting instances. Reach for a pattern when you have the *recurring variation* it solves, not to decorate code. The failure mode is a framework of one-use abstractions nobody dares simplify."
     },
     {
       "type": "h2",
@@ -167,13 +167,13 @@
     },
     {
       "type": "p",
-      "md": "Observer is everywhere in market data: the feed publishes updates, listeners subscribe. The design decision that matters is **lifetime ownership** - a listener that unsubscribes in its destructor, or the feed holding `weak` references, prevents the classic dangling-callback crash where the feed notifies a listener that was already destroyed. When you review an Observer design, ask exactly one question first: who owns the subscribers, and what happens when one dies mid-callback?"
+      "md": "Observer is everywhere in market data: the feed publishes updates, listeners subscribe. The design decision that matters is **lifetime ownership**, a listener that unsubscribes in its destructor, or the feed holding `weak` references, prevents the classic dangling-callback crash where the feed notifies a listener that was already destroyed. When you review an Observer design, ask exactly one question first: who owns the subscribers, and what happens when one dies mid-callback?"
     }
   ],
   "guidedExercise": {
     "prompt": "Refactor this branching fee logic into the Strategy pattern. Before:\n\n```cpp\ndouble fee(const std::string& model, double notional, int shares) {\n    if (model == \"PER_SHARE\") return 0.02 * shares;\n    if (model == \"BPS\")       return notional * 1.0 / 10000.0;\n    throw std::invalid_argument(\"unknown fee model\");\n}\n```\n\nGive the interface, two concrete strategies, and state which SOLID principles the refactor serves and what the caller must change.",
     "hints": [
-      "The string dispatch becomes virtual dispatch - the interface is the FeeModel shown in the lesson.",
+      "The string dispatch becomes virtual dispatch, the interface is the FeeModel shown in the lesson.",
       "Each branch becomes a class; the throw becomes construction-time choice instead of call-time surprise.",
       "Open/Closed: extension by new classes; Dependency Inversion: callers hold the abstraction."
     ],
@@ -183,15 +183,15 @@
     "prompt": "Design the public API for a `PositionBook` that applies fills and returns the updated position. Requirements: fills carry side/quantity/price; quantities are always positive on a fill; the book may go short; a zero or negative fill quantity is invalid; the class must be unit-testable without a database. Give the types and method signature, justify each API choice against 'hard to misuse' and SOLID, and sketch how a test would substitute dependencies if any existed.",
     "hints": [
       "enum class Side, a Fill struct with validated-positive int quantity, a Position struct with signed quantity.",
-      "Decide the error path explicitly: throw a specific exception or return a result type - not a bool nobody checks.",
+      "Decide the error path explicitly: throw a specific exception or return a result type, not a bool nobody checks.",
       "SRP: the book tracks positions only; PnL math lives elsewhere. DIP: if persistence is needed later, it enters behind an interface."
     ],
-    "solution": "```cpp\nenum class Side { Buy, Sell };\n\nstruct Fill {\n    Side   side;\n    int    quantity;   // contract: > 0\n    double price;      // per share\n};\n\nstruct Position {\n    long long quantity = 0;   // signed: positive = long, negative = short\n    double    avg_cost = 0.0;\n};\n\nclass PositionBook {\npublic:\n    virtual ~PositionBook() = default;\n    // Returns the post-fill position; throws std::invalid_argument on invalid fill.\n    virtual Position apply(const Fill& fill) = 0;\n};\n```\n\nJustifications: `enum class Side` makes 'B' or 'buy' unrepresentable (**hard to misuse**); `int quantity` with a documented positive contract means sign lives in *one* place - the book (**Single Responsibility** of sign handling); the signed `Position::quantity` models shorts without a separate field; the explicit `std::invalid_argument` beats a silent bool (**explicit error path**); the abstract base with a virtual `apply` is the **Dependency Inversion** seam - a test injects a fake `PositionBook` into, say, a `RiskMonitor` under test, with no database involved. Sign convention of the arithmetic (BUY adds, SELL subtracts) is unit-tested exactly as in the testing lesson: buy 100 then sell 100 returns to 0."
+    "solution": "```cpp\nenum class Side { Buy, Sell };\n\nstruct Fill {\n    Side   side;\n    int    quantity;   // contract: > 0\n    double price;      // per share\n};\n\nstruct Position {\n    long long quantity = 0;   // signed: positive = long, negative = short\n    double    avg_cost = 0.0;\n};\n\nclass PositionBook {\npublic:\n    virtual ~PositionBook() = default;\n    // Returns the post-fill position; throws std::invalid_argument on invalid fill.\n    virtual Position apply(const Fill& fill) = 0;\n};\n```\n\nJustifications: `enum class Side` makes 'B' or 'buy' unrepresentable (**hard to misuse**); `int quantity` with a documented positive contract means sign lives in *one* place, the book (**Single Responsibility** of sign handling); the signed `Position::quantity` models shorts without a separate field; the explicit `std::invalid_argument` beats a silent bool (**explicit error path**); the abstract base with a virtual `apply` is the **Dependency Inversion** seam, a test injects a fake `PositionBook` into, say, a `RiskMonitor` under test, with no database involved. Sign convention of the arithmetic (BUY adds, SELL subtracts) is unit-tested exactly as in the testing lesson: buy 100 then sell 100 returns to 0."
   },
   "commonMistakes": [
     "Strings or booleans as mode parameters ('buy' vs 'BUY') where an enum would make mistakes unrepresentable.",
     "Silent error paths: returning -1 or false from an API whose callers never check it.",
-    "Forcing a pattern everywhere - a 2-line if/else does not need a class hierarchy.",
+    "Forcing a pattern everywhere, a 2-line if/else does not need a class hierarchy.",
     "Using a Singleton for convenience, then wondering why tests interfere with each other (global mutable state).",
     "Publishing a fat interface 'for flexibility' that every implementer must stub out in eight empty methods.",
     "Adding public API surface early ('we might need it') and paying to maintain it forever."
@@ -221,7 +221,7 @@
         1,
         2
       ],
-      "explanation": "LSP says the opposite of the last option: every subtype must be usable wherever the base is expected, honouring its contract - a simulated feed that returns stale prices violates it."
+      "explanation": "LSP says the opposite of the last option: every subtype must be usable wherever the base is expected, honouring its contract, a simulated feed that returns stale prices violates it."
     },
     {
       "id": "q2",
@@ -234,7 +234,7 @@
         "Facade"
       ],
       "answerIndex": 1,
-      "explanation": "Strategy encapsulates interchangeable algorithms behind one interface - fee models are the textbook case. Adapter translates foreign interfaces; Facade hides subsystem complexity; Singleton adds global state without solving variation."
+      "explanation": "Strategy encapsulates interchangeable algorithms behind one interface, fee models are the textbook case. Adapter translates foreign interfaces; Facade hides subsystem complexity; Singleton adds global state without solving variation."
     },
     {
       "id": "q3",
@@ -247,7 +247,7 @@
         "Strategy"
       ],
       "answerIndex": 0,
-      "explanation": "An Adapter wraps the vendor SDK and exposes your Feed interface - the vendor stays an implementation detail that can be swapped or faked in tests."
+      "explanation": "An Adapter wraps the vendor SDK and exposes your Feed interface, the vendor stays an implementation detail that can be swapped or faked in tests."
     },
     {
       "id": "q4",
@@ -288,7 +288,7 @@
     {
       "type": "definition",
       "front": "Strategy pattern",
-      "back": "Define an interface for an operation, keep interchangeable implementations behind it, and let a context object hold one - swaps algorithms without touching callers (fee models, execution algos)."
+      "back": "Define an interface for an operation, keep interchangeable implementations behind it, and let a context object hold one, swaps algorithms without touching callers (fee models, execution algos)."
     },
     {
       "type": "concept",
@@ -308,11 +308,11 @@
   ],
   "references": [
     {
-      "label": "Refactoring.Guru - Design Patterns catalogue",
+      "label": "Refactoring.Guru: Design Patterns catalogue",
       "url": "https://refactoring.guru/design-patterns"
     },
     {
-      "label": "Martin Fowler - SOLID (OO Design) article collection",
+      "label": "Martin Fowler: SOLID (OO Design) article collection",
       "url": "https://martinfowler.com/bliki/PrinciplesOfOod.html"
     }
   ],

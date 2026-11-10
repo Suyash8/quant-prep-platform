@@ -114,7 +114,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
           </section>
         )}
 
-        {/* context + problem statement — side by side on desktop */}
+        {/* context + problem statement, side by side on desktop */}
         <section className="mt-8 grid gap-4 lg:grid-cols-2">
           <div className="qf-card p-5 anim-slide-up relative overflow-hidden">
             <div className="absolute -right-8 -top-8 h-28 w-28 rounded-full bg-accent-soft" aria-hidden />
@@ -164,26 +164,26 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
             <h2>Milestones</h2>
             <span className="chip ml-auto tnum">{project.milestones.length} · ~{totalHours}h</span>
           </div>
-          <ol className="space-y-3">
+          <ol className="relative space-y-3 before:absolute before:left-8 before:top-4 before:bottom-4 before:w-0.5 before:rounded-full before:bg-border" aria-label="Milestone timeline">
             {project.milestones.map((m, i) => {
               const isDone = i < doneCount;
               return (
                 <li
                   key={i}
-                  className="qf-card-flat p-4 flex gap-3 anim-slide-up hover:-translate-y-0.5 hover:shadow-md transition-all"
+                  className="qf-card-flat p-4 flex gap-3 anim-slide-up hover:-translate-y-0.5 hover:shadow-md transition-all relative"
                   style={{ animationDelay: SLIDE_DELAYS[i % SLIDE_DELAYS.length] }}
                 >
                   <span
-                    className={`w-8 h-8 rounded-full font-black text-sm flex items-center justify-center shrink-0 tnum ${
-                      isDone ? 'bg-accent text-white' : 'border-2 border-border text-faint'
+                    className={`w-8 h-8 rounded-full font-black text-sm flex items-center justify-center shrink-0 tnum z-10 ring-4 ring-surface ${
+                      isDone ? 'bg-accent text-white' : 'border-2 border-border-strong bg-surface text-faint'
                     }`}
                   >
                     {isDone ? <Check className="h-4 w-4" /> : i + 1}
                   </span>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2 flex-wrap">
-                      <h3 className={`font-bold text-sm ${isDone ? 'line-through text-muted' : ''}`}>{m.title}</h3>
-                      <span className="chip tnum"><Clock className="h-3 w-3" /> ~{m.estHours}h</span>
+                      <h3 className={`font-bold text-sm ${isDone ? 'text-accent-deep dark:text-accent' : ''}`}>{m.title}</h3>
+                      <span className={`chip tnum ${isDone ? 'chip-success' : ''}`}><Clock className="h-3 w-3" /> ~{m.estHours}h{isDone ? ' · done' : ''}</span>
                     </div>
                     <p className="mt-1 text-sm text-muted leading-relaxed">{m.detail}</p>
                   </div>
@@ -285,7 +285,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
               <span className="icon-tile bg-surface text-accent-deep dark:text-accent"><Trophy /></span>
               <div>
                 <h2 className="font-extrabold text-lg tracking-tight">Build it, ship it, show it</h2>
-                <p className="text-sm text-muted">Log milestones as you go — honest notes and reproducible benchmarks become the evidence employers ask about.</p>
+                <p className="text-sm text-muted">Log milestones as you go, honest notes and reproducible benchmarks become the evidence employers ask about.</p>
               </div>
             </div>
             <div className="flex items-center gap-2.5 flex-wrap">

@@ -4,14 +4,16 @@
   "title": "Lambdas, std::optional, std::variant and std::tuple",
   "estMinutes": 27,
   "difficulty": "advanced",
-  "prereqs": ["cpp-concepts-traits"],
+  "prereqs": [
+    "cpp-concepts-traits"
+  ],
   "objectives": [
     "Explain what a lambda compiles into and predict the effect of by-value, by-reference and init-captures",
     "Model absent values with std::optional and read them safely with value, value_or and has_value",
     "Dispatch on alternatives of a std::variant with visit, get_if and holds_alternative, and predict bad_variant_access",
     "Return and unpack multiple values with std::tuple and C++17 structured bindings"
   ],
-  "motivation": "Feed handlers live on callbacks: every tick calls a strategy function you did not write inline, carrying state it captured earlier. Lambdas are how C++ builds those closures - and misuse of captures is how dangling bugs are built instead. Meanwhile real market data is not a stream of doubles: a quote may be missing because of a halt, a stale print, a late fill. std::optional and std::variant encode 'absent' and 'absent with a reason' in the type system, so the compiler forces handlers to deal with reality.",
+  "motivation": "Feed handlers live on callbacks: every tick calls a strategy function you did not write inline, carrying state it captured earlier. Lambdas are how C++ builds those closures, and misuse of captures is how dangling bugs are built instead. Meanwhile real market data is not a stream of doubles: a quote may be missing because of a halt, a stale print, a late fill. std::optional and std::variant encode 'absent' and 'absent with a reason' in the type system, so the compiler forces handlers to deal with reality.",
   "blocks": [
     {
       "type": "h2",
@@ -19,7 +21,7 @@
     },
     {
       "type": "p",
-      "md": "A lambda expression builds an anonymous function object on the spot: `[floorPx](double x) { return x < floorPx; }` is compiler shorthand for a struct that stores the captured variable as a member and does the work in `operator()`. Each lambda's type is unique to its expression - that is why you store it in `auto`, type-erase it into `std::function` (which costs an indirect call), or hand it straight to an algorithm. The capture list decides the closure's size and its lifetime risks, so it deserves more attention than the body."
+      "md": "A lambda expression builds an anonymous function object on the spot: `[floorPx](double x) { return x < floorPx; }` is compiler shorthand for a struct that stores the captured variable as a member and does the work in `operator()`. Each lambda's type is unique to its expression, that is why you store it in `auto`, type-erase it into `std::function` (which costs an indirect call), or hand it straight to an algorithm. The capture list decides the closure's size and its lifetime risks, so it deserves more attention than the body."
     },
     {
       "type": "code",
@@ -33,11 +35,11 @@
     },
     {
       "type": "p",
-      "md": "By-value capture `[x]` copies x **when the lambda is created**, not when it runs - the closure freezes the value. By-reference capture `[&x]` stores an alias: mutations show through in both directions, and the reference must stay valid for as long as the closure lives - returning a `[&]`-capturing lambda is the classic dangling bug. The **init-capture** `[p = std::move(buffer)]` (C++14) initialises a closure member from an arbitrary expression, which is how a lambda takes ownership of a moved-in resource. `[=]` and `[&]` capture everything mentioned; explicit lists read better in reviewed code."
+      "md": "By-value capture `[x]` copies x **when the lambda is created**, not when it runs, the closure freezes the value. By-reference capture `[&x]` stores an alias: mutations show through in both directions, and the reference must stay valid for as long as the closure lives, returning a `[&]`-capturing lambda is the classic dangling bug. The **init-capture** `[p = std::move(buffer)]` (C++14) initialises a closure member from an arbitrary expression, which is how a lambda takes ownership of a moved-in resource. `[=]` and `[&]` capture everything mentioned; explicit lists read better in reviewed code."
     },
     {
       "type": "p",
-      "md": "By-value captures are `const` inside the body. To modify the closure's *own copy* - an internal counter, a rolling mean - mark the lambda `mutable`. Draw the distinction carefully: `mutable` edits the closure's member; `[&]` edits the outside world. A stateful counter that should survive between calls wants `mutable`; a callback that reports to a shared book wants `[&]` - and the caller must guarantee the book's lifetime."
+      "md": "By-value captures are `const` inside the body. To modify the closure's *own copy*, an internal counter, a rolling mean, mark the lambda `mutable`. Draw the distinction carefully: `mutable` edits the closure's member; `[&]` edits the outside world. A stateful counter that should survive between calls wants `mutable`; a callback that reports to a shared book wants `[&]` - and the caller must guarantee the book's lifetime."
     },
     {
       "type": "code",
@@ -54,8 +56,11 @@
     {
       "type": "interactive",
       "component": "MemoryLayout",
-      "params": { "totalBytes": 8, "bytesPerRow": 8 },
-      "caption": "A by-value captured double becomes an 8-byte member of the closure; a by-reference capture stores just an 8-byte address - the lifetime risk leaves no trace in the size."
+      "params": {
+        "totalBytes": 8,
+        "bytesPerRow": 8
+      },
+      "caption": "A by-value captured double becomes an 8-byte member of the closure; a by-reference capture stores just an 8-byte address, the lifetime risk leaves no trace in the size."
     },
     {
       "type": "h2",
@@ -77,7 +82,7 @@
     },
     {
       "type": "p",
-      "md": "A `std::variant<A, B>` holds exactly one of its alternatives and knows which - a **tagged union** with the safety a raw `union` never had. The quant workhorse is a quote stream where a symbol is either live (`Price`) or absent *with a cause* (`Missing`). Inspect with `v.index()`, `std::holds_alternative<T>(v)` or the null-on-mismatch pointer `std::get_if<T>(&v)`, and dispatch over all alternatives with `std::visit`. Reading the wrong alternative through `std::get<T>` throws `std::bad_variant_access`. A default-constructed variant holds its **first** alternative, which must therefore be default-constructible."
+      "md": "A `std::variant<A, B>` holds exactly one of its alternatives and knows which, a **tagged union** with the safety a raw `union` never had. The quant workhorse is a quote stream where a symbol is either live (`Price`) or absent *with a cause* (`Missing`). Inspect with `v.index()`, `std::holds_alternative<T>(v)` or the null-on-mismatch pointer `std::get_if<T>(&v)`, and dispatch over all alternatives with `std::visit`. Reading the wrong alternative through `std::get<T>` throws `std::bad_variant_access`. A default-constructed variant holds its **first** alternative, which must therefore be default-constructible."
     },
     {
       "type": "code",
@@ -91,13 +96,13 @@
     },
     {
       "type": "p",
-      "md": "When a function returns several related values - a spread and its timestamp - `std::tuple` bundles them and C++17 **structured bindings** unpack them by name: `auto [bid, ask, qty] = makeQuote();`. Reach for tuples for quick, local bundles; the moment the bundle grows behaviour or crosses an API boundary, promote it to a struct with real member names."
+      "md": "When a function returns several related values, a spread and its timestamp - `std::tuple` bundles them and C++17 **structured bindings** unpack them by name: `auto [bid, ask, qty] = makeQuote();`. Reach for tuples for quick, local bundles; the moment the bundle grows behaviour or crosses an API boundary, promote it to a struct with real member names."
     },
     {
       "type": "code",
       "lang": "cpp",
       "code": "// C++17\n#include <iostream>\n#include <tuple>\n\nstd::tuple<double, double, int> makeQuote() { return {99.5, 100.5, 200}; }\n\nint main() {\n    auto [bid, ask, qty] = makeQuote();\n    std::cout << (bid + ask) / 2 << \" \" << qty << \"\\n\";   // 100 200\n}",
-      "caption": "Three returns, three names, no struct - and no out-parameters."
+      "caption": "Three returns, three names, no struct, and no out-parameters."
     },
     {
       "type": "callout",
@@ -109,10 +114,10 @@
   "guidedExercise": {
     "prompt": "Trace this program by hand, then explain why the two numbers differ:\n\n```cpp\n// C++17\n#include <iostream>\nint main() {\n    int wins = 0;\n    auto record = [wins]() mutable { return ++wins; };  // mutates its own copy\n    record(); record();\n    std::cout << wins << \" \" << record() << \"\\n\";\n}\n```",
     "hints": [
-      "The capture happens once, when `record` is created - not on each call.",
+      "The capture happens once, when `record` is created, not on each call.",
       "`mutable` lifts constness from the closure's own member; it never touches the outer variable."
     ],
-    "solution": "Output: **`0 3`**.\n\n- `[wins]` copies the outer `wins` (0) into the closure once, at creation.\n- The first `record()` increments the closure's member: 1. The second: 2. The closure is one object, so its state persists across calls.\n- The outer `wins` was never touched by the mutable lambda - it still prints **0**.\n- The final `record()` increments again and returns **3**.\n\nThe lesson: `mutable` gives the closure private, persistent state. If the intent were to count wins in the outside world, the capture had to be `[&wins]` - and then the lifetime of `wins` must outlive `record`."
+    "solution": "Output: **`0 3`**.\n\n- `[wins]` copies the outer `wins` (0) into the closure once, at creation.\n- The first `record()` increments the closure's member: 1. The second: 2. The closure is one object, so its state persists across calls.\n- The outer `wins` was never touched by the mutable lambda, it still prints **0**.\n- The final `record()` increments again and returns **3**.\n\nThe lesson: `mutable` gives the closure private, persistent state. If the intent were to count wins in the outside world, the capture had to be `[&wins]` - and then the lifetime of `wins` must outlive `record`."
   },
   "independentExercise": {
     "prompt": "Build a Price-or-Missing stream: define `struct Price { double value; };`, `struct Missing { const char* why; };` and `using Quote = std::variant<Price, Missing>;`. Write a `report(const Quote&)` using `std::visit` plus a generic lambda and `if constexpr` (as in the lesson) that prints `px <value>` or `miss <why>`. Then state the exact program output for the three quotes: `Price{100.25}`, `Missing{\"halt\"}`, `Price{101.5}`.",
@@ -120,21 +125,21 @@
       "The generic lambda's parameter `const auto& alt` binds once per alternative; `std::decay_t<decltype(alt)>` names the alternative type.",
       "std::visit calls the callable exactly once, with the active alternative bound."
     ],
-    "solution": "```cpp\n// C++17\nvoid report(const Quote& q) {\n    std::visit([](const auto& alt) {\n        using T = std::decay_t<decltype(alt)>;\n        if constexpr (std::is_same_v<T, Price>) std::cout << \"px \" << alt.value << \"\\n\";\n        else                                    std::cout << \"miss \" << alt.why << \"\\n\";\n    }, q);\n}\n```\n\nExact output for the stream:\n\n```\npx 100.25\nmiss halt\npx 101.5\n```\n\n`std::visit` dispatches to the same generic lambda with `alt` bound to `const Price&` for quotes 1 and 3 and `const Missing&` for quote 2; `if constexpr` compiles a different branch per alternative, so the variant's state - not a flag - decides the line printed."
+    "solution": "```cpp\n// C++17\nvoid report(const Quote& q) {\n    std::visit([](const auto& alt) {\n        using T = std::decay_t<decltype(alt)>;\n        if constexpr (std::is_same_v<T, Price>) std::cout << \"px \" << alt.value << \"\\n\";\n        else                                    std::cout << \"miss \" << alt.why << \"\\n\";\n    }, q);\n}\n```\n\nExact output for the stream:\n\n```\npx 100.25\nmiss halt\npx 101.5\n```\n\n`std::visit` dispatches to the same generic lambda with `alt` bound to `const Price&` for quotes 1 and 3 and `const Missing&` for quote 2; `if constexpr` compiles a different branch per alternative, so the variant's state, not a flag, decides the line printed."
   },
   "commonMistakes": [
-    "Returning a lambda that captured locals by reference - the closure outlives the variables and calling it is undefined behaviour; capture by value or move resources in with an init-capture.",
+    "Returning a lambda that captured locals by reference, the closure outlives the variables and calling it is undefined behaviour; capture by value or move resources in with an init-capture.",
     "Believing [=] copies at call time: by-value captures are copied when the lambda is created, so later changes to the outer variable are invisible.",
-    "Reading the wrong variant alternative: std::get<T> throws std::bad_variant_access - branch with holds_alternative, get_if or visit.",
+    "Reading the wrong variant alternative: std::get<T> throws std::bad_variant_access, branch with holds_alternative, get_if or visit.",
     "Default-constructing a std::variant whose first alternative has no default constructor: that is a compile error, by design.",
-    "Using NaN or -1.0 as 'missing price' sentinels that callers forget to check - optional and variant encode absence in the type instead."
+    "Using NaN or -1.0 as 'missing price' sentinels that callers forget to check, optional and variant encode absence in the type instead."
   ],
   "realWorldApplication": "STL algorithms take callables, and lambdas are the glue of event loops, schedulers and strategy callbacks; optional and variant model real feeds where quotes legitimately go missing.",
-  "quantFinanceApplication": "A consolidated feed maps every symbol to std::variant<Price, Missing> - halts, stale quotes and late prints become typed states the compiler forces you to handle, not magic doubles.",
+  "quantFinanceApplication": "A consolidated feed maps every symbol to std::variant<Price, Missing>, halts, stale quotes and late prints become typed states the compiler forces you to handle, not magic doubles.",
   "summary": [
     "A lambda is a compiler-generated closure: captures become members, the body is operator(), and the type is unique per expression.",
     "By-value capture freezes at creation; by-reference capture aliases and can dangle; init-capture (C++14) moves resources in; mutable gives a closure private persistent state.",
-    "std::optional (C++17) models absence honestly: has_value, value (throws when empty), value_or for defaults - no sentinel values.",
+    "std::optional (C++17) models absence honestly: has_value, value (throws when empty), value_or for defaults, no sentinel values.",
     "std::variant (C++17) is a safe tagged union: index, holds_alternative, get_if and visit; a wrong-alternative get throws bad_variant_access.",
     "Structured bindings (C++17) unpack tuples by name; promote the bundle to a struct once it has behaviour or crosses an API."
   ],
@@ -172,7 +177,7 @@
       "prompt": "A factory function returns a lambda that captured a local variable by reference. What is the risk?",
       "options": [
         "None: by-reference capture copies the variable into the closure",
-        "The closure outlives the local, so calling it reads a dead object - undefined behaviour",
+        "The closure outlives the local, so calling it reads a dead object, undefined behaviour",
         "The lambda cannot be returned from a function at all",
         "It merely leaks memory"
       ],
@@ -202,7 +207,12 @@
         "The init-capture [p = std::move(buf)] lets a closure take ownership of a moved-in resource",
         "Every lambda expression has a unique compiler-generated type"
       ],
-      "answerIndices": [0, 1, 2, 3],
+      "answerIndices": [
+        0,
+        1,
+        2,
+        3
+      ],
       "explanation": "All four are true: copies happen at creation (C++14 init-capture is the general form for expressions); references must not outlive their variable; each lambda expression is a distinct class, which is why two identical lambdas have different types."
     }
   ],
@@ -215,7 +225,7 @@
     {
       "type": "concept",
       "front": "By-value vs by-reference capture?",
-      "back": "[x] copies at lambda creation - frozen thereafter. [&x] is an alias: mutations show both ways, and the reference must never outlive the variable."
+      "back": "[x] copies at lambda creation, frozen thereafter. [&x] is an alias: mutations show both ways, and the reference must never outlive the variable."
     },
     {
       "type": "definition",
@@ -229,10 +239,24 @@
     }
   ],
   "references": [
-    { "label": "cppreference — Lambda expressions", "url": "https://en.cppreference.com/w/cpp/language/lambda" },
-    { "label": "cppreference — std::optional", "url": "https://en.cppreference.com/w/cpp/utility/optional" },
-    { "label": "cppreference — std::variant", "url": "https://en.cppreference.com/w/cpp/utility/variant" },
-    { "label": "cppreference — Structured bindings (C++17)", "url": "https://en.cppreference.com/w/cpp/language/structured_binding" }
+    {
+      "label": "cppreference. Lambda expressions",
+      "url": "https://en.cppreference.com/w/cpp/language/lambda"
+    },
+    {
+      "label": "cppreference, std::optional",
+      "url": "https://en.cppreference.com/w/cpp/utility/optional"
+    },
+    {
+      "label": "cppreference, std::variant",
+      "url": "https://en.cppreference.com/w/cpp/utility/variant"
+    },
+    {
+      "label": "cppreference. Structured bindings (C++17)",
+      "url": "https://en.cppreference.com/w/cpp/language/structured_binding"
+    }
   ],
-  "skills": ["cpp-advanced"]
+  "skills": [
+    "cpp-advanced"
+  ]
 }

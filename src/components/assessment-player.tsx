@@ -10,6 +10,10 @@ import {
 import { QMath, type SafeQuestion } from '@/components/quiz';
 import { Confetti } from '@/components/gamified/confetti';
 import { toast } from 'sonner';
+import type { QuizQuestion } from '@/lib/content';
+import { gradeAnswer } from '@/lib/grading';
+import { recordAssessmentResult } from '@/lib/client/local-state';
+import { getAssessmentPack } from '@/lib/client/packs';
 
 export interface PlayerAssessment {
   id: string; title: string; kind: string;
@@ -43,9 +47,62 @@ export function AssessmentPlayer({ assessment, compactIntro = false }: { assessm
   const allQuestions = React.useMemo(() => assessment.sections.flatMap(s => s.questions), [assessment.sections]);
   const total = allQuestions.length;
 
+  React.useEffect(() => {
+    if (!started || result) return;
+    const t = setInterval(() => {
+      setSecondsLeft(s => {
+        if (s <= 1) {
+          clearInterval(t);
+          toast.info('Time is up, submitting automatically.');
+          setTimeout(() => submitRef.current?.(), 100);
+          return 0;
+        }
+        return s - 1;
+      });
+    }, 1000);
+    return () => clearInterval(t);
+  }, [started, result]);
+
+  // v3: full questions load from the content pack so grading runs locally,
+  // instantly, and offline. Falls back to the server route if the pack is gone.
+  const [fullQuestions, setFullQuestions] = React.useState<QuizQuestion[] | null>(null);
+  React.useEffect(() => {
+    getAssessmentPack(assessment.id)
+      .then(a => setFullQuestions(a.sections.flatMap(sec => sec.questions)))
+      .catch(() => setFullQuestions(null));
+  }, [assessment.id]);
+
   async function submit() {
     setBusy(true);
     try {
+      if (fullQuestions) {
+        const perQuestion: Record<string, { correct: boolean; explanation: string }> = {};
+        const areaIndex = assessment.areaLabels ?? [];
+        const areaTotals: Record<string, { correct: number; total: number }> = {};
+        const sectionResults: { title: string; correct: number; total: number; pct: number }[] = [];
+        let allCorrect = 0, allTotal = 0;
+        assessment.sections.forEach((section, si) => {
+          let correct = 0;
+          for (const q of section.questions) {
+            const full = fullQuestions.find(x => x.id === q.id);
+            const isCorrect = full && answers[q.id] !== undefined ? gradeAnswer(full, answers[q.id]) : false;
+            perQuestion[q.id] = { correct: isCorrect, explanation: full?.explanation ?? '' };
+            if (isCorrect) correct++;
+            const area = areaIndex[si] ?? section.title;
+            areaTotals[area] = areaTotals[area] ?? { correct: 0, total: 0 };
+            areaTotals[area].total++;
+            if (isCorrect) areaTotals[area].correct++;
+          }
+          sectionResults.push({ title: section.title, correct, total: section.questions.length, pct: section.questions.length ? Math.round((correct / section.questions.length) * 100) : 0 });
+          allCorrect += correct;
+          allTotal += section.questions.length;
+        });
+        const pct = allTotal ? Math.round((allCorrect / allTotal) * 100) : 0;
+        const xp = recordAssessmentResult(assessment.id, pct);
+        setResult({ pct, correct: allCorrect, total: allTotal, sectionResults, perQuestion, areaTotals, xpAwarded: xp });
+        if (xp > 0) toast.success(`Assessment complete, +${xp} XP`);
+        return;
+      }
       const res = await fetch('/api/assessments/submit', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -59,7 +116,7 @@ export function AssessmentPlayer({ assessment, compactIntro = false }: { assessm
       setResult(data as PlayerResult);
       const xp = (data as PlayerResult).xpAwarded ?? 0;
       if (xp > 0) {
-        toast.success(`Assessment complete — +${xp} XP`);
+        toast.success(`Assessment complete, +${xp} XP`);
         window.dispatchEvent(new CustomEvent('qf:hud-refresh'));
       }
     } catch { toast.error('Network error.'); } finally { setBusy(false); }
@@ -67,22 +124,6 @@ export function AssessmentPlayer({ assessment, compactIntro = false }: { assessm
 
   const submitRef = React.useRef(submit);
   React.useEffect(() => { submitRef.current = submit; });
-
-  React.useEffect(() => {
-    if (!started || result) return;
-    const t = setInterval(() => {
-      setSecondsLeft(s => {
-        if (s <= 1) {
-          clearInterval(t);
-          toast.info('Time is up — submitting automatically.');
-          setTimeout(() => submitRef.current?.(), 100);
-          return 0;
-        }
-        return s - 1;
-      });
-    }, 1000);
-    return () => clearInterval(t);
-  }, [started, result]);
 
   function retake() {
     setAnswers({});
@@ -136,7 +177,7 @@ export function AssessmentPlayer({ assessment, compactIntro = false }: { assessm
             <div className="prose-qf mt-3 text-sm"><QMath text={assessment.description} /></div>
             <ul className="mt-4 space-y-2 text-sm font-semibold text-muted">
               <li className="flex items-center gap-2.5 rounded-xl bg-surface-2/60 px-3 py-2"><CheckCircle2 className="h-4 w-4 text-accent shrink-0" /> {total} questions across {assessment.sections.length} sections</li>
-              <li className="flex items-center gap-2.5 rounded-xl bg-surface-2/60 px-3 py-2"><CheckCircle2 className="h-4 w-4 text-accent shrink-0" /> Time limit: <strong>{assessment.timeLimitMinutes} minutes</strong> — a timer runs once you start</li>
+              <li className="flex items-center gap-2.5 rounded-xl bg-surface-2/60 px-3 py-2"><CheckCircle2 className="h-4 w-4 text-accent shrink-0" /> Time limit: <strong>{assessment.timeLimitMinutes} minutes</strong> ,  a timer runs once you start</li>
               <li className="flex items-center gap-2.5 rounded-xl bg-surface-2/60 px-3 py-2"><CheckCircle2 className="h-4 w-4 text-accent shrink-0" /> Scoring happens server-side; explanations appear after submission</li>
               <li className="flex items-center gap-2.5 rounded-xl bg-surface-2/60 px-3 py-2"><CheckCircle2 className="h-4 w-4 text-accent shrink-0" /> You can move back and forth between questions before submitting</li>
             </ul>
@@ -225,7 +266,7 @@ export function AssessmentPlayer({ assessment, compactIntro = false }: { assessm
         )}
       </div>
       <p className="mx-auto mt-3 max-w-2xl text-center text-xs font-semibold text-faint">
-        Scoring happens server-side — correct answers never reach the browser before submission.
+        Scoring happens server-side, correct answers never reach the browser before submission.
       </p>
     </div>
   );
@@ -331,10 +372,10 @@ function AssessmentResult({ assessment, result, onRetake, timeSpentS }: {
   const bannerTitle = isDiagnostic
     ? 'Baseline complete'
     : passed
-      ? 'Passed — nicely done!'
+      ? 'Passed, nicely done!'
       : 'Below the 70% pass mark';
   const bannerSub = isDiagnostic
-    ? 'Advisory only — it maps your gaps, it does not gate anything.'
+    ? 'Advisory only, it maps your gaps, it does not gate anything.'
     : passed
       ? 'This result marks your passed lessons as retrieval-verified for mastery.'
       : 'Review the explanations below and retake in a few days.';
@@ -352,7 +393,7 @@ function AssessmentResult({ assessment, result, onRetake, timeSpentS }: {
         <div className="absolute -left-10 -bottom-12 h-40 w-40 rounded-full bg-accent-soft anim-float-slow" aria-hidden />
         <div className="absolute -right-8 -top-10 h-32 w-32 rounded-full bg-info-soft anim-float" aria-hidden />
         <div className="relative">
-          <p className="text-xs font-black uppercase tracking-[0.12em] text-faint">{assessment.title} — result</p>
+          <p className="text-xs font-black uppercase tracking-[0.12em] text-faint">{assessment.title} ,  result</p>
 
           <div className="anim-pop-in relative mx-auto mt-5 h-44 w-44">
             <svg viewBox="0 0 160 160" className="h-44 w-44 -rotate-90">

@@ -4,14 +4,16 @@
   "title": "std::vector, std::array and Growth Behaviour",
   "estMinutes": 27,
   "difficulty": "core",
-  "prereqs": ["cpp-move-semantics"],
+  "prereqs": [
+    "cpp-move-semantics"
+  ],
   "objectives": [
     "Distinguish size from capacity and predict how a vector's capacity evolves under push_back",
     "Use reserve to eliminate reallocations in latency-sensitive loops and justify when it pays off",
     "Predict which vector operations invalidate iterators, pointers and references, and write loops that stay valid while erasing",
     "Choose between std::array and std::vector based on fixed size, allocation and memory location"
   ],
-  "motivation": "A market-data handler appends every fill to a buffer that is read by pointer from three other threads. One unreserved vector can reallocate mid-session: every pointer into it dangles, and a million elements are copied while the tape keeps rolling. std::vector is the most-used container in quantitative systems, and the size-versus-capacity distinction - plus the invalidation rules - is the difference between a smooth session and a 40-millisecond stall that shows up in the tail-latency report.",
+  "motivation": "A market-data handler appends every fill to a buffer that is read by pointer from three other threads. One unreserved vector can reallocate mid-session: every pointer into it dangles, and a million elements are copied while the tape keeps rolling. std::vector is the most-used container in quantitative systems, and the size-versus-capacity distinction, plus the invalidation rules, is the difference between a smooth session and a 40-millisecond stall that shows up in the tail-latency report.",
   "blocks": [
     {
       "type": "h2",
@@ -19,7 +21,7 @@
     },
     {
       "type": "p",
-      "md": "Every std::vector owns one contiguous block of memory. Its **size** is how many elements are constructed right now; its **capacity** is how many elements would fit before the vector must obtain more memory. Capacity is always at least size. Because the block is contiguous, the element at index $i$ sits at byte offset $i \\times \\text{sizeof}(T)$ from the start - the property that makes vector the closest thing C++ has to a raw array with a safety net, and the reason iterating it is cache-friendly."
+      "md": "Every std::vector owns one contiguous block of memory. Its **size** is how many elements are constructed right now; its **capacity** is how many elements would fit before the vector must obtain more memory. Capacity is always at least size. Because the block is contiguous, the element at index $i$ sits at byte offset $i \\times \\text{sizeof}(T)$ from the start, the property that makes vector the closest thing C++ has to a raw array with a safety net, and the reason iterating it is cache-friendly."
     },
     {
       "type": "code",
@@ -36,15 +38,15 @@
       "title": "Counting the cost of doubling",
       "items": [
         "Start empty and push 17 elements with a doubling policy: capacities run 1, 2, 4, 8, 16, 32.",
-        "Reallocation fires whenever size hits capacity: after pushes 1, 2, 3, 5, 9 and 17 - six reallocations in total.",
+        "Reallocation fires whenever size hits capacity: after pushes 1, 2, 3, 5, 9 and 17, six reallocations in total.",
         "Element moves per reallocation equal the old capacity: $0 + 1 + 2 + 4 + 8 + 16 = 31$ moves.",
-        "31 moves for 17 pushes is under 2 moves per push, and the ratio approaches 1 as $n$ grows - the amortized $O(1)$ claim made precise."
+        "31 moves for 17 pushes is under 2 moves per push, and the ratio approaches 1 as $n$ grows, the amortized $O(1)$ claim made precise."
       ]
     },
     {
       "type": "math",
       "tex": "1 + 2 + 4 + \\dots + 2^{\\lceil \\log_2 n \\rceil - 1} < 2n",
-      "caption": "Total element moves for n pushes under doubling growth - linear, hence amortized O(1) per push."
+      "caption": "Total element moves for n pushes under doubling growth, linear, hence amortized O(1) per push."
     },
     {
       "type": "interactive",
@@ -53,9 +55,21 @@
         "title": "Building a 1,000,000-element fill buffer",
         "n": 1000000,
         "operations": [
-          { "name": "push_back without reserve (doubling growth)", "perCall": "amortized O(1)", "allocations": 21 },
-          { "name": "reserve(1000000) once, then push_back", "perCall": "O(1)", "allocations": 1 },
-          { "name": "insert(begin, x) on each arrival", "perCall": "O(n)", "allocations": 21 }
+          {
+            "name": "push_back without reserve (doubling growth)",
+            "perCall": "amortized O(1)",
+            "allocations": 21
+          },
+          {
+            "name": "reserve(1000000) once, then push_back",
+            "perCall": "O(1)",
+            "allocations": 1
+          },
+          {
+            "name": "insert(begin, x) on each arrival",
+            "perCall": "O(n)",
+            "allocations": 21
+          }
         ]
       },
       "caption": "Same end state, wildly different allocation behaviour: 21 reallocations (capacities 1 through 2^20) versus one. Inserting at the front shifts every element on every arrival."
@@ -66,22 +80,22 @@
     },
     {
       "type": "p",
-      "md": "reserve(n) raises capacity to at least n **without creating any elements** - size stays 0. resize(n) actually constructs or destroys elements so that size becomes n. shrink_to_fit() *requests* a capacity reduction; the standard is explicit that implementations may ignore it. Reserve is the tool for the hot path: call it once with the largest count you expect, and push_back never reallocates again. But reserve is not resize - confusing the two is the classic vector crash."
+      "md": "reserve(n) raises capacity to at least n **without creating any elements**, size stays 0. resize(n) actually constructs or destroys elements so that size becomes n. shrink_to_fit() *requests* a capacity reduction; the standard is explicit that implementations may ignore it. Reserve is the tool for the hot path: call it once with the largest count you expect, and push_back never reallocates again. But reserve is not resize, confusing the two is the classic vector crash."
     },
     {
       "type": "list",
       "ordered": false,
       "items": [
-        "**reserve(n)** - capacity $\\ge n$ afterwards, size unchanged; one allocation at most, and iterators die only if reallocation occurred.",
-        "**resize(n)** - size becomes n, appending value-initialised elements or erasing from the back.",
-        "**shrink_to_fit()** - non-binding request to release spare capacity; never guaranteed."
+        "**reserve(n)**, capacity $\\ge n$ afterwards, size unchanged; one allocation at most, and iterators die only if reallocation occurred.",
+        "**resize(n)**, size becomes n, appending value-initialised elements or erasing from the back.",
+        "**shrink_to_fit()**, non-binding request to release spare capacity; never guaranteed."
       ]
     },
     {
       "type": "callout",
       "variant": "pitfall",
       "title": "reserve does not create elements",
-      "md": "A guaranteed crash: v.reserve(10); v[0] = 5; - the vector has room for ten elements but size 0, so v[0] is out of bounds and the write is undefined behaviour. Elements come into existence only via push_back, emplace_back, resize or construction."
+      "md": "A guaranteed crash: v.reserve(10); v[0] = 5;, the vector has room for ten elements but size 0, so v[0] is out of bounds and the write is undefined behaviour. Elements come into existence only via push_back, emplace_back, resize or construction."
     },
     {
       "type": "h2",
@@ -99,7 +113,7 @@
     },
     {
       "type": "p",
-      "md": "When you must erase while iterating, own the loop and use the return value: v.erase(it) hands back an iterator to the element after the erased one, so it = v.erase(it); keeps the loop valid. A range-for hides begin() and end() behind sugar and offers no way to reassign, so erasing inside a range-for is undefined behaviour - the same bug wearing friendlier syntax. Lesson 4 formalises this with the erase-remove idiom."
+      "md": "When you must erase while iterating, own the loop and use the return value: v.erase(it) hands back an iterator to the element after the erased one, so it = v.erase(it); keeps the loop valid. A range-for hides begin() and end() behind sugar and offers no way to reassign, so erasing inside a range-for is undefined behaviour, the same bug wearing friendlier syntax. Lesson 4 formalises this with the erase-remove idiom."
     },
     {
       "type": "h2",
@@ -107,19 +121,19 @@
     },
     {
       "type": "p",
-      "md": "std::array<T, N> holds exactly N elements, fixed at compile time, inside whatever memory the object itself occupies - usually the stack, or an enclosing struct. It never allocates, never reallocates, and its size() is constexpr. That makes it the right choice when the count is genuinely fixed: a ladder of tenor points, a strategy's three constant parameters, a table of tick sizes. The price is rigidity: no push_back, no growth, and a mistake in N is a compile-time fact you must fix in code rather than handle at runtime."
+      "md": "std::array<T, N> holds exactly N elements, fixed at compile time, inside whatever memory the object itself occupies, usually the stack, or an enclosing struct. It never allocates, never reallocates, and its size() is constexpr. That makes it the right choice when the count is genuinely fixed: a ladder of tenor points, a strategy's three constant parameters, a table of tick sizes. The price is rigidity: no push_back, no growth, and a mistake in N is a compile-time fact you must fix in code rather than handle at runtime."
     },
     {
       "type": "code",
       "lang": "cpp",
       "code": "#include <array>\n#include <iostream>\n\nint main() {\n    constexpr std::array<double, 3> tenorRates{0.031, 0.034, 0.039};\n    std::cout << \"n=\" << tenorRates.size()\n              << \" first=\" << tenorRates[0] << \"\\n\";\n}",
-      "caption": "Zero heap allocation, size known at compile time - ideal for constant market parameters."
+      "caption": "Zero heap allocation, size known at compile time, ideal for constant market parameters."
     },
     {
       "type": "callout",
       "variant": "quant",
       "title": "Pre-reserve before the open",
-      "md": "A fill logger that expects at most 5,000 fills per session reserves 5,000 slots in its constructor: one allocation of 80,000 bytes for 16-byte fills, and every record() afterwards is a plain memory write - no allocation, no element moves, no invalidated pointers. Pushing allocation off the hot path and behind initialisation is one of the cheapest latency wins in C++ trading systems."
+      "md": "A fill logger that expects at most 5,000 fills per session reserves 5,000 slots in its constructor: one allocation of 80,000 bytes for 16-byte fills, and every record() afterwards is a plain memory write, no allocation, no element moves, no invalidated pointers. Pushing allocation off the hot path and behind initialisation is one of the cheapest latency wins in C++ trading systems."
     }
   ],
   "guidedExercise": {
@@ -128,7 +142,7 @@
       "Reallocation happens exactly when size equals capacity.",
       "The move count for each reallocation equals the size before growth."
     ],
-    "solution": "Capacities run 1, 2, 4, 8, 16, 32. Reallocations fire after pushes 1, 2, 3, 5, 9 and 17, so **six** reallocations. Moves: $0 + 1 + 2 + 4 + 8 + 16 = 31$ (the first reallocation moves the zero elements of the empty vector). 31 moves over 17 pushes is under 2 per push - trending to 1, which is the amortized $O(1)$ promise."
+    "solution": "Capacities run 1, 2, 4, 8, 16, 32. Reallocations fire after pushes 1, 2, 3, 5, 9 and 17, so **six** reallocations. Moves: $0 + 1 + 2 + 4 + 8 + 16 = 31$ (the first reallocation moves the zero elements of the empty vector). 31 moves over 17 pushes is under 2 per push, trending to 1, which is the amortized $O(1)$ promise."
   },
   "independentExercise": {
     "prompt": "A session logs at most 5,000 fills, each a 16-byte struct, into a std::vector<Fill>. (a) How many bytes does reserve(5000) allocate for the buffer? (b) If the reserve is forgotten, how many reallocations occur over exactly 5,000 push_back calls under a doubling policy starting at capacity 1, and how many bytes get moved in total? (c) Which scenario can invalidate a pointer to the first fill, and after which pushes?",
@@ -136,22 +150,22 @@
       "Doubling capacities: 1, 2, 4, 8, ... Find the first power of two that holds 5,000 elements.",
       "Sum the capacities before each growth to get total moves."
     ],
-    "solution": "(a) $5000 \\times 16 = 80{,}000$ bytes (78.125 KiB), one allocation. (b) The first power of two reaching 5,000 is $2^{13} = 8192$, so capacities run 1 through 8192: **14 reallocations**. Moves $= 1 + 2 + 4 + \\dots + 4096 = 8191$, i.e. $8191 \\times 16 = 131{,}056$ bytes shuffled. (c) Every one of those 14 reallocations invalidates existing pointers, so a pointer to the first fill dangles after pushes 1, 2, 3, 5, 9, 17, 33, ... - with reserve there are zero invalidations."
+    "solution": "(a) $5000 \\times 16 = 80{,}000$ bytes (78.125 KiB), one allocation. (b) The first power of two reaching 5,000 is $2^{13} = 8192$, so capacities run 1 through 8192: **14 reallocations**. Moves $= 1 + 2 + 4 + \\dots + 4096 = 8191$, i.e. $8191 \\times 16 = 131{,}056$ bytes shuffled. (c) Every one of those 14 reallocations invalidates existing pointers, so a pointer to the first fill dangles after pushes 1, 2, 3, 5, 9, 17, 33, ..., with reserve there are zero invalidations."
   },
   "commonMistakes": [
-    "Assuming reserve(n) creates n elements - it only raises capacity; v[0] after reserve on an empty vector is undefined behaviour.",
-    "Keeping iterators or pointers across push_back and using them afterwards - any reallocation invalidates all of them.",
-    "Erasing inside a range-for loop - the cached end() iterator dangles; use it = v.erase(it) or the erase-remove idiom.",
-    "Quoting a portable capacity() number in an answer - growth factors are implementation-defined (2x on libstdc++/libc++, 1.5x on MSVC).",
+    "Assuming reserve(n) creates n elements, it only raises capacity; v[0] after reserve on an empty vector is undefined behaviour.",
+    "Keeping iterators or pointers across push_back and using them afterwards, any reallocation invalidates all of them.",
+    "Erasing inside a range-for loop, the cached end() iterator dangles; use it = v.erase(it) or the erase-remove idiom.",
+    "Quoting a portable capacity() number in an answer, growth factors are implementation-defined (2x on libstdc++/libc++, 1.5x on MSVC).",
     "Calling resize when reserve was intended: resize constructs elements, reserve only buys slots."
   ],
   "realWorldApplication": "Market-data replay buffers, fill logs and position snapshots are vector-based in production C++ systems; reserving capacity at initialisation is one of the cheapest and most reliable latency improvements available.",
-  "quantFinanceApplication": "A fill logger that reserves its worst-case session size turns every record() call into a plain write - no allocation, no moves, no dangling pointers - the same pattern low-latency tick stores use before the market opens.",
+  "quantFinanceApplication": "A fill logger that reserves its worst-case session size turns every record() call into a plain write, no allocation, no moves, no dangling pointers, the same pattern low-latency tick stores use before the market opens.",
   "summary": [
     "size() counts constructed elements; capacity() counts allocated slots; capacity() >= size() always holds.",
     "Growth is geometric (typically doubling), so n push_backs cost O(n) total element moves and each push is amortized O(1); reserve(n) up front makes it O(1) worst case with a single allocation.",
     "Reallocation invalidates all iterators, pointers and references; insert/erase invalidate those at or after the position; erase returns the next valid iterator.",
-    "std::array holds a compile-time-fixed count with zero allocations - right for genuinely fixed-size data such as tenor ladders and parameter tables.",
+    "std::array holds a compile-time-fixed count with zero allocations, right for genuinely fixed-size data such as tenor ladders and parameter tables.",
     "reserve() buys capacity, resize() creates elements, shrink_to_fit() is only a non-binding request."
   ],
   "quiz": [
@@ -194,7 +208,11 @@
         "v[2] = 42 (element assignment)",
         "v.erase(v.begin())"
       ],
-      "answerIndices": [0, 1, 3],
+      "answerIndices": [
+        0,
+        1,
+        3
+      ],
       "explanation": "push_back at full capacity reallocates (kills all iterators); reserve that raises capacity reallocates; erase invalidates iterators at and after the erased position and end(). Plain element assignment touches no structure and invalidates nothing."
     },
     {
@@ -202,7 +220,13 @@
       "type": "short",
       "prompt": "In one or two sentences: why is push_back said to be amortized O(1) rather than plain O(1)?",
       "modelAnswer": "Occasional reallocations move the entire buffer, so a single push_back can cost O(n); geometric growth makes the total cost of n pushes O(n), hence constant on average per push.",
-      "keywords": ["amortized", "geometric", "doubling", "reallocation", "O(n)"],
+      "keywords": [
+        "amortized",
+        "geometric",
+        "doubling",
+        "reallocation",
+        "O(n)"
+      ],
       "explanation": "The bound is a statement about the average over a sequence: linear total work spread over linearly many pushes. Any individual push hitting a full buffer still pays for the whole move."
     },
     {
@@ -216,7 +240,7 @@
         "It invalidates iterators on push_back"
       ],
       "answerIndex": 1,
-      "explanation": "std::array wraps a C array of fixed N inside the object itself - no allocation, no mutation of size, hence no push_back and no invalidation. It is the zero-overhead choice for genuinely fixed counts."
+      "explanation": "std::array wraps a C array of fixed N inside the object itself, no allocation, no mutation of size, hence no push_back and no invalidation. It is the zero-overhead choice for genuinely fixed counts."
     }
   ],
   "flashcards": [
@@ -233,7 +257,7 @@
     {
       "type": "code-output",
       "front": "vector<int> v{1,2,3}; v.reserve(100); v.push_back(4); cout << v[0] << ' ' << v.size();",
-      "back": "1 4 - reserve reallocated (old pointers die), but push_back at size 4 <= capacity 100 does not."
+      "back": "1 4, reserve reallocated (old pointers die), but push_back at size 4 <= capacity 100 does not."
     },
     {
       "type": "concept",
@@ -243,17 +267,19 @@
   ],
   "references": [
     {
-      "label": "cppreference - std::vector",
+      "label": "cppreference: std::vector",
       "url": "https://en.cppreference.com/w/cpp/container/vector"
     },
     {
-      "label": "cppreference - std::array",
+      "label": "cppreference: std::array",
       "url": "https://en.cppreference.com/w/cpp/container/array"
     },
     {
-      "label": "cppreference - vector::reserve and capacity",
+      "label": "cppreference: vector::reserve and capacity",
       "url": "https://en.cppreference.com/w/cpp/container/vector/reserve"
     }
   ],
-  "skills": ["cpp-stl"]
+  "skills": [
+    "cpp-stl"
+  ]
 }

@@ -4,14 +4,16 @@
   "title": "Kernel-Bypass Concepts: DPDK and Onload",
   "estMinutes": 27,
   "difficulty": "specialist",
-  "prereqs": ["ll-user-space-techniques"],
+  "prereqs": [
+    "ll-user-space-techniques"
+  ],
   "objectives": [
     "Trace a packet through the kernel network stack and identify each added cost",
     "Explain poll-mode drivers (DPDK-style): dedicated cores, hugepages, no interrupts",
     "Explain kernel TCP bypass (Onload-style): sockets API kept, stack moved to user space",
     "Choose between kernel, bypass-TCP and raw-UDP designs using approximate µs costs"
   ],
-  "motivation": "Between your process and the NIC sits the kernel: a general-purpose, feature-rich network stack that was never designed to answer in under a microsecond. Kernel-bypass technologies (DPDK, Onload) move packet processing into user space. You need no special hardware to understand the ideas - only the packet's journey and what each stop costs.",
+  "motivation": "Between your process and the NIC sits the kernel: a general-purpose, feature-rich network stack that was never designed to answer in under a microsecond. Kernel-bypass technologies (DPDK, Onload) move packet processing into user space. You need no special hardware to understand the ideas, only the packet's path and what each stop costs.",
   "blocks": [
     {
       "type": "h2",
@@ -21,17 +23,17 @@
       "type": "steps",
       "title": "One inbound packet, kernel path (costs approximate)",
       "items": [
-        "The NIC DMA-writes the packet into a ring in RAM - hardware, ~100 ns scale.",
+        "The NIC DMA-writes the packet into a ring in RAM, hardware, ~100 ns scale.",
         "**Interrupt**: the NIC raises an IRQ; the CPU stops your thread and runs the driver. Waking and dispatching costs µs-scale (approximate).",
-        "The driver builds a socket buffer (`sk_buff`) and runs IP/UDP/TCP processing - checks, checksums, socket lookup.",
+        "The driver builds a socket buffer (`sk_buff`) and runs IP/UDP/TCP processing, checks, checksums, socket lookup.",
         "The packet is queued to the socket's receive buffer.",
-        "Your thread - if it was blocked in `recvfrom()` - is woken: another context switch, caches cold.",
-        "Finally `recvfrom()` copies the bytes from kernel memory into your buffer. Total overhead commonly ≈ $1{-}2\\,\\mu s$ per direction (approximate) - and the *tail* is worse, because interrupts land whenever they like."
+        "Your thread, if it was blocked in `recvfrom()` - is woken: another context switch, caches cold.",
+        "Finally `recvfrom()` copies the bytes from kernel memory into your buffer. Total overhead commonly ≈ $1{-}2\\,\\mu s$ per direction (approximate), and the *tail* is worse, because interrupts land whenever they like."
       ]
     },
     {
       "type": "p",
-      "md": "On a $10\\,\\mu s$ budget, $1{-}2\\,\\mu s$ each way is a quarter of the ledger spent sightseeing. Jitter matters as much as the mean: an interrupt arriving mid-decision adds delay you cannot predict - exactly what percentile charts expose. The kernel is not slow because it is badly written; it is slow because it is *general*: firewalls, counters, netfilter hooks, scheduling fairness - features you pay for on every packet."
+      "md": "On a $10\\,\\mu s$ budget, $1{-}2\\,\\mu s$ each way is a quarter of the ledger spent sightseeing. Jitter matters as much as the mean: an interrupt arriving mid-decision adds delay you cannot predict, exactly what percentile charts expose. The kernel is not slow because it is badly written; it is slow because it is *general*: firewalls, counters, netfilter hooks, scheduling fairness, features you pay for on every packet."
     },
     {
       "type": "interactive",
@@ -40,7 +42,7 @@
         "totalBytes": 32768,
         "bytesPerRow": 64
       },
-      "caption": "A NIC receive ring as fixed memory: 512 descriptors x 64 bytes = 32,768 bytes. The NIC DMA-writes into these slots; a poll-mode driver reads them directly from user space - no interrupt, no kernel copy, no allocation."
+      "caption": "A NIC receive ring as fixed memory: 512 descriptors x 64 bytes = 32,768 bytes. The NIC DMA-writes into these slots; a poll-mode driver reads them directly from user space, no interrupt, no kernel copy, no allocation."
     },
     {
       "type": "h2",
@@ -48,7 +50,7 @@
     },
     {
       "type": "p",
-      "md": "DPDK's idea is blunt: **remove the kernel from the data path**. The application, via DPDK libraries, polls the NIC's RX/TX rings directly from user space with a **poll-mode driver** - no interrupts at all - and packet buffers come from **hugepages** (large, TLB-friendly pages). Each NIC gets dedicated pinned cores whose only job is to poll. Consequences: per-packet cost drops to hundreds of nanoseconds scale (approximate), jitter collapses because nothing asynchronous interrupts you - and the bill is real: cores burn 100% polling, kernel networking tools no longer see the traffic, and the application must now do what the kernel used to do (ARP, fragmentation, everything)."
+      "md": "DPDK's idea is blunt: **remove the kernel from the data path**. The application, via DPDK libraries, polls the NIC's RX/TX rings directly from user space with a **poll-mode driver**, no interrupts at all, and packet buffers come from **hugepages** (large, TLB-friendly pages). Each NIC gets dedicated pinned cores whose only job is to poll. Consequences: per-packet cost drops to hundreds of nanoseconds scale (approximate), jitter collapses because nothing asynchronous interrupts you, and the bill is real: cores burn 100% polling, kernel networking tools no longer see the traffic, and the application must now do what the kernel used to do (ARP, fragmentation, everything)."
     },
     {
       "type": "h2",
@@ -56,26 +58,46 @@
     },
     {
       "type": "p",
-      "md": "Raw UDP plus DPDK is the fastest but hands you all the protocol work. **Onload**-style bypass keeps the **sockets API**: a library intercepts socket calls (dynamic-linking shim), moves the TCP state machine into user space, and talks to the NIC through poll-mode queues. Existing TCP code runs unchanged on the fast path; control connections can quietly fall back to the kernel stack. You trade some of DPDK's raw speed for keeping TCP's reliability, congestion control - and your codebase."
+      "md": "Raw UDP plus DPDK is the fastest but hands you all the protocol work. **Onload**-style bypass keeps the **sockets API**: a library intercepts socket calls (dynamic-linking shim), moves the TCP state machine into user space, and talks to the NIC through poll-mode queues. Existing TCP code runs unchanged on the fast path; control connections can quietly fall back to the kernel stack. You trade some of DPDK's raw speed for keeping TCP's reliability, congestion control, and your codebase."
     },
     {
       "type": "table",
-      "headers": ["Design", "Per-direction overhead (approx.)", "App changes", "Notes"],
+      "headers": [
+        "Design",
+        "Per-direction overhead (approx.)",
+        "App changes",
+        "Notes"
+      ],
       "rows": [
-        ["Kernel stack", "~1-2 µs + jitter", "None", "Tooling works; tails suffer"],
-        ["Bypass TCP (Onload-style)", "~100s of ns", "None (drop-in library)", "TCP semantics kept; kernel fallback possible"],
-        ["Raw UDP + DPDK", "~100s of ns, least jitter", "Large (own reliability, framing)", "Fastest; highest ownership; dedicated cores"]
+        [
+          "Kernel stack",
+          "~1-2 µs + jitter",
+          "None",
+          "Tooling works; tails suffer"
+        ],
+        [
+          "Bypass TCP (Onload-style)",
+          "~100s of ns",
+          "None (drop-in library)",
+          "TCP semantics kept; kernel fallback possible"
+        ],
+        [
+          "Raw UDP + DPDK",
+          "~100s of ns, least jitter",
+          "Large (own reliability, framing)",
+          "Fastest; highest ownership; dedicated cores"
+        ]
       ]
     },
     {
       "type": "callout",
       "variant": "quant",
-      "title": "Bypass buys microseconds - buy them where they pay",
+      "title": "Bypass buys microseconds: buy them where they pay",
       "md": "The saving is real but bounded: ≈ $1.5\\,\\mu s$ kernel vs ≈ $0.3\\,\\mu s$ bypass per direction (illustrative numbers) $= 2.4\\,\\mu s$ per round trip. On a $9.8\\,\\mu s$ tick-to-trade path that is ~24%. If your budget is $50\\,\\mu s$, spend the effort elsewhere; if it is $5\\,\\mu s$, the kernel stack may not fit in the budget at all."
     },
     {
       "type": "p",
-      "md": "Everything here is understandable - and even implementable in miniature - without exotic NICs: a user-space poll loop over a memory ring is just the busy-polling lesson applied to packets. Hardware makes it faster; the *architecture* makes it low-latency."
+      "md": "Everything here is understandable, and even implementable in miniature, without exotic NICs: a user-space poll loop over a memory ring is just the busy-polling lesson applied to packets. Hardware makes it faster; the *architecture* makes it low-latency."
     }
   ],
   "guidedExercise": {
@@ -92,20 +114,20 @@
       "Budget minus sum of stages.",
       "Bypass replaces the 2.0 µs kernel cost with 0.4 µs."
     ],
-    "solution": "(a) Kernel stages sum to $2.0 + 0.3 + 1.5 + 0.4 + 0.2 = 4.4\\,\\mu s$, leaving $0.6\\,\\mu s$ of slack - one tail event blows it. (b) Bypass: $4.4 - 2.0 + 0.4 = 2.8\\,\\mu s$, leaving $2.2\\,\\mu s$ of slack. (c) Bypass leaves room for the tail. Non-latency costs: dedicated polling cores (power), loss of kernel tooling on the fast path, and far more code to own."
+    "solution": "(a) Kernel stages sum to $2.0 + 0.3 + 1.5 + 0.4 + 0.2 = 4.4\\,\\mu s$, leaving $0.6\\,\\mu s$ of slack, one tail event blows it. (b) Bypass: $4.4 - 2.0 + 0.4 = 2.8\\,\\mu s$, leaving $2.2\\,\\mu s$ of slack. (c) Bypass leaves room for the tail. Non-latency costs: dedicated polling cores (power), loss of kernel tooling on the fast path, and far more code to own."
   },
   "commonMistakes": [
-    "Comparing bypass numbers across different hardware and calling it an improvement - measure your own path.",
+    "Comparing bypass numbers across different hardware and calling it an improvement, measure your own path.",
     "Bypassing everything: control channels, logging and research belong on the kernel stack.",
     "Forgetting the tail: bypass shrinks jitter as much as the mean, which is often the real win.",
-    "Assuming bypass removes the need for the earlier lessons - it depends on pinned cores, pre-allocation and poll discipline."
+    "Assuming bypass removes the need for the earlier lessons, it depends on pinned cores, pre-allocation and poll discipline."
   ],
   "realWorldApplication": "Market-data handlers and order gateways at HFT firms run DPDK or Onload-style stacks in production; the same poll-mode ideas now power cloud networking (smartNIC offloads) and packet-capture tools.",
   "quantFinanceApplication": "Round-trip order latency bounds how quickly a market maker can reprice after a fill, so removing ~2 µs of kernel overhead per round trip (approximate) directly tightens achievable quote spreads.",
   "summary": [
     "Kernel path per packet: DMA -> interrupt -> driver -> stack -> socket buffer -> wake -> copy; ≈ 1-2 µs/direction plus jitter (approximate).",
-    "Poll-mode drivers (DPDK): user-space polling, hugepages, dedicated cores, no interrupts - µs become 100s of ns (approximate) at the cost of burned cores and lost kernel tooling.",
-    "Bypass TCP (Onload): sockets API kept, TCP state machine in user space - drop-in speed with kernel fallback.",
+    "Poll-mode drivers (DPDK): user-space polling, hugepages, dedicated cores, no interrupts, µs become 100s of ns (approximate) at the cost of burned cores and lost kernel tooling.",
+    "Bypass TCP (Onload): sockets API kept, TCP state machine in user space, drop-in speed with kernel fallback.",
     "Quantify before adopting: illustrative saving 2.4 µs per round trip ≈ 24% of a 9.8 µs path."
   ],
   "quiz": [
@@ -129,7 +151,7 @@
       "answer": 640,
       "tolerance": 1,
       "unit": "MB/s",
-      "explanation": "$10 \\times 10^6 \\times 64 = 640 \\times 10^6$ bytes/s = 640 MB/s ≈ 5.1 Gbit/s - the packet *rate*, not bandwidth, is why per-packet cost matters."
+      "explanation": "$10 \\times 10^6 \\times 64 = 640 \\times 10^6$ bytes/s = 640 MB/s ≈ 5.1 Gbit/s, the packet *rate*, not bandwidth, is why per-packet cost matters."
     },
     {
       "id": "q3",
@@ -141,16 +163,25 @@
         "Cache state after a wake-up depends on what else ran",
         "The propagation delay of fibre is random"
       ],
-      "answerIndices": [0, 1, 2],
+      "answerIndices": [
+        0,
+        1,
+        2
+      ],
       "explanation": "Interrupts, scheduling and cache state are all variable; fibre propagation is a fixed physical constant."
     },
     {
       "id": "q4",
       "type": "short",
       "prompt": "Why does Onload-style bypass keep the sockets API instead of inventing a new one?",
-      "modelAnswer": "Keeping the sockets API means existing TCP applications run unchanged on the fast path - no rewrite, portable across stacks, and the app can still fall back to the kernel for control connections.",
-      "keywords": ["portab", "rewrite", "existing", "fallback"],
-      "explanation": "API compatibility converts bypass from a re-architecture into a deployment choice - which is exactly its selling point versus raw DPDK."
+      "modelAnswer": "Keeping the sockets API means existing TCP applications run unchanged on the fast path, no rewrite, portable across stacks, and the app can still fall back to the kernel for control connections.",
+      "keywords": [
+        "portab",
+        "rewrite",
+        "existing",
+        "fallback"
+      ],
+      "explanation": "API compatibility converts bypass from a re-architecture into a deployment choice, which is exactly its selling point versus raw DPDK."
     },
     {
       "id": "q5",
@@ -172,7 +203,7 @@
       "answer": 2.4,
       "tolerance": 0.2,
       "unit": "µs",
-      "explanation": "$2 \\times (1.5 - 0.3) = 2.4\\,\\mu s$ per round trip - about a quarter of a 9.8 µs path in the lesson's example."
+      "explanation": "$2 \\times (1.5 - 0.3) = 2.4\\,\\mu s$ per round trip, about a quarter of a 9.8 µs path in the lesson's example."
     }
   ],
   "flashcards": [
@@ -184,12 +215,12 @@
     {
       "type": "concept",
       "front": "DPDK vs Onload",
-      "back": "DPDK: raw user-space packet I/O - most control, most effort. Onload: keeps the sockets API and moves the TCP stack to user space - drop-in acceleration with kernel fallback."
+      "back": "DPDK: raw user-space packet I/O, most control, most effort. Onload: keeps the sockets API and moves the TCP stack to user space, drop-in acceleration with kernel fallback."
     },
     {
       "type": "formula",
       "front": "Round-trip saving from bypass",
-      "back": "2 x (kernel per-direction - bypass per-direction). Illustrative: 2 x (1.5 - 0.3) = 2.4 µs."
+      "back": "2 x (kernel per-direction, bypass per-direction). Illustrative: 2 x (1.5, 0.3) = 2.4 µs."
     },
     {
       "type": "concept",
@@ -199,17 +230,20 @@
   ],
   "references": [
     {
-      "label": "DPDK Project - Data Plane Development Kit",
+      "label": "DPDK Project: Data Plane Development Kit",
       "url": "https://www.dpdk.org/"
     },
     {
-      "label": "OpenOnload - kernel-bypass TCP stack (GitHub)",
+      "label": "OpenOnload: kernel-bypass TCP stack (GitHub)",
       "url": "https://github.com/Xilinx-CNS/openonload"
     },
     {
-      "label": "Wikipedia - Data Plane Development Kit",
+      "label": "Wikipedia: Data Plane Development Kit",
       "url": "https://en.wikipedia.org/wiki/Data_Plane_Development_Kit"
     }
   ],
-  "skills": ["low-latency", "networking"]
+  "skills": [
+    "low-latency",
+    "networking"
+  ]
 }

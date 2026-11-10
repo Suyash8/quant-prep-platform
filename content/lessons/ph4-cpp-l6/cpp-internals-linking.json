@@ -4,7 +4,9 @@
   "title": "Translation Units, Linkage and Name Mangling",
   "estMinutes": 27,
   "difficulty": "advanced",
-  "prereqs": ["cpp-value-categories"],
+  "prereqs": [
+    "cpp-value-categories"
+  ],
   "objectives": [
     "Trace how a program becomes translation units, object files and one linked binary, and predict where compile-time versus link-time errors originate",
     "Apply the One Definition Rule to decide which declarations may be repeated across translation units and which must have exactly one definition",
@@ -12,7 +14,7 @@
     "Decode Itanium-ABI mangled names back to declarations and demangle them with nm -C and c++filt",
     "Use extern \"C\" correctly to publish unmangled symbols for dlopen and ctypes boundaries"
   ],
-  "motivation": "A desk ships one pricing library that gets compiled into the backtester, the risk engine and the execution gateway. One stray non-static global in a header turns tomorrow's build into a wall of 'multiple definition' errors, and a pricing function you want to call from Python through ctypes fails to load unless it is extern \"C\". None of this is about C++ syntax - it is about what the linker actually sees, and that is precisely what this lesson teaches you to inspect.",
+  "motivation": "A desk ships one pricing library that gets compiled into the backtester, the risk engine and the execution gateway. One stray non-static global in a header turns tomorrow's build into a wall of 'multiple definition' errors, and a pricing function you want to call from Python through ctypes fails to load unless it is extern \"C\". None of this is about C++ syntax, it is about what the linker actually sees, and that is precisely what this lesson teaches you to inspect.",
   "blocks": [
     {
       "type": "h2",
@@ -20,7 +22,7 @@
     },
     {
       "type": "p",
-      "md": "The compiler never sees your program. It sees one **translation unit** (TU) at a time: a single `.cpp` file after the preprocessor has pasted in every `#include` and expanded every macro. Anything not in that file - classes declared in a header, functions living in a library - is invisible; declarations are *promises* that the linker will later keep. Each TU compiles into an **object file** (`.o`) holding machine code plus a **symbol table**: symbols it defines (code and data that live here) and symbols it needs, marked undefined. The **linker** stitches object files and libraries together, resolving every undefined symbol against exactly one definition. This division of labour explains the two error families: compile errors mean a promise was broken inside one TU; link errors mean a promise was never kept anywhere."
+      "md": "The compiler never sees your program. It sees one **translation unit** (TU) at a time: a single `.cpp` file after the preprocessor has pasted in every `#include` and expanded every macro. Anything not in that file, classes declared in a header, functions living in a library, is invisible; declarations are *promises* that the linker will later keep. Each TU compiles into an **object file** (`.o`) holding machine code plus a **symbol table**: symbols it defines (code and data that live here) and symbols it needs, marked undefined. The **linker** stitches object files and libraries together, resolving every undefined symbol against exactly one definition. This division of labour explains the two error families: compile errors mean a promise was broken inside one TU; link errors mean a promise was never kept anywhere."
     },
     {
       "type": "code",
@@ -40,7 +42,7 @@
     },
     {
       "type": "p",
-      "md": "The ODR has two halves. A non-inline function or variable with **external linkage** must have **exactly one definition in the whole program**. Class definitions, inline functions and templates are different: they may be defined in *every* TU that uses them, but all those definitions must be **token-for-token identical**. Violating the repeatable half is ill-formed with no diagnostic required - the linker catches the blatant case (`multiple definition of ...`) but is structurally unable to catch the subtle one below."
+      "md": "The ODR has two halves. A non-inline function or variable with **external linkage** must have **exactly one definition in the whole program**. Class definitions, inline functions and templates are different: they may be defined in *every* TU that uses them, but all those definitions must be **token-for-token identical**. Violating the repeatable half is ill-formed with no diagnostic required, the linker catches the blatant case (`multiple definition of ...`) but is structurally unable to catch the subtle one below."
     },
     {
       "type": "callout",
@@ -64,14 +66,35 @@
     },
     {
       "type": "table",
-      "headers": ["nm letter", "meaning"],
+      "headers": [
+        "nm letter",
+        "meaning"
+      ],
       "rows": [
-        ["T", "defined here, in the code (text) section, external linkage"],
-        ["t", "defined here, but local to this object file - internal linkage"],
-        ["D", "defined here, initialised data, external linkage"],
-        ["d", "defined data with internal linkage"],
-        ["U", "undefined here - the linker must satisfy it from elsewhere"],
-        ["B", "defined here, zero-initialised data (bss)"]
+        [
+          "T",
+          "defined here, in the code (text) section, external linkage"
+        ],
+        [
+          "t",
+          "defined here, but local to this object file, internal linkage"
+        ],
+        [
+          "D",
+          "defined here, initialised data, external linkage"
+        ],
+        [
+          "d",
+          "defined data with internal linkage"
+        ],
+        [
+          "U",
+          "undefined here, the linker must satisfy it from elsewhere"
+        ],
+        [
+          "B",
+          "defined here, zero-initialised data (bss)"
+        ]
       ],
       "caption": "Uppercase = external linkage, lowercase = internal. Only uppercase symbols participate in cross-TU linking."
     },
@@ -85,13 +108,25 @@
     },
     {
       "type": "table",
-      "headers": ["Declaration", "Itanium symbol"],
-      "rows": [
-        ["int square(int)", "_Z6squarei"],
-        ["double fx::price(double, int)", "_ZN2fx5priceEdi"],
-        ["extern \"C\" double bs_call(double)", "bs_call"]
+      "headers": [
+        "Declaration",
+        "Itanium symbol"
       ],
-      "caption": "Mangled symbols are an ABI detail, not a language guarantee - they differ between compilers."
+      "rows": [
+        [
+          "int square(int)",
+          "_Z6squarei"
+        ],
+        [
+          "double fx::price(double, int)",
+          "_ZN2fx5priceEdi"
+        ],
+        [
+          "extern \"C\" double bs_call(double)",
+          "bs_call"
+        ]
+      ],
+      "caption": "Mangled symbols are an ABI detail, not a language guarantee, they differ between compilers."
     },
     {
       "type": "code",
@@ -105,7 +140,7 @@
     },
     {
       "type": "p",
-      "md": "`extern \"C\"` gives declarations **C language linkage**: the symbol is emitted unmangled and overloading is not allowed inside the block. It exists so that C code, Python's ctypes, Rust and `dlsym` can find functions by a plain string. Note what it does *not* do: it changes the name, not the type system - passing a `std::string` through an `extern \"C\"` function is still a cross-ABI risk, which is exactly where the next lessons go."
+      "md": "`extern \"C\"` gives declarations **C language linkage**: the symbol is emitted unmangled and overloading is not allowed inside the block. It exists so that C code, Python's ctypes, Rust and `dlsym` can find functions by a plain string. Note what it does *not* do: it changes the name, not the type system, passing a `std::string` through an `extern \"C\"` function is still a cross-ABI risk, which is exactly where the next lessons go."
     },
     {
       "type": "code",
@@ -123,11 +158,11 @@
   "guidedExercise": {
     "prompt": "You run `g++ main.cpp compute.cpp && ./a.out; echo $?` where `compute.cpp` defines `int compute(int n) { return n * 2; }` and `main.cpp` contains only:\n\n```cpp\nint compute(int n);      // promise\nint main() { return compute(21); }\n```\n\nPredict, before running anything: (1) the nm class of `compute` in `main.o` (T or U?), (2) the exact mangled symbol in `compute.o`, (3) the number `echo $?` prints.",
     "hints": [
-      "main.cpp has only a declaration - no body was compiled in that TU.",
+      "main.cpp has only a declaration, no body was compiled in that TU.",
       "The Itanium mangling for a free function is _Z, then length+name, then parameter types.",
       "On Linux the exit status of main is the 8-bit value main returns."
     ],
-    "solution": "(1) `U compute(int)` (demangled with `nm -C`) - referenced but undefined in main.o. (2) `compute.o` defines `_Z7computei` - `_Z` + `7compute` + `i` for the `int` parameter - shown as `T` by nm. (3) The linker binds the U to the T, main returns `21 * 2 = 42`, and `echo $?` prints **42**."
+    "solution": "(1) `U compute(int)` (demangled with `nm -C`), referenced but undefined in main.o. (2) `compute.o` defines `_Z7computei` - `_Z` + `7compute` + `i` for the `int` parameter, shown as `T` by nm. (3) The linker binds the U to the T, main returns `21 * 2 = 42`, and `echo $?` prints **42**."
   },
   "independentExercise": {
     "prompt": "A teammate pastes this into every TU that wants it:\n\n```cpp\nconst double kTax = 0.07;      // in tax.h, no inline/static keyword\ndouble kFee = 0.02;            // in fee.h\n```\n\nThree .cpp files include both headers. (a) Which of the two causes a link error, what is the exact error, and why does the other one not? (b) Give two clean fixes for the problematic declaration. (c) If every TU defines its own copy of the `const` object, what consistency requirement does the ODR still impose on the values?",
@@ -135,10 +170,10 @@
       "In C++, namespace-scope const objects default to internal linkage; ordinary variables default to external.",
       "Think about what the linker does when it sees two D symbols with the same name."
     ],
-    "solution": "(a) `kFee` triggers `multiple definition of 'kFee'`: it has external linkage and each of the three TUs exports a `D kFee` symbol, so the linker sees three definitions. `kTax` is fine because `const` at namespace scope gives internal linkage - each TU gets its own private `d` symbol. (b) Mark it `inline` (`inline double kFee = 0.02;` - one merged definition by ODR), or declare `extern double kFee;` in the header and define it in exactly one .cpp, or (if it should be per-TU) make it `static`. (c) The ODR requires that if the object is *used*, every TU's definition is identical - if one TU had 0.07 and another 0.075, that is an ODR violation with no diagnostic, the silent kind of bug."
+    "solution": "(a) `kFee` triggers `multiple definition of 'kFee'`: it has external linkage and each of the three TUs exports a `D kFee` symbol, so the linker sees three definitions. `kTax` is fine because `const` at namespace scope gives internal linkage, each TU gets its own private `d` symbol. (b) Mark it `inline` (`inline double kFee = 0.02;` - one merged definition by ODR), or declare `extern double kFee;` in the header and define it in exactly one .cpp, or (if it should be per-TU) make it `static`. (c) The ODR requires that if the object is *used*, every TU's definition is identical, if one TU had 0.07 and another 0.075, that is an ODR violation with no diagnostic, the silent kind of bug."
   },
   "commonMistakes": [
-    "Defining a non-inline function or global variable in a header included by several TUs - each TU exports it and the linker reports 'multiple definition'.",
+    "Defining a non-inline function or global variable in a header included by several TUs, each TU exports it and the linker reports 'multiple definition'.",
     "Believing `extern \"C\"` fixes type/ABI mismatches: it only controls the symbol name, not struct layout or std::string internals.",
     "Confusing `static` locals with `static` globals: a static local is one shared object across all calls; a static global is a per-TU private name.",
     "Assuming mangled names are portable: they are an ABI convention (Itanium on gcc/clang, MSVC uses a different scheme), so never hard-code them.",
@@ -151,7 +186,7 @@
     "ODR: non-inline external-linkage entities need exactly one program-wide definition; inline functions/templates may repeat but must be token-identical across TUs.",
     "Internal linkage (static, anonymous namespace, const namespace-scope objects) keeps a name private to its TU; nm shows it lowercase (t/d) versus uppercase (T/D/U).",
     "Itanium mangling encodes namespaces and parameter types into symbol names (e.g. _Z7computei); nm -C and c++filt translate them back.",
-    "extern \"C\" emits an unmangled symbol - the door through which dlsym, ctypes and C code enter."
+    "extern \"C\" emits an unmangled symbol, the door through which dlsym, ctypes and C code enter."
   ],
   "quiz": [
     {
@@ -172,7 +207,7 @@
       "type": "numeric",
       "prompt": "How many external-linkage symbols does this translation unit DEFINE (nm uppercase, not counting main's dependencies)?\n\n```cpp\nstatic int a = 1;\nnamespace { int b = 2; }\nint c = 3;\nint f() { return a + b + c; }\n```",
       "answer": 2,
-      "explanation": "`a` (static) and `b` (anonymous namespace) are internal. `c` and `f` are defined with external linkage - exactly two uppercase nm symbols."
+      "explanation": "`a` (static) and `b` (anonymous namespace) are internal. `c` and `f` are defined with external linkage, exactly two uppercase nm symbols."
     },
     {
       "id": "q3",
@@ -201,7 +236,13 @@
       "type": "short",
       "prompt": "Both a.cpp and b.cpp define `double fee_rate() { return 0.02; }` at namespace scope (not inline). Which rule is violated, what error do you see at which build stage, and name one fix.",
       "modelAnswer": "The One Definition Rule is violated: two definitions of an external-linkage function. The compile stage succeeds; the LINK stage fails with 'multiple definition of fee_rate()'. Fixes: mark it inline, make it static / put it in an anonymous namespace (if per-TU copies are wanted), or define it in one .cpp and declare it extern in the header.",
-      "keywords": ["odr", "one definition", "multiple definition", "link", "inline"],
+      "keywords": [
+        "odr",
+        "one definition",
+        "multiple definition",
+        "link",
+        "inline"
+      ],
       "explanation": "Compiling each TU is blind to the other; only the linker sees both T symbols for the same name and refuses. The standard fixes are inline, static/anonymous namespace, or define-once + extern declaration."
     },
     {
@@ -210,7 +251,7 @@
       "prompt": "In nm output, a symbol shown as `U _ZN2fx5priceEdi` means:",
       "options": [
         "The symbol is unique to this object file",
-        "This object uses the symbol but does not define it - the linker must resolve it",
+        "This object uses the symbol but does not define it, the linker must resolve it",
         "The symbol is a local static variable",
         "The symbol is undefined behaviour at runtime"
       ],
@@ -221,7 +262,7 @@
   "flashcards": [
     {
       "type": "definition",
-      "front": "Internal vs external linkage - and three ways to get internal in C++",
+      "front": "Internal vs external linkage: and three ways to get internal in C++",
       "back": "External: linker-visible, other TUs can bind to it. Internal: private to the translation unit. Ways: `static` at namespace scope, anonymous namespace, const namespace-scope variables (non-inline)."
     },
     {
@@ -232,27 +273,30 @@
     {
       "type": "code-output",
       "front": "Mangled name of `int square(int)` under the Itanium ABI?",
-      "back": "_Z6squarei - _Z prefix, 6square (name with length), i (int parameter)."
+      "back": "_Z6squarei, _Z prefix, 6square (name with length), i (int parameter)."
     },
     {
       "type": "definition",
       "front": "What does `extern \"C\"` change (and what does it NOT change)?",
-      "back": "Changes language linkage: symbol emitted unmangled, no overloading in the block. Does NOT change types, layouts or calling safety - a std::string through it is still an ABI risk."
+      "back": "Changes language linkage: symbol emitted unmangled, no overloading in the block. Does NOT change types, layouts or calling safety, a std::string through it is still an ABI risk."
     }
   ],
   "references": [
     {
-      "label": "cppreference - Language linkage (extern \"C\")",
+      "label": "cppreference: Language linkage (extern \"C\")",
       "url": "https://en.cppreference.com/w/cpp/language/language_linkage"
     },
     {
-      "label": "cppreference - Internal and external linkage",
+      "label": "cppreference: Internal and external linkage",
       "url": "https://en.cppreference.com/w/cpp/language/storage_duration#Linkage"
     },
     {
-      "label": "Itanium C++ ABI - Mangled names",
+      "label": "Itanium C++ ABI: Mangled names",
       "url": "https://itanium-cxx-abi.github.io/cxx-abi/abi.html#mangling"
     }
   ],
-  "skills": ["cpp-internals", "cpp-performance"]
+  "skills": [
+    "cpp-internals",
+    "cpp-performance"
+  ]
 }

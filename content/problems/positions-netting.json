@@ -12,7 +12,7 @@
   "statement": [
     {
       "type": "p",
-      "md": "At the end of a trading day, a desk's blotter holds a long list of executed trades: buys (positive quantity) and sells (negative quantity) in many symbols. Before anything else \u2014 risk, settlement, reporting \u2014 the blotter is *netted*: all trades in the same symbol collapse to a single signed net position. This is a textbook streaming hash-table aggregation, and getting it right (including output order and 64-bit accumulation) is a daily engineering task on any trading floor."
+      "md": "At the end of a trading day, a desk's blotter holds a long list of executed trades: buys (positive quantity) and sells (negative quantity) in many symbols. Before anything else, risk, settlement, reporting, the blotter is *netted*: all trades in the same symbol collapse to a single signed net position. This is a textbook streaming hash-table aggregation, and getting it right (including output order and 64-bit accumulation) is a daily engineering task on any trading floor."
     },
     {
       "type": "h2",
@@ -41,7 +41,7 @@
     {
       "input": "6\nAAPL 100\nMSFT -50\nAAPL -30\nTSLA 25\nMSFT -20\nAAPL 5\n",
       "output": "AAPL 75\nMSFT -70\nTSLA 25\n",
-      "explanation": "AAPL: 100 - 30 + 5 = 75. MSFT: -50 - 20 = -70. TSLA: 25. Sorted: AAPL, MSFT, TSLA."
+      "explanation": "AAPL: 100, 30 + 5 = 75. MSFT: -50, 20 = -70. TSLA: 25. Sorted: AAPL, MSFT, TSLA."
     },
     {
       "input": "4\nAAPL 100\nAAPL -100\nZZZ 5\nAAA -7\n",
@@ -61,7 +61,7 @@
     },
     {
       "type": "p",
-      "md": "This is the canonical aggregate-by-key pattern. A hash map (dictionary) maps each symbol to its running net: for each trade, net[sym] += qty, an expected O(1) update. After the single pass, extract the keys, sort them (O(s log s) for s distinct symbols), and print. Total: $O(n + s \\log s)$ time, $O(s)$ memory \u2014 a single scan over the tape and no per-trade sorting."
+      "md": "This is the canonical aggregate-by-key pattern. A hash map (dictionary) maps each symbol to its running net: for each trade, net[sym] += qty, an expected O(1) update. After the single pass, extract the keys, sort them (O(s log s) for s distinct symbols), and print. Total: $O(n + s \\log s)$ time, $O(s)$ memory, a single scan over the tape and no per-trade sorting."
     },
     {
       "type": "steps",
@@ -74,18 +74,18 @@
     },
     {
       "type": "p",
-      "md": "Two details deserve care. First, zero-net symbols must still appear: netting is an accounting identity, not a filter. Second, accumulation must be 64-bit \u2014 with quantity bounds of 10^9 and up to 2*10^5 trades, a 32-bit accumulator overflows long before the end of the tape. In C++ prefer std::map<string,long long> (sorted automatically) or unordered_map plus an explicit sort of keys; both are acceptable here."
+      "md": "Two details deserve care. First, zero-net symbols must still appear: netting is an accounting identity, not a filter. Second, accumulation must be 64-bit, with quantity bounds of 10^9 and up to 2*10^5 trades, a 32-bit accumulator overflows long before the end of the tape. In C++ prefer std::map<string,long long> (sorted automatically) or unordered_map plus an explicit sort of keys; both are acceptable here."
     },
     {
       "type": "callout",
       "variant": "quant",
       "title": "Netting in practice",
-      "md": "Real post-trade systems net fills per account per symbol per settlement date, then compare against expected positions. The same hash-accumulate-report shape powers VWAP buckets, PnL aggregation, and exchange drop-copy reconciliation \u2014 it is arguably the most-executed loop in a trading back office."
+      "md": "Real post-trade systems net fills per account per symbol per settlement date, then compare against expected positions. The same hash-accumulate-report shape powers VWAP buckets, PnL aggregation, and exchange drop-copy reconciliation, it is possibly the most-executed loop in a trading back office."
     }
   ],
   "solutions": {
-    "python": "import sys\n\ndef main():\n    data = sys.stdin.buffer.read().split()\n    n = int(data[0])\n    net = {}\n    idx = 1\n    for _ in range(n):\n        sym = data[idx].decode(); q = int(data[idx + 1]); idx += 2\n        net[sym] = net.get(sym, 0) + q\n    out = []\n    for sym in sorted(net):\n        out.append(f\"{sym} {net[sym]}\")\n    sys.stdout.write(\"\\n\".join(out) + \"\\n\")\n\nmain()\n",
-    "cpp": "#include <bits/stdc++.h>\nusing namespace std;\n\nint main() {\n    int n;\n    if (scanf(\"%d\", &n) != 1) return 0;\n    map<string, long long> net;\n    char sym[16];\n    for (int i = 0; i < n; i++) {\n        long long q;\n        scanf(\"%15s %lld\", sym, &q);\n        net[string(sym)] += q;\n    }\n    string out;\n    for (const auto &kv : net) {\n        out += kv.first;\n        out += ' ';\n        out += to_string(kv.second);\n        out += '\\n';\n    }\n    fputs(out.c_str(), stdout);\n    return 0;\n}\n"
+    "python": "import sys\n\ndef main():\n data = sys.stdin.buffer.read().split()\n n = int(data[0])\n net = {}\n idx = 1\n for _ in range(n):\n sym = data[idx].decode(); q = int(data[idx + 1]); idx += 2\n net[sym] = net.get(sym, 0) + q\n out = []\n for sym in sorted(net):\n out.append(f\"{sym} {net[sym]}\")\n sys.stdout.write(\"\\n\".join(out) + \"\\n\")\n\nmain()\n",
+    "cpp": "#include <bits/stdc++.h>\nusing namespace std;\n\nint main() {\n int n;\n if (scanf(\"%d\", &n) != 1) return 0;\n map<string, long long> net;\n char sym[16];\n for (int i = 0; i < n; i++) {\n long long q;\n scanf(\"%15s %lld\", sym, &q);\n net[string(sym)] += q;\n }\n string out;\n for (const auto &kv : net) {\n out += kv.first;\n out += ' ';\n out += to_string(kv.second);\n out += '\\n';\n }\n fputs(out.c_str(), stdout);\n return 0;\n}\n"
   },
   "tests": [
     {

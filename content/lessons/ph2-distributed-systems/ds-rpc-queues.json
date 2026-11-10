@@ -4,7 +4,9 @@
   "title": "Client-Server Systems, RPC, REST and Message Queues",
   "estMinutes": 26,
   "difficulty": "advanced",
-  "prereqs": ["net-tcp-udp"],
+  "prereqs": [
+    "net-tcp-udp"
+  ],
   "objectives": [
     "Describe the client-server request/response lifecycle including connection setup costs",
     "Explain how RPC hides network calls behind function-call syntax and why timeouts create ambiguity",
@@ -12,7 +14,7 @@
     "Compare synchronous RPC against message-queue-mediated communication using latency, coupling and load-shaping criteria",
     "Compute queue backlog growth from producer/consumer rates and size a consumer to drain it in a target time"
   ],
-  "motivation": "A trading application is never one program: an order router calls a risk service, a blotter publishes fills, a reporting job consumes everything asynchronously. The dominant architectures for that wiring - RPC frameworks, REST APIs and message queues - differ in latency, coupling and failure behaviour, and picking the wrong one shows up as p99 latency spikes or lost fills. This lesson builds the vocabulary and the arithmetic you need to reason about those choices before you ever wire one up.",
+  "motivation": "A trading application is never one program: an order router calls a risk service, a blotter publishes fills, a reporting job consumes everything asynchronously. The dominant architectures for that wiring. RPC frameworks, REST APIs and message queues, differ in latency, coupling and failure behaviour, and picking the wrong one shows up as p99 latency spikes or lost fills. This lesson builds the vocabulary and the arithmetic you need to reason about those choices before you ever wire one up.",
   "blocks": [
     {
       "type": "h2",
@@ -20,17 +22,35 @@
     },
     {
       "type": "p",
-      "md": "A **server** owns state and logic; **clients** open connections and send requests; the server replies with responses. Behind the simple picture sits a fixed protocol tax: name resolution (DNS), TCP's three-way handshake, and (for anything crossing the internet) a TLS handshake, then the request/response round trip itself. On a LAN with a 0.5 ms round-trip time, a TLS 1.2 session costs roughly 2 extra round trips plus TCP's 1, so a first request needs about $3 \\times 0.5\\,\\text{ms} = 1.5\\,\\text{ms}$ of setup before a 1 ms exchange - and servers add their own processing time on top. That is why production systems keep connections warm with pooling: setup cost is paid once, not per request."
+      "md": "A **server** owns state and logic; **clients** open connections and send requests; the server replies with responses. Behind the simple picture sits a fixed protocol tax: name resolution (DNS), TCP's three-way handshake, and (for anything crossing the internet) a TLS handshake, then the request/response round trip itself. On a LAN with a 0.5 ms round-trip time, a TLS 1.2 session costs roughly 2 extra round trips plus TCP's 1, so a first request needs about $3 \\times 0.5\\,\\text{ms} = 1.5\\,\\text{ms}$ of setup before a 1 ms exchange, and servers add their own processing time on top. That is why production systems keep connections warm with pooling: setup cost is paid once, not per request."
     },
     {
       "type": "table",
-      "headers": ["Stage", "Typical cost (LAN example, RTT 0.5 ms)"],
+      "headers": [
+        "Stage",
+        "Typical cost (LAN example, RTT 0.5 ms)"
+      ],
       "rows": [
-        ["DNS lookup", "0.3-1 ms (cached afterwards)"],
-        ["TCP handshake", "1 RTT = 0.5 ms"],
-        ["TLS 1.2 handshake", "~2 RTT = 1 ms"],
-        ["Request + response", "1 RTT = 0.5 ms"],
-        ["Server processing", "the real work - budget for it explicitly"]
+        [
+          "DNS lookup",
+          "0.3-1 ms (cached afterwards)"
+        ],
+        [
+          "TCP handshake",
+          "1 RTT = 0.5 ms"
+        ],
+        [
+          "TLS 1.2 handshake",
+          "~2 RTT = 1 ms"
+        ],
+        [
+          "Request + response",
+          "1 RTT = 0.5 ms"
+        ],
+        [
+          "Server processing",
+          "the real work, budget for it explicitly"
+        ]
       ]
     },
     {
@@ -39,13 +59,13 @@
     },
     {
       "type": "p",
-      "md": "**Remote Procedure Call** frameworks (gRPC is today's standard) let you call `get_quote(ticker)` on another machine as if it were a local function. Generated **stubs** on each side handle **marshalling** - packing arguments into bytes on the wire (via a schema such as Protocol Buffers) and unpacking the reply. The convenience hides a brutal truth: a local call either runs or crashes your process, while a remote call has a third outcome. If the client times out, it cannot tell whether the server (a) never received the request, (b) executed it but the reply was lost, or (c) is still working. The **failure ambiguity** is unavoidable - the network cannot prove a negative - and it dictates the design rule of the next lesson: make repeated execution of the same request harmless (idempotence), because timeouts force retries."
+      "md": "**Remote Procedure Call** frameworks (gRPC is today's standard) let you call `get_quote(ticker)` on another machine as if it were a local function. Generated **stubs** on each side handle **marshalling**, packing arguments into bytes on the wire (via a schema such as Protocol Buffers) and unpacking the reply. The convenience hides a brutal truth: a local call either runs or crashes your process, while a remote call has a third outcome. If the client times out, it cannot tell whether the server (a) never received the request, (b) executed it but the reply was lost, or (c) is still working. The **failure ambiguity** is unavoidable, the network cannot prove a negative, and it dictates the design rule of the next lesson: make repeated execution of the same request harmless (idempotence), because timeouts force retries."
     },
     {
       "type": "callout",
       "variant": "pitfall",
       "title": "Timeout does not mean failure",
-      "md": "A timed-out order request may still land. Blindly retrying can double-submit an order; blindly giving up can orphan a fill. Distinguish *unknown outcome* from *known failure* in your code paths - this single distinction drives idempotency keys, deduplication and reconciliation systems."
+      "md": "A timed-out order request may still land. Blindly retrying can double-submit an order; blindly giving up can orphan a fill. Distinguish *unknown outcome* from *known failure* in your code paths, this single distinction drives idempotency keys, deduplication and reconciliation systems."
     },
     {
       "type": "h2",
@@ -53,7 +73,7 @@
     },
     {
       "type": "p",
-      "md": "REST models the world as **resources** with URLs (`/orders/4317`), manipulated with HTTP verbs. The semantics carry load-bearing weight: `GET` is **safe** (no state change), `PUT` and `DELETE` are **idempotent** (repeating them leaves the same end state), and `POST` is neither - exactly the verb that creates orders. Status codes are the contract: `2xx` success, `4xx` *your* mistake (retrying a `400` will fail identically), `5xx` *our* mistake (a `503` invites a retry with backoff). A retry policy that ignores this distinction hammers servers with requests that can never succeed."
+      "md": "REST models the world as **resources** with URLs (`/orders/4317`), manipulated with HTTP verbs. The semantics carry load-bearing weight: `GET` is **safe** (no state change), `PUT` and `DELETE` are **idempotent** (repeating them leaves the same end state), and `POST` is neither, exactly the verb that creates orders. Status codes are the contract: `2xx` success, `4xx` *your* mistake (retrying a `400` will fail identically), `5xx` *our* mistake (a `503` invites a retry with backoff). A retry policy that ignores this distinction hammers servers with requests that can never succeed."
     },
     {
       "type": "h2",
@@ -61,7 +81,7 @@
     },
     {
       "type": "p",
-      "md": "A **message queue** (Kafka, RabbitMQ) inserts a durable buffer between a **producer** and a **consumer**. The producer appends and moves on - it never waits for the consumer. This buys three things RPC cannot: **decoupling** (producer and consumer deploy and fail independently), **load shaping** (bursts land in the buffer instead of crushing the consumer), and **replay** (Kafka retains a log, so a rebuilt consumer can reprocess history). The price is a new failure mode and a new arithmetic: the **backlog**. Delivery semantics matter too - queues typically offer *at-least-once* delivery, so consumers must tolerate duplicates, again foreshadowing idempotent processing."
+      "md": "A **message queue** (Kafka, RabbitMQ) inserts a durable buffer between a **producer** and a **consumer**. The producer appends and moves on, it never waits for the consumer. This buys three things RPC cannot: **decoupling** (producer and consumer deploy and fail independently), **load shaping** (bursts land in the buffer instead of crushing the consumer), and **replay** (Kafka retains a log, so a rebuilt consumer can reprocess history). The price is a new failure mode and a new arithmetic: the **backlog**. Delivery semantics matter too, queues typically offer *at-least-once* delivery, so consumers must tolerate duplicates, again foreshadowing idempotent processing."
     },
     {
       "type": "steps",
@@ -69,7 +89,7 @@
       "items": [
         "Producer (market-data publisher): 1{,}200 messages per second. Consumer (feature extractor): 1{,}000 per second.",
         "Deficit: $1200 - 1000 = 200$ messages per second accumulate in the queue.",
-        "After 60 seconds: $200 \\times 60 = 12{,}000$ messages of backlog - and latency to consume a 'fresh' message grows by $12000/1000 = 12$ seconds.",
+        "After 60 seconds: $200 \\times 60 = 12{,}000$ messages of backlog, and latency to consume a 'fresh' message grows by $12000/1000 = 12$ seconds.",
         "To drain that backlog within the next 60 seconds, the consumer needs capacity $12000/60 + 1000 = 1200$ per second: exactly the producer's rate, held for the whole drain window."
       ]
     },
@@ -83,7 +103,7 @@
       "type": "callout",
       "variant": "quant",
       "title": "Backlog is stale data",
-      "md": "For a trading system, 12{,}000 unconsumed ticks is not storage - it is *staleness*: features computed off a 12-second-old tape are wrong, and signals fired on them are wrong faster. Queue depth belongs on your trading dashboard next to latency."
+      "md": "For a trading system, 12{,}000 unconsumed ticks is not storage, it is *staleness*: features computed off a 12-second-old tape are wrong, and signals fired on them are wrong faster. Queue depth belongs on your trading dashboard next to latency."
     },
     {
       "type": "h2",
@@ -93,17 +113,20 @@
       "type": "interactive",
       "component": "ComplexityCompare",
       "params": {
-        "expressions": ["x / (1 - x)", "x"],
+        "expressions": [
+          "x / (1, x)",
+          "x"
+        ],
         "xMin": 0,
         "xMax": 0.95,
         "xLabel": "utilization",
         "yLabel": "relative delay"
       },
-      "caption": "Queueing delay grows roughly like $\\rho/(1-\\rho)$ with utilization $\\rho$: near 90% utilization small bursts explode into huge waits - the mathematical reason queues need headroom and backpressure (next lessons)."
+      "caption": "Queueing delay grows roughly like $\\rho/(1-\\rho)$ with utilization $\\rho$: near 90% utilization small bursts explode into huge waits, the mathematical reason queues need headroom and backpressure (next lessons)."
     },
     {
       "type": "p",
-      "md": "Use **RPC/REST** when the caller needs the answer now - order validation, position checks, pricing requests. Use a **queue** when the requester does not need to block: order *events* to the blotter, ticks to analytics, end-of-day jobs. A production trading stack uses both: synchronous paths for anything that gates an order, queue-backed paths for everything downstream. The failures differ too - RPC couples availability (if the risk service is down, orders stall), while a queue converts downtime into delay, bounded only by buffer capacity and consumer throughput."
+      "md": "Use **RPC/REST** when the caller needs the answer now, order validation, position checks, pricing requests. Use a **queue** when the requester does not need to block: order *events* to the blotter, ticks to analytics, end-of-day jobs. A production trading stack uses both: synchronous paths for anything that gates an order, queue-backed paths for everything downstream. The failures differ too. RPC couples availability (if the risk service is down, orders stall), while a queue converts downtime into delay, bounded only by buffer capacity and consumer throughput."
     }
   ],
   "guidedExercise": {
@@ -113,7 +136,7 @@
       "Warm connections skip DNS/TCP/TLS entirely.",
       "Setup cost per cold call times 200 gives the per-second waste."
     ],
-    "solution": "(a) Setup: DNS 0.5 + TCP $1 \\times 1$ + TLS $2 \\times 1$ = 3.5 ms; plus request RTT 1 ms; plus processing 4 ms. Total $= 3.5 + 1 + 4 = 8.5$ ms. (b) Warm: request RTT 1 ms + processing 4 ms $= 5$ ms. (c) Setup waste per cold call is $3.5$ ms, so 200 cold calls burn $3.5 \\times 200 = 700$ ms of wall-clock setup per second - pooling recovers nearly all of it; per call that is a 41% latency reduction (8.5 to 5 ms)."
+    "solution": "(a) Setup: DNS 0.5 + TCP $1 \\times 1$ + TLS $2 \\times 1$ = 3.5 ms; plus request RTT 1 ms; plus processing 4 ms. Total $= 3.5 + 1 + 4 = 8.5$ ms. (b) Warm: request RTT 1 ms + processing 4 ms $= 5$ ms. (c) Setup waste per cold call is $3.5$ ms, so 200 cold calls burn $3.5 \\times 200 = 700$ ms of wall-clock setup per second, pooling recovers nearly all of it; per call that is a 41% latency reduction (8.5 to 5 ms)."
   },
   "independentExercise": {
     "prompt": "A queue fronts an EOD position-reporting service. Producers push 900 messages/s; the consumer handles 750/s for the first 2 minutes of the burst, then an autoscaler doubles consumer capacity to 1{,}500/s. (a) How many messages are queued after the 2 minutes? (b) How long does the doubled consumer take to drain the backlog (to the nearest second, assuming producers have stopped)? (c) During the overload window, how many seconds of extra latency does a message enqueued at the end of the burst experience if it is consumed last?",
@@ -122,12 +145,12 @@
       "Drain time = backlog / drain rate.",
       "The last-enqueued message waits for the entire backlog ahead of it."
     ],
-    "solution": "(a) Deficit $= 900 - 750 = 150$/s; over 120 s: $150 \\times 120 = 18{,}000$ messages. (b) $18000 / 1500 = 12$ seconds. (c) A message enqueued at the end sits behind 18{,}000 others; at the eventual 1{,}500/s rate that is $18000/1500 = 12$ seconds of wait (during the slow phase it would have been $18000/750 = 24$ seconds) - the autoscaler halves the worst-case staleness."
+    "solution": "(a) Deficit $= 900 - 750 = 150$/s; over 120 s: $150 \\times 120 = 18{,}000$ messages. (b) $18000 / 1500 = 12$ seconds. (c) A message enqueued at the end sits behind 18{,}000 others; at the eventual 1{,}500/s rate that is $18000/1500 = 12$ seconds of wait (during the slow phase it would have been $18000/750 = 24$ seconds), the autoscaler halves the worst-case staleness."
   },
   "commonMistakes": [
     "Treating a timed-out RPC as a failed one: the request may have executed, so retries need deduplication or idempotent design.",
     "Retrying 4xx responses: a 400 will fail identically every time; only 5xx and network errors justify retries.",
-    "Reading queue depth as 'free buffering' - backlog is latency, and unbounded queues end in out-of-memory crashes or stale-data decisions.",
+    "Reading queue depth as 'free buffering', backlog is latency, and unbounded queues end in out-of-memory crashes or stale-data decisions.",
     "Assuming a queue guarantees exactly-once processing: at-least-once delivery means consumers must handle duplicates."
   ],
   "realWorldApplication": "Every web and trading backend is a web of these three patterns: REST or gRPC at the edges for interactive calls, queues (Kafka especially) as the nervous system for events, and connection pools hiding protocol setup costs at every hop.",
@@ -136,8 +159,8 @@
     "Client-server requests pay fixed protocol taxes (DNS, TCP, TLS) that pooling amortises; processing time is budgeted separately from round trips.",
     "RPC marshals calls over the wire but introduces failure ambiguity: a timeout means 'unknown outcome', forcing idempotent designs and explicit reconciliation.",
     "REST semantics are load-bearing: GET safe, PUT/DELETE idempotent, POST neither; 4xx means do-not-retry, 5xx means retry-with-backoff.",
-    "Queues decouple producers from consumers and shape bursts, at the cost of backlog latency; backlog = integral of (production - consumption) rate.",
-    "Sync calls gate decisions (orders); queues carry events downstream (blotters, analytics) - production trading stacks deliberately use both."
+    "Queues decouple producers from consumers and shape bursts, at the cost of backlog latency; backlog = integral of (production, consumption) rate.",
+    "Sync calls gate decisions (orders); queues carry events downstream (blotters, analytics), production trading stacks deliberately use both."
   ],
   "quiz": [
     {
@@ -147,19 +170,28 @@
       "options": [
         "The server definitely did not execute the check",
         "The server definitely executed the check",
-        "The outcome is unknown - the check may or may not have executed",
+        "The outcome is unknown, the check may or may not have executed",
         "The network is down"
       ],
       "answerIndex": 2,
-      "explanation": "A timeout means the reply did not arrive; the request may have been lost, executed-but-reply-lost, or still in progress. Only the outcome is unknown - which is why retries require idempotence or deduplication."
+      "explanation": "A timeout means the reply did not arrive; the request may have been lost, executed-but-reply-lost, or still in progress. Only the outcome is unknown, which is why retries require idempotence or deduplication."
     },
     {
       "id": "q2",
       "type": "ms",
       "prompt": "Which HTTP verbs are idempotent by specification (repeating the request leaves the same end state)?",
-      "options": ["GET", "POST", "PUT", "DELETE"],
-      "answerIndices": [0, 2, 3],
-      "explanation": "GET (safe - no state change), PUT and DELETE are idempotent. POST is not: each POST typically creates a new resource, which is exactly why order-submission retries need idempotency keys."
+      "options": [
+        "GET",
+        "POST",
+        "PUT",
+        "DELETE"
+      ],
+      "answerIndices": [
+        0,
+        2,
+        3
+      ],
+      "explanation": "GET (safe, no state change), PUT and DELETE are idempotent. POST is not: each POST typically creates a new resource, which is exactly why order-submission retries need idempotency keys."
     },
     {
       "id": "q3",
@@ -193,7 +225,15 @@
       "type": "short",
       "prompt": "Give two distinct reasons a design might route order *events* through a message queue rather than calling the blotter service synchronously over RPC.",
       "modelAnswer": "Decoupling: the blotter can be down or redeploying without stalling order flow, and the producer never blocks on it. Load shaping: bursts of fills buffer in the queue instead of overwhelming the blotter, with replay available for consumers that fall behind.",
-      "keywords": ["decoupl", "buffer", "burst", "replay", "down", "independen", "load"],
+      "keywords": [
+        "decoupl",
+        "buffer",
+        "burst",
+        "replay",
+        "down",
+        "independen",
+        "load"
+      ],
       "explanation": "Queues buy availability independence, burst absorption and replay; the synchronous path is reserved for calls whose answer gates a decision."
     }
   ],
@@ -206,7 +246,7 @@
     {
       "type": "definition",
       "front": "Marshalling",
-      "back": "Packing structured arguments into wire bytes (per a schema like Protocol Buffers) at the caller and unpacking at the callee - the plumbing that makes a remote call look local."
+      "back": "Packing structured arguments into wire bytes (per a schema like Protocol Buffers) at the caller and unpacking at the callee, the plumbing that makes a remote call look local."
     },
     {
       "type": "concept",
@@ -220,13 +260,13 @@
     },
     {
       "type": "concept",
-      "front": "Sync RPC vs queue - when to use each",
+      "front": "Sync RPC vs queue: when to use each",
       "back": "RPC/REST when the caller needs the answer to proceed (order gates). Queue when the event can flow asynchronously (blotter, analytics) and you want decoupling, burst absorption and replay."
     }
   ],
   "references": [
     {
-      "label": "MDN - HTTP methods",
+      "label": "MDN: HTTP methods",
       "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods"
     },
     {
@@ -234,9 +274,11 @@
       "url": "https://grpc.io/docs/what-is-grpc/introduction/"
     },
     {
-      "label": "Apache Kafka - documentation (producer/consumer, delivery semantics)",
+      "label": "Apache Kafka: documentation (producer/consumer, delivery semantics)",
       "url": "https://kafka.apache.org/documentation/"
     }
   ],
-  "skills": ["distributed-systems"]
+  "skills": [
+    "distributed-systems"
+  ]
 }

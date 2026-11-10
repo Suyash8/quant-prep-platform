@@ -13,7 +13,7 @@
     "List and apply firm-side pre-trade risk checks with real numbers",
     "Explain why pre-trade risk must run synchronously before order transmission"
   ],
-  "motivation": "The matching engine applies price-time priority and generates fills; your strategy turns book updates into decisions. Between them runs a wire and a gate. Skip the gate and one buggy loop can trade without limit - the industry's most expensive software failures happened exactly there. This lesson is about the contract at that boundary and the checks that make the worst case survivable.",
+  "motivation": "The matching engine applies price-time priority and generates fills; your strategy turns book updates into decisions. Between them runs a wire and a gate. Skip the gate and one buggy loop can trade without limit, the industry's most expensive software failures happened exactly there. This lesson is about the contract at that boundary and the checks that make the worst case survivable.",
   "blocks": [
     {
       "type": "h2",
@@ -21,7 +21,7 @@
     },
     {
       "type": "p",
-      "md": "The **matching engine** lives at the venue: it matches incoming orders against resting ones by price-time priority and emits acknowledgements and execution reports. You studied its rules in the microstructure and order-book lessons; operationally, treat it as a black box with a strict contract - orders in, messages out, nothing else guaranteed. On your side of the wire sits the **strategy process**, which consumes the feed handler's book and produces order intentions. The gateway and the risk gate live between them, and everything in this lesson is about keeping that boundary disciplined."
+      "md": "The **matching engine** lives at the venue: it matches incoming orders against resting ones by price-time priority and emits acknowledgements and execution reports. You studied its rules in the microstructure and order-book lessons; operationally, treat it as a black box with a strict contract, orders in, messages out, nothing else guaranteed. On your side of the wire sits the **strategy process**, which consumes the feed handler's book and produces order intentions. The gateway and the risk gate live between them, and everything in this lesson is about keeping that boundary disciplined."
     },
     {
       "type": "h2",
@@ -29,17 +29,17 @@
     },
     {
       "type": "p",
-      "md": "A production strategy is a loop over *events*, not a loop over time: react to each book update or fill, decide quickly, return. Four disciplines make the loop safe. **Single-threaded** ownership of strategy state - no locks on the decision path. **No allocation** - everything is pre-sized (the low-latency module expands this). **Idempotent handlers** - a retransmitted fill with an already-seen execution ID must change nothing. **Recorded transitions** - state is checkpointed so the process can resume after a restart without inventing orders."
+      "md": "A production strategy is a loop over *events*, not a loop over time: react to each book update or fill, decide quickly, return. Four disciplines make the loop safe. **Single-threaded** ownership of strategy state, no locks on the decision path. **No allocation**, everything is pre-sized (the low-latency module expands this). **Idempotent handlers**, a retransmitted fill with an already-seen execution ID must change nothing. **Recorded transitions**, state is checkpointed so the process can resume after a restart without inventing orders."
     },
     {
       "type": "code",
       "lang": "python",
       "code": "while True:\n    msg = inbound.pop()                 # SPSC ring, already parsed\n    if msg.kind == \"FILL\":\n        positions.on_fill(msg)          # idempotent: dedupe on exec ID\n    elif msg.kind == \"TICK\":\n        quote = strategy.decide(msg, positions)\n        if quote and risk.check(quote): # synchronous gate, before send\n            outbound.send(encode(quote))",
-      "caption": "Pseudocode of one iteration; production versions are C++ over pre-allocated queues, but the shape - apply, decide, gate, send - is identical."
+      "caption": "Pseudocode of one iteration; production versions are C++ over pre-allocated queues, but the shape, apply, decide, gate, send, is identical."
     },
     {
       "type": "p",
-      "md": "A strategy wrapped around a matching engine is a set of promises about *when you are willing to be wrong*. Every design in this space — reactive, market-making, predictive — is a different allocation of that willingness. The matching layer itself is deterministic; all the intelligence (and all the risk) lives in what you do between order book updates and the orders you emit. This lesson connects those decisions to the engine mechanics you already know: queue position, price priority, and the fact that your order, once resting, is an option written to everyone else."
+      "md": "A strategy wrapped around a matching engine is a set of promises about *when you are willing to be wrong*. Every design in this space, reactive, market-making, predictive, is a different allocation of that willingness. The matching layer itself is deterministic; all the intelligence (and all the risk) lives in what you do between order book updates and the orders you emit. This lesson connects those decisions to the engine mechanics you already know: queue position, price priority, and the fact that your order, once resting, is an option written to everyone else."
     },
     {
       "type": "table",
@@ -80,10 +80,10 @@
       "type": "steps",
       "title": "Why each pattern is the way it is (engineering reasons, not taste)",
       "items": [
-        "**Reactive** strategies live and die on tick-to-trade latency because the alpha decays in microseconds-to-seconds. The engine's price priority means *someone* is first — latency decides who.",
-        "**Market making** profits from the spread but only if fills are balanced; the engine's time priority means your resting order only gets filled when the market comes to you — which is precisely when the market may know more (adverse selection). Queue position and quote-skew management are the craft.",
-        "**Arbitrage** is where matching-engine determinism pays the bills: both legs are simple, and the strategy is a race — the first to detect the dislocation and get both orders in wins, everyone else holds a naked leg. The unmatched-leg state machine is the critical engineering.",
-        "Note what is common: every pattern must specify behaviour for the states *cancelled*, *partially filled*, and *rejected* — the engine will produce all three, and a strategy that only handles FILLED is a strategy that will hold phantom inventory."
+        "**Reactive** strategies live and die on tick-to-trade latency because the alpha decays in microseconds-to-seconds. The engine's price priority means *someone* is first, latency decides who.",
+        "**Market making** profits from the spread but only if fills are balanced; the engine's time priority means your resting order only gets filled when the market comes to you, which is precisely when the market may know more (adverse selection). Queue position and quote-skew management are the craft.",
+        "**Arbitrage** is where matching-engine determinism pays the bills: both legs are simple, and the strategy is a race, the first to detect the dislocation and get both orders in wins, everyone else holds a naked leg. The unmatched-leg state machine is the critical engineering.",
+        "Note what is common: every pattern must specify behaviour for the states *cancelled*, *partially filled*, and *rejected*, the engine will produce all three, and a strategy that only handles FILLED is a strategy that will hold phantom inventory."
       ]
     },
     {
@@ -94,7 +94,7 @@
     },
     {
       "type": "p",
-      "md": "A strategy wrapped around a matching engine is a set of promises about *when you are willing to be wrong*. Every design in this space — reactive, market-making, predictive — is a different allocation of that willingness. The matching layer itself is deterministic; all the intelligence (and all the risk) lives in what you do between order book updates and the orders you emit. This lesson connects those decisions to the engine mechanics you already know: queue position, price priority, and the fact that your order, once resting, is an option written to everyone else."
+      "md": "A strategy wrapped around a matching engine is a set of promises about *when you are willing to be wrong*. Every design in this space, reactive, market-making, predictive, is a different allocation of that willingness. The matching layer itself is deterministic; all the intelligence (and all the risk) lives in what you do between order book updates and the orders you emit. This lesson connects those decisions to the engine mechanics you already know: queue position, price priority, and the fact that your order, once resting, is an option written to everyone else."
     },
     {
       "type": "table",
@@ -135,10 +135,10 @@
       "type": "steps",
       "title": "Why each pattern is the way it is (engineering reasons, not taste)",
       "items": [
-        "**Reactive** strategies live and die on tick-to-trade latency because the alpha decays in microseconds-to-seconds. The engine's price priority means *someone* is first — latency decides who.",
-        "**Market making** profits from the spread but only if fills are balanced; the engine's time priority means your resting order only gets filled when the market comes to you — which is precisely when the market may know more (adverse selection). Queue position and quote-skew management are the craft.",
-        "**Arbitrage** is where matching-engine determinism pays the bills: both legs are simple, and the strategy is a race — the first to detect the dislocation and get both orders in wins, everyone else holds a naked leg. The unmatched-leg state machine is the critical engineering.",
-        "Note what is common: every pattern must specify behaviour for the states *cancelled*, *partially filled*, and *rejected* — the engine will produce all three, and a strategy that only handles FILLED is a strategy that will hold phantom inventory."
+        "**Reactive** strategies live and die on tick-to-trade latency because the alpha decays in microseconds-to-seconds. The engine's price priority means *someone* is first, latency decides who.",
+        "**Market making** profits from the spread but only if fills are balanced; the engine's time priority means your resting order only gets filled when the market comes to you, which is precisely when the market may know more (adverse selection). Queue position and quote-skew management are the craft.",
+        "**Arbitrage** is where matching-engine determinism pays the bills: both legs are simple, and the strategy is a race, the first to detect the dislocation and get both orders in wins, everyone else holds a naked leg. The unmatched-leg state machine is the critical engineering.",
+        "Note what is common: every pattern must specify behaviour for the states *cancelled*, *partially filled*, and *rejected*, the engine will produce all three, and a strategy that only handles FILLED is a strategy that will hold phantom inventory."
       ]
     },
     {
@@ -160,7 +160,7 @@
     },
     {
       "type": "p",
-      "md": "Before an order leaves the firm, a synchronous **pre-trade risk** gate runs in the hot path - microseconds, not milliseconds. Its checks are the firm's last line of defence between a buggy strategy and a very bad afternoon:"
+      "md": "Before an order leaves the firm, a synchronous **pre-trade risk** gate runs in the hot path, microseconds, not milliseconds. Its checks are the firm's last line of defence between a buggy strategy and a very bad afternoon:"
     },
     {
       "type": "list",
@@ -179,16 +179,16 @@
       "title": "Two checks, worked",
       "items": [
         "Reference price \\$100.00, band $\\pm 5\\%$: allowed window $[100 \\times 0.95,\\ 100 \\times 1.05] = [95.00,\\ 105.00]$.",
-        "An order to buy at \\$92.50 fails the band: rejected locally in microseconds - it never reaches the venue.",
+        "An order to buy at \\$92.50 fails the band: rejected locally in microseconds, it never reaches the venue.",
         "Second order: buy 5,000 @ \\$101.00. Notional $= 5{,}000 \\times 101.00 = 505{,}000$ against a \\$250,000 cap: rejected.",
-        "The venue would have accepted both orders - the gate exists precisely because 'the venue allows it' is not the question."
+        "The venue would have accepted both orders, the gate exists precisely because 'the venue allows it' is not the question."
       ]
     },
     {
       "type": "callout",
       "variant": "pitfall",
       "title": "Asynchronous risk is no risk",
-      "md": "A risk check that runs after the order is sent - or in a batch job a second later - only writes the post-mortem. The check must complete *before* the bytes leave the building; otherwise the worst case (a strategy stuck in a loop) is unbounded exposure, not a rejected order."
+      "md": "A risk check that runs after the order is sent, or in a batch job a second later, only writes the post-mortem. The check must complete *before* the bytes leave the building; otherwise the worst case (a strategy stuck in a loop) is unbounded exposure, not a rejected order."
     },
     {
       "type": "p",
@@ -201,7 +201,7 @@
       "Band limits: $150 \\times 0.97$ and $150 \\times 1.03$.",
       "Run checks in order and stop at the first failure."
     ],
-    "solution": "Band: upper limit $= 150 \\times 1.03 = 154.50$. The order price $= 4{,}000 \\times 156.00 = 624{,}000 \\le 1{,}500{,}000$ (would pass) and post-trade position $4{,}000 \\le 10{,}000$ (would pass) - but evaluation stops at the first failure."
+    "solution": "Band: upper limit $= 150 \\times 1.03 = 154.50$. The order price $= 4{,}000 \\times 156.00 = 624{,}000 \\le 1{,}500{,}000$ (would pass) and post-trade position $4{,}000 \\le 10{,}000$ (would pass), but evaluation stops at the first failure."
   },
   "independentExercise": {
     "prompt": "Reference \\$100.00, band $\\pm 5\\%$; notional cap \\$1,000,000; position limit 12,000 shares, currently long 7,000. Check the order 'buy 6,000 @ \\$102.00' against all three checks and name the one that fails.",
@@ -209,12 +209,12 @@
       "Notional = qty x price.",
       "Post-trade position = current position + order quantity."
     ],
-    "solution": "Band: $[95.00, 105.00]$; \\$102.00 is inside, pass. Notional $= 6{,}000 \\times 102.00 = 612{,}000 \\le 1{,}000{,}000$, pass. Position: $7{,}000 + 6{,}000 = 13{,}000 > 12{,}000$ - the **position limit fails**; reject, or size the order down to at most 5,000 shares."
+    "solution": "Band: $[95.00, 105.00]$; \\$102.00 is inside, pass. Notional $= 6{,}000 \\times 102.00 = 612{,}000 \\le 1{,}000{,}000$, pass. Position: $7{,}000 + 6{,}000 = 13{,}000 > 12{,}000$, the **position limit fails**; reject, or size the order down to at most 5,000 shares."
   },
   "commonMistakes": [
-    "Checking risk after send, or on a timer - exposure exists the moment the venue can match the order.",
+    "Checking risk after send, or on a timer, exposure exists the moment the venue can match the order.",
     "Letting the strategy process own the risk gate; separation of duties survives strategy bugs.",
-    "Forgetting self-trade prevention - two of your own algorithms can happily match each other.",
+    "Forgetting self-trade prevention, two of your own algorithms can happily match each other.",
     "Conflating venue rejections with firm rejections; locally rejected orders never crossed the wire."
   ],
   "realWorldApplication": "Regulators formalised this pattern: market-access rules require broker-dealers to run pre-trade financial and regulatory controls before orders reach the market, and every exchange onboarding test probes the gate's behaviour.",
@@ -223,7 +223,7 @@
     "Matching engine = venue black box with a strict in/out contract; the strategy process reacts to events across that boundary.",
     "Strategy event loop: single-threaded, allocation-free, idempotent handlers, resumable state.",
     "Pre-trade risk runs synchronously before transmission: price bands, notional/quantity caps, position limits, self-trade prevention, duplicate IDs, rate limits, kill switch.",
-    "A locally rejected order costs microseconds; a bad fill costs money - the gate exists for the tail, not the average."
+    "A locally rejected order costs microseconds; a bad fill costs money, the gate exists for the tail, not the average."
   ],
   "quiz": [
     {
@@ -323,11 +323,11 @@
   ],
   "references": [
     {
-      "label": "FIX Trading Community - New Order / Execution Report semantics",
+      "label": "FIX Trading Community: New Order / Execution Report semantics",
       "url": "https://www.fixtrading.org/"
     },
     {
-      "label": "SEC Rule 15c3-5 - Market Access Rule (pre-trade controls)",
+      "label": "SEC Rule 15c3-5: Market Access Rule (pre-trade controls)",
       "url": "https://www.sec.gov/rules/final/2010/34-63241.pdf"
     }
   ],

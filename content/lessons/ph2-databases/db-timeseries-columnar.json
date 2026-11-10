@@ -13,7 +13,7 @@
     "Explain row-oriented vs columnar layouts and why analytics over few columns reads less data",
     "Use Redis strings, hashes and sorted sets for a last-price cache with TTL, a position hash and a price-ladder top-of-book"
   ],
-  "motivation": "Market data is the extreme case of everything the last three lessons taught: millions of appends per day, almost no updates, and queries that always carve a time range. A row-oriented OLTP engine ingesting every tick at full ACID cost is the wrong tool at both ends of the pipeline - ticks want columnar, append-friendly storage and pre-aggregated bars, while traders' screens want sub-millisecond reads of 'the latest price', which is a job for an in-memory cache like Redis. This lesson wires the three tiers together.",
+  "motivation": "Market data is the extreme case of everything the last three lessons taught: millions of appends per day, almost no updates, and queries that always carve a time range. A row-oriented OLTP engine ingesting every tick at full ACID cost is the wrong tool at both ends of the pipeline, ticks want columnar, append-friendly storage and pre-aggregated bars, while traders' screens want sub-millisecond reads of 'the latest price', which is a job for an in-memory cache like Redis. This lesson wires the three tiers together.",
   "blocks": [
     {
       "type": "h2",
@@ -21,7 +21,7 @@
     },
     {
       "type": "p",
-      "md": "A tick, a one-minute bar, a daily position snapshot - time series differ from OLTP tables in four ways. They are **append-mostly**: rows are inserted once and never updated, so the lost-update machinery matters less than insert throughput. They are **time-ordered**: almost every query is `WHERE ts BETWEEN t1 AND t2`, so storage keyed by time wins. They grow **monotonically and forever**, forcing explicit **retention** decisions (keep 2 years of ticks, 10 years of bars) and **downsampling** - collapsing raw ticks into 1-minute and daily bars, which also shrinks storage by orders of magnitude. And they are read **aggregately**: nobody asks for tick 8,412,003; they ask for the VWAP of an hour."
+      "md": "A tick, a one-minute bar, a daily position snapshot, time series differ from OLTP tables in four ways. They are **append-mostly**: rows are inserted once and never updated, so the lost-update machinery matters less than insert throughput. They are **time-ordered**: almost every query is `WHERE ts BETWEEN t1 AND t2`, so storage keyed by time wins. They grow **monotonically and forever**, forcing explicit **retention** decisions (keep 2 years of ticks, 10 years of bars) and **downsampling**, collapsing raw ticks into 1-minute and daily bars, which also shrinks storage by orders of magnitude. And they are read **aggregately**: nobody asks for tick 8,412,003; they ask for the VWAP of an hour."
     },
     {
       "type": "code",
@@ -31,7 +31,7 @@
     },
     {
       "type": "p",
-      "md": "Time-series engines (TimescaleDB, kdb+, DuckDB for local analytics) add mechanics around this shape: **time partitioning** splits storage by day so a range query touches only relevant partitions and old partitions can be dropped or compressed wholesale; **continuous aggregates** maintain bar tables incrementally as ticks arrive. You can approximate all of it in plain SQL with partitioned tables and a nightly downsample job - the concepts, not the product, are the lesson."
+      "md": "Time-series engines (TimescaleDB, kdb+, DuckDB for local analytics) add mechanics around this shape: **time partitioning** splits storage by day so a range query touches only relevant partitions and old partitions can be dropped or compressed wholesale; **continuous aggregates** maintain bar tables incrementally as ticks arrive. You can approximate all of it in plain SQL with partitioned tables and a nightly downsample job, the concepts, not the product, are the lesson."
     },
     {
       "type": "h2",
@@ -39,7 +39,7 @@
     },
     {
       "type": "p",
-      "md": "A row store lays each row's columns together on disk - perfect for OLTP, where you read or write one whole entity ('fetch order 1042 with all its fields'). A **columnar** store lays each column contiguously. An analyst query computing VWAP touches 2 of 20 columns, so columnar reads only those two column files - a 10x I/O reduction straight away. Contiguous same-typed values also compress spectacularly: run-length encoding on a symbol column that says 'AAPL' 10,000 times, dictionary encoding for repeats - often 5-10x further. Scanning compressed, contiguous arrays vectorises well, which is why columnar engines are the default for analytics and OLAP workloads, and why writes-heavy OLTP stays row-based."
+      "md": "A row store lays each row's columns together on disk, perfect for OLTP, where you read or write one whole entity ('fetch order 1042 with all its fields'). A **columnar** store lays each column contiguously. An analyst query computing VWAP touches 2 of 20 columns, so columnar reads only those two column files, a 10x I/O reduction straight away. Contiguous same-typed values also compress spectacularly: run-length encoding on a symbol column that says 'AAPL' 10,000 times, dictionary encoding for repeats, often 5-10x further. Scanning compressed, contiguous arrays vectorises well, which is why columnar engines are the default for analytics and OLAP workloads, and why writes-heavy OLTP stays row-based."
     },
     {
       "type": "table",
@@ -78,7 +78,7 @@
     },
     {
       "type": "p",
-      "md": "Do the arithmetic on scale. Hypothetical: 1,000 symbols ticking once per second over a 6.5-hour session (23,400 seconds) is 23.4 million ticks per day. At 30 bytes per tick in a row store that is about 700 MB per day; columnar storage of the same payload at roughly 6 bytes per tick is about 140 MB per day. Over a 250-day year: roughly 175 GB vs 35 GB - and the columnar copy is also the one that answers '5-year VWAP' in seconds. (All numbers illustrative, not measured.)"
+      "md": "Do the arithmetic on scale. Hypothetical: 1,000 symbols ticking once per second over a 6.5-hour session (23,400 seconds) is 23.4 million ticks per day. At 30 bytes per tick in a row store that is about 700 MB per day; columnar storage of the same payload at roughly 6 bytes per tick is about 140 MB per day. Over a 250-day year: roughly 175 GB vs 35 GB, and the columnar copy is also the one that answers '5-year VWAP' in seconds. (All numbers illustrative, not measured.)"
     },
     {
       "type": "interactive",
@@ -104,7 +104,7 @@
         "period": 5,
         "label": "Hypothetical daily volume, thousands of shares"
       },
-      "caption": "Volume series in finance mix a slow trend with a repeating weekly pattern - decomposing series like this is a routine research task on columnar data."
+      "caption": "Volume series in finance mix a slow trend with a repeating weekly pattern, decomposing series like this is a routine research task on columnar data."
     },
     {
       "type": "h2",
@@ -112,7 +112,7 @@
     },
     {
       "type": "p",
-      "md": "Redis is an **in-memory key-value store** with sub-millisecond reads and a small set of data structures that map perfectly onto desk problems. **Strings** hold scalar values - a last price with a **TTL** so stale quotes expire on their own. **Hashes** hold field-value records - one hash per position (`qty`, `avg_cost`). **Sorted sets** hold members ordered by a numeric score - a price ladder where scores are prices and ZADD keeps it ordered for you. Redis also does atomic `INCR` counters (rate limiting) and pub/sub fan-out of quote updates. It is a **cache tier**, not the system of record: persistence exists, but the database remains the source of truth, and every cached value should carry an expiry."
+      "md": "Redis is an **in-memory key-value store** with sub-millisecond reads and a small set of data structures that map perfectly onto desk problems. **Strings** hold scalar values, a last price with a **TTL** so stale quotes expire on their own. **Hashes** hold field-value records, one hash per position (`qty`, `avg_cost`). **Sorted sets** hold members ordered by a numeric score, a price ladder where scores are prices and ZADD keeps it ordered for you. Redis also does atomic `INCR` counters (rate limiting) and pub/sub fan-out of quote updates. It is a **cache tier**, not the system of record: persistence exists, but the database remains the source of truth, and every cached value should carry an expiry."
     },
     {
       "type": "code",
@@ -124,11 +124,11 @@
       "type": "callout",
       "variant": "warn",
       "title": "The cache is not the truth",
-      "md": "A Redis price is a hint with a lifetime; the fills table is the record. If the cache and the database disagree after a reconnect, the database wins - design every consumer to survive a cache miss or a stale value, and bound staleness with EX/TTL, never with hope."
+      "md": "A Redis price is a hint with a lifetime; the fills table is the record. If the cache and the database disagree after a reconnect, the database wins, design every consumer to survive a cache miss or a stale value, and bound staleness with EX/TTL, never with hope."
     },
     {
       "type": "p",
-      "md": "The resulting architecture is tiered by access pattern: Redis answers 'what is the price right now', a row-oriented OLTP database owns orders, positions and cash (transactional truth), and a columnar store owns history (research and reporting). Each tier uses the storage layout its queries deserve - which is the real lesson of this module."
+      "md": "The resulting architecture is tiered by access pattern: Redis answers 'what is the price right now', a row-oriented OLTP database owns orders, positions and cash (transactional truth), and a columnar store owns history (research and reporting). Each tier uses the storage layout its queries deserve, which is the real lesson of this module."
     }
   ],
   "guidedExercise": {
@@ -138,7 +138,7 @@
       "A ladder is a sorted set: ZADD key score member, score = price, member = order id.",
       "Best bids = highest prices first = ZREVRANGE."
     ],
-    "solution": "```\n(a) SET price:MSFT 412.07 EX 5\n(b) GET price:MSFT              -> \"412.07\" (or nil after 5s - the caller must treat that as a cache miss, not an error)\n(c) ZADD book:AAPL:bid 189.50 order:17 189.45 order:23 189.40 order:31\n    ZREVRANGE book:AAPL:bid 0 4 WITHSCORES\n```\n\nThe ZREVRANGE returns the ladder best-first: `order:17 @ 189.50`, `order:23 @ 189.45`, `order:31 @ 189.40`. The set stays sorted on every ZADD, and replacing an order's price is just a new ZADD with the same member - Redis updates the score in place."
+    "solution": "```\n(a) SET price:MSFT 412.07 EX 5\n(b) GET price:MSFT              -> \"412.07\" (or nil after 5s - the caller must treat that as a cache miss, not an error)\n(c) ZADD book:AAPL:bid 189.50 order:17 189.45 order:23 189.40 order:31\n    ZREVRANGE book:AAPL:bid 0 4 WITHSCORES\n```\n\nThe ZREVRANGE returns the ladder best-first: `order:17 @ 189.50`, `order:23 @ 189.45`, `order:31 @ 189.40`. The set stays sorted on every ZADD, and replacing an order's price is just a new ZADD with the same member. Redis updates the score in place."
   },
   "independentExercise": {
     "prompt": "(a) Write the standard SQL that downsamples the `fills` table into a daily bar table `daily_bars(symbol, trade_date, volume, vwap)`. (b) For a hypothetical feed of 500 symbols ticking once per second over 6.5 hours per day, compute the ticks per day, and the daily and yearly (250 trading days) storage for a 30-byte-per-tick row store versus a 6-byte-per-tick columnar store.",
@@ -152,7 +152,7 @@
   "commonMistakes": [
     "Storing ticks in a row-oriented OLTP table with full constraint checking, then wondering why ingestion is the bottleneck.",
     "AVG(price) as the bar's 'average price' instead of VWAP = SUM(price*quantity)/SUM(quantity).",
-    "Keeping raw ticks forever with no retention or downsampling policy - storage grows monotonically by design.",
+    "Keeping raw ticks forever with no retention or downsampling policy, storage grows monotonically by design.",
     "Caching prices in Redis without a TTL, so a dead feed leaves yesterday's quote on traders' screens.",
     "Treating the Redis cache as the system of record and losing data that only ever existed in memory."
   ],
@@ -160,9 +160,9 @@
   "quantFinanceApplication": "The daily VWAP bar computed here is the benchmark against which execution performance is measured, and the TTL'd last-price cache is the same pattern a smart order router uses when it checks the current quote before routing.",
   "summary": [
     "Time-series workloads are append-mostly, time-ordered and range-scanned: partition by time, downsample into bars, set retention explicitly.",
-    "VWAP bars come from GROUP BY on a date expression with SUM(price*quantity)/SUM(quantity) - materialise them, do not recompute.",
+    "VWAP bars come from GROUP BY on a date expression with SUM(price*quantity)/SUM(quantity), materialise them, do not recompute.",
     "Columnar storage reads only the columns a query touches and compresses repeated values strongly; row storage wins for transactional point reads and writes.",
-    "Illustrative scale check: 11.7M ticks/day is ~351 MB/day row-based vs ~70 MB/day columnar - layout choice is an order-of-magnitude decision.",
+    "Illustrative scale check: 11.7M ticks/day is ~351 MB/day row-based vs ~70 MB/day columnar, layout choice is an order-of-magnitude decision.",
     "Redis provides strings with TTL, hashes, sorted sets and atomic counters for the cache tier; the database stays the source of truth and every cached value gets an expiry."
   ],
   "quiz": [
@@ -201,7 +201,7 @@
         1,
         2
       ],
-      "explanation": "Strings carry scalars with TTLs, hashes carry field-value records, sorted sets keep members ordered by numeric score. Redis is a cache, not durable fill storage - that stays in the database."
+      "explanation": "Strings carry scalars with TTLs, hashes carry field-value records, sorted sets keep members ordered by numeric score. Redis is a cache, not durable fill storage, that stays in the database."
     },
     {
       "id": "q4",
@@ -222,7 +222,7 @@
       "language": "text",
       "code": "SET rate:acct7 1\nINCR rate:acct7\nGET rate:acct7",
       "answer": "2",
-      "explanation": "INCR atomically adds 1 to the stored value and returns it; the subsequent GET reads 2. INCR is atomic, so concurrent callers each get a unique increment - the basis of Redis rate limiters."
+      "explanation": "INCR atomically adds 1 to the stored value and returns it; the subsequent GET reads 2. INCR is atomic, so concurrent callers each get a unique increment, the basis of Redis rate limiters."
     },
     {
       "id": "q6",
@@ -252,21 +252,21 @@
     {
       "type": "definition",
       "front": "Redis TTL",
-      "back": "EX (seconds) / PX (ms) option or EXPIRE command: the key is deleted after the timeout - the mechanism that bounds cache staleness."
+      "back": "EX (seconds) / PX (ms) option or EXPIRE command: the key is deleted after the timeout, the mechanism that bounds cache staleness."
     },
     {
       "type": "code-output",
       "front": "Which Redis command returns the top 5 bids (highest price first) from a sorted set book:AAPL:bid?",
-      "back": "ZREVRANGE book:AAPL:bid 0 4 WITHSCORES - reverse order because higher score = better bid."
+      "back": "ZREVRANGE book:AAPL:bid 0 4 WITHSCORES, reverse order because higher score = better bid."
     }
   ],
   "references": [
     {
-      "label": "Redis Documentation - Data types tutorial",
+      "label": "Redis Documentation: Data types tutorial",
       "url": "https://redis.io/docs/latest/develop/data-types/"
     },
     {
-      "label": "DuckDB - Why DuckDB (vectorized, columnar)",
+      "label": "DuckDB: Why DuckDB (vectorized, columnar)",
       "url": "https://duckdb.org/why_duckdb"
     }
   ],

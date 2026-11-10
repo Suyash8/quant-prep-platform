@@ -13,7 +13,7 @@
     "Run clang-tidy with targeted checks and clang-format, and explain warnings-as-errors policy",
     "Diagnose a common warning (signed/unsigned comparison) and fix it at the source"
   ],
-  "motivation": "A new hire builds the pricing library with plain `g++ main.cpp`, runs it, and ships numbers that are wrong - because their signed loop variable compared against `vector.size()` never terminated the intended way, a warning that `-Wall -Werror` would have rejected at compile time. Tooling is not bureaucracy: flags, fast incremental builds and static analysis are the difference between bugs caught in seconds and bugs caught in production.",
+  "motivation": "A new hire builds the pricing library with plain `g++ main.cpp`, runs it, and ships numbers that are wrong, because their signed loop variable compared against `vector.size()` never terminated the intended way, a warning that `-Wall -Werror` would have rejected at compile time. Tooling is not bureaucracy: flags, fast incremental builds and static analysis are the difference between bugs caught in seconds and bugs caught in production.",
   "blocks": [
     {
       "type": "h2",
@@ -21,7 +21,7 @@
     },
     {
       "type": "p",
-      "md": "C++ has no single 'the' build - you maintain at least two. The **debug build** compiles fast, keeps every diagnostic on, and is shaped for humans: optimisation off (`-O0`) so the debugger's line-by-line view matches the source, debug symbols (`-g`) so GDB and perf can name things. The **release build** is shaped for the machine: `-O2`/`-O3` optimisation, `-DNDEBUG` to compile out asserts, and `-g` kept anyway so profilers still map addresses to lines - symbols cost disk, not runtime. Warnings come from `-Wall -Wextra -Wpedantic` (not literally 'all', but the high-signal set), and `-Werror` promotes any warning to a build failure so warnings cannot accumulate into wallpaper."
+      "md": "C++ has no single 'the' build, you maintain at least two. The **debug build** compiles fast, keeps every diagnostic on, and is shaped for humans: optimisation off (`-O0`) so the debugger's line-by-line view matches the source, debug symbols (`-g`) so GDB and perf can name things. The **release build** is shaped for the machine: `-O2`/`-O3` optimisation, `-DNDEBUG` to compile out asserts, and `-g` kept anyway so profilers still map addresses to lines, symbols cost disk, not runtime. Warnings come from `-Wall -Wextra -Wpedantic` (not literally 'all', but the high-signal set), and `-Werror` promotes any warning to a build failure so warnings cannot accumulate into wallpaper."
     },
     {
       "type": "code",
@@ -70,7 +70,7 @@
         [
           "-fsanitize=...",
           "Runtime checking",
-          "ASan/UBSan/TSan builds - correctness, never benchmarks"
+          "ASan/UBSan/TSan builds, correctness, never benchmarks"
         ]
       ]
     },
@@ -80,7 +80,7 @@
     },
     {
       "type": "p",
-      "md": "Typing compiler commands stops scaling at a handful of files. **CMake** describes the project (targets, dependencies, options) and *generates* build files for a chosen backend; **Ninja** is the backend built for speed - it evaluates a dependency graph and executes the minimum recompilation in parallel, one compiler process per core. Change one `.cpp` and Ninja rebuilds that file plus whatever links it; change a header and everything that includes it rebuilds. Compile-time is a feedback loop for correctness work like the warning discipline above, so fast incremental builds change behaviour, not just wall-clock."
+      "md": "Typing compiler commands stops scaling at a handful of files. **CMake** describes the project (targets, dependencies, options) and *generates* build files for a chosen backend; **Ninja** is the backend built for speed, it evaluates a dependency graph and executes the minimum recompilation in parallel, one compiler process per core. Change one `.cpp` and Ninja rebuilds that file plus whatever links it; change a header and everything that includes it rebuilds. Compile-time is a feedback loop for correctness work like the warning discipline above, so fast incremental builds change behaviour, not just wall-clock."
     },
     {
       "type": "code",
@@ -94,7 +94,7 @@
     },
     {
       "type": "p",
-      "md": "Compiler warnings catch what the compiler notices; dedicated static analysers go further. **clang-tidy** runs named checks over your code with full AST knowledge: `bugprone-*` (suspicious constructs), `performance-*` (inefficient patterns), `modernize-*` (pre-C++11 idioms to update), `clang-analyzer-*` (path-sensitive bug finding). **clang-format** ends style debates: a `.clang-format` file specifies formatting, and `clang-format -i` rewrites files to match - diffs stop containing whitespace noise. The pipeline standard: format check + `clang-tidy` + `-Werror` on every commit."
+      "md": "Compiler warnings catch what the compiler notices; dedicated static analysers go further. **clang-tidy** runs named checks over your code with full AST knowledge: `bugprone-*` (suspicious constructs), `performance-*` (inefficient patterns), `modernize-*` (pre-C++11 idioms to update), `clang-analyzer-*` (path-sensitive bug finding). **clang-format** ends style debates: a `.clang-format` file specifies formatting, and `clang-format -i` rewrites files to match, diffs stop containing whitespace noise. The pipeline standard: format check + `clang-tidy` + `-Werror` on every commit."
     },
     {
       "type": "code",
@@ -119,7 +119,7 @@
           "-Wall -Wextra",
           "what looks suspicious?",
           "unused, sign issues, shadowing",
-          "free — always on"
+          "free, always on"
         ],
         [
           "-fsanitize=address",
@@ -148,7 +148,7 @@
         [
           "-O2 vs -O0",
           "how hard does the compiler try?",
-          "— (a choice, not a check)",
+          ", (a choice, not a check)",
           "compile time, debuggability"
         ]
       ]
@@ -161,13 +161,13 @@
     },
     {
       "type": "p",
-      "md": "The ordering discipline matters more than any individual flag. Debug with sanitisers at `-O1` (fast enough to run, faithful enough to diagnose). Benchmark only at `-O2`/`-O3` with `-march=native` on the target hardware, after the sanitisers are clean — because UB that \"works\" at `-O0` becomes the miscompiled loop you ship at `-O2`. And treat warnings as errors from day one (`-Werror`): a warning you learn to scroll past is a bug you have scheduled for later."
+      "md": "The ordering discipline matters more than any individual flag. Debug with sanitisers at `-O1` (fast enough to run, faithful enough to diagnose). Benchmark only at `-O2`/`-O3` with `-march=native` on the target hardware, after the sanitisers are clean, because UB that \"works\" at `-O0` becomes the miscompiled loop you ship at `-O2`. And treat warnings as errors from day one (`-Werror`): a warning you learn to scroll past is a bug you have scheduled for later."
     },
     {
       "type": "callout",
       "variant": "pitfall",
       "title": "\"It works at -O0\" is a UB confession",
-      "md": "The single most diagnostic sentence in C++ debugging. Optimisation exposes undefined behaviour — the compiler assumes UB never happens and optimises accordingly (dead-code elimination, reordering, vectorisation). If behaviour changes between -O0 and -O2, you do not have a compiler bug; you have UB, and the sanitisers will name it."
+      "md": "The single most diagnostic sentence in C++ debugging. Optimisation exposes undefined behaviour, the compiler assumes UB never happens and optimises accordingly (dead-code elimination, reordering, vectorisation). If behaviour changes between -O0 and -O2, you do not have a compiler bug; you have UB, and the sanitisers will name it."
     },
     {
       "type": "steps",
@@ -183,7 +183,7 @@
     {
       "type": "callout",
       "variant": "pitfall",
-      "title": "Do not silence - understand",
+      "title": "Do not silence: understand",
       "md": "The lazy fix for any warning is a cast or deleting the flag. Each warning suppresses a class of future bug detection too. The professional move: understand *why* the tool fired, fix the code, and only with a written justification (and a code comment or targeted check-disable) bypass anything."
     }
   ],
@@ -193,7 +193,7 @@
       "What is the type of `quotes.size() - 1` when size() returns 0?",
       "Range-for removes the index entirely; C++20 std::ssize keeps indices but fixes signedness."
     ],
-    "solution": "`quotes.size()` is unsigned, so `size() - 1` with `size() == 0` wraps to $2^{64}-1$ (the largest unsigned long); the comparison converts `i` to unsigned, and the loop believes there are ~$1.8 \\times 10^{19}$ elements - it reads wildly out of bounds instead of skipping the loop. Fixes: (1) `for (std::size_t i = 0; i + 1 < quotes.size(); ++i)` - the `i + 1 <` form avoids the wrap because `i + 1` cannot underflow; (2) `for (const auto& q : quotes)` when the index is not needed, or `for (int i = 0; i < std::ssize(quotes) - 1; ++i)` in C++20 (signed `ssize`). With -Werror the original never compiles."
+    "solution": "`quotes.size()` is unsigned, so `size() - 1` with `size() == 0` wraps to $2^{64}-1$ (the largest unsigned long); the comparison converts `i` to unsigned, and the loop believes there are ~$1.8 \\times 10^{19}$ elements, it reads wildly out of bounds instead of skipping the loop. Fixes: (1) `for (std::size_t i = 0; i + 1 < quotes.size(); ++i)` - the `i + 1 <` form avoids the wrap because `i + 1` cannot underflow; (2) `for (const auto& q : quotes)` when the index is not needed, or `for (int i = 0; i < std::ssize(quotes) - 1; ++i)` in C++20 (signed `ssize`). With -Werror the original never compiles."
   },
   "independentExercise": {
     "prompt": "Set up the build/check pipeline for a two-file project `pricer.cpp` and `book.cpp` (headers included). Write: (a) the CMake configure line choosing Ninja and the Release configuration; (b) the incremental build command after editing only `book.cpp`; (c) the clang-tidy command checking `bugprone-*`, `performance-*` and `modernize-*` with the compile database from the build directory; (d) the clang-format command to fix formatting across both files, and one sentence on why the format step belongs before code review rather than during it.",
@@ -201,21 +201,21 @@
       "cmake -B <dir> -G <generator> -DCMAKE_BUILD_TYPE=<type>; building via cmake --build or ninja -C.",
       "clang-tidy needs -p pointing at the directory with compile_commands.json (generate with CMAKE_EXPORT_COMPILE_COMMANDS)."
     ],
-    "solution": "(a) `cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON`. (b) `ninja -C build` (or `cmake --build build`) - Ninja's dependency graph rebuilds only `book.o` and relinks. (c) `clang-tidy src/book.cpp src/pricer.cpp -p build/ -checks='-*,bugprone-*,performance-*,modernize-*'`. (d) `clang-format -i src/pricer.cpp src/book.cpp`; format before review so reviewers see semantic diffs only - whitespace churn in review wastes attention and hides real changes."
+    "solution": "(a) `cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON`. (b) `ninja -C build` (or `cmake --build build`). Ninja's dependency graph rebuilds only `book.o` and relinks. (c) `clang-tidy src/book.cpp src/pricer.cpp -p build/ -checks='-*,bugprone-*,performance-*,modernize-*'`. (d) `clang-format -i src/pricer.cpp src/book.cpp`; format before review so reviewers see semantic diffs only, whitespace churn in review wastes attention and hides real changes."
   },
   "commonMistakes": [
     "Building release code without -g and then being unable to profile or get a readable crash backtrace.",
     "Treating -Wall as 'all warnings' and skipping -Wextra -Wpedantic; the high-value signed/unsigned and shadowing warnings live in -Wextra.",
     "Letting warnings accumulate (no -Werror) until the real signal drowns in wallpaper.",
     "Committing formatting churn mixed with logic changes because clang-format was never run.",
-    "Using -march=native for binaries that must run on other machines - the release artefact then crashes with SIGILL on older CPUs."
+    "Using -march=native for binaries that must run on other machines, the release artefact then crashes with SIGILL on older CPUs."
   ],
-  "realWorldApplication": "Every production C++ shop standardises on CMake+Ninja (or Bazel), warnings-as-errors in CI, clang-format enforced by a commit hook, and clang-tidy on changed lines - the pipeline is the codebase's immune system.",
+  "realWorldApplication": "Every production C++ shop standardises on CMake+Ninja (or Bazel), warnings-as-errors in CI, clang-format enforced by a commit hook, and clang-tidy on changed lines, the pipeline is the codebase's immune system.",
   "quantFinanceApplication": "Trading-firm codebases gate every commit on -Werror builds and sanitiser jobs so a signedness wrap in a position loop or a stray allocation in the hot path is caught before it can reach a live order stream.",
   "summary": [
     "Two builds by contract: -O0 -g with warnings+sanitisers for debugging; -O3 -DNDEBUG -g -march=native for performance.",
     "-Wall -Wextra -Wpedantic -Werror converts the high-signal warning set into build failures, keeping signal high.",
-    "CMake generates the dependency graph, Ninja executes the minimum rebuild in parallel - fast feedback enables discipline.",
+    "CMake generates the dependency graph, Ninja executes the minimum rebuild in parallel, fast feedback enables discipline.",
     "clang-tidy (bugprone/performance/modernize checks) and clang-format (one style, zero whitespace debates) run mechanically on every change.",
     "Signed/unsigned comparison is the canonical caught-by-tooling bug: unsigned wraparound on empty containers; fix with size_t/range-for/std::ssize."
   ],
@@ -231,7 +231,7 @@
         "Errors only on warnings involving UB"
       ],
       "answerIndex": 1,
-      "explanation": "-Werror changes the policy: any warning fails the build, which is why CI uses it - warnings cannot accumulate into ignored wallpaper."
+      "explanation": "-Werror changes the policy: any warning fails the build, which is why CI uses it, warnings cannot accumulate into ignored wallpaper."
     },
     {
       "id": "q2",
@@ -244,7 +244,7 @@
         "Without -g the linker strips the binary"
       ],
       "answerIndex": 1,
-      "explanation": "Debug symbols live in a table, not in the hot path: profiling, post-mortem debugging and symbolication all need them. (They do enlarge the binary - some shops ship them separately.)"
+      "explanation": "Debug symbols live in a table, not in the hot path: profiling, post-mortem debugging and symbolication all need them. (They do enlarge the binary, some shops ship them separately.)"
     },
     {
       "id": "q3",
@@ -265,13 +265,13 @@
       "type": "mcq",
       "prompt": "`for (int i = 0; i < v.size() - 1; ++i)` with `v.size() == 0`. What happens at the first comparison and why?",
       "options": [
-        "The loop body never runs because size() - 1 is -1",
+        "The loop body never runs because size(), 1 is -1",
         "`size() - 1` wraps to a huge unsigned value, the comparison converts i to unsigned, and the loop runs far out of bounds",
         "The compiler rejects it at -O2 only",
         "It throws std::out_of_range"
       ],
       "answerIndex": 1,
-      "explanation": "size_t arithmetic: 0 - 1 = 2^64 - 1. The signed int i is converted to unsigned for the comparison, so the loop sees an enormous bound. This is exactly what -Wall's sign-compare warning flags."
+      "explanation": "size_t arithmetic: 0, 1 = 2^64, 1. The signed int i is converted to unsigned for the comparison, so the loop sees an enormous bound. This is exactly what -Wall's sign-compare warning flags."
     },
     {
       "id": "q5",
@@ -293,7 +293,7 @@
       "language": "text",
       "code": "# build.ninja tracks dependencies from compile_commands/depfiles\n# project: pricer.cpp, book.cpp, main.cpp  -> app\n# you edited book.cpp only\n$ ninja -C build",
       "answer": "1",
-      "explanation": "Ninja's dependency graph recompiles only book.cpp (one translation unit) and then relinks the app - that minimum-rebuild property is the point of the tool."
+      "explanation": "Ninja's dependency graph recompiles only book.cpp (one translation unit) and then relinks the app, that minimum-rebuild property is the point of the tool."
     }
   ],
   "flashcards": [
@@ -320,11 +320,11 @@
   ],
   "references": [
     {
-      "label": "GCC online docs — Invoking G++ (warnings)",
+      "label": "GCC online docs. Invoking G++ (warnings)",
       "url": "https://gcc.gnu.org/onlinedocs/gcc/Invoking-G_002b_002b.html"
     },
     {
-      "label": "clang-tidy — checks list",
+      "label": "clang-tidy, checks list",
       "url": "https://clang.llvm.org/extra/clang-tidy/checks/list.html"
     },
     {

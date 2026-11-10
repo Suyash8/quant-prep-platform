@@ -4,14 +4,16 @@
   "title": "std::shared_ptr, std::weak_ptr and Shared Ownership",
   "estMinutes": 27,
   "difficulty": "core",
-  "prereqs": ["cpp-unique-ptr"],
+  "prereqs": [
+    "cpp-unique-ptr"
+  ],
   "objectives": [
     "Explain the control block: strong and weak counts, atomic updates, and what happens when each counter reaches zero",
     "Predict use_count() transitions and destructor timing in shared_ptr programs",
     "Choose make_shared over shared_ptr(new) and state its one trade-off with weak_ptr observers",
     "Detect ownership cycles that leak, and break them with std::weak_ptr::lock"
   ],
-  "motivation": "Some objects genuinely have several owners with independent lifetimes: a pricing cache referenced by every strategy, a curve shared by many pricers. std::shared_ptr implements 'last one out turns off the lights' via an atomic reference count in a control block - and std::weak_ptr observes without keeping anything alive, which is also the only cure for shared-ownership cycles. This lesson is about the machinery: refcounts, allocation costs, cycles, and lock().",
+  "motivation": "Some objects genuinely have several owners with independent lifetimes: a pricing cache referenced by every strategy, a curve shared by many pricers. std::shared_ptr implements 'last one out turns off the lights' via an atomic reference count in a control block, and std::weak_ptr observes without keeping anything alive, which is also the only cure for shared-ownership cycles. This lesson is about the machinery: refcounts, allocation costs, cycles, and lock().",
   "blocks": [
     {
       "type": "h2",
@@ -19,17 +21,35 @@
     },
     {
       "type": "p",
-      "md": "A `std::shared_ptr<T>` is two pointers: one to the **object**, one to a **control block** shared by all smart pointers watching the same object. The control block holds a **strong count** (owners: shared_ptrs keeping the object alive) and a **weak count** (observers: weak_ptrs, plus the strong owners themselves). Copying a shared_ptr increments the strong count *atomically*; destroying one decrements it. When the strong count reaches zero, the object is destroyed; the control block itself survives until the weak count also reaches zero. This is why shared_ptr costs real memory (two words per pointer, plus the block) and real time (atomic read-modify-write on every copy and destruction) - unlike unique_ptr's zero overhead."
+      "md": "A `std::shared_ptr<T>` is two pointers: one to the **object**, one to a **control block** shared by all smart pointers watching the same object. The control block holds a **strong count** (owners: shared_ptrs keeping the object alive) and a **weak count** (observers: weak_ptrs, plus the strong owners themselves). Copying a shared_ptr increments the strong count *atomically*; destroying one decrements it. When the strong count reaches zero, the object is destroyed; the control block itself survives until the weak count also reaches zero. This is why shared_ptr costs real memory (two words per pointer, plus the block) and real time (atomic read-modify-write on every copy and destruction), unlike unique_ptr's zero overhead."
     },
     {
       "type": "table",
-      "headers": ["Operation", "Effect on counts"],
+      "headers": [
+        "Operation",
+        "Effect on counts"
+      ],
       "rows": [
-        ["make_shared / shared_ptr(new)", "creates a block: strong = 1, weak = 0"],
-        ["copy (or copy-assign a live ptr)", "strong +1 (atomic)"],
-        ["destructor / reset()", "strong -1; at 0 the object is destroyed"],
-        ["assigning a weak_ptr", "weak +1, strong unchanged"],
-        ["last strong owner destroyed", "object destroyed; block lives while weak > 0"]
+        [
+          "make_shared / shared_ptr(new)",
+          "creates a block: strong = 1, weak = 0"
+        ],
+        [
+          "copy (or copy-assign a live ptr)",
+          "strong +1 (atomic)"
+        ],
+        [
+          "destructor / reset()",
+          "strong -1; at 0 the object is destroyed"
+        ],
+        [
+          "assigning a weak_ptr",
+          "weak +1, strong unchanged"
+        ],
+        [
+          "last strong owner destroyed",
+          "object destroyed; block lives while weak > 0"
+        ]
       ]
     },
     {
@@ -38,7 +58,7 @@
     },
     {
       "type": "p",
-      "md": "`std::shared_ptr<T> p(new T)` performs **two allocations**: the object, then the control block. `std::make_shared<T>(args...)` performs **one**, placing object and block together - faster, and friendlier to the cache since the two live adjacently. The trade-off: with make_shared, the object's storage is inside the same allocation as the block, so while any weak_ptr observer still exists, the *object's memory* cannot be freed even though the object is destroyed (the strong count hit zero - destructor ran - but the block waits for the weak count). For large objects with long-lived weak observers, the two-allocation form can release object memory earlier."
+      "md": "`std::shared_ptr<T> p(new T)` performs **two allocations**: the object, then the control block. `std::make_shared<T>(args...)` performs **one**, placing object and block together, faster, and friendlier to the cache since the two live adjacently. The trade-off: with make_shared, the object's storage is inside the same allocation as the block, so while any weak_ptr observer still exists, the *object's memory* cannot be freed even though the object is destroyed (the strong count hit zero, destructor ran, but the block waits for the weak count). For large objects with long-lived weak observers, the two-allocation form can release object memory earlier."
     },
     {
       "type": "h2",
@@ -56,7 +76,7 @@
     },
     {
       "type": "p",
-      "md": "`std::weak_ptr<T>` points into the same control block but never increments the strong count - it only marks the block as watched. It cannot dereference directly: to *use* the object you must call **lock()**, which atomically returns a shared_ptr that either owns the object (if still alive) or is null (if it died). The lock-then-test pattern is the safe one; testing `expired()` first is a race, because the last owner may die between your check and your use. Typical uses: caches that must not pin objects, back-pointers in parent/child graphs, and any observer that should not extend an object's lifetime."
+      "md": "`std::weak_ptr<T>` points into the same control block but never increments the strong count, it only marks the block as watched. It cannot dereference directly: to *use* the object you must call **lock()**, which atomically returns a shared_ptr that either owns the object (if still alive) or is null (if it died). The lock-then-test pattern is the safe one; testing `expired()` first is a race, because the last owner may die between your check and your use. Typical uses: caches that must not pin objects, back-pointers in parent/child graphs, and any observer that should not extend an object's lifetime."
     },
     {
       "type": "code",
@@ -66,11 +86,11 @@
     },
     {
       "type": "h2",
-      "text": "The cycle problem - and its cure"
+      "text": "The cycle problem, and its cure"
     },
     {
       "type": "p",
-      "md": "Shared ownership has one structural failure mode: **cycles**. If A holds a shared_ptr to B and B holds a shared_ptr to A, each object's strong count is pinned at 1 by the other forever - both leak, and no destructor ever runs. The rule: ownership flows one way (usually parent owns children via shared_ptr); anything pointing *back* must be a weak_ptr."
+      "md": "Shared ownership has one structural failure mode: **cycles**. If A holds a shared_ptr to B and B holds a shared_ptr to A, each object's strong count is pinned at 1 by the other forever, both leak, and no destructor ever runs. The rule: ownership flows one way (usually parent owns children via shared_ptr); anything pointing *back* must be a weak_ptr."
     },
     {
       "type": "code",
@@ -82,22 +102,58 @@
       "type": "callout",
       "variant": "quant",
       "title": "Cycles in a pricing tree",
-      "md": "A scenario tree holds children via shared_ptr; each child needs its parent for calibration lookups. A shared_ptr back-edge leaks the entire tree on every re-calibration. The fix is exactly the weak_ptr back-edge above - a one-word change that determines whether the pricing service's memory grows forever or stays flat."
+      "md": "A scenario tree holds children via shared_ptr; each child needs its parent for calibration lookups. A shared_ptr back-edge leaks the entire tree on every re-calibration. The fix is exactly the weak_ptr back-edge above, a one-word change that determines whether the pricing service's memory grows forever or stays flat."
     },
     {
       "type": "callout",
       "variant": "pitfall",
       "title": "shared_ptr is not a thread-safety switch",
-      "md": "Only the control block is thread-safe (atomic counts). The *managed object* is as thread-safe as any other object: concurrent access still needs mutexes or atomics. Two threads may safely copy different shared_ptr instances to the same object - that is all the guarantee buys."
+      "md": "Only the control block is thread-safe (atomic counts). The *managed object* is as thread-safe as any other object: concurrent access still needs mutexes or atomics. Two threads may safely copy different shared_ptr instances to the same object, that is all the guarantee buys."
     },
     {
       "type": "interactive",
       "component": "MemoryLayout",
       "params": {
         "regions": [
-          { "name": "stack frame: main", "objects": [{ "label": "shared_ptr a (16 B: obj + block)", "size": 16 }, { "label": "shared_ptr b (copy of a)", "size": 16 }, { "label": "weak_ptr w (16 B)", "size": 16 }] },
-          { "name": "heap: control block", "objects": [{ "label": "strong = 2", "size": 8 }, { "label": "weak = 1", "size": 8 }] },
-          { "name": "heap: object", "objects": [{ "label": "the shared object", "size": 32 }] }
+          {
+            "name": "stack frame: main",
+            "objects": [
+              {
+                "label": "shared_ptr a (16 B: obj + block)",
+                "size": 16
+              },
+              {
+                "label": "shared_ptr b (copy of a)",
+                "size": 16
+              },
+              {
+                "label": "weak_ptr w (16 B)",
+                "size": 16
+              }
+            ]
+          },
+          {
+            "name": "heap: control block",
+            "objects": [
+              {
+                "label": "strong = 2",
+                "size": 8
+              },
+              {
+                "label": "weak = 1",
+                "size": 8
+              }
+            ]
+          },
+          {
+            "name": "heap: object",
+            "objects": [
+              {
+                "label": "the shared object",
+                "size": 32
+              }
+            ]
+          }
         ]
       },
       "caption": "Every shared_ptr is two words; the control block is the single source of truth for lifetime."
@@ -107,34 +163,34 @@
     "prompt": "Track the strong count and object lifetime step by step, and give the value printed at each marked point:\n\n```cpp\nauto a = std::make_shared<int>(5);   // (1) strong = ?\nauto b = a;                          // (2) strong = ?\n{\n    auto c = a;                      // (3) strong = ?\n    std::cout << a.use_count();      // (4) prints ?\n}\nb.reset();                           // (5) strong = ?, object destroyed?\n// (6) a.use_count() is now ?  and the object is ?\n```",
     "hints": [
       "Count only strong owners: copies of shared_ptr, not weak_ptrs.",
-      "c's scope ends at the closing brace - what does its destructor do to the count?",
+      "c's scope ends at the closing brace, what does its destructor do to the count?",
       "The object dies exactly when the strong count transitions to zero."
     ],
-    "solution": "(1) strong = 1 (the object and control block are created). (2) strong = 2 (copy increments atomically). (3) strong = 3. (4) prints **3**. (5) c was destroyed at the end of its scope (back to 2), then b.reset() takes it to **1** - the object is *not* destroyed, a still owns it. (6) a.use_count() is **1**, and the object is **alive**; it dies only when a is reset or goes out of scope. The invariant to internalise: the destructor fires on the transition to zero, never before."
+    "solution": "(1) strong = 1 (the object and control block are created). (2) strong = 2 (copy increments atomically). (3) strong = 3. (4) prints **3**. (5) c was destroyed at the end of its scope (back to 2), then b.reset() takes it to **1**, the object is *not* destroyed, a still owns it. (6) a.use_count() is **1**, and the object is **alive**; it dies only when a is reset or goes out of scope. The invariant to internalise: the destructor fires on the transition to zero, never before."
   },
   "independentExercise": {
     "prompt": "Design a two-way parent/child relationship: class Parent holds a shared_ptr<Child>; class Child needs a reference back to its Parent.\n\n(a) First write it with `std::shared_ptr<Parent> parent_` in the Child. State the exact strong counts after `p->child = c; c->parent = p;` and what happens when p and c go out of scope. (b) Then fix it with `std::weak_ptr<Parent> parent_` and show how Child accesses the parent safely. (c) Report the use_count() values in the fixed version and prove the destructors run.",
     "hints": [
-      "(a) After both assignments, each object is owned by one stack variable and one object member - what are the counts, and can they ever reach zero?",
-      "(b) The child cannot just dereference the weak_ptr - what method converts observation into ownership safely?",
+      "(a) After both assignments, each object is owned by one stack variable and one object member, what are the counts, and can they ever reach zero?",
+      "(b) The child cannot just dereference the weak_ptr, what method converts observation into ownership safely?",
       "(c) In the fixed version the back edge contributes nothing to the strong count."
     ],
-    "solution": "(a) After `p->child = c;` the Child's strong count is 2 (stack c + Parent::child). After `c->parent = p;` the Parent's strong count is 2 (stack p + Child::parent). When the stack variables die, each count drops only to 1 - held by the *other* object, which itself cannot die. **Both leak**: no destructor ever prints. This is the classic shared-ownership cycle. (b) ```cpp\n#include <iostream>\n#include <memory>\n\nstruct Child;\n\nstruct Parent {\n    std::shared_ptr<Child> child;\n    ~Parent() { std::cout << \"~Parent\\n\"; }\n};\nstruct Child {\n    std::weak_ptr<Parent> parent;          // back edge does not own\n    ~Child() { std::cout << \"~Child\\n\"; }\n    void report() {\n        if (auto p = parent.lock())        // safe: ownership only while alive\n            std::cout << \"my parent is alive\\n\";\n        else\n            std::cout << \"parent gone\\n\";\n    }\n};\n\nint main() {\n    auto p = std::make_shared<Parent>();\n    auto c = std::make_shared<Child>();\n    p->child = c;\n    c->parent = p;\n    std::cout << \"p=\" << p.use_count() << \" c=\" << c.use_count() << '\\n';\n    c->report();\n}\n```\nOutput: `p=1 c=2`, `my parent is alive`, then `~Child` and `~Parent` - proof the cycle is broken. (c) Parent's strong count is 1 (only the stack pointer; the weak edge adds nothing strong), Child's is 2 (stack + parent's owning edge). Destructors run at scope exit because no count is pinned above zero."
+    "solution": "(a) After `p->child = c;` the Child's strong count is 2 (stack c + Parent::child). After `c->parent = p;` the Parent's strong count is 2 (stack p + Child::parent). When the stack variables die, each count drops only to 1, held by the *other* object, which itself cannot die. **Both leak**: no destructor ever prints. This is the classic shared-ownership cycle. (b) ```cpp\n#include <iostream>\n#include <memory>\n\nstruct Child;\n\nstruct Parent {\n    std::shared_ptr<Child> child;\n    ~Parent() { std::cout << \"~Parent\\n\"; }\n};\nstruct Child {\n    std::weak_ptr<Parent> parent;          // back edge does not own\n    ~Child() { std::cout << \"~Child\\n\"; }\n    void report() {\n        if (auto p = parent.lock())        // safe: ownership only while alive\n            std::cout << \"my parent is alive\\n\";\n        else\n            std::cout << \"parent gone\\n\";\n    }\n};\n\nint main() {\n    auto p = std::make_shared<Parent>();\n    auto c = std::make_shared<Child>();\n    p->child = c;\n    c->parent = p;\n    std::cout << \"p=\" << p.use_count() << \" c=\" << c.use_count() << '\\n';\n    c->report();\n}\n```\nOutput: `p=1 c=2`, `my parent is alive`, then `~Child` and `~Parent` - proof the cycle is broken. (c) Parent's strong count is 1 (only the stack pointer; the weak edge adds nothing strong), Child's is 2 (stack + parent's owning edge). Destructors run at scope exit because no count is pinned above zero."
   },
   "commonMistakes": [
-    "Reaching for shared_ptr by default - every copy and destruction is an atomic operation, and shared ownership loosens the design; unique_ptr is the default, shared_ptr is the exception.",
+    "Reaching for shared_ptr by default, every copy and destruction is an atomic operation, and shared ownership loosens the design; unique_ptr is the default, shared_ptr is the exception.",
     "Creating cycles with shared_ptr back-pointers: parent owns children, children must weak_ptr back to the parent.",
-    "Assuming shared_ptr makes the managed object thread-safe - only the control block counts are atomic; the object itself needs its own synchronisation.",
-    "Testing expired() then lock() as two separate calls - the last owner can die in between; call lock() once and test the returned shared_ptr.",
+    "Assuming shared_ptr makes the managed object thread-safe, only the control block counts are atomic; the object itself needs its own synchronisation.",
+    "Testing expired() then lock() as two separate calls, the last owner can die in between; call lock() once and test the returned shared_ptr.",
     "Forgetting the make_shared trade-off: object memory stays allocated while any weak observer exists, even though the object is destroyed."
   ],
-  "realWorldApplication": "Caches, plugin registries and shared configuration objects are the standard use cases: many consumers, independent lifetimes, no single owner - shared_ptr for the cache entries, weak_ptr for observers that must not pin them.",
+  "realWorldApplication": "Caches, plugin registries and shared configuration objects are the standard use cases: many consumers, independent lifetimes, no single owner, shared_ptr for the cache entries, weak_ptr for observers that must not pin them.",
   "quantFinanceApplication": "A yield-curve object shared by every book's pricer is a shared_ptr held in a registry; per-strategy calculations observe it through weak_ptr so a strategy shutting down never pins the curve, and curve re-calibration never leaves a dangling pricer.",
   "summary": [
     "shared_ptr = object pointer + control block (atomic strong count, weak count); the object is destroyed when the strong count reaches zero.",
     "make_shared performs one allocation (object + block together) instead of two; trade-off: block lifetime pins object memory while weak observers exist.",
     "weak_ptr observes without owning: it cannot dereference directly; lock() atomically returns a shared_ptr or null, and lock-then-test beats expired()-then-lock.",
-    "Shared-ownership cycles leak permanently; the cure is direction of ownership - owning edges one way, weak_ptr for back-edges.",
+    "Shared-ownership cycles leak permanently; the cure is direction of ownership, owning edges one way, weak_ptr for back-edges.",
     "Thread-safety applies only to the control block; the shared object still needs its own synchronisation."
   ],
   "quiz": [
@@ -182,7 +238,7 @@
       "prompt": "Two objects hold std::shared_ptr to each other and both stack pointers are destroyed. What happens?",
       "options": [
         "Both objects are destroyed immediately",
-        "Nothing: each object's strong count stays at 1, pinned by the other - both leak and no destructor runs",
+        "Nothing: each object's strong count stays at 1, pinned by the other, both leak and no destructor runs",
         "The compiler detects the cycle and deletes the older object",
         "One object is destroyed and the other dangles"
       ],
@@ -194,8 +250,14 @@
       "type": "short",
       "prompt": "Why is the pattern `if (!w.expired()) { auto p = w.lock(); use(*p); }` unsafe, and what is the correct pattern?",
       "modelAnswer": "The last strong owner may destroy the object between the expired() check and the lock() call, so lock() can still return null and the use is invalid. Correct: call lock() once - `if (auto p = w.lock()) { use(*p); }` - since lock() atomically converts observation into ownership.",
-      "keywords": ["race", "lock", "atomic", "expired", "shared_ptr"],
-      "explanation": "expired()-then-lock() is a check-then-act race on another thread's destruction. lock() performs the check and the acquisition atomically, returning either a owning shared_ptr or null - a single decision point."
+      "keywords": [
+        "race",
+        "lock",
+        "atomic",
+        "expired",
+        "shared_ptr"
+      ],
+      "explanation": "expired()-then-lock() is a check-then-act race on another thread's destruction. lock() performs the check and the acquisition atomically, returning either a owning shared_ptr or null, a single decision point."
     }
   ],
   "flashcards": [
@@ -207,12 +269,12 @@
     {
       "type": "concept",
       "front": "make_shared vs shared_ptr<T>(new T)",
-      "back": "make_shared: one allocation, object adjacent to block - faster and cache-friendlier. Trade-off: object memory persists until the weak count drops, even after the destructor runs."
+      "back": "make_shared: one allocation, object adjacent to block, faster and cache-friendlier. Trade-off: object memory persists until the weak count drops, even after the destructor runs."
     },
     {
       "type": "definition",
       "front": "What does weak_ptr::lock() return?",
-      "back": "A shared_ptr that owns the object if it is still alive, or a null shared_ptr if it is not - the check and acquisition are one atomic operation."
+      "back": "A shared_ptr that owns the object if it is still alive, or a null shared_ptr if it is not, the check and acquisition are one atomic operation."
     },
     {
       "type": "error-identification",
@@ -222,13 +284,24 @@
     {
       "type": "concept",
       "front": "Is the shared object thread-safe because shared_ptr is?",
-      "back": "No - only the control block counts are atomic. Concurrent access to the managed object needs its own mutex/atomics."
+      "back": "No, only the control block counts are atomic. Concurrent access to the managed object needs its own mutex/atomics."
     }
   ],
   "references": [
-    { "label": "cppreference — std::shared_ptr", "url": "https://en.cppreference.com/w/cpp/memory/shared_ptr" },
-    { "label": "cppreference — std::weak_ptr", "url": "https://en.cppreference.com/w/cpp/memory/weak_ptr" },
-    { "label": "cppreference — std::make_shared", "url": "https://en.cppreference.com/w/cpp/memory/shared_ptr/make_shared" }
+    {
+      "label": "cppreference, std::shared_ptr",
+      "url": "https://en.cppreference.com/w/cpp/memory/shared_ptr"
+    },
+    {
+      "label": "cppreference, std::weak_ptr",
+      "url": "https://en.cppreference.com/w/cpp/memory/weak_ptr"
+    },
+    {
+      "label": "cppreference, std::make_shared",
+      "url": "https://en.cppreference.com/w/cpp/memory/shared_ptr/make_shared"
+    }
   ],
-  "skills": ["cpp-memory"]
+  "skills": [
+    "cpp-memory"
+  ]
 }

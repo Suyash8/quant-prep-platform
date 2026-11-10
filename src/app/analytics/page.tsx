@@ -10,7 +10,7 @@ import { db } from '@/lib/db';
 import { getCurriculumGraph, getRegistry } from '@/lib/content';
 import { AppShell } from '@/components/app-shell';
 
-export const metadata = { title: 'Analytics — QuantFoundry' };
+export const metadata = { title: 'Analytics. QuantFoundry' };
 
 const WEEKDAY_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 const SKILL_ICONS: LucideIcon[] = [Sigma, Percent, Divide, Pi, Variable, InfinityIcon, Braces, Equal];
@@ -42,6 +42,8 @@ export default async function AnalyticsPage() {
   ]);
 
   // ---- study hours per day (last 14 days) ----
+
+
   const days: { day: string; minutes: number }[] = [];
   for (let i = 13; i >= 0; i--) {
     const d = new Date(Date.now() - i * 86400_000).toISOString().slice(0, 10);
@@ -53,6 +55,8 @@ export default async function AnalyticsPage() {
   const bestMinutes = days.reduce((m, d) => Math.max(m, d.minutes), 0);
 
   // day streak from the 14-day window (today, with yesterday grace)
+
+
   const minsByDay = new Map(days.map(d => [d.day, d.minutes]));
   const dayKey = (ts: number) => new Date(ts).toISOString().slice(0, 10);
   let streakCursor = Date.now();
@@ -64,6 +68,8 @@ export default async function AnalyticsPage() {
   }
 
   // ---- mastery by skill ----
+
+
   const skillData: Record<string, { passed: number; total: number }> = {};
   for (const id of publishedIds) {
     const node = graph.byId.get(id);
@@ -90,17 +96,23 @@ export default async function AnalyticsPage() {
   };
 
   // ---- problem accuracy ----
+
+
   const submissions = attempts.length;
   const accepted = attempts.filter(a => a.status === 'passed').length;
   const uniqueSolved = new Set(attempts.filter(a => a.status === 'passed').map(a => a.problemSlug)).size;
 
   // ---- drills ----
+
+
   const drillStats = drills.reduce(
     (acc, d) => ({ correct: acc.correct + d.correct, total: acc.total + d.total, ms: acc.ms + d.avgMs, n: acc.n + 1 }),
     { correct: 0, total: 0, ms: 0, n: 0 }
   );
 
   // ---- revision consistency (reviews by week) ----
+
+
   const now = Date.now();
   const reviewWeeks = [0, 1, 2, 3].map(w => {
     const start = new Date(now - (w + 1) * 7 * 86400_000);
@@ -112,19 +124,19 @@ export default async function AnalyticsPage() {
 
   const bottlenecks: string[] = [];
   const needsRev = progressRows.filter(p => p.status === 'needs_revision');
-  if (needsRev.length > 0) bottlenecks.push(`${needsRev.length} lesson(s) marked needs-revision — retake their knowledge checks after re-reading.`);
+  if (needsRev.length > 0) bottlenecks.push(`${needsRev.length} lesson(s) marked needs-revision, retake their knowledge checks after re-reading.`);
   const lapsed = cards.filter(c => c.lapses >= 2).length;
-  if (lapsed > 0) bottlenecks.push(`${lapsed} card(s) lapsed twice or more — these concepts need a deeper re-read, not another repetition.`);
-  if (drillStats.n >= 3 && drillStats.correct / Math.max(drillStats.total, 1) < 0.75) bottlenecks.push('Mental-math accuracy below 75% — drill percentages and multiplication before assessments.');
+  if (lapsed > 0) bottlenecks.push(`${lapsed} card(s) lapsed twice or more, these concepts need a deeper re-read, not another repetition.`);
+  if (drillStats.n >= 3 && drillStats.correct / Math.max(drillStats.total, 1) < 0.75) bottlenecks.push('Mental-math accuracy below 75%, drill percentages and multiplication before assessments.');
   const stalePassed = progressRows.filter(p => ['passed', 'mastered'].includes(p.status) && p.retrievalDone === false);
-  if (stalePassed.length > 0) bottlenecks.push(`${stalePassed.length} passed lesson(s) not yet retrieval-verified — a cumulative assessment or their revision cards will confirm mastery.`);
-  if (bottlenecks.length === 0) bottlenecks.push('No bottlenecks detected from your data so far — keep the streak going.');
+  if (stalePassed.length > 0) bottlenecks.push(`${stalePassed.length} passed lesson(s) not yet retrieval-verified, a cumulative assessment or their revision cards will confirm mastery.`);
+  if (bottlenecks.length === 0) bottlenecks.push('No bottlenecks detected from your data so far, keep the streak going.');
 
   const totalMinutes = Math.round(sessions.reduce((n, s) => n + s.seconds, 0) / 60);
   const studyTimeValue = Math.floor(totalMinutes / 60) + 'h ' + (totalMinutes % 60) + 'm';
   const lessonsValue =
     progressRows.filter(p => p.status === 'passed').length + ' / ' + progressRows.filter(p => p.status === 'mastered').length;
-  const drillPctValue = drillStats.total ? Math.round((drillStats.correct / drillStats.total) * 100) + '%' : '—';
+  const drillPctValue = drillStats.total ? Math.round((drillStats.correct / drillStats.total) * 100) + '%' : ', ';
   const drillMsChip = drillStats.n ? Math.round(drillStats.ms / drillStats.n) + 'ms avg' : null;
 
   const tiles: { icon: LucideIcon; tile: string; value: string; label: string; valueCls?: string; chip?: string | null; chipCls?: string }[] = [
@@ -174,24 +186,25 @@ export default async function AnalyticsPage() {
             <span className="icon-tile-sm icon-tile-info">
               <History />
             </span>
-            <h2>Study time — last 14 days</h2>
+            <h2>Study time, last 14 days</h2>
             <span className="chip chip-accent tnum ml-auto">total {totalMinutes}m</span>
           </div>
           {hasStudyData ? (
             <div className="flex items-end gap-1.5 h-44">
               {days.map(d => {
                 const pct = (d.minutes / maxMinutes) * 100;
-                const barHeight = d.minutes > 0 ? Math.max(6, pct) + '%' : '6px';
                 const barCls =
                   d.minutes > 0
-                    ? 'w-full rounded-t-lg bg-accent xp-stripes hover:brightness-110 hover:scale-x-110 transition-all'
-                    : 'w-full rounded-full bg-surface-3';
+                    ? 'w-full rounded-t-lg rounded-b-md bg-accent hover:brightness-110 hover:scale-x-110 transition-all'
+                    : '';
                 const barTitle = d.day + ': ' + d.minutes + ' min';
                 return (
                   <div key={d.day} className="flex-1 h-full flex flex-col items-center gap-1 min-w-0" title={barTitle}>
                     {d.minutes > 0 && <span className="text-[9px] font-black tnum leading-none text-muted">{d.minutes}m</span>}
                     <div className="w-full flex-1 flex items-end justify-center">
-                      <div className={barCls} style={{ height: barHeight }} />
+                      {d.minutes > 0
+                        ? <div className={barCls} style={{ height: Math.max(6, pct) + '%' }} />
+                        : <div className="h-2.5 w-2.5 rounded-full border-2 border-border-strong bg-surface-3 mb-0.5" aria-label="rest day" />}
                     </div>
                     <span className="text-[10px] font-bold text-faint leading-none">{weekdayLetter(d.day)}</span>
                   </div>
@@ -257,6 +270,7 @@ export default async function AnalyticsPage() {
               <ul className="space-y-1">
                 {weakest.map(([s, v], i) => {
                   const name = s.replace(/-/g, ' ');
+                  const pct = v.total ? Math.round((v.passed / v.total) * 100) : 0;
                   return (
                     <li key={s} className="flex items-center gap-3 rounded-xl px-2 py-2.5 anim-slide-up hover:bg-surface-2/60 transition-colors" style={slideDelay(i)}>
                       <span className="h-8 w-8 shrink-0 rounded-xl bg-warning-soft flex items-center justify-center">
@@ -264,9 +278,13 @@ export default async function AnalyticsPage() {
                       </span>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-bold capitalize truncate">{name}</p>
-                        <div className="mt-1 h-2 rounded-full bg-surface-3 overflow-hidden">
-                          <div className="h-full rounded-full bg-warning" style={{ width: `${v.total ? Math.round((v.passed / v.total) * 100) : 0}%` }} />
-                        </div>
+                        {v.passed > 0 ? (
+                          <div className="mt-1 h-2 rounded-full bg-surface-3 overflow-hidden">
+                            <div className="h-full rounded-full bg-warning" style={{ width: `${pct}%` }} />
+                          </div>
+                        ) : (
+                          <p className="mt-1 text-[11px] font-black uppercase tracking-wider text-faint">not started yet</p>
+                        )}
                       </div>
                       <span className="text-xs font-black text-faint tnum shrink-0">{v.passed}/{v.total}</span>
                     </li>
@@ -333,15 +351,15 @@ export default async function AnalyticsPage() {
           </section>
         </div>
 
-        {/* closing CTA — keep the momentum */}
+        {/* closing CTA, keep the momentum */}
         <div className="mt-8 qf-card p-4 flex items-center gap-3.5 flex-wrap anim-slide-up">
           <span className="icon-tile icon-tile-sm icon-tile-accent shrink-0">
             <Flame />
           </span>
           <p className="flex-1 min-w-[220px] text-sm font-semibold text-muted">
             {streakDays > 0
-              ? `You are on a ${streakDays}-day streak — one lesson today keeps it alive.`
-              : 'Start a new streak today — one focused lesson is enough.'}
+              ? `You are on a ${streakDays}-day streak, one lesson today keeps it alive.`
+              : 'Start a new streak today, one focused lesson is enough.'}
           </p>
           <Link href="/dashboard" className="btn3d btn3d-sm shrink-0">
             Continue learning

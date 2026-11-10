@@ -11,10 +11,10 @@
     "Design retry policies with exponential backoff and jitter that respect an end-to-end deadline budget",
     "Explain why idempotency keys are mandatory for order submission and describe the server-side deduplication flow",
     "Apply backpressure (bounded queues, load shedding) so overload degrades gracefully instead of catastrophically",
-    "Relate the three observability pillars - metrics, logs and distributed traces - to diagnosing a slow or failing request",
+    "Relate the three observability pillars, metrics, logs and distributed traces, to diagnosing a slow or failing request",
     "Name the roles of Kafka, Docker and Kubernetes in running fault-tolerant services"
   ],
-  "motivation": "In a distributed system, failures are not exceptions - they are the operating baseline. Networks drop packets, processes die mid-request, downstream services stall, and every component you depend on will eventually do all of these while you are watching. Systems that survive are not the ones that avoid failures; they are the ones with rehearsed responses: retries with backoff, idempotency keys that make retries safe, backpressure that sheds load instead of collapsing, and the observability to see all of it happening. For an order path, each of these is a money question before it is an engineering one.",
+  "motivation": "In a distributed system, failures are not exceptions, they are the operating baseline. Networks drop packets, processes die mid-request, downstream services stall, and every component you depend on will eventually do all of these while you are watching. Systems that survive are not the ones that avoid failures; they are the ones with rehearsed responses: retries with backoff, idempotency keys that make retries safe, backpressure that sheds load instead of collapsing, and the observability to see all of it happening. For an order path, each of these is a money question before it is an engineering one.",
   "blocks": [
     {
       "type": "h2",
@@ -22,7 +22,7 @@
     },
     {
       "type": "p",
-      "md": "Treat every remote interaction as eventually failing in one of three ways: **crash** (the process stops), **timeout** (no answer in time - remember from the RPC lesson that the outcome is *unknown*, not necessarily failed), and **degradation** (answers arrive but slowly). Fault tolerance is the set of rehearsed responses: detect (timeouts, health checks), absorb (retries, buffers), shed (backpressure), and recover (replication from the previous lesson, plus restarts). The cardinal rule: a deadline must be respected end to end. Retries inside a deadline need arithmetic, not optimism."
+      "md": "Treat every remote interaction as eventually failing in one of three ways: **crash** (the process stops), **timeout** (no answer in time, remember from the RPC lesson that the outcome is *unknown*, not necessarily failed), and **degradation** (answers arrive but slowly). Fault tolerance is the set of rehearsed responses: detect (timeouts, health checks), absorb (retries, buffers), shed (backpressure), and recover (replication from the previous lesson, plus restarts). The cardinal rule: a deadline must be respected end to end. Retries inside a deadline need arithmetic, not optimism."
     },
     {
       "type": "h2",
@@ -30,7 +30,7 @@
     },
     {
       "type": "p",
-      "md": "Retrying immediately into a struggling service is fuel on the fire - synchronized clients form a **retry storm** that amplifies the original overload. Two fixes are standard. **Exponential backoff**: double the wait between attempts (100 ms, 200 ms, 400 ms, ...) so repeated failures spread out. **Jitter**: add randomness to each wait so thousands of clients do not retry in lockstep and re-collide. Both must fit inside the request's deadline:"
+      "md": "Retrying immediately into a struggling service is fuel on the fire, synchronized clients form a **retry storm** that amplifies the original overload. Two fixes are standard. **Exponential backoff**: double the wait between attempts (100 ms, 200 ms, 400 ms, ...) so repeated failures spread out. **Jitter**: add randomness to each wait so thousands of clients do not retry in lockstep and re-collide. Both must fit inside the request's deadline:"
     },
     {
       "type": "steps",
@@ -38,7 +38,7 @@
       "items": [
         "Budget: one client request must complete within 1{,}000 ms. Per-attempt timeout: 250 ms. Backoffs between attempts: 100 ms, then 200 ms (exponential, capped by budget).",
         "Worst case total: attempt 1 (250) + backoff (100) + attempt 2 (250) + backoff (200) + attempt 3 (250).",
-        "Sum: $250 + 100 + 250 + 200 + 250 = 1{,}050$ ms - **over** the 1{,}000 ms deadline by 50 ms.",
+        "Sum: $250 + 100 + 250 + 200 + 250 = 1{,}050$ ms, **over** the 1{,}000 ms deadline by 50 ms.",
         "Fixes: drop to 2 attempts ($250 + 100 + 250 = 600$ ms, leaving headroom), or shrink the per-attempt timeout to 225 ms ($225+100+225+200+225 = 975$ ms), or raise the deadline. Never let the client discover the overrun in production."
       ]
     },
@@ -75,13 +75,13 @@
       "type": "code",
       "lang": "python",
       "code": "attempt = 0\ndelay = 0.1          # seconds\ntotal = 0.0\ntimeouts = [0.25, 0.25, 0.25]   # per-attempt worst case\nfor t in timeouts:\n    total += t\n    attempt += 1\n    if attempt < len(timeouts):\n        total += delay\n        delay *= 2\nprint(attempt, round(total, 3))   # 3 1.05 -> exceeds a 1.0 s deadline",
-      "caption": "The deadline arithmetic is a three-line check - make it part of the design review, not a production incident."
+      "caption": "The deadline arithmetic is a three-line check, make it part of the design review, not a production incident."
     },
     {
       "type": "callout",
       "variant": "pitfall",
       "title": "Retry only what can succeed",
-      "md": "A 400 Bad Request will fail identically forever; retrying it 3 times triples the load for nothing. Retry **network errors and 5xx** (especially 503), honour **429 Too Many Requests** by backing off, and never retry inside the hot path without a budget check. And because a timed-out request may still have executed (failure ambiguity), every retry must be safe - which brings us to idempotency."
+      "md": "A 400 Bad Request will fail identically forever; retrying it 3 times triples the load for nothing. Retry **network errors and 5xx** (especially 503), honour **429 Too Many Requests** by backing off, and never retry inside the hot path without a budget check. And because a timed-out request may still have executed (failure ambiguity), every retry must be safe, which brings us to idempotency."
     },
     {
       "type": "h2",
@@ -89,7 +89,7 @@
     },
     {
       "type": "p",
-      "md": "An **idempotency key** is a unique identifier (a UUID) that the *client* generates per logical operation and attaches to every attempt of that operation. The server stores the key with the outcome: a first request executes and records the result; any **replay** with the same key returns the stored result without executing again. This converts 'unknown outcome' into 'known outcome' - the client can retry fearlessly because the server deduplicates."
+      "md": "An **idempotency key** is a unique identifier (a UUID) that the *client* generates per logical operation and attaches to every attempt of that operation. The server stores the key with the outcome: a first request executes and records the result; any **replay** with the same key returns the stored result without executing again. This converts 'unknown outcome' into 'known outcome', the client can retry fearlessly because the server deduplicates."
     },
     {
       "type": "steps",
@@ -97,7 +97,7 @@
       "items": [
         "Trader submits: buy 500 shares at a limit of \\$101.00 - a notional of $500 \\times 101.00 = $50{,}500$.",
         "The gateway times out after the exchange gateway received the order: the outcome is unknown.",
-        "Naive retry without a key: the same 500 shares execute again - total exposure \\$101{,}000, double the intended position, and a reconciliation mess at settlement.",
+        "Naive retry without a key: the same 500 shares execute again, total exposure \\$101{,}000, double the intended position, and a reconciliation mess at settlement.",
         "Retry **with** the idempotency key: the server finds the key already recorded with order ID and fill status, and returns the original result. Exactly one order exists.",
         "Keys are stored with the response (not just the request) so replays get the *same answer*, and are purged only after the settlement window closes."
       ]
@@ -106,7 +106,7 @@
       "type": "callout",
       "variant": "quant",
       "title": "Financial consequence",
-      "md": "Idempotency in the order path is not a nicety - it is position control. A duplicated 500-share order is a \\$50{,}500 unintended exposure, a wrong risk profile and a regulatory report. Desks treat missing idempotency keys in an order API as a production-blocking defect."
+      "md": "Idempotency in the order path is not a nicety, it is position control. A duplicated 500-share order is a \\$50{,}500 unintended exposure, a wrong risk profile and a regulatory report. Desks treat missing idempotency keys in an order API as a production-blocking defect."
     },
     {
       "type": "h2",
@@ -114,7 +114,7 @@
     },
     {
       "type": "p",
-      "md": "When work arrives faster than it can be processed, an unbounded queue answers *everything now, nothing on time*: latency grows without limit until memory dies. **Backpressure** pushes the overload upstream instead. Concretely: bound every queue; when it is full, reject immediately with `429`/`503` (**load shedding**) so callers can retry later or route elsewhere; let consumers advertise capacity (credit- or window-based flow control, as TCP does); and prefer dropping *low-value* work first. A system that sheds 10% of low-priority traffic under stress serves the other 90% with predictable latency - a system that buffers everything serves nobody."
+      "md": "When work arrives faster than it can be processed, an unbounded queue answers *everything now, nothing on time*: latency grows without limit until memory dies. **Backpressure** pushes the overload upstream instead. Concretely: bound every queue; when it is full, reject immediately with `429`/`503` (**load shedding**) so callers can retry later or route elsewhere; let consumers advertise capacity (credit- or window-based flow control, as TCP does); and prefer dropping *low-value* work first. A system that sheds 10% of low-priority traffic under stress serves the other 90% with predictable latency, a system that buffers everything serves nobody."
     },
     {
       "type": "h2",
@@ -122,21 +122,21 @@
     },
     {
       "type": "p",
-      "md": "You cannot fix what you cannot see, and distributed systems fail in distributed ways. The three pillars: **metrics** - numeric time series, minimally the RED triple (Rate of requests, Errors, Duration, e.g. p50/p99 latency) per service; **logs** - structured, timestamped events from inside one process; **traces** - a **trace ID** threaded through every hop of one request's journey (gateway $\\to$ order service $\\to$ exchange gateway), with each hop recorded as a span showing its duration and errors. Metrics tell you *that* p99 blew up; the trace tells you *where* - usually one slow dependency, not a diffuse slowdown. Alert on user-visible symptoms (error rate, latency SLO breaches), not on CPU."
+      "md": "You cannot fix what you cannot see, and distributed systems fail in distributed ways. The three pillars: **metrics**, numeric time series, minimally the RED triple (Rate of requests, Errors, Duration, e.g. p50/p99 latency) per service; **logs**, structured, timestamped events from inside one process; **traces**, a **trace ID** threaded through every hop of one request's path (gateway $\\to$ order service $\\to$ exchange gateway), with each hop recorded as a span showing its duration and errors. Metrics tell you *that* p99 blew up; the trace tells you *where*, usually one slow dependency, not a diffuse slowdown. Alert on user-visible symptoms (error rate, latency SLO breaches), not on CPU."
     },
     {
       "type": "p",
-      "md": "The platform layer ties it together, briefly: **Kafka** acts as the durable buffer that lets consumers fall behind and catch up (and replay after a bug); **Docker** packages each service with its dependencies so 'works on my machine' stops being an excuse; **Kubernetes** runs the containers with restart policies and liveness probes - a crashed pod is restarted automatically - while rolling updates replace instances without downtime. None of them removes the need for idempotency: K8s restarting your pod mid-order is exactly the failure ambiguity again."
+      "md": "The platform layer ties it together, briefly: **Kafka** acts as the durable buffer that lets consumers fall behind and catch up (and replay after a bug); **Docker** packages each service with its dependencies so 'works on my machine' stops being an excuse; **Kubernetes** runs the containers with restart policies and liveness probes, a crashed pod is restarted automatically, while rolling updates replace instances without downtime. None of them removes the need for idempotency: K8s restarting your pod mid-order is exactly the failure ambiguity again."
     }
   ],
   "guidedExercise": {
-    "prompt": "A reporting endpoint has a 2{,}000 ms end-to-end deadline. Each attempt needs up to 500 ms; backoffs are 200 ms then 400 ms. (a) Compute the worst-case duration of 3 attempts with both backoffs. (b) Does it fit? (c) Design a 2-attempt policy with the same backoff schedule that fits with at least 300 ms of headroom - state the maximum per-attempt timeout you can afford.",
+    "prompt": "A reporting endpoint has a 2{,}000 ms end-to-end deadline. Each attempt needs up to 500 ms; backoffs are 200 ms then 400 ms. (a) Compute the worst-case duration of 3 attempts with both backoffs. (b) Does it fit? (c) Design a 2-attempt policy with the same backoff schedule that fits with at least 300 ms of headroom, state the maximum per-attempt timeout you can afford.",
     "hints": [
       "Worst case = sum of attempt timeouts + intermediate backoffs.",
       "A 2-attempt chain has only one backoff between attempts.",
       "Headroom = deadline minus worst case."
     ],
-    "solution": "(a) $500 + 200 + 500 + 400 + 500 = 2{,}100$ ms. (b) **No** - it exceeds the 2{,}000 ms deadline by 100 ms, so the third attempt would be cut off (or worse, the client replies late to its own caller). (c) Two attempts: attempt + backoff + attempt $= T + 200 + T = 2T + 200 \\le 1700$ (deadline minus 300 ms headroom), so $2T \\le 1500$ and $T = 750$ ms. With $T = 750$: worst case $750 + 200 + 750 = 1{,}700$ ms, exactly 300 ms of headroom."
+    "solution": "(a) $500 + 200 + 500 + 400 + 500 = 2{,}100$ ms. (b) **No**, it exceeds the 2{,}000 ms deadline by 100 ms, so the third attempt would be cut off (or worse, the client replies late to its own caller). (c) Two attempts: attempt + backoff + attempt $= T + 200 + T = 2T + 200 \\le 1700$ (deadline minus 300 ms headroom), so $2T \\le 1500$ and $T = 750$ ms. With $T = 750$: worst case $750 + 200 + 750 = 1{,}700$ ms, exactly 300 ms of headroom."
   },
   "independentExercise": {
     "prompt": "An order gateway submits to an exchange adapter with a 900 ms deadline. Attempts cost up to 300 ms; backoffs are 100 ms, 200 ms, 400 ms (3 backoffs between 4 attempts). (a) Compute the worst-case duration of the full 4-attempt chain and compare with the deadline. (b) How many attempts fit, and what is the total then? (c) Suppose attempt 2 actually executed the order (300 shares at \\$102.00 = \\$30{,}600 notional) but its response was lost. Describe exactly what happens on attempt 3 with and without an idempotency key, and give the financial consequence of the missing key.",
@@ -145,22 +145,22 @@
       "A chain of $n$ attempts contains $n-1$ backoffs.",
       "With the key, the server recognises the replay; without it, the exchange sees a brand-new order."
     ],
-    "solution": "(a) $4 \\times 300 + (100 + 200 + 400) = 1200 + 700 = 1{,}900$ ms $> 900$ ms - it is about 2.1 times the deadline; the design is unshippable as stated. (b) Attempts that fit: 2 attempts $= 300 + 100 + 300 = 700$ ms (fits); 3 attempts $= 300 + 100 + 300 + 200 + 300 = 1{,}200$ ms (does not). So **2 attempts**, with 200 ms of headroom. (c) With the key: attempt 3 carries the same UUID, the adapter finds it already recorded against the original order and returns the original execution - still exactly one order of 300 shares. Without the key: attempt 3 is a new order - a second 300-share buy, total notional \\$61{,}200, double the intended exposure, wrong risk state and a settlement break. The idempotency key is what makes the (fitting) retry policy of part (b) actually safe."
+    "solution": "(a) $4 \\times 300 + (100 + 200 + 400) = 1200 + 700 = 1{,}900$ ms $> 900$ ms, it is about 2.1 times the deadline; the design is unshippable as stated. (b) Attempts that fit: 2 attempts $= 300 + 100 + 300 = 700$ ms (fits); 3 attempts $= 300 + 100 + 300 + 200 + 300 = 1{,}200$ ms (does not). So **2 attempts**, with 200 ms of headroom. (c) With the key: attempt 3 carries the same UUID, the adapter finds it already recorded against the original order and returns the original execution, still exactly one order of 300 shares. Without the key: attempt 3 is a new order, a second 300-share buy, total notional \\$61{,}200, double the intended exposure, wrong risk state and a settlement break. The idempotency key is what makes the (fitting) retry policy of part (b) actually safe."
   },
   "commonMistakes": [
     "Retrying without a deadline budget: a retry chain that sums past the deadline turns one slow dependency into a user-visible timeout cascade.",
-    "Retrying non-retryable responses (4xx) or retrying a POST without an idempotency key - both multiply the damage instead of repairing it.",
+    "Retrying non-retryable responses (4xx) or retrying a POST without an idempotency key, both multiply the damage instead of repairing it.",
     "Skipping jitter: synchronized backoffs make thousands of clients retry in lockstep and recreate the very spike they back off from.",
     "Letting queues grow unbounded under overload: backlog is latency, and latency without a rejection policy ends in memory exhaustion and total collapse."
   ],
   "realWorldApplication": "Retry budgets, idempotency keys, bounded queues and RED dashboards are the standard operating kit of internet-scale services; payment providers and cloud APIs expose idempotency-key semantics in their public APIs precisely because their clients must retry.",
   "quantFinanceApplication": "Order submission is the canonical idempotency case: the gateway retries on timeout, and the idempotency key is the only thing standing between a transient failure and a doubled position. Backpressure on market-data consumers and tracing across gateway-to-exchange hops are daily operations on a trading floor.",
   "summary": [
-    "Timeouts mean unknown outcomes; fault tolerance is rehearsed responses - detect, absorb (retries), shed (backpressure), recover (replication, restarts).",
-    "Retries need exponential backoff plus jitter and must fit the deadline: 3 attempts at 250 ms with 100/200 ms backoffs total 1{,}050 ms - over a 1{,}000 ms budget, so cut attempts or timeouts by arithmetic, not hope.",
-    "Idempotency keys (client-generated UUIDs per logical operation, stored with the result server-side) make retries of order submissions safe: replay returns the original outcome - one order, one fill stream.",
+    "Timeouts mean unknown outcomes; fault tolerance is rehearsed responses, detect, absorb (retries), shed (backpressure), recover (replication, restarts).",
+    "Retries need exponential backoff plus jitter and must fit the deadline: 3 attempts at 250 ms with 100/200 ms backoffs total 1{,}050 ms, over a 1{,}000 ms budget, so cut attempts or timeouts by arithmetic, not hope.",
+    "Idempotency keys (client-generated UUIDs per logical operation, stored with the result server-side) make retries of order submissions safe: replay returns the original outcome, one order, one fill stream.",
     "Backpressure bounds queues and sheds load fast (429/503) so overload degrades gracefully; unbounded buffering converts overload into outage.",
-    "Observability = metrics (RED), structured logs, and distributed traces with a trace ID per request; Kafka buffers and replays, Docker packages, Kubernetes restarts - none of it removes the need for idempotency."
+    "Observability = metrics (RED), structured logs, and distributed traces with a trace ID per request; Kafka buffers and replays, Docker packages, Kubernetes restarts, none of it removes the need for idempotency."
   ],
   "quiz": [
     {
@@ -170,7 +170,7 @@
       "answer": 900,
       "tolerance": 0.5,
       "unit": "ms",
-      "explanation": "$200 + 100 + 200 + 200 + 200 = 900$ ms. Two backoffs occur between three attempts - this chain fits a 1{,}000 ms deadline with 100 ms to spare."
+      "explanation": "$200 + 100 + 200 + 200 + 200 = 900$ ms. Two backoffs occur between three attempts, this chain fits a 1{,}000 ms deadline with 100 ms to spare."
     },
     {
       "id": "q2",
@@ -192,7 +192,7 @@
       "language": "python",
       "code": "delay = 0.1\ntotal = 0.0\nfor _ in range(4):\n    total += delay\n    delay *= 2\nprint(round(total, 1))",
       "answer": "1.5",
-      "explanation": "Delays 0.1, 0.2, 0.4, 0.8 sum to 1.5 seconds - exponential backoff quadruples the spacing after just two doublings."
+      "explanation": "Delays 0.1, 0.2, 0.4, 0.8 sum to 1.5 seconds, exponential backoff quadruples the spacing after just two doublings."
     },
     {
       "id": "q4",
@@ -209,7 +209,7 @@
         1,
         2
       ],
-      "explanation": "Traces, metrics and logs are the three pillars. Idempotency keys are a correctness mechanism for safe retries - important, but they do not help you *see* the system."
+      "explanation": "Traces, metrics and logs are the three pillars. Idempotency keys are a correctness mechanism for safe retries, important, but they do not help you *see* the system."
     },
     {
       "id": "q5",
@@ -244,7 +244,7 @@
     {
       "type": "formula",
       "front": "Retry-chain deadline check",
-      "back": "Worst case = sum of per-attempt timeouts + sum of backoffs between attempts. E.g. 3 x 250 ms + (100 + 200) ms = 1{,}050 ms - must fit the end-to-end deadline."
+      "back": "Worst case = sum of per-attempt timeouts + sum of backoffs between attempts. E.g. 3 x 250 ms + (100 + 200) ms = 1{,}050 ms, must fit the end-to-end deadline."
     },
     {
       "type": "concept",
@@ -259,7 +259,7 @@
     {
       "type": "concept",
       "front": "RED metrics",
-      "back": "Rate (requests/s), Errors (rate/fraction), Duration (latency percentiles p50/p99) per service - the minimal metric set that catches degradation."
+      "back": "Rate (requests/s), Errors (rate/fraction), Duration (latency percentiles p50/p99) per service, the minimal metric set that catches degradation."
     },
     {
       "type": "concept",
@@ -269,19 +269,19 @@
   ],
   "references": [
     {
-      "label": "Google SRE Book - Handling Overload / backpressure",
+      "label": "Google SRE Book: Handling Overload / backpressure",
       "url": "https://sre.google/sre-book/handling-overload-cases/"
     },
     {
-      "label": "Stripe API - Idempotency keys",
+      "label": "Stripe API: Idempotency keys",
       "url": "https://stripe.com/docs/idempotency"
     },
     {
-      "label": "Apache Kafka - documentation",
+      "label": "Apache Kafka: documentation",
       "url": "https://kafka.apache.org/documentation/"
     },
     {
-      "label": "Kubernetes - Pod lifecycle and probes",
+      "label": "Kubernetes: Pod lifecycle and probes",
       "url": "https://kubernetes.io/docs/concepts/workloads/pods/lifecycle/"
     }
   ],

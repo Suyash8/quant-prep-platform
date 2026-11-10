@@ -1,17 +1,27 @@
 import 'server-only';
 import fs from 'fs';
 import path from 'path';
+import { buildCurriculumGraph, type LessonNode } from '@/lib/curriculum-graph';
+
+export type { LessonNode } from '@/lib/curriculum-graph';
 
 const CONTENT_DIR = path.join(process.cwd(), 'content');
 
 // In dev, content files change under the running server; bypass the caches so
+
+
 // edits are picked up without a manual recompile. Production keeps the caches.
+
+
 const DEV = process.env.NODE_ENV !== 'production';
 
 // ---------- cached loaders ----------
+
+
 let mapCache: CurriculumMap | null = null;
 let registryCache: Registry | null = null;
 const lessonCache = new Map<string, Lesson>();
+let graphCache: ReturnType<typeof buildCurriculumGraph> | null = null;
 
 export interface CurriculumMap {
   version: string;
@@ -94,6 +104,8 @@ export function getRegistry(): Registry {
     return registryCache;
   }
   // fallback: build on the fly
+
+
   const map = getMap();
   const lessons: Registry['lessons'] = [];
   for (const ph of map.phases) {
@@ -137,6 +149,8 @@ export function getLessonById(id: string): { lesson: Lesson; moduleId: string } 
 }
 
 // ---------- problems ----------
+
+
 export interface Problem {
   slug: string; title: string; difficulty: 'easy' | 'medium' | 'hard'; category: string;
   tags: string[]; statement: Block[]; inputFormat: string; outputFormat: string;
@@ -167,6 +181,8 @@ export function getProblem(slug: string): Problem | null {
 }
 
 // ---------- assessments ----------
+
+
 export interface Assessment {
   id: string; title: string; kind: 'diagnostic' | 'assessment' | 'interview' | 'screening';
   timeLimitMinutes: number; description: string; areas?: string[];
@@ -189,6 +205,8 @@ export function getAssessment(id: string): Assessment | null {
 }
 
 // ---------- projects ----------
+
+
 export interface Project {
   slug: string; order: number; title: string; language: string; difficulty: string;
   prereqLessons: string[]; context: string; problem: string; requirements: string[];
@@ -216,6 +234,8 @@ export function getProject(slug: string): Project | null {
 }
 
 // ---------- companies ----------
+
+
 export interface Company {
   slug: string; name: string; category: string;
   roles: { title: string; track: string; notes: string }[];
@@ -245,62 +265,13 @@ export function getMatrix(): { generatedAt: string; tiers: string[]; rows: { ski
 }
 
 // ---------- prerequisite graph / curriculum helpers ----------
-export interface LessonNode {
-  id: string; moduleId: string; phaseId: string; phaseTitle: string; moduleTitle: string;
-  title: string; estMinutes: number; difficulty: string; skills: string[]; prereqs: string[];
-  tracks: string[]; published: boolean;
-}
+
 
 export function getCurriculumGraph(): { nodes: LessonNode[]; byId: Map<string, LessonNode>; order: string[] } {
-  const map = getMap();
-  const reg = getRegistry();
-  const published = new Set(reg.lessons.map(l => l.id));
-  const byId = new Map<string, LessonNode>();
-  const nodes: LessonNode[] = [];
-  for (const ph of map.phases) {
-    for (const m of ph.modules) {
-      for (const l of m.lessons) {
-        const node: LessonNode = {
-          id: l.id, moduleId: m.id, phaseId: ph.id, phaseTitle: ph.title, moduleTitle: m.title,
-          title: l.title, estMinutes: l.estMinutes, difficulty: (l as { difficulty?: string }).difficulty ?? 'core', skills: l.skills,
-          prereqs: [], tracks: m.tracks, published: published.has(l.id),
-        };
-        byId.set(l.id, node);
-        nodes.push(node);
-      }
-    }
+  if (graphCache === null || DEV) {
+    graphCache = buildCurriculumGraph(getMap(), getRegistry().lessons);
   }
-  // resolve prereqs: sequential within module + explicit ones from lesson files
-  for (const m of map.phases.flatMap(p => p.modules)) {
-    for (let i = 0; i < m.lessons.length; i++) {
-      const node = byId.get(m.lessons[i].id)!;
-      if (i > 0 && !node.prereqs.length) node.prereqs = [m.lessons[i - 1].id];
-    }
-    // published lessons may declare explicit prereqs
-    for (const l of m.lessons) {
-      const node = byId.get(l.id)!;
-      if (node.published) {
-        try {
-          const L = getLesson(m.id, l.id);
-          if (L?.prereqs?.length) node.prereqs = L.prereqs.filter(p => byId.has(p));
-        } catch { /* ignore */ }
-      }
-    }
-  }
-  // topological order (published lessons first in topo order over published subgraph)
-  const order: string[] = [];
-  const state = new Map<string, 0 | 1 | 2>();
-  const visit = (id: string) => {
-    const st = state.get(id) ?? 0;
-    if (st === 2) return;
-    if (st === 1) return; // cycle guard (map validated acyclic)
-    state.set(id, 1);
-    for (const p of byId.get(id)?.prereqs ?? []) visit(p);
-    state.set(id, 2);
-    order.push(id);
-  };
-  for (const n of nodes) visit(n.id);
-  return { nodes, byId, order };
+  return graphCache;
 }
 
 export function isUnlocked(lessonId: string, done: Set<string>): boolean {
@@ -311,6 +282,8 @@ export function isUnlocked(lessonId: string, done: Set<string>): boolean {
 }
 
 // Phase color tokens for the design system
+
+
 export const PHASE_COLORS: Record<string, string> = {
   orientation: '#64748b', math: '#1d4ed8', cs: '#0f766e', python: '#15803d',
   cpp: '#9f1239', dsa: '#7c2d12', aptitude: '#a16207', finance: '#166534',

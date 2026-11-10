@@ -43,7 +43,11 @@ export async function POST(req: NextRequest) {
   });
 
   // Retrieval mastery: a lesson card reviewed with grade >= 3 after being due marks
+
+
   // the lesson's retrievalDone; combined with status 'passed' -> mastered.
+
+
   if (card.source === 'lesson' && grade >= 3) {
     const lessonId = card.cardKey.split(':')[0];
     const progress = await db.lessonProgress.findUnique({
@@ -57,6 +61,8 @@ export async function POST(req: NextRequest) {
   }
 
   // quiz_miss cards that are now solid get removed from the deck
+
+
   if (card.source === 'quiz_miss' && grade >= 4 && updated.repetitions >= 2) {
     await db.cardState.delete({ where: { id: card.id } });
     return NextResponse.json({ ok: true, graduated: true, nextDueAt: next.dueAt.toISOString() });
@@ -75,6 +81,8 @@ export async function PUT(req: NextRequest) {
     data: { userId: user.id, kind: 'revision', seconds: parsed.data.seconds, day: new Date().toISOString().slice(0, 10) },
   });
   // Gamification: revision pays a little XP per 10 reviewed cards.
+
+
   let xpAwarded = 0;
   if (parsed.data.reviewed >= 10) {
     const amount = Math.min(Math.floor(parsed.data.reviewed / 10) * XP_TABLE.revisionPer10, XP_TABLE.revisionCap);

@@ -4,14 +4,16 @@
   "title": "Branchless Code and SIMD Fundamentals",
   "estMinutes": 28,
   "difficulty": "specialist",
-  "prereqs": ["cpp-allocators-pools"],
+  "prereqs": [
+    "cpp-allocators-pools"
+  ],
   "objectives": [
     "Explain why data-dependent branches cost 15-20 cycles on misprediction and how conditional moves remove them",
     "Rewrite a simple conditional update in branchless form using masks or std::min/std::max",
     "State the widths of SSE/AVX/AVX-512 vector registers and how many floats/doubles they hold",
     "Describe how compilers auto-vectorise a loop and which flags/analysis tools confirm vectorisation"
   ],
-  "motivation": "A risk engine loops over one million positions applying a cap: if notional exceeds a limit, clip it. Written as an if-statement whose outcome depends on the data, the CPU's branch predictor misses whenever notionals alternate around the cap, costing ~15 cycles per miss - about 15 million wasted cycles per pass. A mask-based rewrite does the same job at one instruction per element, and SIMD does eight at once.",
+  "motivation": "A risk engine loops over one million positions applying a cap: if notional exceeds a limit, clip it. Written as an if-statement whose outcome depends on the data, the CPU's branch predictor misses whenever notionals alternate around the cap, costing ~15 cycles per miss, about 15 million wasted cycles per pass. A mask-based rewrite does the same job at one instruction per element, and SIMD does eight at once.",
   "blocks": [
     {
       "type": "h2",
@@ -19,7 +21,7 @@
     },
     {
       "type": "p",
-      "md": "Modern CPUs are pipelines: instructions are fetched, decoded and executed many stages ahead, and **branch prediction** guesses which way each branch goes so the pipeline stays full. A correct guess is nearly free; a **misprediction** means discarding all speculative work - typically a **15-20 cycle** flush. Random-looking branches (data-dependent decisions, like *clip this notional?*) defeat the predictor, and the branch becomes the bottleneck, not the arithmetic. The fix is **branchless** code: turn the decision into data - a mask - and let arithmetic select the result. CPUs provide `cmov` (conditional move) for exactly this, and compilers emit it for `std::min`/`std::max` and ternaries on modern targets."
+      "md": "Modern CPUs are pipelines: instructions are fetched, decoded and executed many stages ahead, and **branch prediction** guesses which way each branch goes so the pipeline stays full. A correct guess is nearly free; a **misprediction** means discarding all speculative work, typically a **15-20 cycle** flush. Random-looking branches (data-dependent decisions, like *clip this notional?*) defeat the predictor, and the branch becomes the bottleneck, not the arithmetic. The fix is **branchless** code: turn the decision into data, a mask, and let arithmetic select the result. CPUs provide `cmov` (conditional move) for exactly this, and compilers emit it for `std::min`/`std::max` and ternaries on modern targets."
     },
     {
       "type": "code",
@@ -29,7 +31,7 @@
     },
     {
       "type": "p",
-      "md": "Check the mask trick by hand: if $p > 100$, `over = -1` (all ones), so `~over = 0` and the result is `limit`; if $p \\le 100$, `over = 0`, `~over = -1` and the result is `p`. No branch exists for the predictor to miss. The classic ternary `p > limit ? limit : p` often compiles to `cmov` too - the lesson is not 'avoid ternaries' but *avoid unpredictable branches*: measure, and when a branch is data-random, express the choice as a mask."
+      "md": "Check the mask trick by hand: if $p > 100$, `over = -1` (all ones), so `~over = 0` and the result is `limit`; if $p \\le 100$, `over = 0`, `~over = -1` and the result is `p`. No branch exists for the predictor to miss. The classic ternary `p > limit ? limit : p` often compiles to `cmov` too, the lesson is not 'avoid ternaries' but *avoid unpredictable branches*: measure, and when a branch is data-random, express the choice as a mask."
     },
     {
       "type": "callout",
@@ -43,7 +45,7 @@
     },
     {
       "type": "p",
-      "md": "**SIMD** (single instruction, multiple data) widens the datapath. Vector registers hold packs of scalars and an instruction operates on all lanes simultaneously: **SSE** registers are 128-bit (4 floats or 2 doubles), **AVX/AVX2** are 256-bit (8 floats or 4 doubles), and **AVX-512** are 512-bit (16 floats or 8 doubles). With AVX2, a multiply-add over `double` arrays does 4 FMA operations per instruction instead of 1 scalar - the same loop, 4x wider per cycle. Compilers **auto-vectorise** simple, dependency-free loops over contiguous data (which is why SoA layouts from the cache lesson matter: SIMD wants streams)."
+      "md": "**SIMD** (single instruction, multiple data) widens the datapath. Vector registers hold packs of scalars and an instruction operates on all lanes simultaneously: **SSE** registers are 128-bit (4 floats or 2 doubles), **AVX/AVX2** are 256-bit (8 floats or 4 doubles), and **AVX-512** are 512-bit (16 floats or 8 doubles). With AVX2, a multiply-add over `double` arrays does 4 FMA operations per instruction instead of 1 scalar, the same loop, 4x wider per cycle. Compilers **auto-vectorise** simple, dependency-free loops over contiguous data (which is why SoA layouts from the cache lesson matter: SIMD wants streams)."
     },
     {
       "type": "code",
@@ -58,25 +60,25 @@
         "Scalar: one multiply-add per iteration, ~1 element per cycle for the inner product.",
         "AVX2 (256-bit): 4 doubles per vector instruction -> ~4 elements per cycle.",
         "AVX-512 (512-bit): 8 doubles per instruction -> ~8 elements per cycle.",
-        "For $10^6$-element dot products: ~1M cycles scalar vs ~250k with AVX2 vs ~125k with AVX-512 - the 4x/8x is exactly the lane width.",
+        "For $10^6$-element dot products: ~1M cycles scalar vs ~250k with AVX2 vs ~125k with AVX-512, the 4x/8x is exactly the lane width.",
         "Caveats: the loop must be contiguous and dependency-free; data must arrive from cache fast enough to feed the wide units (again: locality first)."
       ]
     },
     {
       "type": "p",
-      "md": "Intrinsics are the explicit route: `_mm256_mul_pd`/`_mm256_add_pd` operate on `__m256d` (four doubles) and are legible once you know the pattern (`_mm256_` prefix = 256-bit operation). But treat intrinsics as a last step: first write the loop so the *compiler* vectorises it - clean bounds, contiguous memory, no hidden dependencies, compiled with `-O3 -march=native`. Then check with `-fopt-info-vec` (GCC) or `-Rpass=loop-vectorize` (Clang) that it actually happened, and fall back to intrinsics only for the loops that remain scalar."
+      "md": "Intrinsics are the explicit route: `_mm256_mul_pd`/`_mm256_add_pd` operate on `__m256d` (four doubles) and are legible once you know the pattern (`_mm256_` prefix = 256-bit operation). But treat intrinsics as a last step: first write the loop so the *compiler* vectorises it, clean bounds, contiguous memory, no hidden dependencies, compiled with `-O3 -march=native`. Then check with `-fopt-info-vec` (GCC) or `-Rpass=loop-vectorize` (Clang) that it actually happened, and fall back to intrinsics only for the loops that remain scalar."
     },
     {
       "type": "callout",
       "variant": "quant",
       "title": "Where this shows up on a desk",
-      "md": "Pricing thousands of options with the same formula but different spots (map a vector of spots through a closed-form pricer), applying position caps or margin bands (mask-based clamps), and accumulating cross-greek sums (vectorised FMA reductions) are the canonical branchless/SIMD workloads - regular control flow, dense arrays, millions of elements."
+      "md": "Pricing thousands of options with the same formula but different spots (map a vector of spots through a closed-form pricer), applying position caps or margin bands (mask-based clamps), and accumulating cross-greek sums (vectorised FMA reductions) are the canonical branchless/SIMD workloads, regular control flow, dense arrays, millions of elements."
     }
   ],
   "guidedExercise": {
     "prompt": "Rewrite this branchy accumulator branchlessly and predict its assembly shape: `long above = 0; for (double x : px) { if (x > limit) ++above; }`. Then state how many branches remain per iteration in your version.",
     "hints": [
-      "A comparison produces a 0/1 boolean - and booleans convert to integers.",
+      "A comparison produces a 0/1 boolean, and booleans convert to integers.",
       "There is no need to select a value here, only to accumulate the condition itself."
     ],
     "solution": "`long above = 0; for (double x : px) above += (x > limit);` The comparison `x > limit` yields `true`/`false`, which converts to 1/0, so the increment is a masked add. In optimised code this compiles to a vectorised compare-and-accumulate (e.g. `vpcmpgtd` + `psubq` style on packed lanes) or at worst a `setcc`+`add` with no misprediction-prone forward branch: **zero** data-dependent control-flow branches remain per iteration."
@@ -92,12 +94,12 @@
   "commonMistakes": [
     "Removing *predictable* branches: a rare error-check branch costs nothing and branchless form may compute the expensive path always.",
     "Assuming the ternary is a branch: on modern compilers it often becomes cmov; verify in the disassembly, don't guess.",
-    "Expecting auto-vectorisation from pointer-chasing, aliasing or loop-carried-dependency code - SIMD needs contiguous, independent iterations.",
+    "Expecting auto-vectorisation from pointer-chasing, aliasing or loop-carried-dependency code. SIMD needs contiguous, independent iterations.",
     "Forgetting -march=native (or the target ISA flag): without it the compiler emits baseline SSE2 and your 'vectorised' loop is not.",
-    "Using unaligned/strided data with aligned load intrinsics - undefined behaviour, not just slowness."
+    "Using unaligned/strided data with aligned load intrinsics, undefined behaviour, not just slowness."
   ],
   "realWorldApplication": "Image/audio codecs, ML inference kernels and physics engines are built from vectorised dense kernels; profiling-driven teams convert hot unpredictable branches into cmov/mask selects and verify vectorisation reports in CI.",
-  "quantFinanceApplication": "Closed-form pricing over a vector of spots/strikes, mask-based risk-cap application, and vectorised accumulation of greeks are the same patterns - the pricing kernel fits the 400k-cycle budget only because it is branchless and SIMD-wide.",
+  "quantFinanceApplication": "Closed-form pricing over a vector of spots/strikes, mask-based risk-cap application, and vectorised accumulation of greeks are the same patterns, the pricing kernel fits the 400k-cycle budget only because it is branchless and SIMD-wide.",
   "summary": [
     "Data-dependent branches risk a 15-20 cycle misprediction flush; make the decision data with masks or cmov instead.",
     "The mask idiom: mask = -(cond) is all-ones/all-zeros; (a & ~mask) | (b & mask) selects without branching.",
@@ -124,7 +126,7 @@
         "Branches force the CPU to drop to a lower clock"
       ],
       "answerIndex": 1,
-      "explanation": "The pipeline speculatively executes down the predicted path; when the guess is wrong, all that in-flight work is discarded and refilled - the flush costs far more than the add/compare itself."
+      "explanation": "The pipeline speculatively executes down the predicted path; when the guess is wrong, all that in-flight work is discarded and refilled, the flush costs far more than the add/compare itself."
     },
     {
       "id": "q3",
@@ -166,7 +168,7 @@
       "type": "numeric",
       "prompt": "A 1,000,000-element dot product runs at one vector FMA per cycle, each AVX2 FMA processing 4 doubles. How many cycles does the vectorised loop take (ignore loads and the tail)?",
       "answer": 250000,
-      "explanation": "1,000,000 / 4 lanes = 250,000 vector instructions, one per cycle. The scalar loop needs 1,000,000 cycles - the 4x speedup is exactly the lane width."
+      "explanation": "1,000,000 / 4 lanes = 250,000 vector instructions, one per cycle. The scalar loop needs 1,000,000 cycles, the 4x speedup is exactly the lane width."
     }
   ],
   "flashcards": [
@@ -193,7 +195,7 @@
   ],
   "references": [
     {
-      "label": "GCC docs — Vectorization and -fopt-info-vec",
+      "label": "GCC docs. Vectorization and -fopt-info-vec",
       "url": "https://gcc.gnu.org/onlinedocs/gcc/Vectorization.html"
     },
     {
@@ -201,7 +203,7 @@
       "url": "https://www.intel.com/content/www/us/en/docs/intrinsics-guide/"
     },
     {
-      "label": "Agner Fog — Optimization manual (branches, SIMD)",
+      "label": "Agner Fog. Optimization manual (branches, SIMD)",
       "url": "https://www.agner.org/optimize/"
     }
   ],

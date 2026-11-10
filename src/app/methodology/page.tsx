@@ -4,7 +4,7 @@ import { getRegistry, getMap } from '@/lib/content';
 import { AppShell, PublicHeader } from '@/components/app-shell';
 import { Brain, Repeat, Layers, Gauge, ClipboardCheck, ListChecks, GraduationCap, ArrowRight, BookCheck, Target, PencilLine, MessageSquareText, RefreshCcw } from 'lucide-react';
 
-export const metadata = { title: 'Methodology — QuantFoundry' };
+export const metadata = { title: 'Methodology. QuantFoundry' };
 
 export default async function MethodologyPage() {
   const user = await getCurrentUser();
@@ -12,9 +12,9 @@ export default async function MethodologyPage() {
   const map = getMap();
 
   const principles = [
-    { icon: Brain, tile: 'icon-tile-accent', title: 'First principles, actually', desc: 'Nothing is assumed. Variables, derivatives, pointers, distributions, instruments — all taught from zero, and no formula shows up before the reason it exists.' },
-    { icon: Layers, tile: 'icon-tile-info', title: 'Prerequisites are enforced, not suggested', desc: `Lessons unlock through a prerequisite graph covering ${reg.lessons.length} lessons. If a lesson says you need something, the thing you need is on the platform — you shouldn’t have to leave mid-lesson to go find it.` },
-    { icon: Gauge, tile: 'icon-tile-violet', title: 'Mastery over exposure', desc: 'Score 80%+ on the knowledge check and finish the exercises, and the lesson is “passed”. To call it “mastered” you have to hold onto it — the material comes back later, and you have to land it again.' },
+    { icon: Brain, tile: 'icon-tile-accent', title: 'First principles, actually', desc: 'Nothing is assumed. Variables, derivatives, pointers, distributions, instruments, all taught from zero, and no formula shows up before the reason it exists.' },
+    { icon: Layers, tile: 'icon-tile-info', title: 'Prerequisites are enforced, not suggested', desc: `Lessons unlock through a prerequisite graph covering ${reg.lessons.length} lessons. If a lesson says you need something, the thing you need is on the platform, you shouldn’t have to leave mid-lesson to go find it.` },
+    { icon: Gauge, tile: 'icon-tile-violet', title: 'Mastery over exposure', desc: 'Score 80%+ on the knowledge check and finish the exercises, and the lesson is “passed”. To call it “mastered” you have to hold onto it, the material comes back later, and you have to land it again.' },
     { icon: Repeat, tile: 'icon-tile-warning', title: 'Spaced retrieval', desc: 'Every lesson generates flashcards, scheduled with SM-2 (the Anki algorithm). Quiz questions you miss join the same queue. Reviewing a card after it was due is what upgrades a lesson from passed to mastered.' },
     { icon: ClipboardCheck, tile: 'icon-tile-gold', title: 'No fake anything', desc: 'No employment promises, no “learn C++ in 21 days”, no metrics invented to look impressive. If a module isn’t finished, the platform says so. Every number you see was measured.' },
   ];
@@ -24,11 +24,13 @@ export default async function MethodologyPage() {
   const lessonParts = ['Title & estimated time', 'Prerequisites (enforced)', 'Learning objectives', 'A real motivating problem', 'Intuitive explanation', 'Formal explanation', 'Visual/interactive demonstration', 'Step-by-step derivation', 'Worked examples with verified numbers', 'Guided exercise', 'Independent exercise', 'Coding implementation where applicable', 'Common mistakes', 'Real-world application', 'Quantitative finance application', 'Knowledge check (server-scored)', 'Summary', 'Flashcards created', 'Further practice links', 'References'];
 
   // the 20 parts grouped into 4 phases with distinct visual identity
+
+
   const partPhases = [
-    { title: 'Set up', icon: Target, tile: 'icon-tile-info', from: 0, to: 5 },
-    { title: 'Practice', icon: PencilLine, tile: 'icon-tile-accent', from: 5, to: 12 },
-    { title: 'Feedback', icon: MessageSquareText, tile: 'icon-tile-warning', from: 12, to: 16 },
-    { title: 'Retention', icon: RefreshCcw, tile: 'icon-tile-violet', from: 16, to: 20 },
+    { title: 'Set up', icon: Target, tile: 'icon-tile-info', numCls: 'bg-info', from: 0, to: 5 },
+    { title: 'Practice', icon: PencilLine, tile: 'icon-tile-accent', numCls: 'bg-accent', from: 5, to: 12 },
+    { title: 'Feedback', icon: MessageSquareText, tile: 'icon-tile-warning', numCls: 'bg-warning', from: 12, to: 16 },
+    { title: 'Retention', icon: RefreshCcw, tile: 'icon-tile-violet', numCls: 'bg-violet', from: 16, to: 20 },
   ];
 
   const body = (
@@ -37,7 +39,7 @@ export default async function MethodologyPage() {
         <span className="icon-tile icon-tile-violet"><GraduationCap className="h-7 w-7" /></span>
         <div>
           <h1>How this platform teaches</h1>
-          <p className="page-sub">Retrieval practice, spacing, interleaving, immediate feedback — old ideas from learning research, applied seriously to a curriculum this deep.</p>
+          <p className="page-sub">Retrieval practice, spacing, interleaving, immediate feedback, old ideas from learning research, applied seriously to a curriculum this deep.</p>
         </div>
       </header>
 
@@ -47,8 +49,24 @@ export default async function MethodologyPage() {
         actual engineering work.
       </p>
 
+      {/* evidence band */}
+      <div className="mt-6 grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[
+          { icon: BookCheck, tile: 'icon-tile-accent', value: String(reg.lessons.length), label: 'Authored lessons' },
+          { icon: Layers, tile: 'icon-tile-info', value: String(map.phases.reduce((n, p) => n + p.modules.length, 0)), label: 'Modules' },
+          { icon: ListChecks, tile: 'icon-tile-violet', value: '20', label: 'Parts per lesson' },
+          { icon: ClipboardCheck, tile: 'icon-tile-gold', value: '9', label: 'Assessment types' },
+        ].map((s, i) => (
+          <div key={s.label} className="stat-tile anim-pop-in" style={{ animationDelay: `${i * 60}ms` }}>
+            <span className={`icon-tile icon-tile-sm ${s.tile}`}><s.icon className="h-5 w-5" /></span>
+            <div className="stat-value mt-1 tnum">{s.value}</div>
+            <div className="stat-label mt-1">{s.label}</div>
+          </div>
+        ))}
+      </div>
+
       <div className="mt-7">
-        {/* feature principle — the headline idea gets hero treatment */}
+        {/* feature principle, the headline idea gets hero treatment */}
         {(() => {
           const hero = principles[0];
           const HeroIcon = hero.icon;
@@ -110,7 +128,7 @@ export default async function MethodologyPage() {
                 <ol className="space-y-1.5">
                   {lessonParts.slice(ph.from, ph.to).map((t, j) => (
                     <li key={t} className="flex items-center gap-2.5 rounded-xl bg-surface-2/50 border border-border/60 px-2.5 py-1.5 text-[13px] font-bold">
-                      <span className="h-5 w-5 shrink-0 rounded-lg bg-accent text-white text-[10px] font-black tnum flex items-center justify-center">{ph.from + j + 1}</span>
+                      <span className={`h-5 w-5 shrink-0 rounded-lg ${ph.numCls} text-white text-[10px] font-black tnum flex items-center justify-center`}>{ph.from + j + 1}</span>
                       <span className="min-w-0 truncate">{t}</span>
                     </li>
                   ))}
@@ -126,11 +144,14 @@ export default async function MethodologyPage() {
           <span className="icon-tile icon-tile-sm icon-tile-warning"><ClipboardCheck className="h-5 w-5" /></span>
           <div>
             <h2 className="text-lg font-black tracking-tight">Assessment types</h2>
-            <p className="text-xs font-bold text-muted">Nine ways you prove it — none of them guessable</p>
+            <p className="text-xs font-bold text-muted">Nine ways you prove it, none of them guessable</p>
           </div>
         </div>
-        <div className="mt-4 flex flex-wrap gap-2">
-          {assessmentTypes.map(t => <span key={t} className="chip">{t}</span>)}
+        <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+          {assessmentTypes.map((t, i) => {
+            const chipCls = ['chip chip-info', 'chip chip-accent', 'chip chip-warning', 'chip chip-gold', 'chip'][i % 5];
+            return <span key={t} className={`${chipCls} justify-center`}>{t}</span>;
+          })}
         </div>
         <p className="mt-4 text-sm text-muted font-semibold qf-card-flat p-4 !bg-surface-2/50">
           The bar is deliberately strict: you can’t guess your way through, and time-on-page counts for nothing.
@@ -145,12 +166,23 @@ export default async function MethodologyPage() {
             <span className="icon-tile icon-tile-sm icon-tile-info"><BookCheck className="h-5 w-5" /></span>
             <h2 className="text-lg font-black tracking-tight">Content standards</h2>
           </div>
-          <p className="text-sm text-muted leading-relaxed font-semibold max-w-2xl">
-            Every lesson is validated by an automated schema gate ({reg.lessons.length} lessons, {map.phases.reduce((n, p) => n + p.modules.length, 0)} modules):
-            quiz answers verified present, math delimiters balanced, code samples syntactically plausible, interactive
-            components registered, prerequisites resolvable. Mathematical examples carry hand-verified numbers; finance
-            examples use clearly-hypothetical data. References prefer primary sources — cppreference, OpenStax, Python and
-            NumPy documentation, PostgreSQL and Linux docs — and never substitute for the lesson itself.
+          <ul className="mt-3 grid sm:grid-cols-2 gap-2.5">
+            {[
+              'Automated schema gate on every lesson, quiz answers, math delimiters, code plausibility',
+              'Interactive components must be registered, broken embeds fail validation, not at runtime',
+              'Prerequisites must resolve inside the platform, no lesson sends you off-site mid-stream',
+              'Mathematical examples carry hand-verified numbers; finance examples use clearly-hypothetical data',
+              'References prefer primary sources, cppreference, OpenStax, Python/NumPy, PostgreSQL, Linux docs',
+              'References never substitute for the lesson itself',
+            ].map(t => (
+              <li key={t} className="flex items-start gap-2.5 rounded-xl bg-surface-2/50 border border-border/60 px-3 py-2.5 text-sm font-semibold text-muted">
+                <BookCheck className="h-4 w-4 text-info shrink-0 mt-0.5" />
+                <span className="leading-relaxed">{t}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-4 text-sm text-muted leading-relaxed font-semibold max-w-2xl">
+            The gate currently covers {reg.lessons.length} lessons across {map.phases.reduce((n, p) => n + p.modules.length, 0)} modules, and every one of them passed it.
           </p>
           <div className="mt-5 flex flex-wrap gap-3">
             <Link href="/curriculum" className="btn3d">

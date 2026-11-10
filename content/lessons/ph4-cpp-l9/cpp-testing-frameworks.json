@@ -13,7 +13,7 @@
     "Explain what a CI pipeline should run per commit: build matrix, tests, sanitiser jobs",
     "Sketch a YAML CI configuration that builds two configurations and runs tests via ctest"
   ],
-  "motivation": "A pricing fix passes manual testing on three examples and ships; two weeks later a regression breaks the TWAP scheduler and nobody notices until fills arrive wrong. The desk's answer was not more careful humans - it was a fixture-based test suite that runs in 40 seconds on every commit, with CI refusing to merge any commit that fails. Testing frameworks make correctness a property of the pipeline, not of vigilance.",
+  "motivation": "A pricing fix passes manual testing on three examples and ships; two weeks later a regression breaks the TWAP scheduler and nobody notices until fills arrive wrong. The desk's answer was not more careful humans, it was a fixture-based test suite that runs in 40 seconds on every commit, with CI refusing to merge any commit that fails. Testing frameworks make correctness a property of the pipeline, not of vigilance.",
   "blocks": [
     {
       "type": "h2",
@@ -21,7 +21,7 @@
     },
     {
       "type": "p",
-      "md": "GoogleTest rests on two primitives. `TEST(Suite, Name)` defines a test as ordinary C++ plus **assertions**. `EXPECT_*` records a failure and *continues* the test (one test can report several problems); `ASSERT_*` records a failure and *returns from the test immediately* - mandatory when continuing would dereference invalid state. Fixtures - a class deriving from `::testing::Test` with `TEST_F` - give every test a freshly constructed environment: the fixture's constructor runs per test, `SetUp()` runs before each test's body, `TearDown()` after. This per-test freshness is what kills order-dependence: no test can corrupt another's state."
+      "md": "GoogleTest rests on two primitives. `TEST(Suite, Name)` defines a test as ordinary C++ plus **assertions**. `EXPECT_*` records a failure and *continues* the test (one test can report several problems); `ASSERT_*` records a failure and *returns from the test immediately*, mandatory when continuing would dereference invalid state. Fixtures, a class deriving from `::testing::Test` with `TEST_F` - give every test a freshly constructed environment: the fixture's constructor runs per test, `SetUp()` runs before each test's body, `TearDown()` after. This per-test freshness is what kills order-dependence: no test can corrupt another's state."
     },
     {
       "type": "code",
@@ -31,7 +31,7 @@
     },
     {
       "type": "p",
-      "md": "Assertion choice is semantic: `EXPECT_EQ` for integers (exact), `EXPECT_DOUBLE_EQ` for doubles when values should match to about 4 ULPs (unit in the last place - tighter than naive `==` yet tolerant of legitimate codegen reassociation), `EXPECT_NEAR(a, b, tol)` when the tolerance is a domain statement ('within half a tick'), `EXPECT_THROW(expr, Ex)` / `EXPECT_NO_THROW` for error contracts, and `ASSERT_*` whenever the next line would be invalid after a failure - e.g. asserting a pointer is non-null *before* dereferencing it."
+      "md": "Assertion choice is semantic: `EXPECT_EQ` for integers (exact), `EXPECT_DOUBLE_EQ` for doubles when values should match to about 4 ULPs (unit in the last place, tighter than naive `==` yet tolerant of legitimate codegen reassociation), `EXPECT_NEAR(a, b, tol)` when the tolerance is a domain statement ('within half a tick'), `EXPECT_THROW(expr, Ex)` / `EXPECT_NO_THROW` for error contracts, and `ASSERT_*` whenever the next line would be invalid after a failure, e.g. asserting a pointer is non-null *before* dereferencing it."
     },
     {
       "type": "callout",
@@ -45,7 +45,7 @@
     },
     {
       "type": "p",
-      "md": "Unit tests answer *is it correct*; micro-benchmarks answer *is it fast enough to stay that way*. Google Benchmark harnesses (covered in the benchmarking lesson) belong in the same repository and the same review discipline as tests: a performance regression test runs a critical kernel and CI can flag when its time-per-item grows beyond a threshold. Keep the two separate in CI - tests plus sanitisers for correctness, uninstrumented release builds for timings."
+      "md": "Unit tests answer *is it correct*; micro-benchmarks answer *is it fast enough to stay that way*. Google Benchmark harnesses (covered in the benchmarking lesson) belong in the same repository and the same review discipline as tests: a performance regression test runs a critical kernel and CI can flag when its time-per-item grows beyond a threshold. Keep the two separate in CI, tests plus sanitisers for correctness, uninstrumented release builds for timings."
     },
     {
       "type": "h2",
@@ -53,33 +53,33 @@
     },
     {
       "type": "p",
-      "md": "A C++ CI pipeline should, per commit: configure and build in **both Debug and Release** (different flag sets catch different failures); run the unit tests in Debug; run a sanitiser job (ASan/UBSan in Debug flags, TSan where threads exist); build Release for performance artefacts; and enforce the tooling gates from the previous lesson (`-Werror`, clang-format check, clang-tidy). The sketch below is a GitHub Actions workflow - the same shape translates to GitLab CI, Jenkins or a self-hosted runner."
+      "md": "A C++ CI pipeline should, per commit: configure and build in **both Debug and Release** (different flag sets catch different failures); run the unit tests in Debug; run a sanitiser job (ASan/UBSan in Debug flags, TSan where threads exist); build Release for performance artefacts; and enforce the tooling gates from the previous lesson (`-Werror`, clang-format check, clang-tidy). The sketch below is a GitHub Actions workflow, the same shape translates to GitLab CI, Jenkins or a self-hosted runner."
     },
     {
       "type": "code",
       "lang": "text",
       "code": "name: cpp-ci\non: [push, pull_request]\n\njobs:\n  build-test:\n    runs-on: ubuntu-latest\n    strategy:\n      matrix:\n        build: [Debug, Release]        # both configurations on every commit\n    steps:\n      - uses: actions/checkout@v4\n      - name: Configure (CMake + Ninja, warnings-as-errors)\n        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=${{ matrix.build }} \\\n                   -DCMAKE_CXX_FLAGS=\"-Wall -Wextra -Wpedantic -Werror\"\n      - name: Build\n        run: cmake --build build\n      - name: Unit tests\n        run: ctest --test-dir build --output-on-failure   # runs GoogleTest binaries\n\n  sanitizers:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - name: ASan + UBSan build and test\n        run: |\n          cmake -B build-asan -G Ninja -DCMAKE_BUILD_TYPE=Debug \\\n                -DCMAKE_CXX_FLAGS=\"-fsanitize=address,undefined -fno-omit-frame-pointer\"\n          cmake --build build-asan\n          ctest --test-dir build-asan --output-on-failure",
-      "caption": "Two builds, tests, and a sanitiser lane - the minimum credible C++ CI."
+      "caption": "Two builds, tests, and a sanitiser lane, the minimum credible C++ CI."
     },
     {
       "type": "p",
-      "md": "A test suite is a proof, written in the language the compiler already checks. Unit tests prove properties of components; integration tests prove the components compose; the CI pipeline proves the proofs run on every change. The craft is choosing *what* to prove: the boundary conditions, the invariants, and the regression list — because testing everything is impossible and testing nothing is a deployment strategy."
+      "md": "A test suite is a proof, written in the language the compiler already checks. Unit tests prove properties of components; integration tests prove the components compose; the CI pipeline proves the proofs run on every change. The craft is choosing *what* to prove: the boundary conditions, the invariants, and the regression list, because testing everything is impossible and testing nothing is a deployment strategy."
     },
     {
       "type": "code",
       "lang": "cpp",
       "code": "// tests/test_pnl.cpp - GoogleTest, testing what actually breaks\n#include <gtest/gtest.h>\n#include \"pricer/pnl.hpp\"\n\nTEST(PnL, FlatPositionHasZeroPnL) {\n    Position p{0, 0.0};\n    EXPECT_DOUBLE_EQ(realised_pnl(p, 100.0), 0.0);\n}\n\nTEST(PnL, AverageCostUpdatesOnIncreasing) {\n    Position p;\n    p.apply_fill(+100, 50.0);\n    p.apply_fill(+100, 60.0);\n    EXPECT_DOUBLE_EQ(p.avg_cost, 55.0);      // weighted, not last-price\n}\n\nTEST(PnL, ReducingFlipRealisesCorrectly) {\n    Position p;\n    p.apply_fill(+100, 50.0);\n    p.apply_fill(-150, 60.0);                // flip to short\n    EXPECT_DOUBLE_EQ(p.realised, 1000.0);   // 100 * 10 profit\n    EXPECT_EQ(p.qty, -50);\n    EXPECT_DOUBLE_EQ(p.avg_cost, 60.0);      // new side priced at fill\n}\n\nTEST(PnL, NoFloatingDriftAcrossCycle) {\n    Position p;\n    for (int i = 0; i < 100000; ++i) p.apply_fill(+1, 0.1);\n    EXPECT_NEAR(p.qty * p.avg_cost, 10000.0, 1e-6);   // accumulation sanity\n}",
-      "caption": "Test the invariants and the flip cases — those are where P&L bugs live."
+      "caption": "Test the invariants and the flip cases, those are where P&L bugs live."
     },
     {
       "type": "p",
-      "md": "The benchmark half of the framework matters as much as the correctness half, because latency regressions are bugs that tests cannot see. GoogleTest's sibling (`benchmark::`) measures what microseconds cost; the discipline is to *fix the environment* (pin the CPU governor, warm caches, report distributions not means — the percentile lesson made this exact point) and to alarm on percentile drift, not on noise. A CI that reports \"mean 4.2µs\" has told you almost nothing; one that reports \"p99 was 9µs, now 14µs\" has caught a real regression before production does."
+      "md": "The benchmark half of the framework matters as much as the correctness half, because latency regressions are bugs that tests cannot see. GoogleTest's sibling (`benchmark::`) measures what microseconds cost; the discipline is to *fix the environment* (pin the CPU governor, warm caches, report distributions not means, the percentile lesson made this exact point) and to alarm on percentile drift, not on noise. A CI that reports \"mean 4.2µs\" has told you almost nothing; one that reports \"p99 was 9µs, now 14µs\" has caught a real regression before production does."
     },
     {
       "type": "callout",
       "variant": "pitfall",
       "title": "Tests that pass and prove nothing",
-      "md": "Three anti-patterns to hunt in reviews: (1) *tautologies* — `EXPECT_EQ(f(x), f(x))` or re-implementing the logic under test; (2) *fixture soup* — one giant setup used by every test, so no test can be understood alone and none test a clean state; (3) *float equality* — `EXPECT_EQ` on doubles fails on the last ulp; use EXPECT_NEAR with a tolerance tied to the magnitudes involved. A suite with any of these has coverage-shaped holes exactly where confidence is highest."
+      "md": "Three anti-patterns to hunt in reviews: (1) *tautologies*, `EXPECT_EQ(f(x), f(x))` or re-implementing the logic under test; (2) *fixture soup*, one giant setup used by every test, so no test can be understood alone and none test a clean state; (3) *float equality*, `EXPECT_EQ` on doubles fails on the last ulp; use EXPECT_NEAR with a tolerance tied to the magnitudes involved. A suite with any of these has coverage-shaped holes exactly where confidence is highest."
     },
     {
       "type": "steps",
@@ -107,12 +107,12 @@
       "Optimised and debug builds fail in different ways: asserts live in Debug; optimiser-induced UB shows in Release.",
       "ASan/UBSan pair in one build; TSan must be built alone (it is incompatible with other sanitisers in one binary)."
     ],
-    "solution": "(a) Add Debug (asserts live, optimisation off - catches logic errors `assert()` was written for) and keep Release (`-DNDEBUG`, `-O3` - catches optimiser-sensitive code like signed overflow 'working' at -O0). (b) ASan+UBSan lane: out-of-bounds, use-after-free, double-free (ASan) and signed overflow/misaligned or null deref/bad shifts (UBSan); add a separate TSan lane for data races - it cannot share a binary with ASan. (c) `cmake -B build-asan -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS=\"-fsanitize=address,undefined -fno-omit-frame-pointer\"` then `cmake --build build-asan` then `ctest --test-dir build-asan --output-on-failure`. (d) Sanitiser instrumentation roughly doubles runtime and perturbs cache behaviour, and Debug has no optimisation at all - so any timing from these jobs measures the instrumentation. Benchmark jobs use a clean Release build (`-O3 -march=native`, no sanitiser) with Google Benchmark's DoNotOptimize discipline; CI tracks those numbers separately and flags regressions against a baseline."
+    "solution": "(a) Add Debug (asserts live, optimisation off, catches logic errors `assert()` was written for) and keep Release (`-DNDEBUG`, `-O3` - catches optimiser-sensitive code like signed overflow 'working' at -O0). (b) ASan+UBSan lane: out-of-bounds, use-after-free, double-free (ASan) and signed overflow/misaligned or null deref/bad shifts (UBSan); add a separate TSan lane for data races - it cannot share a binary with ASan. (c) `cmake -B build-asan -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS=\"-fsanitize=address,undefined -fno-omit-frame-pointer\"` then `cmake --build build-asan` then `ctest --test-dir build-asan --output-on-failure`. (d) Sanitiser instrumentation roughly doubles runtime and perturbs cache behaviour, and Debug has no optimisation at all, so any timing from these jobs measures the instrumentation. Benchmark jobs use a clean Release build (`-O3 -march=native`, no sanitiser) with Google Benchmark's DoNotOptimize discipline; CI tracks those numbers separately and flags regressions against a baseline."
   },
   "commonMistakes": [
-    "Using EXPECT where state would be invalid after failure (dangling pointer, null deref) - a follow-on crash hides the real report.",
+    "Using EXPECT where state would be invalid after failure (dangling pointer, null deref), a follow-on crash hides the real report.",
     "Comparing doubles with EXPECT_EQ/== and flaking on compiler reassociation; use EXPECT_DOUBLE_EQ or EXPECT_NEAR with a stated tolerance.",
-    "Writing tests that depend on execution order or shared statics - fixtures exist precisely to give each test a fresh world.",
+    "Writing tests that depend on execution order or shared statics, fixtures exist precisely to give each test a fresh world.",
     "Testing only the happy path: every error contract (throw cases, boundary quantities) needs its own EXPECT_THROW/NEAR tests.",
     "A CI that builds Release only: it misses assert-enabled Debug failures and never runs the sanitiser lane."
   ],
@@ -123,7 +123,7 @@
     "Floating-point assertions are semantic choices: EXPECT_DOUBLE_EQ (~4 ULP) or EXPECT_NEAR with a domain tolerance, not raw ==.",
     "EXPECT_THROW/EXPECT_NO_THROW test error contracts explicitly; assert them before any state checks that presume the contract.",
     "CI per commit: Debug+Release build matrix, unit tests via ctest, ASan/UBSan lane (TSan separate), tooling gates -Werror/format/tidy.",
-    "Benchmarks live in CI too, but from an uninstrumented Release job - never from sanitiser or Debug builds."
+    "Benchmarks live in CI too, but from an uninstrumented Release job, never from sanitiser or Debug builds."
   ],
   "quiz": [
     {
@@ -147,7 +147,7 @@
         "EXPECT is for ints, ASSERT for doubles",
         "EXPECT records the failure and continues the test; ASSERT records it and returns from the test immediately",
         "ASSERT is faster; EXPECT prints more detail",
-        "No difference - both continue"
+        "No difference, both continue"
       ],
       "answerIndex": 1,
       "explanation": "EXPECT accumulates all failures in one run; ASSERT aborts the current test. Use ASSERT when continuing would be unsafe (null pointer, out-of-bounds state)."
@@ -199,7 +199,7 @@
     {
       "type": "concept",
       "front": "EXPECT vs ASSERT in GoogleTest",
-      "back": "EXPECT: record failure, continue the test (multiple failures per test). ASSERT: record failure and return from the test immediately - required when continuation would use invalid state."
+      "back": "EXPECT: record failure, continue the test (multiple failures per test). ASSERT: record failure and return from the test immediately, required when continuation would use invalid state."
     },
     {
       "type": "concept",
@@ -219,15 +219,15 @@
   ],
   "references": [
     {
-      "label": "GoogleTest — primer and advanced guide",
+      "label": "GoogleTest, primer and advanced guide",
       "url": "https://google.github.io/googletest/primer.html"
     },
     {
-      "label": "CTest — driving test suites",
+      "label": "CTest, driving test suites",
       "url": "https://cmake.org/cmake/help/latest/manual/ctest.1.html"
     },
     {
-      "label": "GitHub Actions — workflow syntax",
+      "label": "GitHub Actions, workflow syntax",
       "url": "https://docs.github.com/en/actions/reference/workflow-syntax-for-github-actions"
     }
   ],

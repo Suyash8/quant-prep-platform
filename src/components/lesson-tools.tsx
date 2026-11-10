@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { CheckCircle2, BookmarkPlus, BookmarkCheck, NotebookPen, Eye, EyeOff, ChevronLeft, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { QMath } from '@/components/quiz';
+import { recordExerciseDone, lessonProgressOf } from '@/lib/client/local-state';
 
 export function ExerciseCard({ lessonId, kind, title, prompt, hints, solution, initialDone }: {
   lessonId: string; kind: 'guided' | 'independent'; title: string;
@@ -13,22 +14,12 @@ export function ExerciseCard({ lessonId, kind, title, prompt, hints, solution, i
   const [showHints, setShowHints] = React.useState(false);
   const [showSolution, setShowSolution] = React.useState(false);
   const [done, setDone] = React.useState(initialDone);
-  const [busy, setBusy] = React.useState(false);
 
-  async function markDone() {
-    setBusy(true);
-    try {
-      const res = await fetch('/api/progress/lesson', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lessonId, exerciseDone: true }),
-      });
-      const data = await res.json();
-      if (!res.ok) { toast.error(data.error ?? 'Failed.'); return; }
-      setDone(true);
-      toast.success(kind === 'guided' ? 'Guided exercise complete.' : 'Independent exercise complete.');
-    } finally {
-      setBusy(false);
-    }
+  function markDone() {
+    // v3: recorded locally, instant and offline-capable, synced in the background
+    setDone(true);
+    recordExerciseDone(lessonId, !!lessonProgressOf(lessonId)?.exerciseDone || initialDone);
+    toast.success(kind === 'guided' ? 'Guided exercise complete.' : 'Independent exercise complete.');
   }
 
   return (
@@ -39,8 +30,8 @@ export function ExerciseCard({ lessonId, kind, title, prompt, hints, solution, i
           {title}
         </span>
         {!done && (
-          <button onClick={markDone} disabled={busy} className="text-xs px-3 py-1.5 rounded-md bg-accent text-accent-foreground hover:bg-accent-strong disabled:opacity-50">
-            {busy ? '…' : 'Mark complete'}
+          <button onClick={markDone} className="text-xs px-3 py-1.5 rounded-md bg-accent text-accent-foreground hover:bg-accent-strong disabled:opacity-50">
+            Mark complete
           </button>
         )}
       </div>

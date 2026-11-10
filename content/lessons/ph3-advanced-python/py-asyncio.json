@@ -14,7 +14,7 @@
     "Handle exceptions across concurrent tasks with return_exceptions=True",
     "Choose between asyncio, threading and multiprocessing for a given workload, and offload blocking or CPU-heavy calls with run_in_executor"
   ],
-  "motivation": "An order gateway must talk to six venues at once and a market-data client juggles dozens of websocket streams - spawning a thread per connection hits scaling limits fast, and most of those threads are simply asleep waiting on the network. Asyncio runs thousands of concurrent I/O operations on one thread, if you follow its rules. Break them - one stray blocking call - and the whole loop stalls. This lesson is the mental model that keeps async code from silently doing nothing.",
+  "motivation": "An order gateway must talk to six venues at once and a market-data client juggles dozens of websocket streams, spawning a thread per connection hits scaling limits fast, and most of those threads are simply asleep waiting on the network. Asyncio runs thousands of concurrent I/O operations on one thread, if you follow its rules. Break them, one stray blocking call, and the whole loop stalls. This lesson is the mental model that keeps async code from silently doing nothing.",
   "blocks": [
     {
       "type": "h2",
@@ -22,7 +22,7 @@
     },
     {
       "type": "p",
-      "md": "Asyncio achieves concurrency on **one thread** with cooperative scheduling. A *coroutine* is a function defined with `async def` that can pause itself at any `await` and hand control back to the **event loop**, which then runs whichever other coroutine is ready. Contrast with threads, which the OS preempts whenever it likes: coroutines only switch where you wrote `await`, so interleaving points are visible in the source. Between awaits, a coroutine runs uninterrupted - which is why carefully-placed awaits give you race-free access to shared state without locks."
+      "md": "Asyncio achieves concurrency on **one thread** with cooperative scheduling. A *coroutine* is a function defined with `async def` that can pause itself at any `await` and hand control back to the **event loop**, which then runs whichever other coroutine is ready. Contrast with threads, which the OS preempts whenever it likes: coroutines only switch where you wrote `await`, so interleaving points are visible in the source. Between awaits, a coroutine runs uninterrupted, which is why carefully-placed awaits give you race-free access to shared state without locks."
     },
     {
       "type": "p",
@@ -32,7 +32,7 @@
       "type": "code",
       "lang": "python",
       "code": "import asyncio\n\nasync def fetch_quote(symbol, ms):\n    await asyncio.sleep(ms / 1000)     # simulated network wait\n    return (symbol, ms)\n\nasync def main():\n    quotes = await asyncio.gather(\n        fetch_quote(\"AAPL\", 300),\n        fetch_quote(\"MSFT\", 100),\n        fetch_quote(\"NVDA\", 200),\n    )\n    print(quotes)\n\nasyncio.run(main())",
-      "caption": "Three 100-300 ms 'round trips' complete in ~0.3 s total - the waits overlap. gather returns results in submission order, not completion order."
+      "caption": "Three 100-300 ms 'round trips' complete in ~0.3 s total, the waits overlap. gather returns results in submission order, not completion order."
     },
     {
       "type": "h2",
@@ -40,7 +40,7 @@
     },
     {
       "type": "p",
-      "md": "`await` on coroutines one after another is still **serial**: the second starts only after the first finishes. To run things concurrently you schedule them: `asyncio.create_task(coro)` starts the coroutine on the loop immediately and returns a `Task` you can await later. Keep references to tasks - the loop only holds weak references, and a garbage-collected task can vanish mid-flight."
+      "md": "`await` on coroutines one after another is still **serial**: the second starts only after the first finishes. To run things concurrently you schedule them: `asyncio.create_task(coro)` starts the coroutine on the loop immediately and returns a `Task` you can await later. Keep references to tasks, the loop only holds weak references, and a garbage-collected task can vanish mid-flight."
     },
     {
       "type": "code",
@@ -52,7 +52,7 @@
       "type": "callout",
       "variant": "pitfall",
       "title": "One blocking call freezes the whole loop",
-      "md": "The loop is single-threaded: while one coroutine runs `time.sleep(1)` or a synchronous `requests.get(...)`, *every other coroutine is frozen* - no task switching happens, because switching only occurs at `await`. Use `asyncio.sleep`, async libraries (aiohttp, asyncpg), or push unavoidable blocking/CPU work to a thread or process: `await loop.run_in_executor(pool, blocking_fn, arg)`."
+      "md": "The loop is single-threaded: while one coroutine runs `time.sleep(1)` or a synchronous `requests.get(...)`, *every other coroutine is frozen*, no task switching happens, because switching only occurs at `await`. Use `asyncio.sleep`, async libraries (aiohttp, asyncpg), or push unavoidable blocking/CPU work to a thread or process: `await loop.run_in_executor(pool, blocking_fn, arg)`."
     },
     {
       "type": "h2",
@@ -60,7 +60,7 @@
     },
     {
       "type": "p",
-      "md": "By default `gather` re-raises the first exception and the surviving siblings keep running unobserved. For mixed reliability - say, five venue adapters where one is down - pass `return_exceptions=True`: exceptions come back as values in the result list, in position. When you care about *completion* order rather than submission order, `asyncio.as_completed` yields awaitables as they finish."
+      "md": "By default `gather` re-raises the first exception and the surviving siblings keep running unobserved. For mixed reliability, say, five venue adapters where one is down, pass `return_exceptions=True`: exceptions come back as values in the result list, in position. When you care about *completion* order rather than submission order, `asyncio.as_completed` yields awaitables as they finish."
     },
     {
       "type": "code",
@@ -70,13 +70,13 @@
     },
     {
       "type": "p",
-      "md": "Where async fits in a trading stack: websocket market-data consumers, REST order gateways, and any service with far more concurrent connections than CPU load - exactly the workload where threads would mostly sleep. It is the wrong tool for CPU-bound maths: keep that in numpy or push it to a `ProcessPoolExecutor` via `run_in_executor`. The `async/await` syntax itself is built on the generator machinery you met in the iterators lesson - `await` is conceptually a yield that the loop consumes."
+      "md": "Where async fits in a trading stack: websocket market-data consumers, REST order gateways, and any service with far more concurrent connections than CPU load, exactly the workload where threads would mostly sleep. It is the wrong tool for CPU-bound maths: keep that in numpy or push it to a `ProcessPoolExecutor` via `run_in_executor`. The `async/await` syntax itself is built on the generator machinery you met in the iterators lesson - `await` is conceptually a yield that the loop consumes."
     },
     {
       "type": "callout",
       "variant": "quant",
       "title": "Race discipline between awaits",
-      "md": "Because coroutines only switch at await points, code that checks-then-updates shared state *without awaiting in between* is atomic. An invariant that spans an await - read balance, await an exchange call, then update balance - is exactly where two coroutines can interleave. Audit every await that sits inside a multi-step state transition."
+      "md": "Because coroutines only switch at await points, code that checks-then-updates shared state *without awaiting in between* is atomic. An invariant that spans an await, read balance, await an exchange call, then update balance, is exactly where two coroutines can interleave. Audit every await that sits inside a multi-step state transition."
     }
   ],
   "guidedExercise": {
@@ -85,7 +85,7 @@
       "Sequential awaits do not overlap waits.",
       "gather returns results in submission order, regardless of who finishes first."
     ],
-    "solution": "(a) $0.5 + 1.0 + 0.3 = 1.8$ s. (b) About **1.0 s** - all waits start together, so wall time is the maximum delay. (c) Submission order: the results appear as vendor-a, vendor-b, vendor-c (the 0.3 s coroutine finishing first does not jump the queue).\n\n(d)\n```python\nprices = await asyncio.gather(*[fetch(sym) for sym in symbols])\n```"
+    "solution": "(a) $0.5 + 1.0 + 0.3 = 1.8$ s. (b) About **1.0 s**, all waits start together, so wall time is the maximum delay. (c) Submission order: the results appear as vendor-a, vendor-b, vendor-c (the 0.3 s coroutine finishing first does not jump the queue).\n\n(d)\n```python\nprices = await asyncio.gather(*[fetch(sym) for sym in symbols])\n```"
   },
   "independentExercise": {
     "prompt": "An order router must submit to four venues whose acknowledgement latencies are 0.2, 0.5, 0.1 and 0.4 seconds. Write an `async def route()` that starts all four submissions with `create_task`, prints each acknowledgement **as it arrives** (use `asyncio.as_completed`), and prints total elapsed time. State the exact expected print order and the expected elapsed time.",
@@ -93,11 +93,11 @@
       "as_completed yields finished awaitables in completion order.",
       "Elapsed time for fully-overlapped waits is the maximum delay, not the sum."
     ],
-    "solution": "```python\nimport asyncio, time\n\nasync def submit(venue, delay):\n    await asyncio.sleep(delay)\n    return f\"ack {venue}\"\n\nasync def route():\n    t0 = time.perf_counter()\n    tasks = [asyncio.create_task(submit(v, d))\n             for v, d in [(\"V1\", 0.2), (\"V2\", 0.5), (\"V3\", 0.1), (\"V4\", 0.4)]]\n    for coro in asyncio.as_completed(tasks):\n        print(await coro)\n    print(f\"{time.perf_counter() - t0:.2f}s\")\n\nasyncio.run(route())\n```\nExpected print order (completion order): `ack V3` (0.1), `ack V1` (0.2), `ack V4` (0.4), `ack V2` (0.5), then elapsed $\\approx$ **0.50 s** - the slowest venue bounds the wait."
+    "solution": "```python\nimport asyncio, time\n\nasync def submit(venue, delay):\n    await asyncio.sleep(delay)\n    return f\"ack {venue}\"\n\nasync def route():\n    t0 = time.perf_counter()\n    tasks = [asyncio.create_task(submit(v, d))\n             for v, d in [(\"V1\", 0.2), (\"V2\", 0.5), (\"V3\", 0.1), (\"V4\", 0.4)]]\n    for coro in asyncio.as_completed(tasks):\n        print(await coro)\n    print(f\"{time.perf_counter() - t0:.2f}s\")\n\nasyncio.run(route())\n```\nExpected print order (completion order): `ack V3` (0.1), `ack V1` (0.2), `ack V4` (0.4), `ack V2` (0.5), then elapsed $\\approx$ **0.50 s**, the slowest venue bounds the wait."
   },
   "commonMistakes": [
     "Calling an async function without `await`/`create_task`: nothing runs, and Python emits 'coroutine was never awaited'.",
-    "Using blocking calls (`time.sleep`, `requests`, heavy CPU) inside a coroutine: the entire loop - every connection - freezes.",
+    "Using blocking calls (`time.sleep`, `requests`, heavy CPU) inside a coroutine: the entire loop, every connection, freezes.",
     "Assuming `gather` returns results in completion order: it returns submission order; use `as_completed` for completion order.",
     "Awaiting coroutines sequentially in a loop and wondering why nothing is concurrent: `await` is a join, not a schedule; use `create_task` or `gather`.",
     "Discarding task references so a running task can be garbage-collected mid-execution; keep them in a set or list."
@@ -118,7 +118,7 @@
       "language": "python",
       "code": "import asyncio\n\nasync def fetch_quote(symbol, ms):\n    await asyncio.sleep(ms / 1000)\n    return (symbol, ms)\n\nasync def main():\n    quotes = await asyncio.gather(\n        fetch_quote(\"AAPL\", 300),\n        fetch_quote(\"MSFT\", 100),\n        fetch_quote(\"NVDA\", 200),\n    )\n    print(quotes)\n\nasyncio.run(main())",
       "answer": "[('AAPL', 300), ('MSFT', 100), ('NVDA', 200)]",
-      "explanation": "gather returns the results as a list in submission order (AAPL, MSFT, NVDA), even though MSFT finished first - all three waits ran concurrently."
+      "explanation": "gather returns the results as a list in submission order (AAPL, MSFT, NVDA), even though MSFT finished first, all three waits ran concurrently."
     },
     {
       "id": "q2",
@@ -151,7 +151,7 @@
       "prompt": "A coroutine calls `time.sleep(5)` in the middle of a busy service. What happens?",
       "options": [
         "The event loop reschedules the coroutine and continues serving others",
-        "The whole event loop - every coroutine - is frozen for 5 seconds",
+        "The whole event loop, every coroutine, is frozen for 5 seconds",
         "asyncio automatically converts it to asyncio.sleep",
         "Only coroutines on other threads continue"
       ],
@@ -173,14 +173,14 @@
         1,
         3
       ],
-      "explanation": "Scheduling is cooperative, not preemptive - the loop only switches at awaits, and a coroutine does nothing until awaited or turned into a task. gather preserves submission order; create_task starts execution 'now-ish' on the loop."
+      "explanation": "Scheduling is cooperative, not preemptive, the loop only switches at awaits, and a coroutine does nothing until awaited or turned into a task. gather preserves submission order; create_task starts execution 'now-ish' on the loop."
     }
   ],
   "flashcards": [
     {
       "type": "definition",
       "front": "Coroutine (async def)",
-      "back": "A function that can pause itself at await and hand control to the event loop. Calling it builds a coroutine object - it runs only when awaited, gathered, or wrapped in a Task."
+      "back": "A function that can pause itself at await and hand control to the event loop. Calling it builds a coroutine object, it runs only when awaited, gathered, or wrapped in a Task."
     },
     {
       "type": "concept",
@@ -190,11 +190,11 @@
     {
       "type": "code-output",
       "front": "In what order does asyncio.gather return results?",
-      "back": "Submission order - the order coroutines were passed to gather - regardless of completion order. Use asyncio.as_completed for completion order."
+      "back": "Submission order, the order coroutines were passed to gather, regardless of completion order. Use asyncio.as_completed for completion order."
     },
     {
       "type": "error-identification",
-      "front": "Spot the bug: async def main(): fetch(\"AAPL\")  # fetch is async def",
+      "front": "Spot the bug: async def main(): fetch(\"AAPL\") # fetch is async def",
       "back": "The coroutine is never awaited: nothing runs and Python warns 'coroutine ... was never awaited'. Fix: await fetch(\"AAPL\") or asyncio.create_task(fetch(\"AAPL\"))."
     },
     {
@@ -205,15 +205,15 @@
   ],
   "references": [
     {
-      "label": "Python docs - asyncio",
+      "label": "Python docs: asyncio",
       "url": "https://docs.python.org/3/library/asyncio.html"
     },
     {
-      "label": "PEP 492 - Coroutines with async and await syntax",
+      "label": "PEP 492: Coroutines with async and await syntax",
       "url": "https://peps.python.org/pep-0492/"
     },
     {
-      "label": "Python docs - Coroutines and Tasks",
+      "label": "Python docs: Coroutines and Tasks",
       "url": "https://docs.python.org/3/library/asyncio-task.html"
     }
   ],

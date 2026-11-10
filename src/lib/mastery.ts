@@ -1,9 +1,21 @@
-// Mastery engine — configurable model:
+// Mastery engine, configurable model:
+
+
 //   passed    = knowledge check >= PASS_THRESHOLD and practical exercise complete
+
+
 //   mastered  = passed AND retrieval complete (a spaced-repetition card from this
+
+
 //               lesson reviewed with grade >= 3 after it was due)
+
+
 //   needs_revision = two or more failed knowledge-check attempts on the current best score
+
+
 // Scores are computed SERVER-SIDE from quiz submissions scored against content JSON.
+
+
 
 export const PASS_THRESHOLD = 80;
 export const GUESS_GUARD_MIN_QUESTIONS = 3;
@@ -47,16 +59,22 @@ export function computeStatus(
 }
 
 // ---------- SM-2 spaced repetition ----------
+
+
 export interface Sm2State {
   ease: number; intervalDays: number; repetitions: number; lapses: number;
 }
 
 export function sm2(state: Sm2State, grade: number): Sm2State & { dueAt: Date } {
   // grade 0 (blackout) .. 5 (perfect). SM-2: >=3 successful.
+
+
   let { ease, intervalDays, repetitions, lapses } = state;
   if (grade < 3) {
     repetitions = 0;
     intervalDays = grade === 0 ? 0 : 0.5; // relearn quickly
+
+
     lapses += 1;
     ease = Math.max(1.3, ease - 0.2);
   } else {

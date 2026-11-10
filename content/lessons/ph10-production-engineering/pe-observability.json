@@ -11,7 +11,7 @@
     "Classify metrics as counters, gauges or histograms, and design per-symbol feed-health checks",
     "Derive an error budget from an SLO and set alerts that are actionable instead of noisy"
   ],
-  "motivation": "At 14:02 a feed handler starts silently missing ticks. Nothing crashes, dashboards stay green, and a strategy trades on stale data until reconciliation breaks hours later. Observability is the discipline of seeing inside a running system - aggregating enough signal to ask 'are we healthy right now?' and keeping enough detail to answer 'what exactly did order 88213 see?' after the fact.",
+  "motivation": "At 14:02 a feed handler starts silently missing ticks. Nothing crashes, dashboards stay green, and a strategy trades on stale data until reconciliation breaks hours later. Observability is the discipline of seeing inside a running system, aggregating enough signal to ask 'are we healthy right now?' and keeping enough detail to answer 'what exactly did order 88213 see?' after the fact.",
   "blocks": [
     {
       "type": "h2",
@@ -19,11 +19,11 @@
     },
     {
       "type": "p",
-      "md": "**Metrics** are cheap numeric time series - counts, rates, latencies - aggregated over all traffic. They answer *is the system healthy* and *how much*: orders per second, tick lag, p99 latency. **Logs** are per-event records with full detail; they answer *what exactly happened to this one request*: grep or index by correlation id and read the order's whole journey. **Traces** follow one request across service boundaries and answer *where did the time go*: gateway 2 ms, normaliser 4 ms, book update 31 ms."
+      "md": "**Metrics** are cheap numeric time series, counts, rates, latencies, aggregated over all traffic. They answer *is the system healthy* and *how much*: orders per second, tick lag, p99 latency. **Logs** are per-event records with full detail; they answer *what exactly happened to this one request*: grep or index by correlation id and read the order's whole path. **Traces** follow one request across service boundaries and answer *where did the time go*: gateway 2 ms, normaliser 4 ms, book update 31 ms."
     },
     {
       "type": "p",
-      "md": "The design rule follows from cost: metrics cover everything at coarse grain, logs cover events at fine grain, traces cover sampled paths end to end. Inverting that - logging every tick verbatim at debug level in production - is how pipelines run out of disk at 14:35 on a volatile day."
+      "md": "The design rule follows from cost: metrics cover everything at coarse grain, logs cover events at fine grain, traces cover sampled paths end to end. Inverting that, logging every tick verbatim at debug level in production, is how pipelines run out of disk at 14:35 on a volatile day."
     },
     {
       "type": "h2",
@@ -31,18 +31,46 @@
     },
     {
       "type": "p",
-      "md": "The **p95** latency is the value below which 95% of samples fall; **p99** likewise for 99%. Trading systems live and die on the tail - an order acknowledgement that arrives in 42 microseconds on average but takes 9,800 microseconds during a garbage-collection pause is a different system during the pause. One slow pause in a thousand barely moves the mean, yet it is the sample that matters at the exchange."
+      "md": "The **p95** latency is the value below which 95% of samples fall; **p99** likewise for 99%. Trading systems live and die on the tail, an order acknowledgement that arrives in 42 microseconds on average but takes 9,800 microseconds during a garbage-collection pause is a different system during the pause. One slow pause in a thousand barely moves the mean, yet it is the sample that matters at the exchange."
     },
     {
       "type": "table",
-      "headers": ["Percentile", "Order-ack latency (illustrative)", "Reading"],
+      "headers": [
+        "Percentile",
+        "Order-ack latency (illustrative)",
+        "Reading"
+      ],
       "rows": [
-        ["mean", "47 µs", "looks excellent - and hides everything"],
-        ["p50", "42 µs", "typical request"],
-        ["p90", "58 µs", "still fine"],
-        ["p99", "310 µs", "tail begins: queueing, cache misses"],
-        ["p99.9", "1,250 µs", "GC pauses, rebalances"],
-        ["max (1,000 samples)", "9,800 µs", "one pathological request"]
+        [
+          "mean",
+          "47 µs",
+          "looks excellent, and hides everything"
+        ],
+        [
+          "p50",
+          "42 µs",
+          "typical request"
+        ],
+        [
+          "p90",
+          "58 µs",
+          "still fine"
+        ],
+        [
+          "p99",
+          "310 µs",
+          "tail begins: queueing, cache misses"
+        ],
+        [
+          "p99.9",
+          "1,250 µs",
+          "GC pauses, rebalances"
+        ],
+        [
+          "max (1,000 samples)",
+          "9,800 µs",
+          "one pathological request"
+        ]
       ]
     },
     {
@@ -53,7 +81,7 @@
         "mu": 50,
         "sigma": 12
       },
-      "caption": "A latency distribution (illustrative, smooth). Monitoring watches the whole shape - the far tail past p99 is where exchange round-trips are decided - not just the centre that the mean reports."
+      "caption": "A latency distribution (illustrative, smooth). Monitoring watches the whole shape, the far tail past p99 is where exchange round-trips are decided, not just the centre that the mean reports."
     },
     {
       "type": "h2",
@@ -61,7 +89,7 @@
     },
     {
       "type": "p",
-      "md": "A **counter** only goes up (orders_sent, reconnects) - you derive rates from its slope. A **gauge** goes up and down (open_positions, consumer_lag, ticks per minute). A **histogram** buckets observations so percentiles can be computed later. Feed health is a gauge question: a liquid symbol prints roughly 2,400 updates per minute; printing zero for three minutes is an outage, and the monitor below is what turns that into a page instead of a discovery at 16:00."
+      "md": "A **counter** only goes up (orders_sent, reconnects), you derive rates from its slope. A **gauge** goes up and down (open_positions, consumer_lag, ticks per minute). A **histogram** buckets observations so percentiles can be computed later. Feed health is a gauge question: a liquid symbol prints roughly 2,400 updates per minute; printing zero for three minutes is an outage, and the monitor below is what turns that into a page instead of a discovery at 16:00."
     },
     {
       "type": "code",
@@ -73,7 +101,7 @@
       "type": "callout",
       "variant": "quant",
       "title": "Missing data compounds faster than you think",
-      "md": "If 0.05% of one-second bars are silently dropped, a signal computed from 500 bars is corrupt whenever *any* bar is missing: $1 - 0.9995^{500} \\approx 22\\%$ of the time. Per-record validation never sees the absence - only monitoring the tick rate, or reconciling counts, can."
+      "md": "If 0.05% of one-second bars are silently dropped, a signal computed from 500 bars is corrupt whenever *any* bar is missing: $1 - 0.9995^{500} \\approx 22\\%$ of the time. Per-record validation never sees the absence, only monitoring the tick rate, or reconciling counts, can."
     },
     {
       "type": "h2",
@@ -81,15 +109,15 @@
     },
     {
       "type": "p",
-      "md": "An **SLO** states the service promise: e.g. 99.9% of captured ticks land within 1 second of venue time. The complement is the **error budget**: over a 30-day month ($30 \\times 24 \\times 3600 = 2{,}592{,}000$ s) the budget is $0.1\\% \\times 2{,}592{,}000 = 2{,}592$ s, about 43.2 minutes of tolerated badness per month. Budgets convert reliability into a number you can spend: a 12-minute (720 s) outage consumes $720 / 2592 \\approx 27.8\\%$ of the month's budget - visible, debatable, and a trigger to slow feature releases when it runs low."
+      "md": "An **SLO** states the service promise: e.g. 99.9% of captured ticks land within 1 second of venue time. The complement is the **error budget**: over a 30-day month ($30 \\times 24 \\times 3600 = 2{,}592{,}000$ s) the budget is $0.1\\% \\times 2{,}592{,}000 = 2{,}592$ s, about 43.2 minutes of tolerated badness per month. Budgets convert reliability into a number you can spend: a 12-minute (720 s) outage consumes $720 / 2592 \\approx 27.8\\%$ of the month's budget, visible, debatable, and a trigger to slow feature releases when it runs low."
     },
     {
       "type": "p",
-      "md": "Alerts should fire on **symptoms** the user of the data would feel (tick rate zero, error-budget burn rate fast, p99 over the SLO) with a runbook link attached, not on every cause (disk 71% full, one slow request). A pager that fires twenty times a day trains humans to ignore it - and the ignored page is always the real outage. The test for every alert: *would a sleeping engineer change anything if woken?* If not, make it a dashboard, not a page."
+      "md": "Alerts should fire on **symptoms** the user of the data would feel (tick rate zero, error-budget burn rate fast, p99 over the SLO) with a runbook link attached, not on every cause (disk 71% full, one slow request). A pager that fires twenty times a day trains humans to ignore it, and the ignored page is always the real outage. The test for every alert: *would a sleeping engineer change anything if woken?* If not, make it a dashboard, not a page."
     },
     {
       "type": "p",
-      "md": "Logs make the diagnosis possible once the page fires. Structured (JSON) logging with fixed fields - timestamp, level, service, correlation id, event, payload fields - is queryable and joins across services; prose logs are not. The correlation id stamped at the gateway is what connects 'order rejected' in the gateway log to the upstream quote and the downstream position update."
+      "md": "Logs make the diagnosis possible once the page fires. Structured (JSON) logging with fixed fields, timestamp, level, service, correlation id, event, payload fields, is queryable and joins across services; prose logs are not. The correlation id stamped at the gateway is what connects 'order rejected' in the gateway log to the upstream quote and the downstream position update."
     }
   ],
   "guidedExercise": {
@@ -98,7 +126,7 @@
       "31 days $= 31 \\times 24 \\times 3600$ seconds.",
       "Budget $= (1 - \\text{SLO}) \\times$ month seconds; outages are 15 minutes total."
     ],
-    "solution": "(a) Month $= 31 \\times 86{,}400 = 2{,}678{,}400$ s; budget $= 0.0005 \\times 2{,}678{,}400 = \\textbf{1{,}339.2}$ s $= \\textbf{22.32}$ min. (b) Outages $= 15$ min $= 900$ s; $900 / 1{,}339.2 = \\textbf{67.2\\%}$ consumed. (c) Remaining $= 1{,}339.2 - 900 = 439.2$ s $= \\textbf{7.32}$ min - one more bad afternoon burns it."
+    "solution": "(a) Month $= 31 \\times 86{,}400 = 2{,}678{,}400$ s; budget $= 0.0005 \\times 2{,}678{,}400 = \\textbf{1{,}339.2}$ s $= \\textbf{22.32}$ min. (b) Outages $= 15$ min $= 900$ s; $900 / 1{,}339.2 = \\textbf{67.2\\%}$ consumed. (c) Remaining $= 1{,}339.2 - 900 = 439.2$ s $= \\textbf{7.32}$ min, one more bad afternoon burns it."
   },
   "independentExercise": {
     "prompt": "You operate under a 99.9% SLO measured over a 28-day month, with 1-minute billing of downtime. (a) Compute the monthly error budget in seconds and minutes. (b) Incidents of 18 and 11 minutes occur: what fraction of the budget is consumed and what remains? (c) A latency histogram for 2,000 order acknowledgements: 900 took $\\le 40$ µs, 740 more took $\\le 60$ µs, 300 more $\\le 100$ µs, 58 more $\\le 500$ µs, and 2 exceeded 500 µs. How many acknowledgements exceeded 100 µs, and what percentage is that?",
@@ -109,16 +137,16 @@
     "solution": "(a) $28 \\times 86{,}400 = 2{,}419{,}200$ s; budget $= 0.001 \\times 2{,}419{,}200 = \\textbf{2{,}419.2}$ s $= \\textbf{40.32}$ min. (b) $18 + 11 = 29$ min $= 1{,}740$ s; $1{,}740 / 2{,}419.2 = \\textbf{71.9\\%}$ consumed; remaining $2{,}419.2 - 1{,}740 = 679.2$ s $= 11.32$ min. (c) Above 100 µs: $2{,}000 - (900 + 740 + 300) = 2{,}000 - 1{,}940 = \\textbf{60}$, i.e. $60 / 2{,}000 = \\textbf{3\\%}$ - so p95 sits in the 60-100 µs bucket while the tail above 500 µs holds just 2 requests (0.1%)."
   },
   "commonMistakes": [
-    "Reading the mean and concluding health: one 9.8 ms GC pause per thousand requests barely moves a 47 µs mean but is the sample that matters - watch p99 and p99.9.",
+    "Reading the mean and concluding health: one 9.8 ms GC pause per thousand requests barely moves a 47 µs mean but is the sample that matters, watch p99 and p99.9.",
     "Logging everything at debug level in production: fine-grained detail belongs in logs with levels and sampling; metrics cover the 'how much' questions cheaply.",
     "Alerting on causes instead of symptoms: paging on 'disk 71% full' at 3 a.m. when nothing is affected trains the team to ignore pages.",
-    "Confusing counters and gauges: orders_sent is a counter (derive rates from its slope); open_positions is a gauge - charting a counter as a level looks like an outage-free eternity.",
-    "Setting SLOs at 100%: any budget of zero means every blim page and every release is a breach - pick a number the business actually needs."
+    "Confusing counters and gauges: orders_sent is a counter (derive rates from its slope); open_positions is a gauge, charting a counter as a level looks like an outage-free eternity.",
+    "Setting SLOs at 100%: any budget of zero means every blim page and every release is a breach, pick a number the business actually needs."
   ],
   "realWorldApplication": "Trading platforms run per-symbol feed-health gauges, percentile latency dashboards and error-budget burn alerts as standard ops kit; on-call rotations accept pages only when the runbook and the budget both say a human is needed.",
   "quantFinanceApplication": "A zero tick-rate on one symbol is the single cheapest alert that prevents a strategy from trading on stale data for hours; p99.9 order-ack latency is what the exchange actually experiences at the tail, not the mean the dashboard defaults to.",
   "summary": [
-    "Metrics answer 'how much / are we healthy' cheaply; logs answer 'what exactly happened to this event'; traces answer 'where did the time go' - each signal has a job.",
+    "Metrics answer 'how much / are we healthy' cheaply; logs answer 'what exactly happened to this event'; traces answer 'where did the time go', each signal has a job.",
     "Percentiles see the tail the mean hides: illustrative acks at 47 µs mean / 42 µs p50 still had a 1,250 µs p99.9 and a 9,800 µs max.",
     "Error budgets make reliability numeric: 99.9% on a 30-day month is 2,592 s (43.2 min) of tolerated badness; a 12-minute outage spends 27.8% of it.",
     "Alert on symptoms with attached runbooks, not causes; the missing-tick gauge (zero ticks on a liquid symbol) is the highest-value market-data alert there is."
@@ -129,10 +157,10 @@
       "type": "mcq",
       "prompt": "Your service tracks 'number of open positions'. Which metric type is this, and why?",
       "options": [
-        "A counter - it counts positions",
-        "A gauge - the value goes up and down over time",
-        "A histogram - positions are bucketed",
-        "A trace - each position is a request path"
+        "A counter, it counts positions",
+        "A gauge, the value goes up and down over time",
+        "A histogram, positions are bucketed",
+        "A trace, each position is a request path"
       ],
       "answerIndex": 1,
       "explanation": "A gauge is a point-in-time level that can decrease; open positions can be closed. Counters only increase (orders_sent), histograms store bucketed observations for percentile computation."
@@ -165,7 +193,11 @@
         "Page on every p99 blip over 500 µs to be safe",
         "Alert on as many causes as possible so nothing is missed"
       ],
-      "answerIndices": [0, 1, 2],
+      "answerIndices": [
+        0,
+        1,
+        2
+      ],
       "explanation": "Symptom pages with runbooks are actionable; paging on every blip or on raw causes produces alert fatigue, and the ignored page is always the real outage."
     },
     {
@@ -180,8 +212,13 @@
       "id": "q6",
       "type": "short",
       "prompt": "Why is structured (JSON) logging preferred over prose log lines in a trading system?",
-      "modelAnswer": "Fixed fields (timestamp, level, service, correlation id, event) make logs machine-queryable and joinable across services - e.g. tracing one order id through gateway, normaliser and position store - which prose lines cannot support reliably.",
-      "keywords": ["correlation", "query", "field", "search"],
+      "modelAnswer": "Fixed fields (timestamp, level, service, correlation id, event) make logs machine-queryable and joinable across services, e.g. tracing one order id through gateway, normaliser and position store, which prose lines cannot support reliably.",
+      "keywords": [
+        "correlation",
+        "query",
+        "field",
+        "search"
+      ],
       "explanation": "Structure turns logs into data: filterable, indexable and joinable by correlation id. Prose requires regex archaeology precisely when pressure is highest."
     }
   ],
@@ -209,17 +246,19 @@
   ],
   "references": [
     {
-      "label": "Google SRE Book - Monitoring Distributed Systems",
+      "label": "Google SRE Book: Monitoring Distributed Systems",
       "url": "https://sre.google/sre-book/monitoring-distributed-systems/"
     },
     {
-      "label": "Google SRE Workbook - Alerting on SLOs",
+      "label": "Google SRE Workbook: Alerting on SLOs",
       "url": "https://sre.google/workbook/alerting-on-slos/"
     },
     {
-      "label": "Prometheus - metrics types and querying",
+      "label": "Prometheus: metrics types and querying",
       "url": "https://prometheus.io/docs/prometheus/latest/querying/basics/"
     }
   ],
-  "skills": ["production-engineering"]
+  "skills": [
+    "production-engineering"
+  ]
 }

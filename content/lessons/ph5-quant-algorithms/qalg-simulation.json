@@ -4,14 +4,16 @@
   "title": "Event Simulation and Monte Carlo Optimisation",
   "estMinutes": 27,
   "difficulty": "advanced",
-  "prereqs": ["qalg-orderbook-structures"],
+  "prereqs": [
+    "qalg-orderbook-structures"
+  ],
   "objectives": [
     "Implement the discrete-event loop: priority queue of (time, sequence) events, pop, advance clock, schedule",
     "Explain why a heap beats a sorted list for the pending-event set, including tie-breaking",
     "State the Monte Carlo estimator and its standard error, and size a simulation for a target accuracy",
     "Apply antithetic variates and quantify when they reduce variance"
   ],
-  "motivation": "A backtester is a discrete-event simulation: fills, quotes and cancels fire at timestamps, and the engine must process them in exact order while scheduling consequences. Pricing and risk teams face the mirror problem - estimating an expectation by simulation, where each extra decimal of accuracy costs 100x the samples. Both problems share one insight: the efficiency comes from the data structure and from variance reduction, not from raw compute.",
+  "motivation": "A backtester is a discrete-event simulation: fills, quotes and cancels fire at timestamps, and the engine must process them in exact order while scheduling consequences. Pricing and risk teams face the mirror problem, estimating an expectation by simulation, where each extra decimal of accuracy costs 100x the samples. Both problems share one insight: the efficiency comes from the data structure and from variance reduction, not from raw compute.",
   "blocks": [
     {
       "type": "h2",
@@ -19,7 +21,7 @@
     },
     {
       "type": "p",
-      "md": "A **discrete-event simulation** jumps between event times instead of ticking through every moment: it holds a set of pending events keyed by time, pops the earliest, advances the clock to it, executes the event's handler, and lets that handler **schedule** new events. The pending set is a **priority queue** - a binary heap gives $O(\\log E)$ push and pop. Two details make simulations correct: ties need a deterministic order (push $(\\text{time}, \\text{seq})$ pairs with a monotonically increasing sequence number, which also keeps the heap from comparing incomparable payloads), and handlers must only *schedule*, never loop - the queue is the single source of control flow."
+      "md": "A **discrete-event simulation** jumps between event times instead of ticking through every moment: it holds a set of pending events keyed by time, pops the earliest, advances the clock to it, executes the event's handler, and lets that handler **schedule** new events. The pending set is a **priority queue**, a binary heap gives $O(\\log E)$ push and pop. Two details make simulations correct: ties need a deterministic order (push $(\\text{time}, \\text{seq})$ pairs with a monotonically increasing sequence number, which also keeps the heap from comparing incomparable payloads), and handlers must only *schedule*, never loop, the queue is the single source of control flow."
     },
     {
       "type": "code",
@@ -29,7 +31,7 @@
     },
     {
       "type": "p",
-      "md": "This loop *is* a market-replay backtester's core: a tick event updates the book, a strategy handler reacts by scheduling an order event, the order event schedules fills per the matching rules of the previous lesson. A naive alternative - keeping an array of events sorted and re-sorting on every insertion - costs $O(E \\log E)$ per step; the heap amortises to a single $O(\\log E)$ per event. For million-event replays that is the difference between seconds and hours."
+      "md": "This loop *is* a market-replay backtester's core: a tick event updates the book, a strategy handler reacts by scheduling an order event, the order event schedules fills per the matching rules of the previous lesson. A naive alternative, keeping an array of events sorted and re-sorting on every insertion, costs $O(E \\log E)$ per step; the heap amortises to a single $O(\\log E)$ per event. For million-event replays that is the difference between seconds and hours."
     },
     {
       "type": "h2",
@@ -50,7 +52,7 @@
     },
     {
       "type": "p",
-      "md": "**Antithetic variates** exploit symmetry: if $U$ is uniform on $(0,1)$, so is $1-U$, and for any *monotone* integrand the pair $\\big(f(U) + f(1-U)\\big)/2$ has the same mean but smaller variance than $f(U)$ alone - ups and downs hedge inside each pair. Payoff functions are typically monotone in the underlying, so the trick ports directly to option pricing. It is not a free lunch: when $f$ is non-monotone the pairing can *increase* variance, so the monotonicity check comes first."
+      "md": "**Antithetic variates** exploit symmetry: if $U$ is uniform on $(0,1)$, so is $1-U$, and for any *monotone* integrand the pair $\\big(f(U) + f(1-U)\\big)/2$ has the same mean but smaller variance than $f(U)$ alone, ups and downs hedge inside each pair. Payoff functions are typically monotone in the underlying, so the trick ports directly to option pricing. It is not a free lunch: when $f$ is non-monotone the pairing can *increase* variance, so the monotonicity check comes first."
     },
     {
       "type": "steps",
@@ -72,7 +74,7 @@
       "type": "callout",
       "variant": "quant",
       "title": "The standard reduction toolkit",
-      "md": "Antithetic variates pair $u$ with $1-u$; control variates subtract a known-mean correlated quantity (e.g. the underlying's terminal value against a GBM path); stratified sampling forces samples into fixed strata. Every pricing library ships all three - and always reports the standard error alongside the estimate."
+      "md": "Antithetic variates pair $u$ with $1-u$; control variates subtract a known-mean correlated quantity (e.g. the underlying's terminal value against a GBM path); stratified sampling forces samples into fixed strata. Every pricing library ships all three, and always reports the standard error alongside the estimate."
     },
     {
       "type": "interactive",
@@ -89,7 +91,7 @@
       "The fill is not in the queue until the order event executes.",
       "SE = sigma / sqrt(N); to halve SE you need 4x the samples."
     ],
-    "solution": "(a) Pop tick (clock 0.5), pop quote (clock 0.8), pop order (clock 1.2) - the fill enters the queue at $1.2 + 0.3 = 1.5$ - pop fill (clock **1.5**). Order: tick, quote, order, fill. (b) SE $= 2.0/\\sqrt{10{,}000} = 2.0/100 = \\textbf{0.02}$. Halving needs $4 \\times 10{,}000 = \\textbf{40{,}000}$ samples."
+    "solution": "(a) Pop tick (clock 0.5), pop quote (clock 0.8), pop order (clock 1.2), the fill enters the queue at $1.2 + 0.3 = 1.5$ - pop fill (clock **1.5**). Order: tick, quote, order, fill. (b) SE $= 2.0/\\sqrt{10{,}000} = 2.0/100 = \\textbf{0.02}$. Halving needs $4 \\times 10{,}000 = \\textbf{40{,}000}$ samples."
   },
   "independentExercise": {
     "prompt": "Estimate $E[U^2]$ ($U \\sim$ Uniform(0,1), true value $1/3$) from the two uniforms $u = 0.3$ and $u = 0.6$. (a) Compute the plain two-sample estimate. (b) Compute the antithetic estimate. (c) Which is closer to the truth, and what property of $f(u) = u^2$ makes antithetic pairing work here?",
@@ -97,11 +99,11 @@
       "Plain: average $u^2$ over the two draws.",
       "Antithetic: average $\\big(u^2 + (1-u)^2\\big)/2$ over the two draws."
     ],
-    "solution": "(a) Plain: $(0.09 + 0.36)/2 = 0.225$. (b) Antithetic: $\\big((0.09+0.49)/2 + (0.36+0.16)/2\\big)/2 = (0.29 + 0.26)/2 = 0.275$. (c) Antithetic (0.275) is closer to $0.3333$ than plain (0.225). It works because $u^2$ is **monotone** on $(0,1)$, so a draw and its complement hedge each other's deviation from the mean - the pair's variance (1/180) is far below the single-draw variance (4/45)."
+    "solution": "(a) Plain: $(0.09 + 0.36)/2 = 0.225$. (b) Antithetic: $\\big((0.09+0.49)/2 + (0.36+0.16)/2\\big)/2 = (0.29 + 0.26)/2 = 0.275$. (c) Antithetic (0.275) is closer to $0.3333$ than plain (0.225). It works because $u^2$ is **monotone** on $(0,1)$, so a draw and its complement hedge each other's deviation from the mean, the pair's variance (1/180) is far below the single-draw variance (4/45)."
   },
   "commonMistakes": [
     "Pushing events without a sequence tiebreaker, letting the heap compare incomparable payloads or reorder simultaneous events nondeterministically.",
-    "Executing an event's *consequences* inline instead of scheduling them through the queue - breaks the causal order.",
+    "Executing an event's *consequences* inline instead of scheduling them through the queue, breaks the causal order.",
     "Quoting a Monte Carlo estimate without its standard error.",
     "Assuming accuracy scales linearly: SE $\\propto 1/\\sqrt{N}$, so 10x accuracy needs 100x samples.",
     "Applying antithetic variates to non-monotone payoffs, where pairing can increase variance."
@@ -123,7 +125,7 @@
       "language": "python",
       "code": "import heapq\n\nevents = []\nfor t, seq, kind in [(2.0, 2, \"fill\"), (1.0, 0, \"tick\"), (1.5, 1, \"quote\")]:\n    heapq.heappush(events, (t, seq, kind))\n\nout = []\nwhile events:\n    t, seq, kind = heapq.heappop(events)\n    out.append(kind)\nprint(\" \".join(out))",
       "answer": "tick quote fill",
-      "explanation": "The heap orders by time: 1.0 tick, then 1.5 quote, then 2.0 fill - the simulation clock jumps event to event."
+      "explanation": "The heap orders by time: 1.0 tick, then 1.5 quote, then 2.0 fill, the simulation clock jumps event to event."
     },
     {
       "id": "q2",
@@ -178,8 +180,11 @@
         "Antithetic pairing always reduces variance, for any integrand",
         "Taking more samples removes model bias"
       ],
-      "answerIndices": [0, 1],
-      "explanation": "SE scales as $1/\\sqrt{N}$ and event loops run on priority queues. Antithetic pairing needs monotonicity, and bias comes from the model itself - more samples only shrink sampling error, never bias."
+      "answerIndices": [
+        0,
+        1
+      ],
+      "explanation": "SE scales as $1/\\sqrt{N}$ and event loops run on priority queues. Antithetic pairing needs monotonicity, and bias comes from the model itself, more samples only shrink sampling error, never bias."
     }
   ],
   "flashcards": [
@@ -195,28 +200,31 @@
     },
     {
       "type": "concept",
-      "front": "Antithetic variates - idea and precondition",
+      "front": "Antithetic variates: idea and precondition",
       "back": "Average f(u) with f(1-u): same mean, lower pair variance when f is monotone (e.g. Var((U^2+(1-U)^2)/2) = 1/180 vs Var(U^2) = 4/45). Non-monotone f can increase variance."
     },
     {
       "type": "code-output",
       "front": "What does the event heap print for times 2.0/1.0/1.5 with kinds fill/tick/quote?",
-      "back": "tick quote fill - the heap pops strictly in time order regardless of insertion order."
+      "back": "tick quote fill, the heap pops strictly in time order regardless of insertion order."
     }
   ],
   "references": [
     {
-      "label": "Wikipedia - Discrete-event simulation",
+      "label": "Wikipedia: Discrete-event simulation",
       "url": "https://en.wikipedia.org/wiki/Discrete-event_simulation"
     },
     {
-      "label": "Wikipedia - Monte Carlo method",
+      "label": "Wikipedia: Monte Carlo method",
       "url": "https://en.wikipedia.org/wiki/Monte_Carlo_method"
     },
     {
-      "label": "Wikipedia - Antithetic variates",
+      "label": "Wikipedia: Antithetic variates",
       "url": "https://en.wikipedia.org/wiki/Antithetic_variates"
     }
   ],
-  "skills": ["algorithms", "numerical-analysis"]
+  "skills": [
+    "algorithms",
+    "numerical-analysis"
+  ]
 }

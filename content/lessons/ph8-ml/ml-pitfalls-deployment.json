@@ -4,14 +4,16 @@
   "title": "Data Leakage, Concept Drift and Model Deployment",
   "estMinutes": 26,
   "difficulty": "advanced",
-  "prereqs": ["ml-trees-boosting"],
+  "prereqs": [
+    "ml-trees-boosting"
+  ],
   "objectives": [
     "Identify temporal, target and group leakage in a model pipeline and prescribe the fix for each",
     "Compute a Population Stability Index and apply the standard drift thresholds",
     "Distinguish covariate, prior and concept shift, and specify monitoring triggers for each",
-    "Describe a safe deployment pattern - shadow mode, staged rollout, rollback, monitoring - for a live model"
+    "Describe a safe deployment pattern, shadow mode, staged rollout, rollback, monitoring, for a live model"
   ],
-  "motivation": "Most real ML failures are not exotic algorithms failing to converge - they are mundane: a feature that quietly contains the answer, a world that changed after training, a deployment with no undo. This lesson is the operations layer of everything before it: the leaks to hunt before you trust a score, the drift to detect after you deploy, and the rollout pattern that lets a model fail safely.",
+  "motivation": "Most real ML failures are not exotic algorithms failing to converge, they are mundane: a feature that quietly contains the answer, a world that changed after training, a deployment with no undo. This lesson is the operations layer of everything before it: the leaks to hunt before you trust a score, the drift to detect after you deploy, and the rollout pattern that lets a model fail safely.",
   "blocks": [
     {
       "type": "h2",
@@ -19,14 +21,14 @@
     },
     {
       "type": "p",
-      "md": "**Leakage** is any information in training that will not exist at prediction time - the model scores brilliantly and lives a lie. Three flavours cover most incidents:"
+      "md": "**Leakage** is any information in training that will not exist at prediction time, the model scores brilliantly and lives a lie. Three flavours cover most incidents:"
     },
     {
       "type": "list",
       "ordered": false,
       "items": [
-        "**Temporal leakage**: features use information from after the prediction moment - 'tomorrow's volume rank' predicting tomorrow's return, or statistics (means, scalers, imputation values) computed on the *whole* dataset including the future. Fix: compute every derived quantity using only data at or before time $t$, and fit all transforms on training data only.",
-        "**Target leakage**: a feature is an accidental proxy of the label - 'days until earnings beat' obviously encodes the outcome; a 'cancelled' flag predicting churn is the label in disguise. Fix: ask of every feature, *is this knowable at prediction time, without the answer?*",
+        "**Temporal leakage**: features use information from after the prediction moment, 'tomorrow's volume rank' predicting tomorrow's return, or statistics (means, scalers, imputation values) computed on the *whole* dataset including the future. Fix: compute every derived quantity using only data at or before time $t$, and fit all transforms on training data only.",
+        "**Target leakage**: a feature is an accidental proxy of the label, 'days until earnings beat' obviously encodes the outcome; a 'cancelled' flag predicting churn is the label in disguise. Fix: ask of every feature, *is this knowable at prediction time, without the answer?*",
         "**Group leakage**: the same entity appears in train and test (same account, same issuer, same week) so the model recognises entities, not patterns. Fix: split **by entity/time block**, not by row."
       ]
     },
@@ -34,11 +36,11 @@
       "type": "callout",
       "variant": "pitfall",
       "title": "The classic scalar slip",
-      "md": "Standardising features with `scaler.fit(X)` on the full dataset before splitting is leakage even though no labels touched it: the scaler's mean and variance contain test-set information. The pipeline rule is absolute - **fit on train, apply to validation/test** - and the honest symptom of a fixed leak is that your metrics suddenly get worse. That worsening is the truth arriving."
+      "md": "Standardising features with `scaler.fit(X)` on the full dataset before splitting is leakage even though no labels touched it: the scaler's mean and variance contain test-set information. The pipeline rule is absolute, **fit on train, apply to validation/test**, and the honest symptom of a fixed leak is that your metrics suddenly get worse. That worsening is the truth arriving."
     },
     {
       "type": "p",
-      "md": "Leakage is sneaky because every individual step looks defensible: a scaler fit on all data, a feature derived from a timestamp, a split done row by row. The compounding defence is a **pipeline** - a single object that encapsulates every transform, is fit once on training data only, and is then applied unchanged to validation, test and live traffic. If your transforms live outside that object, in notebook cells run in a particular order, the leak is already there and no metric will reveal it."
+      "md": "Leakage is sneaky because every individual step looks defensible: a scaler fit on all data, a feature derived from a timestamp, a split done row by row. The compounding defence is a **pipeline**, a single object that encapsulates every transform, is fit once on training data only, and is then applied unchanged to validation, test and live traffic. If your transforms live outside that object, in notebook cells run in a particular order, the leak is already there and no metric will reveal it."
     },
     {
       "type": "h2",
@@ -46,20 +48,40 @@
     },
     {
       "type": "p",
-      "md": "A model is a frozen snapshot of a relationship. When the relationship moves, the model does not - and unlike leakage, nothing about the offline metrics will warn you, because the training data still says the old world is the world. Three distinct shifts matter, because they call for different fixes:"
+      "md": "A model is a frozen snapshot of a relationship. When the relationship moves, the model does not, and unlike leakage, nothing about the offline metrics will warn you, because the training data still says the old world is the world. Three distinct shifts matter, because they call for different fixes:"
     },
     {
       "type": "table",
-      "headers": ["Shift type", "What changed", "Detection", "Typical response"],
+      "headers": [
+        "Shift type",
+        "What changed",
+        "Detection",
+        "Typical response"
+      ],
       "rows": [
-        ["Covariate shift", "$P(x)$ - input distributions", "PSI / KS tests per feature", "retrain or re-weight features"],
-        ["Prior shift", "$P(y)$ - label balance", "monitor positive rates", "recalibrate thresholds"],
-        ["Concept shift", "$P(y \\mid x)$ - the mapping itself", "rolling error metrics vs baseline", "retrain with fresh labels; escalate"]
+        [
+          "Covariate shift",
+          "$P(x)$ - input distributions",
+          "PSI / KS tests per feature",
+          "retrain or re-weight features"
+        ],
+        [
+          "Prior shift",
+          "$P(y)$ - label balance",
+          "monitor positive rates",
+          "recalibrate thresholds"
+        ],
+        [
+          "Concept shift",
+          "$P(y \\mid x)$ - the mapping itself",
+          "rolling error metrics vs baseline",
+          "retrain with fresh labels; escalate"
+        ]
       ]
     },
     {
       "type": "p",
-      "md": "Concept shift is the dangerous one: inputs can look perfectly normal while the relationship they encode has quietly inverted - in markets, a regime change does exactly this. Since labels arrive late (did the trade actually win?), drift is monitored on two clocks: fast proxy signals (feature distributions, PSI) and slow truth (rolling error once labels land). The monitoring budget should reflect that asymmetry: feature dashboards can update hourly, but the error metric that actually certifies the model only moves at the pace of realised outcomes."
+      "md": "Concept shift is the dangerous one: inputs can look perfectly normal while the relationship they encode has quietly inverted, in markets, a regime change does exactly this. Since labels arrive late (did the trade actually win?), drift is monitored on two clocks: fast proxy signals (feature distributions, PSI) and slow truth (rolling error once labels land). The monitoring budget should reflect that asymmetry: feature dashboards can update hourly, but the error metric that actually certifies the model only moves at the pace of realised outcomes."
     },
     {
       "type": "h2",
@@ -98,17 +120,17 @@
     },
     {
       "type": "p",
-      "md": "Deployment failures are rarely exotic either: a model served from a different feature computation than training used (training-serving skew), a dependency upgrade that silently changed tokenisation, or a rollback path that was never rehearsed and fails under pressure. The checklist below is deliberately boring - boring is what production wants."
+      "md": "Deployment failures are rarely exotic either: a model served from a different feature computation than training used (training-serving skew), a dependency upgrade that silently changed tokenisation, or a rollback path that was never rehearsed and fails under pressure. The checklist below is deliberately boring, boring is what production wants."
     },
     {
       "type": "list",
       "ordered": true,
       "items": [
-        "**Shadow mode**: the new model runs live, produces predictions, and is compared against the incumbent - no decisions taken on its output yet.",
+        "**Shadow mode**: the new model runs live, produces predictions, and is compared against the incumbent, no decisions taken on its output yet.",
         "**Staged rollout**: route a small slice of traffic, compare on the slice, widen on evidence (an A/B comparison tested with the hypothesis-testing lesson's discipline, not by eyeballing a day of numbers).",
         "**Monitoring**: rolling error once labels arrive, PSI per feature, latency and failure rates, plus an alert threshold agreed *before* launch.",
         "**Rollback**: the previous model stays warm and reversible; the rollback path is tested before the new model ever serves a decision.",
-        "**Fallback policy**: what the system does when the model is down - usually the naive baseline (historical mean / incumbent rules), which is another reason benchmarks matter."
+        "**Fallback policy**: what the system does when the model is down, usually the naive baseline (historical mean / incumbent rules), which is another reason benchmarks matter."
       ]
     },
     {
@@ -125,7 +147,7 @@
       "type": "callout",
       "variant": "quant",
       "title": "Pre-launch checklist",
-      "md": "Before any model serves decisions: leakage audit done (every feature checked against prediction-time knowledge); time-aware validation reproduced end to end (seeded, versioned - the reproducibility lesson); drift monitors armed with thresholds; shadow comparison complete; rollback rehearsed. Five boxes, and the expensive failures this lesson opened with become rare."
+      "md": "Before any model serves decisions: leakage audit done (every feature checked against prediction-time knowledge); time-aware validation reproduced end to end (seeded, versioned, the reproducibility lesson); drift monitors armed with thresholds; shadow comparison complete; rollback rehearsed. Five boxes, and the expensive failures this lesson opened with become rare."
     }
   ],
   "guidedExercise": {
@@ -135,7 +157,7 @@
       "PSI terms: $(a_b - e_b)\\ln(a_b/e_b)$ for each bucket.",
       "$\\ln(0.5) \\approx -0.693$, $\\ln(1.75) \\approx 0.560$."
     ],
-    "solution": "(a) Temporal leakage: the full day's volume does not exist at prediction time, so the feature sees the future. Fix: rank on volume accumulated strictly before the prediction moment (or lag it a full period), and refit/re-validate the model with the corrected feature - expect the reported score to drop, honestly. (b) Bucket 1: $(-0.3)\\ln(0.5) = (-0.3)(-0.693) = 0.208$; bucket 2: $(0.3)\\ln(1.75) = 0.3 \\times 0.560 = 0.168$; PSI $\\approx 0.376$. Above $0.25$: a major shift - investigate and plan a retrain."
+    "solution": "(a) Temporal leakage: the full day's volume does not exist at prediction time, so the feature sees the future. Fix: rank on volume accumulated strictly before the prediction moment (or lag it a full period), and refit/re-validate the model with the corrected feature, expect the reported score to drop, honestly. (b) Bucket 1: $(-0.3)\\ln(0.5) = (-0.3)(-0.693) = 0.208$; bucket 2: $(0.3)\\ln(1.75) = 0.3 \\times 0.560 = 0.168$; PSI $\\approx 0.376$. Above $0.25$: a major shift, investigate and plan a retrain."
   },
   "independentExercise": {
     "prompt": "You inherit a churn model whose features include 'account_suspended' (a flag set only *after* a customer churns) and whose training/testing split randomly shuffled customers across both sets. (a) Name both defects and their types. (b) State the corrected split scheme. (c) After relaunch, feature-PSI over three buckets is expected $[0.4, 0.4, 0.2]$ vs actual $[0.3, 0.45, 0.25]$ - compute the PSI and classify it. (d) Write the one-line policy for when the PSI crosses $0.25$ twice in a week.",
@@ -144,15 +166,15 @@
       "Same customer in train and test is the other defect.",
       "PSI: $(a_b - e_b)\\ln(a_b/e_b)$; $\\ln(0.75) \\approx -0.288$, $\\ln(1.125) \\approx 0.118$, $\\ln(1.25) \\approx 0.223$."
     ],
-    "solution": "(a) Target leakage: the flag cannot exist before the outcome it predicts - it is the label in disguise; plus group leakage: the same customer appears in both train and test, so the model recognises people, not behaviour. (b) Split by customer (and ideally by time block): every customer's rows live entirely in one set, with training data strictly older than test data. (c) Terms: $(-0.1)\\ln(0.75) = 0.029$; $(0.05)\\ln(1.125) = 0.006$; $(0.05)\\ln(1.25) = 0.011$; PSI $\\approx 0.046$ - stable, no action. (d) Policy line: 'PSI $> 0.25$ on two consecutive weekly checks triggers an automatic retrain review and freezes new-feature deploys until diagnosed.'"
+    "solution": "(a) Target leakage: the flag cannot exist before the outcome it predicts, it is the label in disguise; plus group leakage: the same customer appears in both train and test, so the model recognises people, not behaviour. (b) Split by customer (and ideally by time block): every customer's rows live entirely in one set, with training data strictly older than test data. (c) Terms: $(-0.1)\\ln(0.75) = 0.029$; $(0.05)\\ln(1.125) = 0.006$; $(0.05)\\ln(1.25) = 0.011$; PSI $\\approx 0.046$ - stable, no action. (d) Policy line: 'PSI $> 0.25$ on two consecutive weekly checks triggers an automatic retrain review and freezes new-feature deploys until diagnosed.'"
   },
   "commonMistakes": [
-    "Fitting scalers, imputers or target encoders on the full dataset before splitting - pipeline leakage with no labels in sight.",
+    "Fitting scalers, imputers or target encoders on the full dataset before splitting, pipeline leakage with no labels in sight.",
     "Declaring victory over leakage and then distrusting the *worse* post-fix metrics; the drop is the correction working.",
     "Monitoring only feature distributions (covariate shift) and missing concept shift, where inputs look normal but the mapping has inverted.",
     "Deploying with no rehearsed rollback: the first bad model version then becomes a production incident instead of a routine revert."
   ],
-  "realWorldApplication": "Credit-scoring models run PSI monitors per feature weekly and shadow-test replacements before switching; recommendation systems stage rollouts on small traffic slices with automated rollback - identical patterns to the ones practised here.",
+  "realWorldApplication": "Credit-scoring models run PSI monitors per feature weekly and shadow-test replacements before switching; recommendation systems stage rollouts on small traffic slices with automated rollback, identical patterns to the ones practised here.",
   "quantFinanceApplication": "A production signal model lives under exactly these rules: features built only from prediction-time data, entity-and-time-aware validation, PSI-style drift monitors on feature and spread distributions, and a rollback path to the incumbent rules when a regime shift breaks the fit.",
   "summary": [
     "Leakage comes in temporal, target and group flavours; the universal test is 'would this value exist at prediction time?' and the universal fix is fit-on-train-only transforms plus entity/time-aware splits.",
@@ -166,13 +188,13 @@
       "type": "mcq",
       "prompt": "Standardising features with a scaler fit on the *entire* dataset before the train/test split is:",
       "options": [
-        "Good practice - it uses all available information",
+        "Good practice, it uses all available information",
         "Temporal leakage via test-set statistics entering training",
         "Acceptable because no labels are involved",
         "Only a problem for tree models"
       ],
       "answerIndex": 1,
-      "explanation": "The scaler's mean and variance encode test data, so training sees information from the evaluation period. Labels are irrelevant - the leak is in the inputs' statistics."
+      "explanation": "The scaler's mean and variance encode test data, so training sees information from the evaluation period. Labels are irrelevant, the leak is in the inputs' statistics."
     },
     {
       "id": "q2",
@@ -192,15 +214,24 @@
         "Using ridge regularisation on correlated features",
         "A feature that is a disguised copy of the label"
       ],
-      "answerIndices": [0, 1, 3],
+      "answerIndices": [
+        0,
+        1,
+        3
+      ],
       "explanation": "Temporal leakage, group leakage and target leakage are the three named defects; regularisation is a bias-variance control, not a leak."
     },
     {
       "id": "q4",
       "type": "short",
       "prompt": "What distinguishes concept shift from covariate shift, and why is the former more dangerous?",
-      "modelAnswer": "Covariate shift changes the distribution of inputs P(x) while the mapping stays valid; concept shift changes the mapping P(y|x) itself, so inputs can look perfectly normal while predictions are wrong - detection requires labels, which arrive late.",
-      "keywords": ["P(y|x)", "mapping", "inputs", "labels"],
+      "modelAnswer": "Covariate shift changes the distribution of inputs P(x) while the mapping stays valid; concept shift changes the mapping P(y|x) itself, so inputs can look perfectly normal while predictions are wrong, detection requires labels, which arrive late.",
+      "keywords": [
+        "P(y|x)",
+        "mapping",
+        "inputs",
+        "labels"
+      ],
       "explanation": "Feature-level monitors catch covariate shift cheaply; concept shift only shows up in outcome metrics, hence the two-clock monitoring design."
     },
     {
@@ -208,9 +239,9 @@
       "type": "mcq",
       "prompt": "Per the standard rule of thumb, a PSI of $0.37$ indicates:",
       "options": [
-        "Stable feature - no action",
-        "Watch zone - log and continue",
-        "Major shift - investigate and plan retraining",
+        "Stable feature, no action",
+        "Watch zone, log and continue",
+        "Major shift, investigate and plan retraining",
         "A bug in the PSI calculation, since PSI cannot exceed $0.25$"
       ],
       "answerIndex": 2,
@@ -230,7 +261,7 @@
     {
       "type": "definition",
       "front": "Data leakage",
-      "back": "Any information in training that will not exist at prediction time - temporal, target or group - producing inflated offline scores."
+      "back": "Any information in training that will not exist at prediction time, temporal, target or group, producing inflated offline scores."
     },
     {
       "type": "concept",
@@ -240,23 +271,25 @@
     {
       "type": "concept",
       "front": "Drift taxonomy",
-      "back": "Covariate shift: $P(x)$ moves. Prior shift: $P(y)$ moves. Concept shift: $P(y \\mid x)$ moves - the dangerous one, detectable only via late-arriving labels."
+      "back": "Covariate shift: $P(x)$ moves. Prior shift: $P(y)$ moves. Concept shift: $P(y \\mid x)$ moves, the dangerous one, detectable only via late-arriving labels."
     },
     {
       "type": "definition",
       "front": "Shadow mode",
-      "back": "New model runs live and is compared against the incumbent without any decisions using its output - the first stage of a safe rollout."
+      "back": "New model runs live and is compared against the incumbent without any decisions using its output, the first stage of a safe rollout."
     }
   ],
   "references": [
     {
-      "label": "scikit-learn - Pipelines and composite estimators (fit-on-train rule)",
+      "label": "scikit-learn: Pipelines and composite estimators (fit-on-train rule)",
       "url": "https://scikit-learn.org/stable/modules/compose.html"
     },
     {
-      "label": "Google ML best practices - production ML systems",
+      "label": "Google ML best practices: production ML systems",
       "url": "https://developers.google.com/machine-learning/rules-of-ml"
     }
   ],
-  "skills": ["machine-learning"]
+  "skills": [
+    "machine-learning"
+  ]
 }

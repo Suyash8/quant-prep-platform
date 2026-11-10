@@ -86,7 +86,7 @@ export function CompoundGrowth({ params }: { params: Record<string, unknown> }) 
   const toX = (t: number) => P + (t / (years || 1)) * (W - 2 * P);
   const toY = (v: number) => H - P - (v / (maxY || 1)) * (H - 2 * P);
   return (
-    <LabFrame title="Compound growth" caption={`After ${years} years: compound ${fmt(principal * Math.pow(1 + rate / freq, freq * years))} vs simple ${fmt(simple)} — compounding adds ${fmt(principal * Math.pow(1 + rate / freq, freq * years) - simple)}.`}>
+    <LabFrame title="Compound growth" caption={`After ${years} years: compound ${fmt(principal * Math.pow(1 + rate / freq, freq * years))} vs simple ${fmt(simple)}, compounding adds ${fmt(principal * Math.pow(1 + rate / freq, freq * years) - simple)}.`}>
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" role="img">
         <line x1={P} y1={toY(0)} x2={W - P} y2={toY(0)} stroke={FAINT} />
         <line x1={P} y1={toY(0)} x2={P} y2={toY(maxY)} stroke={FAINT} />
@@ -175,6 +175,8 @@ export function DerivativeLab({ params }: { params: Record<string, unknown> }) {
   const secant = h !== 0 ? (fp1 - fp) / h : NaN;
   const deriv = h !== 0 ? (f(point + h / 2) - f(point - h / 2)) / h : NaN;
   // tangent + secant lines
+
+
   const lineY = (x: number, x0: number, y0: number, slope: number) => y0 + slope * (x - x0);
   const segLine = (slope: number, color: string, dash?: string) => {
     const xa = xMin, xb = xMax;
@@ -217,6 +219,8 @@ export function IntegralLab({ params }: { params: Record<string, unknown> }) {
     const out: { x: number; y: number }[] = [];
     for (let i = 0; i < n; i++) {
       const x = a + i * dx + dx / 2; // midpoint rule (better behaved visually)
+
+
       out.push({ x: a + i * dx, y: f(x) });
     }
     return out;
@@ -224,6 +228,8 @@ export function IntegralLab({ params }: { params: Record<string, unknown> }) {
   const approx = bars.reduce((s, bar) => s + bar.y * dx, 0);
   const exact = (() => {
     // 2000-point Simpson as reference "exact"
+
+
     const N = 2000;
     const h2 = (b - a) / N;
     let s = f(a) + f(b);
@@ -241,7 +247,7 @@ export function IntegralLab({ params }: { params: Record<string, unknown> }) {
     return out.join(' ');
   })();
   return (
-    <LabFrame title={`Riemann sum of f(x) = ${expr} on [${a}, ${b}]`} caption={`${n} midpoint rectangles: ${fmt(approx, 5)}. Simpson reference: ${fmt(exact, 5)}. Error: ${fmt(Math.abs(approx - exact), 5)} — halve dx and the error falls roughly 4×.`}>
+    <LabFrame title={`Riemann sum of f(x) = ${expr} on [${a}, ${b}]`} caption={`${n} midpoint rectangles: ${fmt(approx, 5)}. Simpson reference: ${fmt(exact, 5)}. Error: ${fmt(Math.abs(approx - exact), 5)}, halve dx and the error falls roughly 4×.`}>
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto">
         <line x1={P} y1={toY(0)} x2={W - P} y2={toY(0)} stroke={FAINT} />
         {bars.map((bar, i) => {
@@ -272,6 +278,8 @@ export function TaylorLab({ params }: { params: Record<string, unknown> }) {
   const toX = (x: number) => P + ((x - xMin) / (xMax - xMin || 1)) * (W - 2 * P);
   const toY = (y: number) => H - P - ((y - ymin) / (ymax - ymin || 1)) * (H - 2 * P);
   // numeric derivatives at center
+
+
   const deriv = (k: number): number => {
     const h = Math.max(1e-4, 1e-3 * Math.max(1, Math.abs(center)));
     let s = 0;
@@ -300,7 +308,7 @@ export function TaylorLab({ params }: { params: Record<string, unknown> }) {
     return { fp: fp.join(' '), tp: tp.join(' ') };
   })();
   return (
-    <LabFrame title={`Taylor polynomial of ${expr} around x = ${center}`} caption={`Order ${order} polynomial (blue dashed) vs the true function. Increase the order — the approximation improves near the centre first.`}>
+    <LabFrame title={`Taylor polynomial of ${expr} around x = ${center}`} caption={`Order ${order} polynomial (blue dashed) vs the true function. Increase the order, the approximation improves near the centre first.`}>
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto">
         <line x1={P} y1={toY(0)} x2={W - P} y2={toY(0)} stroke={FAINT} />
         <line x1={toX(center)} y1={P} x2={toX(center)} y2={H - P} stroke={FAINT} strokeDasharray="3 3" />

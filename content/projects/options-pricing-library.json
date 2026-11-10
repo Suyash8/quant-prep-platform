@@ -15,8 +15,8 @@
     "py-cpp-interop",
     "cpp-benchmarking-profiling"
   ],
-  "context": "Every derivatives desk runs pricing code that must be simultaneously fast, accurate and auditable: the same book priced by a tree, a Monte Carlo and an analytic formula should agree — and when it does not, you need to know which one is lying. Desks also need implied volatility continuously: the market quotes prices, the risk system wants vols, and the conversion runs millions of times a day.\n\nThis project builds a compact pricing library in C++17 with the three canonical engines (Black-Scholes closed form, CRR binomial tree, Monte Carlo with variance reduction) plus a robust implied-vol solver, exposed to Python through a small C-compatible surface so the research stack can call it without bindings frameworks.",
-  "problem": "Build `optpricer`, a C++17 library with a shared-library Python-facing API:\n\n- **Black-Scholes**: European call/put prices with analytic Greeks (delta, gamma, vega, theta, rho); correct edge handling (T -> 0, deep ITM/OTM).\n- **CRR binomial tree**: European and American options (early-exercise check at each node); demonstrate convergence to Black-Scholes for Europeans as steps grow.\n- **Monte Carlo**: GBM paths with antithetic variates; report price with standard error; quantify the variance-reduction factor versus plain sampling.\n- **Implied volatility**: bisection (bracketed, robust) and Newton with vega as slope (with a flat-vega guard); consistent results within tolerance; sensible behaviour for prices outside the no-arbitrage bounds.\n- **Python access**: a small `extern \"C\"` API over doubles and a ctypes wrapper; the build documented so an import works after a standard build.\n- **Tests**: put-call parity, tree convergence, Monte Carlo within three standard errors of Black-Scholes, IV round-trip (price -> vol -> price).\n- **Benchmarks**: tree steps/sec, Monte Carlo paths/sec, Newton vs bisection iteration counts.",
+  "context": "Every derivatives desk runs pricing code that must be simultaneously fast, accurate and auditable: the same book priced by a tree, a Monte Carlo and an analytic formula should agree, and when it does not, you need to know which one is lying. Desks also need implied volatility continuously: the market quotes prices, the risk system wants vols, and the conversion runs millions of times a day.\n\nThis project builds a compact pricing library in C++17 with the three canonical engines (Black-Scholes closed form, CRR binomial tree, Monte Carlo with variance reduction) plus a solid implied-vol solver, exposed to Python through a small C-compatible surface so the research stack can call it without bindings frameworks.",
+  "problem": "Build `optpricer`, a C++17 library with a shared-library Python-facing API:\n\n- **Black-Scholes**: European call/put prices with analytic Greeks (delta, gamma, vega, theta, rho); correct edge handling (T -> 0, deep ITM/OTM).\n- **CRR binomial tree**: European and American options (early-exercise check at each node); demonstrate convergence to Black-Scholes for Europeans as steps grow.\n- **Monte Carlo**: GBM paths with antithetic variates; report price with standard error; quantify the variance-reduction factor versus plain sampling.\n- **Implied volatility**: bisection (bracketed, solid) and Newton with vega as slope (with a flat-vega guard); consistent results within tolerance; sensible behaviour for prices outside the no-arbitrage bounds.\n- **Python access**: a small `extern \"C\"` API over doubles and a ctypes wrapper; the build documented so an import works after a standard build.\n- **Tests**: put-call parity, tree convergence, Monte Carlo within three standard errors of Black-Scholes, IV round-trip (price -> vol -> price).\n- **Benchmarks**: tree steps/sec, Monte Carlo paths/sec, Newton vs bisection iteration counts.",
   "requirements": [
     "C++17 library with a clean core (pure functions, no global state); a shared-library target exposing an `extern \"C\"` API using only C types (doubles, plain structs).",
     "BSM: call/put prices and all five first-order Greeks analytic; precision within 1e-10 of reference values on a published test vector; documented edge behaviour at T=0 and sigma -> 0 (intrinsic/discounted values).",
@@ -71,14 +71,14 @@
     {
       "type": "code",
       "lang": "cpp",
-      "code": "// Standard normal pdf/cdf: use std::erf — do not hand-roll polynomial\n// approximations when the standard library gives you full double precision.\nconstexpr double kInvSqrt2Pi = 0.39894228040143267794;\n\ninline double normPdf(double x) { return kInvSqrt2Pi * std::exp(-0.5 * x * x); }\ninline double normCdf(double x) { return 0.5 * (1.0 + std::erf(x / std::sqrt(2.0))); }",
+      "code": "// Standard normal pdf/cdf: use std::erf, do not hand-roll polynomial\n// approximations when the standard library gives you full double precision.\nconstexpr double kInvSqrt2Pi = 0.39894228040143267794;\n\ninline double normPdf(double x) { return kInvSqrt2Pi * std::exp(-0.5 * x * x); }\ninline double normCdf(double x) { return 0.5 * (1.0 + std::erf(x / std::sqrt(2.0))); }",
       "caption": "The only two functions you should not write yourself"
     },
     {
       "type": "callout",
       "variant": "warn",
       "title": "Implied vol has a domain",
-      "md": "A call price must lie between the discounted intrinsic $(S_0 - Ke^{-rT})^+$ and $S_0$. Outside that band no sigma exists; inside it, price is strictly increasing in sigma, which is what makes bisection safe and gives Newton its slope (vega). Guard vega near expiries — $\\sigma\\sqrt{T} \\to 0$ makes d1/d2 blow up; clamp or special-case $T \\approx 0$."
+      "md": "A call price must lie between the discounted intrinsic $(S_0 - Ke^{-rT})^+$ and $S_0$. Outside that band no sigma exists; inside it, price is strictly increasing in sigma, which is what makes bisection safe and gives Newton its slope (vega). Guard vega near expiries, $\\sigma\\sqrt{T} \\to 0$ makes d1/d2 blow up; clamp or special-case $T \\approx 0$."
     },
     {
       "type": "table",
@@ -122,7 +122,7 @@
         "Bracket: sigma_lo = 1e-4, sigma_hi = 5.0; check the target price lies between the bracket prices (monotone increasing in sigma).",
         "Evaluate the price at the midpoint; compare against the target with tolerance.",
         "Narrow the bracket by monotonicity; stop when the price residual or the sigma interval is below tolerance.",
-        "Newton refinement (optional): sigma_new = sigma - (price(sigma) - target)/vega(sigma), with a |vega| > 1e-8 guard and an iteration cap; fall back to the bisection result on divergence."
+        "Newton refinement (optional): sigma_new = sigma, (price(sigma), target)/vega(sigma), with a |vega| > 1e-8 guard and an iteration cap; fall back to the bisection result on divergence."
       ]
     },
     {
@@ -133,7 +133,7 @@
       "type": "list",
       "ordered": false,
       "items": [
-        "Expose plain functions over doubles/POD structs — no C++ types, no exceptions across the boundary, no allocations owned by callers.",
+        "Expose plain functions over doubles/POD structs, no C++ types, no exceptions across the boundary, no allocations owned by callers.",
         "One struct per argument bundle keeps signatures stable as the API grows; ctypes mirrors the struct exactly (field order = memory layout).",
         "Version the ABI minimally: an `optpricer_version()` function costs nothing and saves hours of 'which build is loaded?' debugging.",
         "Document the build once, precisely: configure, build, and where the .so/.dylib/.dll lands relative to the Python package."
@@ -143,19 +143,19 @@
   "starterFiles": [
     {
       "path": "include/opt/bs.hpp",
-      "content": "#pragma once\n// Black-Scholes core (zero dividend yield). Assumes T > 0 and vol > 0 —\n// TODO(project): add edge handling for T -> 0 and sigma -> 0 per the brief.\n#include <cmath>\n\nnamespace opt {\n\nconstexpr double kInvSqrt2Pi = 0.39894228040143267794;\nconstexpr double kSqrt2 = 1.41421356237309504880;\n\nstruct BsmInputs {\n    double spot;      // S\n    double strike;    // K\n    double rate;      // r, continuously compounded\n    double vol;       // sigma\n    double maturity;  // T in years\n};\n\ninline double normPdf(double x) { return kInvSqrt2Pi * std::exp(-0.5 * x * x); }\ninline double normCdf(double x) { return 0.5 * (1.0 + std::erf(x / kSqrt2)); }\n\ninline double d1(const BsmInputs& i) {\n    return (std::log(i.spot / i.strike) + (i.rate + 0.5 * i.vol * i.vol) * i.maturity)\n         / (i.vol * std::sqrt(i.maturity));\n}\ninline double d2(const BsmInputs& i) { return d1(i) - i.vol * std::sqrt(i.maturity); }\n\ninline double callPrice(const BsmInputs& i) {\n    const double df = std::exp(-i.rate * i.maturity);\n    return i.spot * normCdf(d1(i)) - i.strike * df * normCdf(d2(i));\n}\n\ninline double callDelta(const BsmInputs& i) { return normCdf(d1(i)); }\n\n// TODO(project): putPrice via parity; gamma/vega/theta/rho; American via CRR.\n\n}  // namespace opt\n"
+      "content": "#pragma once\n// Black-Scholes core (zero dividend yield). Assumes T > 0 and vol > 0, // TODO(project): add edge handling for T -> 0 and sigma -> 0 per the brief.\n#include <cmath>\n\nnamespace opt {\n\nconstexpr double kInvSqrt2Pi = 0.39894228040143267794;\nconstexpr double kSqrt2 = 1.41421356237309504880;\n\nstruct BsmInputs {\n double spot; // S\n double strike; // K\n double rate; // r, continuously compounded\n double vol; // sigma\n double maturity; // T in years\n};\n\ninline double normPdf(double x) { return kInvSqrt2Pi * std::exp(-0.5 * x * x); }\ninline double normCdf(double x) { return 0.5 * (1.0 + std::erf(x / kSqrt2)); }\n\ninline double d1(const BsmInputs& i) {\n return (std::log(i.spot / i.strike) + (i.rate + 0.5 * i.vol * i.vol) * i.maturity)\n / (i.vol * std::sqrt(i.maturity));\n}\ninline double d2(const BsmInputs& i) { return d1(i), i.vol * std::sqrt(i.maturity); }\n\ninline double callPrice(const BsmInputs& i) {\n const double df = std::exp(-i.rate * i.maturity);\n return i.spot * normCdf(d1(i)), i.strike * df * normCdf(d2(i));\n}\n\ninline double callDelta(const BsmInputs& i) { return normCdf(d1(i)); }\n\n// TODO(project): putPrice via parity; gamma/vega/theta/rho; American via CRR.\n\n} // namespace opt\n"
     },
     {
       "path": "include/opt/c_api.hpp",
-      "content": "#pragma once\n// C-compatible surface: only C types cross the boundary. Struct layout must\n// match the ctypes.Structure field order in python/optpricer/_bs.py.\n#include \"opt/bs.hpp\"\n\nextern \"C\" {\n\ntypedef struct {\n    double spot;\n    double strike;\n    double rate;\n    double vol;\n    double maturity;\n} BsmArgs;\n\n// TODO(project): bsm_put_price, bsm_greeks, crr_price, mc_price, implied_vol.\n\ndouble optpricer_version();   // build id; aids ABI debugging\n\n}  // extern \"C\"\n"
+      "content": "#pragma once\n// C-compatible surface: only C types cross the boundary. Struct layout must\n// match the ctypes.Structure field order in python/optpricer/_bs.py.\n#include \"opt/bs.hpp\"\n\nextern \"C\" {\n\ntypedef struct {\n double spot;\n double strike;\n double rate;\n double vol;\n double maturity;\n} BsmArgs;\n\n// TODO(project): bsm_put_price, bsm_greeks, crr_price, mc_price, implied_vol.\n\ndouble optpricer_version(); // build id; aids ABI debugging\n\n} // extern \"C\"\n"
     },
     {
       "path": "python/optpricer/_bs.py",
-      "content": "\"\"\"ctypes binding for the optpricer shared library.\n\nBuild first (from the project root):\n    cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build\nThen, with python/ on sys.path:\n    from optpricer._bs import bsm_call_price\n\"\"\"\n\nimport ctypes\nimport sys\nfrom pathlib import Path\n\n_LIB_NAMES = {\n    \"linux\": \"liboptpricer.so\",\n    \"darwin\": \"liboptpricer.dylib\",\n    \"win32\": \"optpricer.dll\",\n}\n\n\ndef _load():\n    root = Path(__file__).resolve().parents[2]\n    path = root / \"build\" / _LIB_NAMES[sys.platform]\n    if not path.exists():\n        raise FileNotFoundError(\n            f\"{path} not found - build the shared library first (see module docstring)\"\n        )\n    return ctypes.CDLL(str(path))\n\n\n_lib = _load()\n\n\nclass BsmArgs(ctypes.Structure):\n    # Field order must match the C struct in include/opt/c_api.hpp.\n    _fields_ = [\n        (\"spot\", ctypes.c_double),\n        (\"strike\", ctypes.c_double),\n        (\"rate\", ctypes.c_double),\n        (\"vol\", ctypes.c_double),\n        (\"maturity\", ctypes.c_double),\n    ]\n\n\n_lib.bsm_call_price.argtypes = [BsmArgs]\n_lib.bsm_call_price.restype = ctypes.c_double\n\n\ndef bsm_call_price(spot, strike, rate, vol, maturity):\n    \"\"\"European call price under Black-Scholes (zero dividend yield).\"\"\"\n    return _lib.bsm_call_price(BsmArgs(spot, strike, rate, vol, maturity))\n"
+      "content": "\"\"\"ctypes binding for the optpricer shared library.\n\nBuild first (from the project root):\n cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build\nThen, with python/ on sys.path:\n from optpricer._bs import bsm_call_price\n\"\"\"\n\nimport ctypes\nimport sys\nfrom pathlib import Path\n\n_LIB_NAMES = {\n \"linux\": \"liboptpricer.so\",\n \"darwin\": \"liboptpricer.dylib\",\n \"win32\": \"optpricer.dll\",\n}\n\n\ndef _load():\n root = Path(__file__).resolve().parents[2]\n path = root / \"build\" / _LIB_NAMES[sys.platform]\n if not path.exists():\n raise FileNotFoundError(\n f\"{path} not found, build the shared library first (see module docstring)\"\n )\n return ctypes.CDLL(str(path))\n\n\n_lib = _load()\n\n\nclass BsmArgs(ctypes.Structure):\n # Field order must match the C struct in include/opt/c_api.hpp.\n _fields_ = [\n (\"spot\", ctypes.c_double),\n (\"strike\", ctypes.c_double),\n (\"rate\", ctypes.c_double),\n (\"vol\", ctypes.c_double),\n (\"maturity\", ctypes.c_double),\n ]\n\n\n_lib.bsm_call_price.argtypes = [BsmArgs]\n_lib.bsm_call_price.restype = ctypes.c_double\n\n\ndef bsm_call_price(spot, strike, rate, vol, maturity):\n \"\"\"European call price under Black-Scholes (zero dividend yield).\"\"\"\n return _lib.bsm_call_price(BsmArgs(spot, strike, rate, vol, maturity))\n"
     },
     {
       "path": "CMakeLists.txt",
-      "content": "# optpricer build sketch. Produces build/liboptpricer.so on Linux, which the\n# ctypes wrapper python/optpricer/_bs.py expects.\ncmake_minimum_required(VERSION 3.16)\nproject(optpricer CXX)\n\nset(CMAKE_CXX_STANDARD 17)\nset(CMAKE_CXX_STANDARD_REQUIRED ON)\n\nadd_library(optpricer SHARED\n  src/c_api.cpp\n  # TODO(project): add src/mc.cpp, src/tree.cpp, src/implied_vol.cpp\n)\ntarget_include_directories(optpricer PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)\ntarget_compile_options(optpricer PRIVATE -Wall -Wextra -O2)\n"
+      "content": "# optpricer build sketch. Produces build/liboptpricer.so on Linux, which the\n# ctypes wrapper python/optpricer/_bs.py expects.\ncmake_minimum_required(VERSION 3.16)\nproject(optpricer CXX)\n\nset(CMAKE_CXX_STANDARD 17)\nset(CMAKE_CXX_STANDARD_REQUIRED ON)\n\nadd_library(optpricer SHARED\n src/c_api.cpp\n # TODO(project): add src/mc.cpp, src/tree.cpp, src/implied_vol.cpp\n)\ntarget_include_directories(optpricer PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)\ntarget_compile_options(optpricer PRIVATE -Wall -Wextra -O2)\n"
     }
   ],
   "evaluationCriteria": [
@@ -164,7 +164,7 @@
       "weight": 30
     },
     {
-      "criterion": "Numerical robustness: edge cases, solver guards, no-arbitrage domain checks",
+      "criterion": "Numerical reliability: edge cases, solver guards, no-arbitrage domain checks",
       "weight": 15
     },
     {
@@ -193,6 +193,6 @@
   "extensionChallenges": [
     "Add a control variate (European Black-Scholes as control) to the Monte Carlo engine and measure the additional variance reduction on OTM options.",
     "Add the Trigeorgis parameterisation to the tree and compare convergence stability against CRR for near-ATM options.",
-    "Wrap implied-vol + Newton into a bulk API over arrays of quotes and benchmark it against per-call overhead — the classic reason desks batch pricing calls."
+    "Wrap implied-vol + Newton into a bulk API over arrays of quotes and benchmark it against per-call overhead, the classic reason desks batch pricing calls."
   ]
 }

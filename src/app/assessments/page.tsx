@@ -9,7 +9,7 @@ import {
   ListChecks, MessagesSquare, RotateCcw, Server, Sigma, Sparkles, Trophy, Coins,
 } from 'lucide-react';
 
-export const metadata = { title: 'Assessment Centre — QuantFoundry' };
+export const metadata = { title: 'Assessment Centre. QuantFoundry' };
 
 /** per-topic icons so the wall of cards gets real variety */
 const TOPIC_ICON: { match: RegExp; icon: React.ComponentType<{ className?: string; strokeWidth?: number }>; tile: string }[] = [
@@ -36,7 +36,7 @@ const KIND_META: Record<string, {
   diagnostic: {
     label: 'Diagnostic',
     icon: BookOpenCheck,
-    desc: 'Baseline mapping across all seven areas — start here.',
+    desc: 'Baseline mapping across all seven areas, start here.',
     tile: 'icon-tile-info',
   },
   assessment: {
@@ -69,7 +69,7 @@ export default async function AssessmentsPage() {
 
   const completedCount = bestById.size;
   const bestOverall = attempts.length ? Math.max(...attempts.map(a => a.scorePct)) : null;
-  const bestDisplay = bestOverall === null ? '—' : Math.round(bestOverall) + '%';
+  const bestDisplay = bestOverall === null ? ', ' : Math.round(bestOverall) + '%';
 
   const statDelays = ['0ms', '80ms', '160ms'];
 
@@ -144,11 +144,15 @@ export default async function AssessmentsPage() {
                   </div>
                   <p className="mt-2.5 text-sm font-medium text-muted line-clamp-2">{meta.desc}</p>
                   <div className="flex-1" />
-                  {attempted && (
-                    <div className="prog-track mt-3.5 h-2.5">
-                      <div className="prog-fill" style={{ width: bestPct + '%' }} />
+                  <div className="mt-3.5">
+                    <div className="flex items-center justify-between text-[11px] font-black uppercase tracking-wider mb-1.5">
+                      <span className="text-faint">{attempted ? (passed ? 'Best score' : 'Best so far') : 'Progress'}</span>
+                      <span className={'tnum ' + (!attempted ? 'text-faint' : passed ? 'text-accent-deep dark:text-accent' : 'text-warning-strong dark:text-warning')}>{attempted ? bestPct + '%' : '0%'}</span>
                     </div>
-                  )}
+                    <div className="prog-track h-2.5">
+                      <div className={passed ? 'prog-fill' : 'prog-fill prog-fill-gold'} style={{ width: bestPct + '%' }} />
+                    </div>
+                  </div>
                   <div className="mt-4 flex items-center justify-between gap-3">
                     <span className={statusChipCls}>{!attempted ? 'not started' : passed ? 'passed' : 'in progress'}</span>
                     <Link href={`/assessments/${a.id}`} className="btn3d btn3d-sm ml-auto">
@@ -173,22 +177,27 @@ export default async function AssessmentsPage() {
                 <span className="empty-emoji" role="img" aria-label="open mailbox">📭</span>
                 <p className="text-lg font-extrabold">No attempts yet</p>
                 <p className="mx-auto mt-1 max-w-md text-sm font-semibold text-muted">
-                  Start with the diagnostic — it maps your strongest and weakest areas in one sitting.
+                  Start with the diagnostic, it maps your strongest and weakest areas in one sitting.
                 </p>
               </div>
             ) : (
               <ul className="divide-y-2 divide-border">
                 {attempts.map(a => {
                   const passed = a.scorePct >= 70;
+                  const title = assessments.find(x => x.id === a.assessmentId)?.title
+                    ?? a.assessmentId.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
                   return (
                     <li key={a.id} className="flex items-center gap-3 px-1 py-2.5 sm:px-2">
                       <span className={'icon-tile-sm ' + (passed ? 'icon-tile-accent' : 'icon-tile-warning')}>
                         <ClipboardList strokeWidth={2.5} />
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-bold capitalize">{a.assessmentId.replace(/-/g, ' ')}</span>
+                        <span className="block truncate text-sm font-bold">{title}</span>
                         <span className="block text-xs font-semibold text-faint tnum">
-                          {a.submittedAt ? new Date(a.submittedAt).toLocaleString() : ''}
+                          {a.submittedAt
+                            ? new Date(a.submittedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+                              + ' · ' + new Date(a.submittedAt).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+                            : ''}
                         </span>
                       </span>
                       <span className={'chip tnum ' + (passed ? 'chip-success' : 'chip-warning')}>{Math.round(a.scorePct)}%</span>

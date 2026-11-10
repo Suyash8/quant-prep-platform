@@ -2,7 +2,7 @@
 """Generate problems 5-7: rolling-max-window, median-of-two-sorted, implied-vol-bisection."""
 import json, os, math
 
-OUT = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../content/problems'))
+OUT = "/home/z/my-project/content/problems"
 os.makedirs(OUT, exist_ok=True)
 
 def p(md): return {"type": "p", "md": md}

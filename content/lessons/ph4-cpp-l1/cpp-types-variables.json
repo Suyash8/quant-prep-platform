@@ -4,14 +4,16 @@
   "title": "Primitive Types, Variables and Conversions",
   "estMinutes": 25,
   "difficulty": "foundation",
-  "prereqs": ["cpp-compilation-model"],
+  "prereqs": [
+    "cpp-compilation-model"
+  ],
   "objectives": [
     "Choose the right primitive type (bool, char, int, long long, double) for a given quantity and state its typical size and range",
     "Predict the result of implicit conversions in mixed arithmetic, including integer division and truncation toward zero",
     "Explain signed overflow as undefined behaviour and unsigned wraparound as modulo arithmetic",
     "Justify representing money as integer cents rather than binary floating point, and demonstrate the discrepancy"
   ],
-  "motivation": "A price ticket says \\$42.17 and a fill quantity is 250 - but which C++ type holds each, and what silently changes when you mix them? Type mistakes in finance are not cosmetic: integer division can zero out a PnL, a double cannot represent most decimal prices exactly, and overflowing a 32-bit position counter corrupts risk data. This lesson builds the conversion and overflow instincts that keep numbers honest.",
+  "motivation": "A price ticket says \\$42.17 and a fill quantity is 250, but which C++ type holds each, and what silently changes when you mix them? Type mistakes in finance are not cosmetic: integer division can zero out a PnL, a double cannot represent most decimal prices exactly, and overflowing a 32-bit position counter corrupts risk data. This lesson builds the conversion and overflow instincts that keep numbers honest.",
   "blocks": [
     {
       "type": "h2",
@@ -19,18 +21,53 @@
     },
     {
       "type": "p",
-      "md": "C++ offers a small family of built-in types, and on mainstream 64-bit platforms their sizes are stable enough to memorise. **bool** (1 byte) holds true or false. **char** (1 byte) holds one character code such as 'B'. **int** (4 bytes) is the default integer: it stores $2^{32}$ values split around zero, so it spans $-2^{31}$ to $2^{31}-1$, i.e. -2,147,483,648 through 2,147,483,647 - about ±2.1 billion. **long long** (8 bytes) reaches roughly ±$9.2\\times10^{18}$ and is the workhorse for money-in-cents and large share counts. **double** (8 bytes) is 64-bit IEEE-754 binary floating point with about 15-17 significant decimal digits; it is the default for model math such as square roots and exponentials. **float** (4 bytes) trades precision for cache footprint - useful in huge numeric arrays, risky for money."
+      "md": "C++ offers a small family of built-in types, and on mainstream 64-bit platforms their sizes are stable enough to memorise. **bool** (1 byte) holds true or false. **char** (1 byte) holds one character code such as 'B'. **int** (4 bytes) is the default integer: it stores $2^{32}$ values split around zero, so it spans $-2^{31}$ to $2^{31}-1$, i.e. -2,147,483,648 through 2,147,483,647, about ±2.1 billion. **long long** (8 bytes) reaches roughly ±$9.2\\times10^{18}$ and is the workhorse for money-in-cents and large share counts. **double** (8 bytes) is 64-bit IEEE-754 binary floating point with about 15-17 significant decimal digits; it is the default for model math such as square roots and exponentials. **float** (4 bytes) trades precision for cache footprint, useful in huge numeric arrays, risky for money."
     },
     {
       "type": "table",
-      "headers": ["Type", "Typical size", "Typical range", "Use it for"],
+      "headers": [
+        "Type",
+        "Typical size",
+        "Typical range",
+        "Use it for"
+      ],
       "rows": [
-        ["bool", "1 byte", "true / false", "flags: filled, isLive"],
-        ["char", "1 byte", "one character code", "order side 'B' / 'S'"],
-        ["int", "4 bytes", "-2,147,483,648 .. 2,147,483,647", "counts, small quantities"],
-        ["long long", "8 bytes", "about ±9.2 × 10^18", "money in cents, big totals"],
-        ["float", "4 bytes", "~7 decimal digits", "large numeric arrays"],
-        ["double", "8 bytes", "~15-17 significant digits", "prices, returns, model parameters"]
+        [
+          "bool",
+          "1 byte",
+          "true / false",
+          "flags: filled, isLive"
+        ],
+        [
+          "char",
+          "1 byte",
+          "one character code",
+          "order side 'B' / 'S'"
+        ],
+        [
+          "int",
+          "4 bytes",
+          "-2,147,483,648 .. 2,147,483,647",
+          "counts, small quantities"
+        ],
+        [
+          "long long",
+          "8 bytes",
+          "about ±9.2 × 10^18",
+          "money in cents, big totals"
+        ],
+        [
+          "float",
+          "4 bytes",
+          "~7 decimal digits",
+          "large numeric arrays"
+        ],
+        [
+          "double",
+          "8 bytes",
+          "~15-17 significant digits",
+          "prices, returns, model parameters"
+        ]
       ]
     },
     {
@@ -68,7 +105,7 @@
     },
     {
       "type": "p",
-      "md": "When you mix types, C++ converts *before* it computes, and you must be able to predict it. In arithmetic between an int and a double, the int is promoted to double first. But an assignment converts the result to the *variable's* type: `int x = 3.9;` stores 3 - fractional parts are **truncated toward zero**, never rounded. Integer division follows the same rule: $7/2$ is 3 because both operands are ints, and you only get 3.5 by forcing one operand to double, e.g. `static_cast<double>(7) / 2`. Widening conversions (int to long long, char to int) are always safe; narrowing ones (double to int, long long to int, int to char) can silently drop data - which is precisely what brace initialisation refuses to do."
+      "md": "When you mix types, C++ converts *before* it computes, and you must be able to predict it. In arithmetic between an int and a double, the int is promoted to double first. But an assignment converts the result to the *variable's* type: `int x = 3.9;` stores 3, fractional parts are **truncated toward zero**, never rounded. Integer division follows the same rule: $7/2$ is 3 because both operands are ints, and you only get 3.5 by forcing one operand to double, e.g. `static_cast<double>(7) / 2`. Widening conversions (int to long long, char to int) are always safe; narrowing ones (double to int, long long to int, int to char) can silently drop data, which is precisely what brace initialisation refuses to do."
     },
     {
       "type": "code",
@@ -88,7 +125,7 @@
     },
     {
       "type": "p",
-      "md": "Every integer type has a hard boundary, and what happens past it depends on signedness. For **unsigned** integers the standard defines wraparound: arithmetic is modulo $2^N$, so `unsigned u = 0; --u;` yields 4,294,967,295 - great for bit manipulation, notorious for `for (unsigned i = n; i >= 0; --i)` loops that can never end because an unsigned value is never negative. For **signed** integers, overflow is **undefined behaviour**: the standard imposes no result at all - the compiler may wrap, may assume it cannot happen and optimise accordingly, and sanitizers may abort. `int big = 2147483647; big = big + 1;` therefore has no defined value. The practical rule: choose a type whose range you cannot exceed (long long for money-in-cents), and let `-Wall -Wextra` police the conversions you did not intend."
+      "md": "Every integer type has a hard boundary, and what happens past it depends on signedness. For **unsigned** integers the standard defines wraparound: arithmetic is modulo $2^N$, so `unsigned u = 0; --u;` yields 4,294,967,295, great for bit manipulation, notorious for `for (unsigned i = n; i >= 0; --i)` loops that can never end because an unsigned value is never negative. For **signed** integers, overflow is **undefined behaviour**: the standard imposes no result at all, the compiler may wrap, may assume it cannot happen and optimise accordingly, and sanitizers may abort. `int big = 2147483647; big = big + 1;` therefore has no defined value. The practical rule: choose a type whose range you cannot exceed (long long for money-in-cents), and let `-Wall -Wextra` police the conversions you did not intend."
     },
     {
       "type": "h2",
@@ -96,7 +133,7 @@
     },
     {
       "type": "p",
-      "md": "Doubles represent *binary* fractions, and most decimal prices are not binary fractions: \\$42.17 stores as 42.1700000000000017..., and \\$0.10 + \\$0.20 evaluates to 0.30000000000000004 at 17 digits. Add \\$0.10 to a running total 100 times and you arrive at 9.9999999999999805, not 10. For research math and display this noise is tolerable; for settlement, position limits and PnL reconciliation it is not. The classic production fix: store money as **long long cents** - 4217, not 42.17 - where every quantity is exact, and convert to double only at the presentation or model boundary. Doubles remain the right tool for returns, volatilities and model parameters, where values are approximations by nature."
+      "md": "Doubles represent *binary* fractions, and most decimal prices are not binary fractions: \\$42.17 stores as 42.1700000000000017..., and \\$0.10 + \\$0.20 evaluates to 0.30000000000000004 at 17 digits. Add \\$0.10 to a running total 100 times and you arrive at 9.9999999999999805, not 10. For research math and display this noise is tolerable; for settlement, position limits and PnL reconciliation it is not. The classic production fix: store money as **long long cents**, 4217, not 42.17, where every quantity is exact, and convert to double only at the presentation or model boundary. Doubles remain the right tool for returns, volatilities and model parameters, where values are approximations by nature."
     },
     {
       "type": "callout",
@@ -112,20 +149,20 @@
       "The conversion to double happens *after* the int division, not before.",
       "Truncation is toward zero: -2.25 loses its fraction, not its sign."
     ],
-    "solution": "(1) **2** - integer division discards the remainder ($9/4 = 2.25 \\to 2$).\n(2) **-2** - truncation is toward zero ($-2.25 \\to -2$), *not* floor ($-3$).\n(3) **2** - the division happened in int first; converting the already-truncated 2 to double changes nothing.\n(4) **2.25** - casting one operand to double forces real division before the division occurs."
+    "solution": "(1) **2**, integer division discards the remainder ($9/4 = 2.25 \\to 2$).\n(2) **-2**, truncation is toward zero ($-2.25 \\to -2$), *not* floor ($-3$).\n(3) **2**, the division happened in int first; converting the already-truncated 2 to double changes nothing.\n(4) **2.25**, casting one operand to double forces real division before the division occurs."
   },
   "independentExercise": {
     "prompt": "A desk stores prices in integer cents. Today it bought 250 shares at 4217 cents (\\$42.17) and sold all 250 at 4305 cents (\\$43.05). Commission is 1 cent per share per side. Using **only long long arithmetic**, compute gross PnL in cents, total commission, and net PnL in cents; then express net PnL in dollars and cents. Finally, state what the double computation `43.05 - 42.17` yields at 17 significant digits, and say why the integer path is safer.",
     "hints": [
-      "Gross per share: 4305 - 4217 = 88 cents, times 250 shares.",
+      "Gross per share: 4305, 4217 = 88 cents, times 250 shares.",
       "Commission: 250 shares × 2 sides × 1 cent.",
-      "0.88 is not a binary fraction - check the subtraction with std::setprecision(17)."
+      "0.88 is not a binary fraction, check the subtraction with std::setprecision(17)."
     ],
-    "solution": "Gross PnL $= (4305 - 4217) \\times 250 = 88 \\times 250 = 22{,}000$ cents = \\$220.00. Commission $= 250 \\times 2 = 500$ cents = \\$5.00. Net $= 22{,}000 - 500 = 21{,}500$ cents = **\\$215.00**. In double, `43.05 - 42.17` gives **0.87999999999999545** at 17 digits - close, but the integer path is *exactly* 88 cents with zero error, which is what a settlement system requires."
+    "solution": "Gross PnL $= (4305 - 4217) \\times 250 = 88 \\times 250 = 22{,}000$ cents = \\$220.00. Commission $= 250 \\times 2 = 500$ cents = \\$5.00. Net $= 22{,}000 - 500 = 21{,}500$ cents = **\\$215.00**. In double, `43.05 - 42.17` gives **0.87999999999999545** at 17 digits, close, but the integer path is *exactly* 88 cents with zero error, which is what a settlement system requires."
   },
   "commonMistakes": [
     "Computing an average in int and converting afterwards: (a + b) / 2 truncates before it ever becomes a double.",
-    "Assuming signed overflow wraps like unsigned - signed overflow is undefined behaviour, not modulo arithmetic.",
+    "Assuming signed overflow wraps like unsigned, signed overflow is undefined behaviour, not modulo arithmetic.",
     "Rounding instead of truncating: int x = 3.9 stores 3, and -7 / 2 is -3, both toward zero.",
     "Storing ledger amounts in double and then wondering why 0.1 + 0.2 prints 0.30000000000000004.",
     "Writing unsigned loop conditions like i >= 0 that can never fail, creating infinite loops."
@@ -134,7 +171,7 @@
   "quantFinanceApplication": "Position keepers accumulate fills in integer cents so overnight PnL reconciles to the penny; double noise of $10^{-14}$ per trade compounds into visible reconciliation breaks across millions of fills a day.",
   "summary": [
     "Typical 64-bit sizes: bool/char 1 byte, int 4, long long 8, float 4, double 8; int spans about ±2.1 billion.",
-    "Mixed arithmetic promotes to the wider type, but assignment converts to the variable's type - and double-to-int truncates toward zero.",
+    "Mixed arithmetic promotes to the wider type, but assignment converts to the variable's type, and double-to-int truncates toward zero.",
     "Integer division of ints truncates: 7/2 is 3; force real division with static_cast<double> or a double operand.",
     "Signed overflow is undefined behaviour; unsigned arithmetic wraps modulo 2^N.",
     "Store money as integer cents (long long) for exactness; use double for rates, returns and model outputs."
@@ -145,7 +182,7 @@
       "type": "numeric",
       "prompt": "What is the largest value a 32-bit signed int can hold?",
       "answer": 2147483647,
-      "explanation": "int stores 2^32 values split around zero: from -2^31 up to 2^31 - 1 = 2,147,483,647."
+      "explanation": "int stores 2^32 values split around zero: from -2^31 up to 2^31, 1 = 2,147,483,647."
     },
     {
       "id": "q2",
@@ -180,7 +217,7 @@
         "0"
       ],
       "answerIndex": 2,
-      "explanation": "Unsigned arithmetic is modulo 2^32: 0 - 1 wraps to 2^32 - 1 = 4,294,967,295. (Signed int overflow, by contrast, would be undefined behaviour.)"
+      "explanation": "Unsigned arithmetic is modulo 2^32: 0, 1 wraps to 2^32, 1 = 4,294,967,295. (Signed int overflow, by contrast, would be undefined behaviour.)"
     },
     {
       "id": "q5",
@@ -192,15 +229,23 @@
         "Storing prices as long long cents is exact",
         "Doubles are wrong for every financial purpose"
       ],
-      "answerIndices": [1, 2],
-      "explanation": "Most decimal prices are not binary fractions, so 0.1 + 0.2 != 0.3 exactly, while integer cents are exact. Doubles are perfectly appropriate for returns, volatilities and model parameters - just not for ledger-exact money."
+      "answerIndices": [
+        1,
+        2
+      ],
+      "explanation": "Most decimal prices are not binary fractions, so 0.1 + 0.2 != 0.3 exactly, while integer cents are exact. Doubles are perfectly appropriate for returns, volatilities and model parameters, just not for ledger-exact money."
     },
     {
       "id": "q6",
       "type": "short",
       "prompt": "A function computes `double averageFill = (qtyA + qtyB) / 2;` but the caller receives 250 instead of 250.5. What happened, and what is the standard fix?",
       "modelAnswer": "Both operands are ints, so integer division truncated the .5 before the result was assigned to the double; fix it by casting one operand, e.g. (qtyA + qtyB) / 2.0 or static_cast<double>(qtyA + qtyB) / 2.",
-      "keywords": ["integer division", "truncat", "cast", "2.0"],
+      "keywords": [
+        "integer division",
+        "truncat",
+        "cast",
+        "2.0"
+      ],
       "explanation": "The right-hand side is evaluated entirely in int arithmetic (501 / 2 = 250) and only then converted to double. Making one operand a double forces real division."
     }
   ],
@@ -208,7 +253,7 @@
     {
       "type": "code-output",
       "front": "What does `int x = 3.9;` store, and why?",
-      "back": "3 - conversion from double to int truncates toward zero; no rounding occurs."
+      "back": "3, conversion from double to int truncates toward zero; no rounding occurs."
     },
     {
       "type": "formula",
@@ -228,22 +273,24 @@
     {
       "type": "code-output",
       "front": "What do `7 / 2` and `7 / 2.0` evaluate to?",
-      "back": "3 and 3.5 - int/int is integer division; making either operand double forces real division."
+      "back": "3 and 3.5, int/int is integer division; making either operand double forces real division."
     }
   ],
   "references": [
     {
-      "label": "cppreference — Fundamental types",
+      "label": "cppreference. Fundamental types",
       "url": "https://en.cppreference.com/w/cpp/language/types"
     },
     {
-      "label": "cppreference — Explicit type conversion (static_cast)",
+      "label": "cppreference. Explicit type conversion (static_cast)",
       "url": "https://en.cppreference.com/w/cpp/language/static_cast"
     },
     {
-      "label": "Goldberg — What Every Computer Scientist Should Know About Floating-Point Arithmetic",
+      "label": "Goldberg. What Every Computer Scientist Should Know About Floating-Point Arithmetic",
       "url": "https://docs.oracle.com/cd/E19957-01/806-3568/ncg_goldberg.html"
     }
   ],
-  "skills": ["cpp"]
+  "skills": [
+    "cpp"
+  ]
 }

@@ -4,14 +4,16 @@
   "title": "Container Complexity, Allocators and Memory Characteristics",
   "estMinutes": 26,
   "difficulty": "core",
-  "prereqs": ["cpp-stl-iterators-algorithms"],
+  "prereqs": [
+    "cpp-stl-iterators-algorithms"
+  ],
   "objectives": [
     "Recall the complexity and memory-layout guarantees of the main STL containers from a blank table",
     "Contrast contiguous and node-based containers in allocation count, per-element overhead and cache behaviour",
     "Explain the Allocator concept and std::allocator's role, and attach a minimal custom allocator to a container",
     "Justify container choices for trading components using complexity, memory and latency-predictability arguments"
   ],
-  "motivation": "Complexity tables tell you how an algorithm scales; memory layout decides how fast it actually runs. A map's O(log n) hides 48-byte nodes scattered across the heap, each one its own allocation; a vector's O(n) find hides a cache-friendly linear scan that outruns the tree at realistic sizes. Add allocators - who supplies the memory, and when - and you have the vocabulary to reason about latency, not just big-O, which is the vocabulary trading-system interviews actually test.",
+  "motivation": "Complexity tables tell you how an algorithm scales; memory layout decides how fast it actually runs. A map's O(log n) hides 48-byte nodes scattered across the heap, each one its own allocation; a vector's O(n) find hides a cache-friendly linear scan that outruns the tree at realistic sizes. Add allocators, who supplies the memory, and when, and you have the vocabulary to reason about latency, not just big-O, which is the vocabulary trading-system interviews actually test.",
   "blocks": [
     {
       "type": "h2",
@@ -19,19 +21,68 @@
     },
     {
       "type": "table",
-      "headers": ["Container", "Random access", "Insert / erase", "Find", "Memory layout", "Iterator invalidation"],
+      "headers": [
+        "Container",
+        "Random access",
+        "Insert / erase",
+        "Find",
+        "Memory layout",
+        "Iterator invalidation"
+      ],
       "rows": [
-        ["vector", "O(1)", "back O(1) amortized; middle O(n)", "O(n) scan; O(log n) if sorted", "one contiguous block", "reallocation kills all; insert/erase from the position"],
-        ["array", "O(1)", "fixed size - none", "O(n) scan; O(log n) if sorted", "in place, zero allocations", "never - no mutation"],
-        ["deque", "O(1)", "both ends O(1); middle O(n)", "O(n)", "fixed-size blocks + directory", "end-push: refs survive, iterators may die; middle ops: all die"],
-        ["list", "none", "O(1) given an iterator", "O(n)", "one node per element", "stable except the erased node"],
-        ["map / set", "none", "O(log n)", "O(log n)", "one node per element", "stable except the erased node"],
-        ["unordered_map / set", "none", "O(1) average; O(n) worst", "O(1) average; O(n) worst", "nodes + bucket array", "rehash kills iterators; refs survive"]
+        [
+          "vector",
+          "O(1)",
+          "back O(1) amortized; middle O(n)",
+          "O(n) scan; O(log n) if sorted",
+          "one contiguous block",
+          "reallocation kills all; insert/erase from the position"
+        ],
+        [
+          "array",
+          "O(1)",
+          "fixed size, none",
+          "O(n) scan; O(log n) if sorted",
+          "in place, zero allocations",
+          "never, no mutation"
+        ],
+        [
+          "deque",
+          "O(1)",
+          "both ends O(1); middle O(n)",
+          "O(n)",
+          "fixed-size blocks + directory",
+          "end-push: refs survive, iterators may die; middle ops: all die"
+        ],
+        [
+          "list",
+          "none",
+          "O(1) given an iterator",
+          "O(n)",
+          "one node per element",
+          "stable except the erased node"
+        ],
+        [
+          "map / set",
+          "none",
+          "O(log n)",
+          "O(log n)",
+          "one node per element",
+          "stable except the erased node"
+        ],
+        [
+          "unordered_map / set",
+          "none",
+          "O(1) average; O(n) worst",
+          "O(1) average; O(n) worst",
+          "nodes + bucket array",
+          "rehash kills iterators; refs survive"
+        ]
       ]
     },
     {
       "type": "p",
-      "md": "Two readings of this table. First, the bounds are **guarantees**, not speeds: an O(n) scan over contiguous memory can beat an O(log n) tree walk for the sizes you actually hold, because the scan streams through cache lines while the tree pointer-chases across the heap. Second, amortized entries - vector's back insertion - are paid in bursts: the reallocation stalls exactly when the buffer is full, which in a trading session is the worst possible moment to stall."
+      "md": "Two readings of this table. First, the bounds are **guarantees**, not speeds: an O(n) scan over contiguous memory can beat an O(log n) tree walk for the sizes you actually hold, because the scan streams through cache lines while the tree pointer-chases across the heap. Second, amortized entries, vector's back insertion, are paid in bursts: the reallocation stalls exactly when the buffer is full, which in a trading session is the worst possible moment to stall."
     },
     {
       "type": "interactive",
@@ -40,9 +91,21 @@
         "title": "Touching all n elements once",
         "n": 1000000,
         "operations": [
-          { "name": "vector traversal", "layout": "contiguous", "cacheMisses": "about n / 64 bytes per line" },
-          { "name": "deque traversal", "layout": "fixed-size blocks", "cacheMisses": "about n / block size" },
-          { "name": "list / map traversal", "layout": "scattered nodes", "cacheMisses": "about n, one per node" }
+          {
+            "name": "vector traversal",
+            "layout": "contiguous",
+            "cacheMisses": "about n / 64 bytes per line"
+          },
+          {
+            "name": "deque traversal",
+            "layout": "fixed-size blocks",
+            "cacheMisses": "about n / block size"
+          },
+          {
+            "name": "list / map traversal",
+            "layout": "scattered nodes",
+            "cacheMisses": "about n, one per node"
+          }
         ]
       },
       "caption": "Same O(n), different constants: contiguous data streams through the prefetcher; every node hop risks a cache miss."
@@ -53,7 +116,7 @@
     },
     {
       "type": "p",
-      "md": "A node container pays per element, forever. On x86-64 with libstdc++, a std::map<int, int> node is roughly 32 bytes of tree machinery (three pointers plus colour and padding) wrapped around the 16-byte pair - call it 48 bytes before allocator overhead, with **one heap allocation per element**. The same million pairs in a vector cost 16 MB in exactly one allocation, and index arithmetic replaces pointer chasing. The tree's premium buys worst-case bounds and stable iterators, not payload."
+      "md": "A node container pays per element, forever. On x86-64 with libstdc++, a std::map<int, int> node is roughly 32 bytes of tree machinery (three pointers plus colour and padding) wrapped around the 16-byte pair, call it 48 bytes before allocator overhead, with **one heap allocation per element**. The same million pairs in a vector cost 16 MB in exactly one allocation, and index arithmetic replaces pointer chasing. The tree's premium buys worst-case bounds and stable iterators, not payload."
     },
     {
       "type": "steps",
@@ -68,7 +131,7 @@
     {
       "type": "math",
       "tex": "n \\text{ nodes} \\;\\Rightarrow\\; n \\text{ allocations}, \\qquad 1 \\text{ vector} \\;\\Rightarrow\\; 1 \\text{ allocation}",
-      "caption": "Allocation count, not just byte count, is the node container's hidden cost - each allocation is a potential syscall and a latency spike."
+      "caption": "Allocation count, not just byte count, is the node container's hidden cost, each allocation is a potential syscall and a latency spike."
     },
     {
       "type": "h2",
@@ -76,32 +139,32 @@
     },
     {
       "type": "p",
-      "md": "Every STL container's full type includes its allocator: std::vector<T, Alloc>. The default, std::allocator<T>, forwards to ::operator new and ::operator delete - the global heap, one call at a time. Because the allocator is part of the type, vector<int, MyAlloc> is a *different type* from vector<int>: pass allocators through template parameters, not through global tricks. What custom allocators buy: arena buffers that free everything at once, pools sized for fixed node types, and instrumentation like the counter below."
+      "md": "Every STL container's full type includes its allocator: std::vector<T, Alloc>. The default, std::allocator<T>, forwards to ::operator new and ::operator delete, the global heap, one call at a time. Because the allocator is part of the type, vector<int, MyAlloc> is a *different type* from vector<int>: pass allocators through template parameters, not through global tricks. What custom allocators buy: arena buffers that free everything at once, pools sized for fixed node types, and instrumentation like the counter below."
     },
     {
       "type": "code",
       "lang": "cpp",
       "code": "#include <vector>\n#include <new>\n#include <iostream>\n\ntemplate <class T>\nstruct CountingAlloc {\n    using value_type = T;\n    CountingAlloc() = default;\n    template <class U>\n    CountingAlloc(const CountingAlloc<U>&) noexcept {}\n    T* allocate(std::size_t n) {\n        ++allocations;\n        return static_cast<T*>(::operator new(n * sizeof(T)));\n    }\n    void deallocate(T* p, std::size_t) noexcept { ::operator delete(p); }\n    bool operator==(const CountingAlloc&) const noexcept { return true; }\n    bool operator!=(const CountingAlloc&) const noexcept { return false; }\n    static inline int allocations = 0;   // C++17 inline variable\n};\n\nint main() {\n    std::vector<int, CountingAlloc<int>> v;\n    v.reserve(1000);\n    for (int i = 0; i < 1000; ++i) v.push_back(i);\n    std::cout << CountingAlloc<int>::allocations << \"\\n\";   // exactly 1\n}",
-      "caption": "An instrumenting allocator is the cheapest container profiler you can write - and the count proves the reserve's value."
+      "caption": "An instrumenting allocator is the cheapest container profiler you can write, and the count proves the reserve's value."
     },
     {
       "type": "p",
-      "md": "The minimal C++17 allocator is small: a value_type alias plus allocate/deallocate - allocator_traits supplies every other member by default. The snippet's point is the count: reserve(1000) turns 1,000 push_backs into exactly one allocation. Without it, a doubling policy calls allocate eleven times (capacities 1 through 1024) and moves 1,023 elements along the way - work that scales with the data you already hold."
+      "md": "The minimal C++17 allocator is small: a value_type alias plus allocate/deallocate, allocator_traits supplies every other member by default. The snippet's point is the count: reserve(1000) turns 1,000 push_backs into exactly one allocation. Without it, a doubling policy calls allocate eleven times (capacities 1 through 1024) and moves 1,023 elements along the way, work that scales with the data you already hold."
     },
     {
       "type": "callout",
       "variant": "quant",
       "title": "Allocate before the bell",
-      "md": "On a latency-sensitive path the goal is zero allocation after initialisation: reserve every buffer, pre-size every unordered_map (reserve plus a tuned max_load_factor), and where node containers are unavoidable, feed them a pool allocator so nodes come from a pre-allocated arena. A single mid-session reallocation of a million-element buffer never shows up in your average latency - it shows up in the 99.9th percentile, where clients notice."
+      "md": "On a latency-sensitive path the goal is zero allocation after initialisation: reserve every buffer, pre-size every unordered_map (reserve plus a tuned max_load_factor), and where node containers are unavoidable, feed them a pool allocator so nodes come from a pre-allocated arena. A single mid-session reallocation of a million-element buffer never shows up in your average latency, it shows up in the 99.9th percentile, where clients notice."
     },
     {
       "type": "list",
       "ordered": false,
       "items": [
-        "**std::allocator** - the default: global heap per call, stateless, no guarantees beyond correctness.",
-        "**std::pmr::monotonic_buffer_resource** (C++17) - bump-pointer arena over a buffer you own; deallocate is a no-op and everything frees when the resource dies.",
-        "**Pool / free-list allocators** - fixed-size chunks sized to node containers (map nodes, list nodes); O(1) alloc and free, no fragmentation.",
-        "**Instrumenting allocators** - count calls and track high-water marks to find which container actually allocates on your hot path."
+        "**std::allocator**, the default: global heap per call, stateless, no guarantees beyond correctness.",
+        "**std::pmr::monotonic_buffer_resource** (C++17), bump-pointer arena over a buffer you own; deallocate is a no-op and everything frees when the resource dies.",
+        "**Pool / free-list allocators**, fixed-size chunks sized to node containers (map nodes, list nodes); O(1) alloc and free, no fragmentation.",
+        "**Instrumenting allocators**, count calls and track high-water marks to find which container actually allocates on your hot path."
       ]
     },
     {
@@ -110,7 +173,7 @@
     },
     {
       "type": "p",
-      "md": "The heuristic ladder: append-only or index-ordered data - vector with reserve (fewest allocations, best cache behaviour). Keys that must stay sorted, best-price reads, range sweeps - map. Keyed lookup with no order, robust hashing, huge n, and tolerance for a rare rehash spike - unordered_map, reserved up front. Work at both ends of a timeline - deque. Always need exactly the single best element - priority_queue. And when two options sit in the same big-O class, decide on constants: allocation count, element size, cache behaviour - measured, not assumed."
+      "md": "The heuristic ladder: append-only or index-ordered data, vector with reserve (fewest allocations, best cache behaviour). Keys that must stay sorted, best-price reads, range sweeps, map. Keyed lookup with no order, solid hashing, huge n, and tolerance for a rare rehash spike, unordered_map, reserved up front. Work at both ends of a timeline, deque. Always need exactly the single best element, priority_queue. And when two options sit in the same big-O class, decide on constants: allocation count, element size, cache behaviour, measured, not assumed."
     }
   ],
   "guidedExercise": {
@@ -119,7 +182,7 @@
       "Node = header + payload, one allocation per node.",
       "Vector cost = element size times count, in one allocation."
     ],
-    "solution": "(a) Per node $32 + 16 = 48$ bytes, so $250{,}000 \\times 48 = 12{,}000{,}000$ bytes = **12 MB**, built through **250,000 allocations**. (b) $250{,}000 \\times 16 = 4{,}000{,}000$ bytes = **4 MB** in **one** allocation. (c) Overhead = **8 MB** of tree machinery and allocation granularity - bought for O(log n) worst-case bounds, sorted sweeps in key order, and iterators that never invalidate except on erase."
+    "solution": "(a) Per node $32 + 16 = 48$ bytes, so $250{,}000 \\times 48 = 12{,}000{,}000$ bytes = **12 MB**, built through **250,000 allocations**. (b) $250{,}000 \\times 16 = 4{,}000{,}000$ bytes = **4 MB** in **one** allocation. (c) Overhead = **8 MB** of tree machinery and allocation granularity, bought for O(log n) worst-case bounds, sorted sweeps in key order, and iterators that never invalidate except on erase."
   },
   "independentExercise": {
     "prompt": "Three components, one container decision each, justified by complexity, layout or allocation behaviour: (a) an append-only buffer of up to 5,000 16-byte fills, replayed by index after the close; (b) a price ladder where the engine reads the best level instantly and sweeps levels in order at the close; (c) a symbol-to-position lookup over 8,000 symbols, probed millions of times per session, with no ordering need. For (a), also give the byte count and allocation count after reserve(5000).",
@@ -130,20 +193,20 @@
     "solution": "(a) **std::vector<Fill> with reserve(5000)**: $5000 \\times 16 = 80{,}000$ bytes, **one** allocation, push_back never reallocates, indexed replay is O(1). (b) **std::map<price, level>**: best price in O(1) via prev(end())/begin(), inserts in O(log n), ordered iteration for the close-out sweep, and a hard worst case. (c) **std::unordered_map** with reserve(8000) and a tuned max_load_factor: average O(1) probes, and reserving up front ensures the table never rehashes mid-session."
   },
   "commonMistakes": [
-    "Reading complexity tables as speed tables - a contiguous O(n) scan beats a scattered O(log n) tree walk at realistic sizes; constants and cache dominate.",
-    "Forgetting that the allocator is part of the container's type - vector<int, A> and vector<int> are unrelated types that do not interconvert.",
-    "Counting only bytes and ignoring allocation count - a million map nodes mean a million allocations, each a potential latency spike.",
-    "Reserving only the vector and forgetting unordered_map - reserve() plus max_load_factor prevent mid-session rehashes.",
-    "Assuming an allocator changes complexity guarantees - it changes who provides memory and how, not the algorithmic bounds of the container."
+    "Reading complexity tables as speed tables, a contiguous O(n) scan beats a scattered O(log n) tree walk at realistic sizes; constants and cache dominate.",
+    "Forgetting that the allocator is part of the container's type, vector<int, A> and vector<int> are unrelated types that do not interconvert.",
+    "Counting only bytes and ignoring allocation count, a million map nodes mean a million allocations, each a potential latency spike.",
+    "Reserving only the vector and forgetting unordered_map, reserve() plus max_load_factor prevent mid-session rehashes.",
+    "Assuming an allocator changes complexity guarantees, it changes who provides memory and how, not the algorithmic bounds of the container."
   ],
   "realWorldApplication": "Capacity planning for production services is this lesson in disguise: buffer pre-sizing, allocator selection and node-vs-contiguous tradeoffs decide whether a service holds p99 latency under load or collapses in allocation spikes.",
-  "quantFinanceApplication": "Low-latency desks pre-reserve every container and use arena or pool allocators so no allocation syscall lands on the hot path during trading hours - the 99.9th-percentile latency report is where skipped reserves become visible.",
+  "quantFinanceApplication": "Low-latency desks pre-reserve every container and use arena or pool allocators so no allocation syscall lands on the hot path during trading hours, the 99.9th-percentile latency report is where skipped reserves become visible.",
   "summary": [
     "Know the map by heart: vector (contiguous, amortized O(1) back), deque (blocks, O(1) ends), list (nodes, O(1) given iterator), map (nodes, O(log n)), unordered_map (nodes + buckets, O(1) average / O(n) worst).",
     "Node containers pay per element: roughly 32 bytes of structure plus one allocation per node; contiguous containers pay once and stream through cache lines.",
     "The allocator is part of a container's type; std::allocator forwards to the global heap, and a minimal custom allocator needs only value_type, allocate and deallocate.",
     "reserve(n) on a vector makes a 1,000-push loop a single allocation; without it, doubling growth allocates eleven times and moves 1,023 elements.",
-    "Same big-O class: decide on constants - allocation count, element size, cache behaviour - measured with benchmarks, not assumed."
+    "Same big-O class: decide on constants, allocation count, element size, cache behaviour, measured with benchmarks, not assumed."
   ],
   "quiz": [
     {
@@ -157,7 +220,7 @@
         "std::set<int>"
       ],
       "answerIndex": 2,
-      "explanation": "The vector's elements live in one buffer. list, map and set are node-based - one heap allocation per element - and unordered containers add a bucket array on top."
+      "explanation": "The vector's elements live in one buffer. list, map and set are node-based, one heap allocation per element, and unordered containers add a bucket array on top."
     },
     {
       "id": "q2",
@@ -173,7 +236,7 @@
       "type": "numeric",
       "prompt": "A std::map<int, int> holds 1,000,000 entries. Model each node as 32 bytes of tree header plus the 16-byte payload, ignoring allocator slack. Compared with a single vector of the same 16-byte pairs, how many extra MB does the map's structure cost?",
       "answer": 32,
-      "explanation": "Map: 1,000,000 x 48 bytes = 48 MB. Vector: 1,000,000 x 16 bytes = 16 MB. The 32 MB difference is tree pointers, colour and padding - structure, not payload."
+      "explanation": "Map: 1,000,000 x 48 bytes = 48 MB. Vector: 1,000,000 x 16 bytes = 16 MB. The 32 MB difference is tree pointers, colour and padding, structure, not payload."
     },
     {
       "id": "q4",
@@ -185,7 +248,11 @@
         "reserve reduces the number of allocations a push loop performs",
         "std::vector cannot be given a custom allocator"
       ],
-      "answerIndices": [0, 1, 2],
+      "answerIndices": [
+        0,
+        1,
+        2
+      ],
       "explanation": "Alloc is a template parameter, so different allocators mean different types (0). std::allocator is a thin forwarder to the global heap (1). reserve pre-buys capacity so the loop allocates once instead of logarithmically often (2). vector's second template parameter exists precisely to accept custom allocators, so (3) is false."
     },
     {
@@ -206,8 +273,16 @@
       "type": "short",
       "prompt": "What is a monotonic (arena) allocator and why does it suit the hot path?",
       "modelAnswer": "It hands out memory by bumping a pointer through a pre-allocated buffer and frees everything at once when the arena dies; no per-object deallocation and no allocation syscalls mid-session.",
-      "keywords": ["bump", "arena", "buffer", "free all", "deallocate", "no-op", "no per-object"],
-      "explanation": "C++17 ships it as std::pmr::monotonic_buffer_resource: allocate is a pointer bump, deallocate is a no-op, and the whole buffer returns when the resource is destroyed - exactly the zero-syscall behaviour a hot path wants."
+      "keywords": [
+        "bump",
+        "arena",
+        "buffer",
+        "free all",
+        "deallocate",
+        "no-op",
+        "no per-object"
+      ],
+      "explanation": "C++17 ships it as std::pmr::monotonic_buffer_resource: allocate is a pointer bump, deallocate is a no-op, and the whole buffer returns when the resource is destroyed, exactly the zero-syscall behaviour a hot path wants."
     }
   ],
   "flashcards": [
@@ -218,33 +293,36 @@
     },
     {
       "type": "code-output",
-      "front": "CountingAlloc vector: reserve(1000) then 1000 push_backs - allocation count?",
-      "back": "Exactly 1 - reserve(n) allocates at most once and guarantees capacity() >= n, so no push_back reallocates."
+      "front": "CountingAlloc vector: reserve(1000) then 1000 push_backs: allocation count?",
+      "back": "Exactly 1, reserve(n) allocates at most once and guarantees capacity() >= n, so no push_back reallocates."
     },
     {
       "type": "concept",
       "front": "Contiguous vs node-based: the trade",
-      "back": "Contiguous (vector/array): one allocation, cache-line streaming, O(1) random access - but O(n) insert/erase and reallocation invalidates. Node-based (list/map/unordered): O(1)-given-iterator or O(log n) operations and stable nodes - but 24-48 bytes of structure per element and pointer-chasing cache misses."
+      "back": "Contiguous (vector/array): one allocation, cache-line streaming, O(1) random access, but O(n) insert/erase and reallocation invalidates. Node-based (list/map/unordered): O(1)-given-iterator or O(log n) operations and stable nodes, but 24-48 bytes of structure per element and pointer-chasing cache misses."
     },
     {
       "type": "formula",
       "front": "Memory model of a std::map node (x86-64, libstdc++)",
-      "back": "About 32 B of tree header (3 pointers + colour + padding) plus the payload, one heap allocation per element - e.g. map<int,int>: about 48 B/node vs 16 B/element in a vector."
+      "back": "About 32 B of tree header (3 pointers + colour + padding) plus the payload, one heap allocation per element, e.g. map<int,int>: about 48 B/node vs 16 B/element in a vector."
     }
   ],
   "references": [
     {
-      "label": "cppreference - Allocators",
+      "label": "cppreference: Allocators",
       "url": "https://en.cppreference.com/w/cpp/named_req/Allocator"
     },
     {
-      "label": "cppreference - std::pmr (polymorphic memory resources)",
+      "label": "cppreference: std::pmr (polymorphic memory resources)",
       "url": "https://en.cppreference.com/w/cpp/memory"
     },
     {
-      "label": "cppreference - Container size and capacity",
+      "label": "cppreference: Container size and capacity",
       "url": "https://en.cppreference.com/w/cpp/container"
     }
   ],
-  "skills": ["cpp-stl", "cpp-performance"]
+  "skills": [
+    "cpp-stl",
+    "cpp-performance"
+  ]
 }

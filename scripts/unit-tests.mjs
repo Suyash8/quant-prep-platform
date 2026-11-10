@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * QuantFoundry unit tests — run with: node --test scripts/unit-tests.mjs
+ * QuantFoundry unit tests, run with: node --test scripts/unit-tests.mjs
  * Covers: mastery engine, SM-2 scheduler, server-side grading, math expression
  * evaluator, drill generator correctness, prerequisite graph integrity, judge
  * normalisation and content/registry consistency.
@@ -161,7 +161,7 @@ test('grading: mcq, ms, numeric tolerance, keyword short, exact code-output', ()
 
 // ---------- math expression evaluator ----------
 // replicate compileExpression essentials via Function-free check: we test the public behaviour
-// by importing the compiled logic conceptually — here we validate expressions used in content
+// by importing the compiled logic conceptually, here we validate expressions used in content
 // parse under a reference recursive-descent implementation copied from core.tsx.
 function compileExpression(expr) {
   const tokens = tokenize(expr);

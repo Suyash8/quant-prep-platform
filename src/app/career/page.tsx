@@ -9,7 +9,7 @@ import {
   ListChecks, MapPin, Route, ShieldCheck, Table2, Target,
 } from 'lucide-react';
 
-export const metadata = { title: 'Career explorer — QuantFoundry' };
+export const metadata = { title: 'Career explorer. QuantFoundry' };
 
 const CATEGORY_LABEL: Record<string, string> = {
   'prop-trading': 'Proprietary trading',
@@ -30,15 +30,17 @@ const CATEGORY_DESC: Record<string, string> = {
 };
 
 // per-firm one-liners (derived from each profile's research notes)
+
+
 const COMPANY_BLURB: Record<string, string> = {
   'barclays': 'Structured products tech with unusually concrete published skill bars.',
-  'blackrock': 'Aladdin — one of the largest risk platforms in asset management.',
+  'blackrock': 'Aladdin, one of the largest risk platforms in asset management.',
   'bloomberg': 'Terminals, data pipelines and platform reliability at global scale.',
   'citadel-securities': 'Market making with demanding C++ and low-latency interviews.',
-  'goldman-sachs': 'The best-documented hiring prep of any bank — platforms and strats.',
-  'imc': 'Publishes its full recruitment process — rare and genuinely useful.',
+  'goldman-sachs': 'The best-documented hiring prep of any bank, platforms and strats.',
+  'imc': 'Publishes its full recruitment process, rare and genuinely useful.',
   'jane-street': 'OCaml-first trading tech; famously explicit interview guidance.',
-  'jpmorgan': 'A structured how-we-hire journey across payments and markets tech.',
+  'jpmorgan': 'A structured how-we-hire path across payments and markets tech.',
   'jump-trading': 'Research-driven prop trading with a performance-first C++ culture.',
   'millennium': 'Multi-manager platform: many pods, heavy research infrastructure.',
   'morgan-stanley': 'Broad markets-and-banking tech org; breadth-oriented hiring.',
@@ -49,7 +51,9 @@ const COMPANY_BLURB: Record<string, string> = {
 };
 
 
-// fixed track colour coding — consistent on every career page
+// fixed track colour coding, consistent on every career page
+
+
 const TRACK_CHIP: Record<string, string> = { A: 'chip-success', B: 'chip-info', C: 'chip-danger', D: 'chip-warning', E: 'chip-accent' };
 const TRACK_TILE: Record<string, string> = { A: 'icon-tile-accent', B: 'icon-tile-info', C: 'icon-tile-danger', D: 'icon-tile-warning', E: 'icon-tile-violet' };
 
@@ -62,7 +66,7 @@ const RESUME_TIPS = [
     icon: BarChart3,
     tile: 'icon-tile-info',
     title: 'Present projects with evidence',
-    body: 'Quantify: “order book sustaining 1.2M updates/s with p99 match latency 3.4µs (benchmark included in repo)” beats “built a fast order book”. Every claimed number must be reproducible from your repository — a reviewer may check.',
+    body: 'Quantify: “order book sustaining 1.2M updates/s with p99 match latency 3.4µs (benchmark included in repo)” beats “built a fast order book”. Every claimed number must be reproducible from your repository, a reviewer may check.',
   },
   {
     icon: ListChecks,
@@ -80,7 +84,7 @@ const RESUME_TIPS = [
     icon: ShieldCheck,
     tile: 'icon-tile-violet',
     title: 'Credibility rule',
-    body: 'Never invent accomplishments, benchmark results or employment history. If you cannot demonstrate it, do not claim it — interviewers probe every line.',
+    body: 'Never invent accomplishments, benchmark results or employment history. If you cannot demonstrate it, do not claim it, interviewers probe every line.',
   },
 ];
 
@@ -122,7 +126,7 @@ export default async function CareerPage() {
       </header>
       <p className="-mt-2.5 mb-6 max-w-3xl text-xs font-semibold leading-relaxed text-muted anim-slide-up">
         Honest preparation for quantitative hiring. Facts marked <em>sourced</em> come from official career pages with
-        retrieval dates; patterns are labelled <em>inferred</em> — never presented as guarantees.
+        retrieval dates; patterns are labelled <em>inferred</em> ,  never presented as guarantees.
       </p>
 
       {/* stat row */}
@@ -165,7 +169,7 @@ export default async function CareerPage() {
               </div>
             </div>
           ))}
-          {/* undecided card — completes the grid, routes to the diagnostic */}
+          {/* undecided card, completes the grid, routes to the diagnostic */}
           <div className="qf-card-flat p-5 flex flex-col !bg-accent-soft/60 border-2 border-accent/30">
             <div className="flex items-center justify-between gap-2">
               <span className="chip">Track ?</span>
@@ -174,7 +178,7 @@ export default async function CareerPage() {
             <h3 className="mt-3 font-extrabold tracking-tight leading-snug">Undecided?</h3>
             <p className="mt-1 text-xs font-bold text-faint">Every track shares the same core phases</p>
             <p className="mt-2 text-sm text-muted leading-relaxed">
-              The first phases are common to all five tracks — start the curriculum and take the diagnostic; your
+              The first phases are common to all five tracks, start the curriculum and take the diagnostic; your
               placement picks the track with you.
             </p>
             <div className="mt-auto pt-4">
@@ -200,17 +204,18 @@ export default async function CareerPage() {
             <span className="matrix-cell matrix-frequent" style={{ height: '1.25rem', minWidth: '3.5rem' }}>frequent</span>
             <span className="matrix-cell matrix-role" style={{ height: '1.25rem', minWidth: '3.5rem' }}>role-dep.</span>
             <span className="matrix-cell matrix-varies" style={{ height: '1.25rem', minWidth: '3.5rem' }}>varies</span>
+            <span className="ml-auto text-faint font-semibold">Hover any cell for the full requirement wording</span>
           </div>
           <div className="qf-card p-2 sm:p-4 overflow-x-auto thin-scroll">
-            <table className="qf-table">
+            <table className="qf-table text-sm">
               <thead>
                 <tr>
                   <th className="sticky left-0 bg-surface z-10">Skill</th>
-                  <th>Asset managers</th>
-                  <th>Banks</th>
-                  <th>Prop trading</th>
-                  <th>Hedge funds</th>
-                  <th>Market data</th>
+                  <th className="text-center">Asset managers</th>
+                  <th className="text-center">Banks</th>
+                  <th className="text-center">Prop trading</th>
+                  <th className="text-center">Hedge funds</th>
+                  <th className="text-center">Market data</th>
                 </tr>
               </thead>
               <tbody>
@@ -224,7 +229,11 @@ export default async function CareerPage() {
                       const v = r[k as keyof typeof r] as string;
                       const cls = v === 'essential' ? 'matrix-essential' : v === 'frequently required' ? 'matrix-frequent' : v === 'role-dependent' ? 'matrix-role' : 'matrix-varies';
                       const label = v === 'frequently required' ? 'freq' : v === 'role-dependent' ? 'role' : v === 'varies by seat' ? 'varies' : v;
-                      return <td key={k}><span className={'matrix-cell ' + cls} title={v}>{label}</span></td>;
+                      return (
+                        <td key={k} className="text-center">
+                          <span className={'matrix-cell !inline-flex items-center justify-center w-[4.5rem]'} title={v}>{label}</span>
+                        </td>
+                      );
                     })}
                   </tr>
                 ))}
@@ -234,7 +243,7 @@ export default async function CareerPage() {
         </section>
       )}
 
-      {/* Company profiles — grouped by category for scannable rhythm */}
+      {/* Company profiles, grouped by category for scannable rhythm */}
       <section className="mt-10">
         <div className="section-head">
           <span className="icon-tile icon-tile-sm icon-tile-gold"><Building2 /></span>
@@ -321,7 +330,7 @@ export default async function CareerPage() {
               <span className="icon-tile bg-surface text-accent-deep dark:text-accent"><Compass /></span>
               <div>
                 <h2 className="font-extrabold text-lg tracking-tight">Not sure where you stand?</h2>
-                <p className="text-sm text-muted">Take the 28-question diagnostic and start at the phase that matches you — no wasted weeks.</p>
+                <p className="text-sm text-muted">Take the 28-question diagnostic and start at the phase that matches you, no wasted weeks.</p>
               </div>
             </div>
             <Link href="/diagnostic" className="btn3d">Take the diagnostic <ArrowRight className="h-4 w-4" /></Link>

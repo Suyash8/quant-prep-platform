@@ -13,7 +13,7 @@
     "Recognize object slicing, explain its cause, and prevent it with references, pointer containers or a deleted base copy",
     "Keep invariants across all construction paths using delegating constructors and in-class defaults"
   ],
-  "motivation": "Subtle PnL bugs hide in object lifetimes: a copy made in the wrong place reports yesterday state, and a derived position pushed into a base-valued container silently loses its option fields. C++ destroys objects deterministically - at scope exit, in reverse construction order - which is precisely what makes RAII possible. This lesson makes the construction and destruction sequence explicit, then attacks the classic value-semantics trap: object slicing.",
+  "motivation": "Subtle PnL bugs hide in object lifetimes: a copy made in the wrong place reports yesterday state, and a derived position pushed into a base-valued container silently loses its option fields. C++ destroys objects deterministically, at scope exit, in reverse construction order, which is precisely what makes RAII possible. This lesson makes the construction and destruction sequence explicit, then attacks the classic value-semantics trap: object slicing.",
   "blocks": [
     {
       "type": "h2",
@@ -21,13 +21,13 @@
     },
     {
       "type": "p",
-      "md": "An object lifetime begins when its constructor completes and ends when its destructor **starts**. For an object with a base class and members, construction follows a fixed recipe: direct base classes in declaration order (virtual bases, if any, first), then members in declaration order, then the constructor body. Destruction is the exact mirror image - derived destructor body first, then members in reverse, then the base. A delegating constructor behaves as its target constructor followed by a body, and in-class default initializers apply whenever the initializer list omits the member."
+      "md": "An object lifetime begins when its constructor completes and ends when its destructor **starts**. For an object with a base class and members, construction follows a fixed recipe: direct base classes in declaration order (virtual bases, if any, first), then members in declaration order, then the constructor body. Destruction is the exact mirror image, derived destructor body first, then members in reverse, then the base. A delegating constructor behaves as its target constructor followed by a body, and in-class default initializers apply whenever the initializer list omits the member."
     },
     {
       "type": "code",
       "lang": "cpp",
       "code": "#include <iostream>\n\nclass Trade {\npublic:\n    explicit Trade(const char* name) : name_{name} { std::cout << \"c\" << name_ << ' '; }\n    ~Trade() { std::cout << \"d\" << name_ << ' '; }\nprivate:\n    const char* name_;\n};\n\nint main() {\n    Trade a{\"A\"};\n    { Trade b{\"B\"}; }    // inner scope: b destroyed at the closing brace\n    Trade c{\"C\"};\n}",
-      "caption": "Output 'cA cB dB cC dC dA': scope exit destroys in reverse creation order - B inside the block, then C, then A at the end of main."
+      "caption": "Output 'cA cB dB cC dC dA': scope exit destroys in reverse creation order. B inside the block, then C, then A at the end of main."
     },
     {
       "type": "h2",
@@ -35,7 +35,7 @@
     },
     {
       "type": "p",
-      "md": "The **copy constructor** fires when a new object is initialized from an existing one: `Order b = a;`, pass-by-value, and return-by-value (compilers routinely elide the last case - never count on observing it). The **copy assignment** fires when an already-existing object is assigned. Both are generated memberwise when you do not write them, and both must preserve the class invariant. Copies of large objects are real work, so hot paths pass heavy or polymorphic types by `const&` - which, unlike pass-by-value, also preserves the dynamic type."
+      "md": "The **copy constructor** fires when a new object is initialized from an existing one: `Order b = a;`, pass-by-value, and return-by-value (compilers routinely elide the last case, never count on observing it). The **copy assignment** fires when an already-existing object is assigned. Both are generated memberwise when you do not write them, and both must preserve the class invariant. Copies of large objects are real work, so hot paths pass heavy or polymorphic types by `const&` - which, unlike pass-by-value, also preserves the dynamic type."
     },
     {
       "type": "code",
@@ -49,7 +49,7 @@
     },
     {
       "type": "p",
-      "md": "Copying a Derived object into a Base **value** copies only the base subobject: the compiler selects the Base copy constructor from the static type at compile time. The derived members never arrive, and the vptr in the new object points at the Base vtable - so even virtual calls afterwards behave as Base. The code compiles and runs, which is what makes slicing dangerous: PnL reports go quietly wrong with no error anywhere."
+      "md": "Copying a Derived object into a Base **value** copies only the base subobject: the compiler selects the Base copy constructor from the static type at compile time. The derived members never arrive, and the vptr in the new object points at the Base vtable, so even virtual calls afterwards behave as Base. The code compiles and runs, which is what makes slicing dangerous: PnL reports go quietly wrong with no error anywhere."
     },
     {
       "type": "code",
@@ -61,7 +61,7 @@
       "type": "callout",
       "variant": "pitfall",
       "title": "Containers slice",
-      "md": "`std::vector<Instrument>` stores values: push_back(option) constructs an Instrument from the Option - sliced, silently. Store pointers (std::vector<Instrument*>, or the smart pointers of the memory module), or delete the base copy constructor to turn slicing into a compile error."
+      "md": "`std::vector<Instrument>` stores values: push_back(option) constructs an Instrument from the Option, sliced, silently. Store pointers (std::vector<Instrument*>, or the smart pointers of the memory module), or delete the base copy constructor to turn slicing into a compile error."
     },
     {
       "type": "p",
@@ -84,11 +84,11 @@
     },
     {
       "type": "p",
-      "md": "Every constructor is an entry point that must establish the invariant, so funnel the work: delegating constructors route through one primary validating constructor; in-class defaults such as `double realized_ = 0.0;` mean no constructor can forget a starting value; and the generated copy operations, copying memberwise, preserve invariants that depend only on member values. When a class manages a resource beyond plain members, copies need custom logic - the Rule of Three/Five lesson makes that systematic."
+      "md": "Every constructor is an entry point that must establish the invariant, so funnel the work: delegating constructors route through one primary validating constructor; in-class defaults such as `double realized_ = 0.0;` mean no constructor can forget a starting value; and the generated copy operations, copying memberwise, preserve invariants that depend only on member values. When a class manages a resource beyond plain members, copies need custom logic, the Rule of Three/Five lesson makes that systematic."
     }
   ],
   "guidedExercise": {
-    "prompt": "Before running anything, write the exact stdout of the program below, one line at a time. Then explain each line - especially why \"copy Instrument\" appears with no \"copy Option\" anywhere. Run it to check yourself.\n\n```cpp\n#include <iostream>\n#include <string>\n#include <utility>\n\nclass Instrument {\npublic:\n    explicit Instrument(std::string sym) : sym_{std::move(sym)}\n        { std::cout << \"ctor Instrument\\n\"; }\n    Instrument(const Instrument&) { std::cout << \"copy Instrument\\n\"; }\n    virtual ~Instrument() { std::cout << \"dtor Instrument\\n\"; }\n    virtual std::string kind() const { return \"Instrument\"; }\nprivate:\n    std::string sym_;\n};\n\nclass Option : public Instrument {\npublic:\n    Option(std::string sym, double strike)\n        : Instrument{std::move(sym)}, strike_{strike}\n        { std::cout << \"ctor Option\\n\"; }\n    ~Option() { std::cout << \"dtor Option\\n\"; }\n    std::string kind() const override { return \"Option\"; }\nprivate:\n    double strike_;\n};\n\nvoid auditByValue(Instrument inst) { std::cout << inst.kind() << '\\n'; }\nvoid auditByRef(const Instrument& inst) { std::cout << inst.kind() << '\\n'; }\n\nint main() {\n    Option o{\"SPX 4500C\", 4500.0};\n    auditByValue(o);\n    auditByRef(o);\n}\n```",
+    "prompt": "Before running anything, write the exact stdout of the program below, one line at a time. Then explain each line, especially why \"copy Instrument\" appears with no \"copy Option\" anywhere. Run it to check yourself.\n\n```cpp\n#include <iostream>\n#include <string>\n#include <utility>\n\nclass Instrument {\npublic:\n    explicit Instrument(std::string sym) : sym_{std::move(sym)}\n        { std::cout << \"ctor Instrument\\n\"; }\n    Instrument(const Instrument&) { std::cout << \"copy Instrument\\n\"; }\n    virtual ~Instrument() { std::cout << \"dtor Instrument\\n\"; }\n    virtual std::string kind() const { return \"Instrument\"; }\nprivate:\n    std::string sym_;\n};\n\nclass Option : public Instrument {\npublic:\n    Option(std::string sym, double strike)\n        : Instrument{std::move(sym)}, strike_{strike}\n        { std::cout << \"ctor Option\\n\"; }\n    ~Option() { std::cout << \"dtor Option\\n\"; }\n    std::string kind() const override { return \"Option\"; }\nprivate:\n    double strike_;\n};\n\nvoid auditByValue(Instrument inst) { std::cout << inst.kind() << '\\n'; }\nvoid auditByRef(const Instrument& inst) { std::cout << inst.kind() << '\\n'; }\n\nint main() {\n    Option o{\"SPX 4500C\", 4500.0};\n    auditByValue(o);\n    auditByRef(o);\n}\n```",
     "hints": [
       "auditByValue takes Instrument by value: only the base copy constructor participates in the slice.",
       "Destruction is reverse construction order; the by-value parameter dies before auditByRef ever runs."
@@ -96,18 +96,18 @@
     "solution": "Exact stdout:\n\n```\nctor Instrument\nctor Option\ncopy Instrument\nInstrument\ndtor Instrument\nOption\ndtor Option\ndtor Instrument\n```\n\nLine by line: constructing the Option builds the base subobject first (ctor Instrument), then the derived ctor body (ctor Option). auditByValue takes its parameter by value, so the Instrument copy constructor runs on the base subobject only (copy Instrument - no Option state travels, no Option ctor or dtor appears). Inside, the parameter is a genuine Instrument, so kind() dispatches to Instrument::kind(). At the end of the call the parameter is destroyed (dtor Instrument) - before auditByRef runs. auditByRef binds a reference: no copy, dynamic type intact, kind() dispatches to Option::kind(). At scope exit the Option is destroyed in reverse order: dtor Option, then its base subobject (dtor Instrument)."
   },
   "independentExercise": {
-    "prompt": "Define an abstract `Position` with a pure virtual `double pnl() const` and a virtual destructor. Derive `StockPosition` (fields qty, entry, last; pnl = qty x (last - entry)) and `OptionPosition` (same fields; pnl = qty x (last - entry) x 100.0 for the contract multiplier). Write `double bookPnl(const std::vector<Position*>&)` summing through the base pointers. Load StockPosition{100, 42.00, 42.50} and OptionPosition{-10, 3.20, 3.80}, print the total, and clean up with delete. Then answer: why can the container not be `std::vector<Position>`?",
+    "prompt": "Define an abstract `Position` with a pure virtual `double pnl() const` and a virtual destructor. Derive `StockPosition` (fields qty, entry, last; pnl = qty x (last, entry)) and `OptionPosition` (same fields; pnl = qty x (last, entry) x 100.0 for the contract multiplier). Write `double bookPnl(const std::vector<Position*>&)` summing through the base pointers. Load StockPosition{100, 42.00, 42.50} and OptionPosition{-10, 3.20, 3.80}, print the total, and clean up with delete. Then answer: why can the container not be `std::vector<Position>`?",
     "hints": [
       "Short positions carry a negative quantity; the sign handles direction.",
-      "Position is abstract - a value container would have to construct Position objects."
+      "Position is abstract, a value container would have to construct Position objects."
     ],
     "solution": "Stock: $100 \\times (42.50 - 42.00) = +50$. Option: $-10 \\times (3.80 - 3.20) \\times 100 = -600$. Total $-550$.\n\n```cpp\n#include <iostream>\n#include <vector>\n\nclass Position {\npublic:\n    virtual ~Position() = default;\n    virtual double pnl() const = 0;\n};\n\nclass StockPosition : public Position {\npublic:\n    StockPosition(int qty, double entry, double last)\n        : qty_{qty}, entry_{entry}, last_{last} {}\n    double pnl() const override { return qty_ * (last_ - entry_); }\nprivate:\n    int qty_;\n    double entry_, last_;\n};\n\nclass OptionPosition : public Position {\npublic:\n    OptionPosition(int qty, double entry, double last)\n        : qty_{qty}, entry_{entry}, last_{last} {}\n    double pnl() const override { return qty_ * (last_ - entry_) * 100.0; }\nprivate:\n    int qty_;\n    double entry_, last_;\n};\n\ndouble bookPnl(const std::vector<Position*>& book) {\n    double total = 0.0;\n    for (const Position* p : book) total += p->pnl();\n    return total;\n}\n\nint main() {\n    std::vector<Position*> book;\n    book.push_back(new StockPosition{100, 42.00, 42.50});   // +50\n    book.push_back(new OptionPosition{-10, 3.20, 3.80});    // -600\n    std::cout << bookPnl(book) << '\\n';                     // -550\n    for (Position* p : book) delete p;                      // virtual dtor: safe\n}\n```\n\n`std::vector<Position>` will not even compile: Position is abstract, and a value container must be able to construct its element type. Even with a concrete base, push_back of a derived object would slice it to the base subobject and the x100 multiplier would vanish."
   },
   "commonMistakes": [
-    "Passing polymorphic types by value - slicing - and then reading the wrong virtual function result.",
+    "Passing polymorphic types by value, slicing, and then reading the wrong virtual function result.",
     "Using std::vector<Base> for heterogeneous collections instead of pointers.",
     "Assuming the initializer-list order controls construction when declaration order does.",
-    "Expecting the copy constructor to run on every return statement - compilers elide copies.",
+    "Expecting the copy constructor to run on every return statement, compilers elide copies.",
     "Forgetting destruction is reverse construction order when reasoning about cleanup sequencing.",
     "Adding a validating constructor but a second default constructor that skips the validation instead of delegating."
   ],
@@ -128,7 +128,7 @@
       "language": "cpp",
       "code": "#include <iostream>\n\nclass Trade {\npublic:\n    explicit Trade(const char* name) : name_{name} { std::cout << \"c\" << name_ << ' '; }\n    ~Trade() { std::cout << \"d\" << name_ << ' '; }\nprivate:\n    const char* name_;\n};\n\nint main() {\n    Trade a{\"A\"};\n    { Trade b{\"B\"}; }\n    Trade c{\"C\"};\n}",
       "answer": "cA cB dB cC dC dA",
-      "explanation": "A and B construct; the inner block ends and B is destroyed immediately (dB); C constructs; at the end of main, C is destroyed first, then A - destruction in reverse construction order."
+      "explanation": "A and B construct; the inner block ends and B is destroyed immediately (dB); C constructs; at the end of main, C is destroyed first, then A, destruction in reverse construction order."
     },
     {
       "id": "q2",
@@ -150,7 +150,7 @@
         "Runtime polymorphism requires it"
       ],
       "answerIndex": 0,
-      "explanation": "The target b has static type Base, so the compiler chooses Base(const Base&) and feeds it a Base& view of the derived object. The derived members and vtable link are simply never copied - it is compile-time selection, not a runtime decision."
+      "explanation": "The target b has static type Base, so the compiler chooses Base(const Base&) and feeds it a Base& view of the derived object. The derived members and vtable link are simply never copied, it is compile-time selection, not a runtime decision."
     },
     {
       "id": "q4",
@@ -172,7 +172,7 @@
     {
       "id": "q5",
       "type": "numeric",
-      "prompt": "An OptionPosition holds qty -10, entry 3.20, last 3.80, and computes pnl() = qty x (last - entry) x 100. What is its pnl?",
+      "prompt": "An OptionPosition holds qty -10, entry 3.20, last 3.80, and computes pnl() = qty x (last, entry) x 100. What is its pnl?",
       "answer": -600,
       "tolerance": 0.01,
       "unit": "USD",
@@ -182,26 +182,26 @@
       "id": "q6",
       "type": "short",
       "prompt": "In one or two sentences: why does deterministic destruction matter in trading systems?",
-      "modelAnswer": "Objects release resources (locks, sockets, orders) at a known instant - scope exit, in reverse order - which enables RAII; unpredictable GC-style cleanup would break latency budgets and correctness.",
+      "modelAnswer": "Objects release resources (locks, sockets, orders) at a known instant, scope exit, in reverse order, which enables RAII; unpredictable GC-style cleanup would break latency budgets and correctness.",
       "keywords": [
         "deterministic",
         "scope",
         "resources",
         "raii"
       ],
-      "explanation": "C++ ties destruction to scope exit in reverse construction order, so resource release timing is exact and compiler-enforced - the foundation of RAII, and the reason latency-critical desks avoid garbage collection."
+      "explanation": "C++ ties destruction to scope exit in reverse construction order, so resource release timing is exact and compiler-enforced, the foundation of RAII, and the reason latency-critical desks avoid garbage collection."
     }
   ],
   "flashcards": [
     {
       "type": "concept",
       "front": "The construction and destruction sequence for an object with a base and members",
-      "back": "Construct: bases in declaration order, members in declaration order, body. Destroy: derived body, members reversed, base - the exact reverse."
+      "back": "Construct: bases in declaration order, members in declaration order, body. Destroy: derived body, members reversed, base, the exact reverse."
     },
     {
       "type": "code-output",
-      "front": "Trade prints \"cX\" on construction and \"dX\" on destruction. main: Trade a{\"A\"}; { Trade b{\"B\"}; } Trade c{\"C\"}; - what prints?",
-      "back": "cA cB dB cC dC dA - inner scopes destroy immediately; main destroys in reverse creation order."
+      "front": "Trade prints \"cX\" on construction and \"dX\" on destruction. main: Trade a{\"A\"}; { Trade b{\"B\"}; } Trade c{\"C\"};: what prints?",
+      "back": "cA cB dB cC dC dA, inner scopes destroy immediately; main destroys in reverse creation order."
     },
     {
       "type": "definition",
@@ -215,25 +215,25 @@
     },
     {
       "type": "concept",
-      "front": "Copy constructor vs copy assignment - when does each fire?",
+      "front": "Copy constructor vs copy assignment: when does each fire?",
       "back": "Copy ctor: a NEW object is initialized from an existing one (T b = a; pass-by-value; return-by-value pre-elision). Assignment: an EXISTING object is assigned (b = a;)."
     }
   ],
   "references": [
     {
-      "label": "cppreference — Object lifetime",
+      "label": "cppreference. Object lifetime",
       "url": "https://en.cppreference.com/w/cpp/language/object_lifetime"
     },
     {
-      "label": "cppreference — Copy constructors",
+      "label": "cppreference. Copy constructors",
       "url": "https://en.cppreference.com/w/cpp/language/copy_constructor"
     },
     {
-      "label": "cppreference — Destructors",
+      "label": "cppreference. Destructors",
       "url": "https://en.cppreference.com/w/cpp/language/destructor"
     },
     {
-      "label": "ISO C++ FAQ — Value semantics and slicing",
+      "label": "ISO C++ FAQ. Value semantics and slicing",
       "url": "https://isocpp.org/wiki/faq/value-semantics"
     }
   ],

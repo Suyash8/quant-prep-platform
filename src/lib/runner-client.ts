@@ -26,6 +26,8 @@ async function ping(): Promise<boolean> {
 export async function ensureRunner(): Promise<boolean> {
   if (await ping()) return true;
   // Serverless: we cannot spawn the mini-service; only an external CODE_RUNNER_URL works.
+
+
   if (IS_SERVERLESS) return false;
   if (starting) {
     for (let i = 0; i < 40; i++) {

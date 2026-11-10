@@ -3,7 +3,7 @@
   "title": "C++ Knowledge Assessment",
   "kind": "assessment",
   "timeLimitMinutes": 30,
-  "description": "Core C++ knowledge check for a quant developer: the memory model, RAII, smart pointers, move semantics, iterator invalidation, virtual dispatch cost, atomics and memory ordering, undefined behaviour, vtables, STL complexity, templates and value categories. 30 minutes. Code-output questions show self-contained C++17 snippets - read them as the compiler would.",
+  "description": "Core C++ knowledge check for a quant developer: the memory model, RAII, smart pointers, move semantics, iterator invalidation, virtual dispatch cost, atomics and memory ordering, undefined behaviour, vtables, STL complexity, templates and value categories. 30 minutes. Code-output questions show self-contained C++17 snippets, read them as the compiler would.",
   "sections": [
     {
       "title": "C++ Core Knowledge",
@@ -13,13 +13,13 @@
           "type": "mcq",
           "prompt": "What does RAII stand for, and what is the core idea?",
           "options": [
-            "Resource Allocation Is Initialization - acquire resources in constructors and release them in destructors, so cleanup happens automatically when objects leave scope",
-            "Runtime Algorithm and Interface Inheritance - resources are managed by a central runtime allocator",
-            "Resource Abstraction via Indirect Internals - all resources must be wrapped in virtual interfaces",
-            "Resource Access In Iterators - resources are freed whenever an iterator is invalidated"
+            "Resource Allocation Is Initialization, acquire resources in constructors and release them in destructors, so cleanup happens automatically when objects leave scope",
+            "Runtime Algorithm and Interface Inheritance, resources are managed by a central runtime allocator",
+            "Resource Abstraction via Indirect Internals, all resources must be wrapped in virtual interfaces",
+            "Resource Access In Iterators, resources are freed whenever an iterator is invalidated"
           ],
           "answerIndex": 0,
-          "explanation": "RAII ties a resource's lifetime (heap memory, file handles, locks, sockets) to an object's lifetime: the constructor acquires, the destructor releases. Because destructors run deterministically on scope exit - including during stack unwinding when an exception fires - RAII makes leaks and dangling handles structurally impossible without try/catch sprinkled everywhere. It is the single most important C++ idiom."
+          "explanation": "RAII ties a resource's lifetime (heap memory, file handles, locks, sockets) to an object's lifetime: the constructor acquires, the destructor releases. Because destructors run deterministically on scope exit, including during stack unwinding when an exception fires. RAII makes leaks and dangling handles structurally impossible without try/catch sprinkled everywhere. It is the single most important C++ idiom."
         },
         {
           "id": "cpp-q2",
@@ -32,14 +32,14 @@
             "Each one requires a matching pair of new and delete expressions"
           ],
           "answerIndex": 1,
-          "explanation": "Automatic objects are created on entry to their scope and destroyed, in reverse construction order, on exit. There is no allocator call in the malloc sense: on most ABIs the 'allocation' is bumping the stack pointer, which is why stack allocation is essentially free compared to heap allocation - a key reason latency-sensitive code avoids unnecessary dynamic allocation."
+          "explanation": "Automatic objects are created on entry to their scope and destroyed, in reverse construction order, on exit. There is no allocator call in the malloc sense: on most ABIs the 'allocation' is bumping the stack pointer, which is why stack allocation is essentially free compared to heap allocation, a key reason latency-sensitive code avoids unnecessary dynamic allocation."
         },
         {
           "id": "cpp-q3",
           "type": "mcq",
           "prompt": "What does shared_ptr add over unique_ptr, and at what cost?",
           "options": [
-            "Nothing - they are interchangeable, shared_ptr is merely the older API",
+            "Nothing, they are interchangeable, shared_ptr is merely the older API",
             "Shared ownership via an atomic reference count and a control block: copies cost atomic increments, and the managed object is destroyed when the last owner goes away",
             "Shared ownership via a per-object spinlock: the object is destroyed when the FIRST owner goes away",
             "Copy semantics only: copies share the same deleter but each pointer keeps its own private count"
@@ -54,7 +54,7 @@
           "language": "cpp",
           "code": "#include <iostream>\n#include <utility>\n\nstruct S {\n    S() { std::cout << \"ctor\\n\"; }\n    S(const S&) { std::cout << \"copy\\n\"; }\n    S(S&&) noexcept { std::cout << \"move\\n\"; }\n};\n\nvoid take(S) {}\n\nint main() {\n    S s;\n    take(s);\n    take(std::move(s));\n    return 0;\n}",
           "answer": "ctor\ncopy\nmove",
-          "explanation": "Constructing s prints ctor. take(s) passes an lvalue by value, so the copy constructor builds the parameter. take(std::move(s)) casts s to an rvalue reference, so overload resolution selects the move constructor. The key insight: std::move moves nothing - it is just a static_cast to rvalue that changes which constructor is chosen."
+          "explanation": "Constructing s prints ctor. take(s) passes an lvalue by value, so the copy constructor builds the parameter. take(std::move(s)) casts s to an rvalue reference, so overload resolution selects the move constructor. The key insight: std::move moves nothing, it is just a static_cast to rvalue that changes which constructor is chosen."
         },
         {
           "id": "cpp-q5",
@@ -80,14 +80,14 @@
             "A mandatory lock acquisition on the vtable"
           ],
           "answerIndex": 2,
-          "explanation": "The call itself is cheap: load the object's vptr, index the vtable, call indirectly - two dependent loads plus an indirect branch. The real cost is what it prevents: the compiler cannot inline the callee (except when it can devirtualize), so all the optimisations inlining unlocks disappear, and the indirect branch may mispredict on polymorphic call sites. The vtable is read-only shared data - no locking involved."
+          "explanation": "The call itself is cheap: load the object's vptr, index the vtable, call indirectly, two dependent loads plus an indirect branch. The real cost is what it prevents: the compiler cannot inline the callee (except when it can devirtualize), so all the optimisations inlining unlocks disappear, and the indirect branch may mispredict on polymorphic call sites. The vtable is read-only shared data, no locking involved."
         },
         {
           "id": "cpp-q7",
           "type": "mcq",
           "prompt": "What does memory_order_relaxed on an atomic fetch_add guarantee?",
           "options": [
-            "Nothing at all - it behaves exactly like a plain int++",
+            "Nothing at all, it behaves exactly like a plain int++",
             "Atomicity and a single modification order for that one variable, but no ordering or synchronisation of surrounding memory operations",
             "Full sequential consistency across all threads",
             "That the compiler cannot reorder it, though the CPU still can"
@@ -105,16 +105,26 @@
             "Reading v[10] on a std::vector<int> of size 5 with operator[]",
             "Reading the value of an automatic int variable that was never initialised"
           ],
-          "answerIndices": [1, 2, 3],
-          "explanation": "Unsigned arithmetic is defined: it computes modulo $2^n$ and wraps. Signed overflow, out-of-bounds access, and reading an indeterminate value are all UB - the standard places no constraints on behaviour, so the compiler may assume they never happen and optimise accordingly (which is why UB can produce bizarre, delayed, or 'impossible' symptoms far from the bug)."
+          "answerIndices": [
+            1,
+            2,
+            3
+          ],
+          "explanation": "Unsigned arithmetic is defined: it computes modulo $2^n$ and wraps. Signed overflow, out-of-bounds access, and reading an indeterminate value are all UB, the standard places no constraints on behaviour, so the compiler may assume they never happen and optimise accordingly (which is why UB can produce bizarre, delayed, or 'impossible' symptoms far from the bug)."
         },
         {
           "id": "cpp-q9",
           "type": "short",
           "prompt": "How many vtable pointers does each object of a polymorphic class carry, and to what does a single vtable belong?",
           "modelAnswer": "Each object carries exactly one vptr (a hidden pointer stored inside the object, typically in its first bytes), pointing to that class's vtable. The vtable belongs to the class, not to any object: all instances of the same class share one vtable, which holds the addresses of that class's virtual function implementations (plus RTTI and offset-to-top information for multiple inheritance).",
-          "keywords": ["one", "per object", "per class", "vptr", "shared"],
-          "explanation": "The vptr is per object (that is what makes dispatch work on 'this'), but the table itself is per class - one copy in read-only memory shared by every instance. A class with 30 virtual functions still stores only one pointer per object; the 30 function pointers live once in the class's vtable. This is why adding virtual functions costs object size nothing, but adding a second base class with virtuals adds a second vptr."
+          "keywords": [
+            "one",
+            "per object",
+            "per class",
+            "vptr",
+            "shared"
+          ],
+          "explanation": "The vptr is per object (that is what makes dispatch work on 'this'), but the table itself is per class, one copy in read-only memory shared by every instance. A class with 30 virtual functions still stores only one pointer per object; the 30 function pointers live once in the class's vtable. This is why adding virtual functions costs object size nothing, but adding a second base class with virtuals adds a second vptr."
         },
         {
           "id": "cpp-q10",
@@ -127,7 +137,7 @@
             "std::vector: guaranteed O(1) lookup by key; std::map: O(n) insert"
           ],
           "answerIndex": 1,
-          "explanation": "unordered_map hashes to a bucket: average O(1) if the hash is good and load factor is controlled, degrading to O(n) when many keys collide into one bucket. map is a balanced red-black tree: every insert/find/erase is O(log n) guaranteed, worst case included - plus it keeps keys in sorted order, which unordered_map cannot. Knowing which guarantee you need (bounded worst case vs speed) matters in latency-sensitive paths."
+          "explanation": "unordered_map hashes to a bucket: average O(1) if the hash is good and load factor is controlled, degrading to O(n) when many keys collide into one bucket. map is a balanced red-black tree: every insert/find/erase is O(log n) guaranteed, worst case included, plus it keeps keys in sorted order, which unordered_map cannot. Knowing which guarantee you need (bounded worst case vs speed) matters in latency-sensitive paths."
         },
         {
           "id": "cpp-q11",
@@ -136,7 +146,7 @@
           "language": "cpp",
           "code": "#include <iostream>\n\ntemplate <typename T>\nT twice(T v) { return v + v; }\n\nint main() {\n    std::cout << twice(5) << ' ' << twice(2.5) << '\\n';\n    return 0;\n}",
           "answer": "10 5",
-          "explanation": "The compiler instantiates the template twice from the same source: twice<int> returns $5 + 5 = 10$, and twice<double> returns $5.0$, which streams as '5'. Templates are a compile-time code generator - one definition, one machine-code body per set of template arguments - which is why template code lives in headers and why type errors surface at instantiation time."
+          "explanation": "The compiler instantiates the template twice from the same source: twice<int> returns $5 + 5 = 10$, and twice<double> returns $5.0$, which streams as '5'. Templates are a compile-time code generator, one definition, one machine-code body per set of template arguments, which is why template code lives in headers and why type errors surface at instantiation time."
         },
         {
           "id": "cpp-q12",
@@ -149,7 +159,7 @@
             "++x"
           ],
           "answerIndex": 1,
-          "explanation": "x names a stored object, so it is an lvalue - and so are the other two traps: built-in assignment yields the assigned-to object ($x = 5$ is an lvalue referring to x), and pre-increment ++x also yields x as an lvalue. Only $x + 1$ produces a temporary value with no identity: a prvalue, which is an rvalue. (Post-increment x++ is also a prvalue - it yields a copy of the old value.) Value categories decide what std::move, perfect forwarding and overload resolution do, so this vocabulary is not academic."
+          "explanation": "x names a stored object, so it is an lvalue, and so are the other two traps: built-in assignment yields the assigned-to object ($x = 5$ is an lvalue referring to x), and pre-increment ++x also yields x as an lvalue. Only $x + 1$ produces a temporary value with no identity: a prvalue, which is an rvalue. (Post-increment x++ is also a prvalue, it yields a copy of the old value.) Value categories decide what std::move, perfect forwarding and overload resolution do, so this vocabulary is not academic."
         }
       ]
     }

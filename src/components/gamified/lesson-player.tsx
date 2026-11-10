@@ -11,6 +11,10 @@ import {
 } from 'lucide-react';
 import type { PlayerCard } from '@/lib/lesson-cards';
 import { cardLabel } from '@/lib/lesson-cards';
+import type { QuizQuestion } from '@/lib/content';
+import { gradeAnswer } from '@/lib/grading';
+import { scoreQuiz } from '@/lib/mastery';
+import { recordLessonResult, recordExerciseDone, lessonProgressOf, xpSummary, subscribe, ensureLocalCards } from '@/lib/client/local-state';
 import { ClientMd, ClientMathFigure } from '@/components/gamified/client-md';
 import { ClientBlock } from '@/components/gamified/player-blocks';
 import { Confetti } from '@/components/gamified/confetti';
@@ -24,7 +28,7 @@ interface FinishResult {
   total: number;
   status: string;
   xpAwarded: number;
-  streakCount: number | null;
+  streakCount?: number | null;
   perQuestion?: Record<string, { correct: boolean; explanation: string }>;
 }
 
@@ -38,12 +42,14 @@ interface PlayerState {
 interface MiniHud { streakCount: number; xp: number }
 
 export function LessonPlayer({
-  lessonId, title, moduleTitle, cards, nextHref, nextTitle,
+  lessonId, title, moduleTitle, cards, fullQuiz, flashcards, nextHref, nextTitle,
 }: {
   lessonId: string;
   title: string;
   moduleTitle: string;
   cards: PlayerCard[];
+  fullQuiz: QuizQuestion[];
+  flashcards: { type: string; front: string; back: string }[];
   nextHref?: string;
   nextTitle?: string;
 }) {
@@ -72,9 +78,11 @@ export function LessonPlayer({
   const cardRef = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
-    fetch('/api/gamification').then(r => (r.ok ? r.json() : null)).then(d => {
-      if (d) setHud({ streakCount: d.streakCount, xp: d.xp });
-    }).catch(() => {});
+    // v3: HUD mirrors the local XP store, instant and offline-capable
+    const pull = () => { const s = xpSummary(); setHud({ streakCount: s.streakCount, xp: s.xp }); };
+    pull();
+    const unsub = subscribe(pull);
+    return () => unsub();
   }, []);
 
   const finished = result !== null;
@@ -83,6 +91,8 @@ export function LessonPlayer({
   const progressPct = finished ? 100 : Math.round(((state.idx + 1) / total) * 100);
 
   // persist position for resume
+
+
   React.useEffect(() => {
     if (!finished) {
       try { window.localStorage.setItem(storageKey, JSON.stringify(state)); } catch { /* ignore */ }
@@ -105,62 +115,55 @@ export function LessonPlayer({
 
   const quizCards = cards.filter(c => c.kind === 'quiz').length;
 
-  async function checkAnswer(qid: string, answer: string | string[]) {
-    const res = await fetch('/api/progress/lesson/check', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ lessonId, questionId: qid, answer }),
-    }).catch(() => null);
-    if (!res || !res.ok) {
-      toast.error('Could not check that answer — connection hiccup.');
-      return { correct: false, explanation: '' };
-    }
-    const data = (await res.json()) as { correct: boolean; explanation: string };
-    setState(s => ({ ...s, feedback: { ...s.feedback, [qid]: { correct: data.correct, explanation: data.explanation } } }));
-    if (!data.correct) setShakeKey(k => k + 1);
-    return data;
+  function checkAnswer(qid: string, answer: string | string[]): { correct: boolean; explanation: string } {
+    // v3: graded locally from the content pack. Instant, works offline,
+    // same grader the server uses (gradeAnswer), so results match.
+    const full = fullQuiz.find(q => q.id === qid);
+    const correct = full ? gradeAnswer(full, answer) : false;
+    const explanation = full?.explanation ?? '';
+    setState(s => ({ ...s, feedback: { ...s.feedback, [qid]: { correct, explanation } } }));
+    if (!correct) setShakeKey(k => k + 1);
+    return { correct, explanation };
   }
 
-  async function submitQuiz() {
+  function submitQuiz() {
+    // v3: scored locally, recorded locally, synced in the background.
     setSubmitting(true);
     try {
-      const res = await fetch('/api/progress/lesson', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          lessonId,
-          answers: state.answers,
-          exerciseDone: state.exercises.guided || state.exercises.independent,
-        }),
+      const r = scoreQuiz(fullQuiz, state.answers, (q, a) => {
+        const full = fullQuiz.find(x => x.id === q.id)!;
+        return gradeAnswer(full, a);
       });
-      const data = await res.json();
-      if (!res.ok) {
-        toast.error(data.error ?? 'Submission failed.');
-        return;
+      const perQuestion: Record<string, { correct: boolean; explanation: string }> = {};
+      for (const q of fullQuiz) {
+        const a = state.answers[q.id];
+        perQuestion[q.id] = { correct: a !== undefined ? gradeAnswer(q, a) : false, explanation: q.explanation };
       }
-      setResult(data as FinishResult);
+      const rec = recordLessonResult(lessonId, r.pct, lessonProgressOf(lessonId));
+      ensureLocalCards(lessonId, flashcards);
+      const data: FinishResult = {
+        pct: r.pct, correct: r.correct, total: r.total,
+        status: rec.status, xpAwarded: rec.xp, perQuestion,
+      };
+      setResult(data);
       try { window.localStorage.removeItem(storageKey); } catch { /* ignore */ }
-    } catch {
-      toast.error('Network error during submission.');
     } finally {
       setSubmitting(false);
     }
   }
 
-  async function markExercise(exKind: 'guided' | 'independent', done: boolean) {
+  function markExercise(exKind: 'guided' | 'independent', done: boolean) {
     setState(s => ({ ...s, exercises: { ...s.exercises, [exKind]: done } }));
     if (done) {
-      fetch('/api/progress/lesson', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lessonId, exerciseDone: true }),
-      }).then(r => r.json()).then(d => {
-        if (d.xpAwarded > 0) toast.success(`Exercise logged — +${d.xpAwarded} XP`);
-      }).catch(() => {});
+      const alreadyDone = !!lessonProgressOf(lessonId)?.exerciseDone;
+      const xp = recordExerciseDone(lessonId, alreadyDone);
+      if (xp > 0) toast.success(`Exercise logged, +${xp} XP`);
     }
   }
 
   // keyboard: Enter continues
+
+
   React.useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key !== 'Enter' || finished || exitAsk) return;
@@ -234,7 +237,7 @@ export function LessonPlayer({
 
       {/* card stage */}
       <div ref={cardRef} className="flex-1 overflow-y-auto thin-scroll">
-        <div className="max-w-3xl mx-auto px-4 py-6 pb-56">
+        <div className="max-w-3xl mx-auto px-4 py-6 pb-12">
           <AnimatePresence mode="wait">
             <motion.div
               key={state.idx}
@@ -331,7 +334,7 @@ export function LessonPlayer({
             >
               <h2 className="text-lg font-extrabold">Leave the lesson?</h2>
               <p className="mt-1.5 text-sm text-muted">
-                Your place and answers are saved — you can pick up right here later.
+                Your place and answers are saved, you can pick up right here later.
               </p>
               <div className="mt-5 grid grid-cols-2 gap-3">
                 <button onClick={() => setExitAsk(false)} className="btn3d btn3d-ghost">Keep learning</button>
@@ -440,17 +443,21 @@ function CardBody({
 
 function IntroCard({ card }: { card: Extract<PlayerCard, { kind: 'intro' }> }) {
   return (
-    <div className="py-2">
-      <div className="mx-auto h-16 w-16 rounded-3xl bg-accent-soft flex items-center justify-center anim-bob">
-        <GraduationCap className="h-8 w-8 text-accent" />
+    <div className="py-1">
+      <div className="flex items-center justify-center gap-4">
+        <div className="h-14 w-14 rounded-3xl bg-accent-soft flex items-center justify-center anim-bob shrink-0">
+          <GraduationCap className="h-7 w-7 text-accent" />
+        </div>
+        <div className="text-left">
+          <p className="text-[11px] font-bold text-faint uppercase tracking-[0.14em]">Lesson briefing</p>
+          <h1 className="text-2xl sm:text-[1.7rem] font-black tracking-tight leading-tight">{card.title}</h1>
+        </div>
       </div>
-      <h1 className="mt-4 text-2xl sm:text-[1.7rem] font-black tracking-tight">{card.title}</h1>
-      <p className="mt-1 text-xs font-bold text-faint uppercase tracking-[0.14em]">Lesson briefing</p>
-      <div className="mt-3 flex flex-wrap justify-center gap-2">
+      <div className="mt-4 flex flex-wrap justify-center gap-2">
         <span className="chip chip-info"><Clock className="h-3 w-3" /> ~{card.estMinutes} min</span>
         <span className="chip chip-warning"><Target className="h-3 w-3" /> {card.difficulty}</span>
       </div>
-      <div className="mt-5 grid gap-3 md:grid-cols-2 md:text-left">
+      <div className="mt-4 grid gap-3 md:grid-cols-2 md:text-left">
         <div className="text-left rounded-2xl border-2 border-transparent bg-accent-soft p-4">
           <p className="text-xs font-extrabold uppercase tracking-wide text-accent-deep dark:text-accent mb-1.5">Why this matters</p>
           <p className="text-sm leading-relaxed font-semibold"><ClientMd text={card.motivation} /></p>
@@ -527,7 +534,7 @@ function ExerciseCard({ card, done, onDone }: {
           onChange={e => onDone(card.exKind, e.target.checked)}
           className="h-5 w-5 accent-[var(--accent)]"
         />
-        <span className="text-sm font-bold">{done ? 'Exercise completed — nice work!' : 'I worked through this exercise (pen and paper or editor)'}</span>
+        <span className="text-sm font-bold">{done ? 'Exercise completed, nice work!' : 'I worked through this exercise (pen and paper or editor)'}</span>
       </label>
     </div>
   );
@@ -610,7 +617,7 @@ function QuizCard({ question, value, onAnswer, revealed }: {
             rows={3} disabled={revealed}
             value={(value as string) ?? ''}
             onChange={e => onAnswer(qid, e.target.value)}
-            placeholder="Exact output — one line per output line"
+            placeholder="Exact output, one line per output line"
             className="w-full px-4 py-3 rounded-2xl border-2 border-border bg-surface text-sm font-mono focus:border-info focus:outline-none"
           />
         )}
@@ -624,7 +631,7 @@ function QuizCard({ question, value, onAnswer, revealed }: {
           />
         )}
       </div>
-      <p className="mt-3 text-xs text-faint">Answer honestly — the point is finding your gaps, not the green tick.</p>
+      <p className="mt-3 text-xs text-faint">Answer honestly, the point is finding your gaps, not the green tick.</p>
     </div>
   );
 }
@@ -657,7 +664,7 @@ function FinishScreen({ result, quizCards, nextHref, nextTitle, referenceHref, t
         <motion.p initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
           className="mt-2 text-sm text-muted font-semibold">
           {master
-            ? 'You retained this material across a later check — the strongest signal there is.'
+            ? 'You retained this material across a later check, the strongest signal there is.'
             : passed
               ? 'Solid work. This unlocks the next lessons in your path.'
               : 'Below the 80% pass mark. Skim the explanations in reference view and run it again.'}
@@ -685,7 +692,7 @@ function FinishScreen({ result, quizCards, nextHref, nextTitle, referenceHref, t
           </div>
           <div className="rounded-2xl border-2 border-border bg-surface p-3">
             <Flame className={cn('h-5 w-5 mx-auto text-flame', result.streakCount ? 'anim-flame' : 'opacity-40')} />
-            <p className="mt-1 text-xl font-black tnum">{result.streakCount ?? '—'}</p>
+            <p className="mt-1 text-xl font-black tnum">{result.streakCount ?? ', '}</p>
             <p className="text-[11px] font-bold text-muted">DAY STREAK</p>
           </div>
           <div className="rounded-2xl border-2 border-border bg-surface p-3">
@@ -712,7 +719,7 @@ function FinishScreen({ result, quizCards, nextHref, nextTitle, referenceHref, t
           </div>
         </motion.div>
 
-        <p className="mt-6 text-xs text-faint">Quiz score is graded on the server — {quizCards} question{quizCards === 1 ? '' : 's'} in this lesson.</p>
+        <p className="mt-6 text-xs text-faint">Quiz score is graded on the server, {quizCards} question{quizCards === 1 ? '' : 's'} in this lesson.</p>
       </div>
     </div>
   );

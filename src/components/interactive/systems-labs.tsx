@@ -13,13 +13,13 @@ export function TerminalSteps({ params }: { params: Record<string, unknown> }) {
     return <LabFrame title="Terminal" note=""><p className="text-sm text-faint">No steps configured.</p></LabFrame>;
   }
   return (
-    <LabFrame title="Try it in a safe, simulated terminal" caption={step.note ?? 'Step through the commands — the output shown is what you would see.'}>
+    <LabFrame title="Try it in a safe, simulated terminal" caption={step.note ?? 'Step through the commands, the output shown is what you would see.'}>
       <div className="font-mono text-xs sm:text-[13px] border rounded-lg bg-[#0d1117] text-[#c9d1d9] overflow-hidden">
         <div className="flex items-center gap-1.5 px-3 py-2 border-b border-white/10">
           <span className="h-2.5 w-2.5 rounded-full bg-[#ff5f57]" />
           <span className="h-2.5 w-2.5 rounded-full bg-[#febc2e]" />
           <span className="h-2.5 w-2.5 rounded-full bg-[#28c840]" />
-          <span className="ml-2 text-[10px] text-white/40">bash — simulation</span>
+          <span className="ml-2 text-[10px] text-white/40">bash, simulation</span>
         </div>
         <div className="p-3 min-h-[110px] space-y-1">
           {steps0.slice(0, i + 1).map((s, k) => (
@@ -106,20 +106,16 @@ export function PipePipeline({ params }: { params: Record<string, unknown> }) {
 /* ---------------- PermissionBits: rwx calculator ---------------- */
 const RWX = ['read', 'write', 'execute'];
 export function PermissionBits({ params }: { params: Record<string, unknown> }) {
-  const initial = (params.initialOctal as string) ?? '644';
-  const parseInitial = (init: string) => {
-    if (init.length === 3 && /^[0-7]{3}$/.test(init)) return init.split('').map(c => parseInt(c, 8));
-    return [6, 4, 4];
-  };
-  const [bits, setBits] = React.useState(() => parseInitial(initial));
-  const [prevInitial, setPrevInitial] = React.useState(initial);
-  if (prevInitial !== initial) {
-    setPrevInitial(initial);
-    setBits(parseInitial(initial));
-  }
+  const [bits, setBits] = React.useState([6, 4, 4]); // owner group other as 0-7
+
+
   const owners = ['owner', 'group', 'other'];
   const octal = bits.map(b => b.toString(8)).join('');
   const sym = bits.map(b => `${b & 4 ? 'r' : '-'}${b & 2 ? 'w' : '-'}${b & 1 ? 'x' : '-'}`).join('');
+  const initial = (params.initialOctal as string) ?? '644';
+  React.useEffect(() => {
+    if (initial.length === 3 && /^[0-7]{3}$/.test(initial)) setBits(initial.split('').map(c => parseInt(c, 8)));
+  }, [initial]);
   return (
     <LabFrame title="Permission bits: who can do what"
       caption="chmod 755 = owner rwx, group r-x, other r-x. The leading digit (setuid/setuid/sticky) is omitted here for clarity.">
@@ -145,7 +141,7 @@ export function PermissionBits({ params }: { params: Record<string, unknown> }) 
       <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
         <code className="px-2 py-1 rounded bg-surface-2 border font-mono">chmod {octal} file</code>
         <code className="px-2 py-1 rounded bg-surface-2 border font-mono">-{sym}</code>
-        <span className="text-xs text-muted">Every file carries these 9 bits — check them with <code className="font-mono">ls -l</code>.</span>
+        <span className="text-xs text-muted">Every file carries these 9 bits, check them with <code className="font-mono">ls -l</code>.</span>
       </div>
     </LabFrame>
   );
@@ -178,7 +174,7 @@ export function PacketJourney({ params }: { params: Record<string, unknown> }) {
   const last = runs[0];
   return (
     <LabFrame title="Reliable vs best-effort delivery"
-      caption="TCP retransmits until the packet arrives (at a latency cost); UDP sends once and moves on. Markets pay for both behaviours — choice depends on the message.">
+      caption="TCP retransmits until the packet arrives (at a latency cost); UDP sends once and moves on. Markets pay for both behaviours, choice depends on the message.">
       <div className="flex flex-wrap gap-2 mb-3">
         {(['tcp', 'udp'] as const).map(p => (
           <button key={p} onClick={() => setProto(p)}
@@ -201,10 +197,10 @@ export function PacketJourney({ params }: { params: Record<string, unknown> }) {
       </div>
       {last && (
         <p className="mt-3 text-xs text-muted tnum">
-          delivered {last.delivered}/{last.sent} packets · {last.retrans} retransmissions · {last.time} total sends —{' '}
+          delivered {last.delivered}/{last.sent} packets · {last.retrans} retransmissions · {last.time} total sends , {' '}
           {proto === 'tcp'
             ? 'TCP kept retrying: everything arrives, but loss directly adds latency.'
-            : 'UDP moved on: some quotes are simply gone — the next one replaces them.'}
+            : 'UDP moved on: some quotes are simply gone, the next one replaces them.'}
         </p>
       )}
       {runs.length > 1 && (
@@ -329,7 +325,7 @@ export function LatencyBudget({ params }: { params: Record<string, unknown> }) {
       </div>
       <p className="mt-3 text-sm">
         Round trip ≈ <span className="font-semibold tnum">{(total / 1000).toFixed(1)} µs</span>
-        {' '}({fmt(total / 1e6, 3)} ms) — {total / 1000 > 50
+        {' '}({fmt(total / 1e6, 3)} ms), {total / 1000 > 50
           ? 'comfortable for most strategy gateways'
           : total / 1000 > 10
             ? 'mid-range: kernel bypass would help'
@@ -342,9 +338,13 @@ export function LatencyBudget({ params }: { params: Record<string, unknown> }) {
 /* ---------------- PercentileExplorer: p50 vs p99 vs tail ---------------- */
 export function PercentileExplorer({ params }: { params: Record<string, unknown> }) {
   const [tail, setTail] = React.useState(1.0); // % of slow outlier
+
+
   const [tailMult, setTailMult] = React.useState(10);
   const N = 1000;
   const base = 5; // µs
+
+
   const slow = base * tailMult;
   const nSlow = Math.round(N * tail / 100);
   const latencies = React.useMemo(() => {
@@ -360,7 +360,7 @@ export function PercentileExplorer({ params }: { params: Record<string, unknown>
   ];
   return (
     <LabFrame title="Why we quote p99, not the average"
-      caption="Averages hide the tail. If 1% of your orders take 10× longer, the mean barely moves — but the exchange sees every one of those slow orders.">
+      caption="Averages hide the tail. If 1% of your orders take 10× longer, the mean barely moves, but the exchange sees every one of those slow orders.">
       <div className="space-y-3">
         {bars.map(b => (
           <div key={b.label} className="flex items-center gap-3">
@@ -377,7 +377,7 @@ export function PercentileExplorer({ params }: { params: Record<string, unknown>
         <Slider label="slow factor" value={tailMult} min={2} max={50} step={1} onChange={setTailMult} format={v => `${v.toFixed(0)}×`} />
       </div>
       <p className="mt-3 text-xs text-muted tnum">
-        mean {fmt((base * (N - nSlow) + slow * nSlow) / N, 2)} µs · p99 {p(0.99).toFixed(1)} µs — the mean and the median agree
+        mean {fmt((base * (N - nSlow) + slow * nSlow) / N, 2)} µs · p99 {p(0.99).toFixed(1)} µs, the mean and the median agree
         almost perfectly, and the tail is a different world. This is why trading systems report percentile latencies.
       </p>
     </LabFrame>
@@ -414,13 +414,12 @@ export function OrderStateMachine({ params }: { params: Record<string, unknown> 
             <button key={i} onClick={() => { setState(t.to); if (t.fill !== undefined) setFilled(t.fill); }}
               className="px-3 py-1.5 rounded-md border text-xs hover:border-accent">{t.label} →</button>
           )) : (
-            <button onClick={() => { setState('NEW'); setFilled(0); }} className="px-3 py-1.5 rounded-md bg-accent text-accent-foreground text-xs">Terminal state — place a new order</button>
+            <button onClick={() => { setState('NEW'); setFilled(0); }} className="px-3 py-1.5 rounded-md bg-accent text-accent-foreground text-xs">Terminal state, place a new order</button>
           )}
         </div>
       </div>
       <p className="mt-3 text-xs text-muted">
-        Executions arrive on the market data / drop-copy channel; your fills book, positions and P&amp;L must stay consistent with them —
-        reconciliation exists because they won&apos;t always agree.
+        Executions arrive on the market data / drop-copy channel; your fills book, positions and P&amp;L must stay consistent with them, reconciliation exists because they won&apos;t always agree.
       </p>
     </LabFrame>
   );
@@ -439,6 +438,8 @@ export function CovarianceLab({ params }: { params: Record<string, unknown> }) {
     for (let i = 0; i < 120; i++) {
       const u = rand(), v = rand();
       // Box-Muller
+
+
       const z1 = Math.sqrt(-2 * Math.log(Math.max(u, 1e-9))) * Math.cos(2 * Math.PI * v);
       const z2 = Math.sqrt(-2 * Math.log(Math.max(u, 1e-9))) * Math.sin(2 * Math.PI * v);
       out.push({ x: sx * z1, y: sy * (rho * z1 + Math.sqrt(1 - rho * rho) * z2) });
@@ -448,8 +449,12 @@ export function CovarianceLab({ params }: { params: Record<string, unknown> }) {
   const cov = rho * sx * sy;
   const W = 320, H = 300, PAD = 30;
   const scale = 90; // px per unit
+
+
   const cx = W / 2, cy = H / 2;
   // eigenvectors of [[sx^2, cov],[cov, sy^2]]
+
+
   const a = sx * sx, b = cov, c = sy * sy;
   const tr = a + c, det = a * c - b * b;
   const disc = Math.max(0, (tr * tr) / 4 - det);
@@ -492,6 +497,8 @@ export function FloatErrorLab({ params }: { params: Record<string, unknown> }) {
   const [spread, setSpread] = React.useState(0.001);
   const run = React.useMemo(() => {
     const base = 1000000.5; // large level, tiny perturbations: the classic killer
+
+
     let s32 = 0, s64 = 0, sq32 = 0, sq64 = 0;
     const f32 = new Float32Array(n);
     let minDiff = Infinity, maxDiff = -Infinity;
@@ -529,7 +536,7 @@ export function FloatErrorLab({ params }: { params: Record<string, unknown> }) {
   };
   return (
     <LabFrame title="Floating point: where the precision goes to die"
-      caption="All samples sit near 1,000,000.5 with a tiny spread — exactly the situation in price series around a level. Switch the operation and watch each one fail differently.">
+      caption="All samples sit near 1,000,000.5 with a tiny spread, exactly the situation in price series around a level. Switch the operation and watch each one fail differently.">
       <div className="flex flex-wrap gap-2 mb-3">
         {([['subtract', 'cancellation'], ['mean', 'naive sum'], ['variance', 'one-pass variance']] as const).map(([m, label]) => (
           <button key={m} onClick={() => setMode(m)}
@@ -600,7 +607,7 @@ export function MemoryPool({ params }: { params: Record<string, unknown> }) {
           </button>
         ))}
         <div className="flex-1" />
-        <button onClick={allocate} className="px-3 py-1.5 rounded-md border text-xs">allocate 16–112 B</button>
+        <button onClick={allocate} className="px-3 py-1.5 rounded-md border text-xs">allocate 16-112 B</button>
         <button onClick={freeSome} className="px-3 py-1.5 rounded-md border text-xs" disabled={!allocs.length}>free 4</button>
         <button onClick={() => { setAllocs([]); setCost(0); }} className="px-3 py-1.5 rounded-md border text-xs">reset</button>
       </div>
@@ -619,7 +626,7 @@ export function MemoryPool({ params }: { params: Record<string, unknown> }) {
           </div>
         ) : (
           <div className="flex flex-col gap-1 items-start">
-            {allocs.length === 0 && <span className="text-xs text-faint">heap empty — allocate a few objects</span>}
+            {allocs.length === 0 && <span className="text-xs text-faint">heap empty, allocate a few objects</span>}
             {allocs.map(a => (
               <div key={a.id} className="h-6 rounded border bg-accent-soft border-accent/50 text-[9px] flex items-center px-1.5 tnum" style={{ width: `${Math.min(100, a.size)}%` }}>
                 {a.size} B
@@ -630,7 +637,7 @@ export function MemoryPool({ params }: { params: Record<string, unknown> }) {
       </div>
       <p className="mt-3 text-xs text-muted tnum">
         {allocs.length} live allocations · cumulative allocator cost ≈ {cost} ns
-        {mode === 'pool' && allocs.some(a => a.size > SLOT) && ' — note: an allocation larger than the slot size would not fit a fixed pool (it needs a size class or a fallback).'}
+        {mode === 'pool' && allocs.some(a => a.size > SLOT) && ', note: an allocation larger than the slot size would not fit a fixed pool (it needs a size class or a fallback).'}
       </p>
     </LabFrame>
   );

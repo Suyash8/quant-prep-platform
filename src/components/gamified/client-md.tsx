@@ -20,7 +20,9 @@ function parseMd(text: string): React.ReactNode[] {
   let key = 0;
 
   const pushStyled = (s: string) => {
-    // **bold**, *italic*, `code` — in that order, left to right.
+    // **bold**, *italic*, `code`, in that order, left to right.
+
+
     const parts: React.ReactNode[] = [];
     let rest = s;
     let pk = 0;

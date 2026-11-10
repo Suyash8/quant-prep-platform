@@ -10,6 +10,8 @@ export function MemoryLayout({ params }: { params: Record<string, unknown> }) {
   const info = typeInfo(type);
   const bits = Array.from({ length: info.bytes * 8 }, () => false);
   // For double/int show real byte patterns (little-endian)
+
+
   const bytes = (() => {
     const out: number[] = [];
     try {
@@ -24,6 +26,8 @@ export function MemoryLayout({ params }: { params: Record<string, unknown> }) {
         view.setInt8(0, Math.round(value) | 0);
       } else {
         // array: first element
+
+
         view.setFloat64(0, value, true);
       }
       for (let i = 0; i < info.bytes; i++) out.push(view.getUint8(i));
@@ -33,7 +37,7 @@ export function MemoryLayout({ params }: { params: Record<string, unknown> }) {
     return out;
   })();
   return (
-    <LabFrame title={`Memory layout: ${type}`} caption={`${info.desc} — ${info.bytes} bytes on typical 64-bit platforms. Byte values are the actual little-endian representation of ${info.bytes === 4 ? Math.round(value) : value}.`}>
+    <LabFrame title={`Memory layout: ${type}`} caption={`${info.desc}, ${info.bytes} bytes on typical 64-bit platforms. Byte values are the actual little-endian representation of ${info.bytes === 4 ? Math.round(value) : value}.`}>
       <div className="flex flex-wrap gap-1.5 justify-center">
         {bytes.map((b, i) => (
           <div key={i} className="text-center">
@@ -43,7 +47,7 @@ export function MemoryLayout({ params }: { params: Record<string, unknown> }) {
         ))}
       </div>
       <p className="mt-3 text-xs text-muted text-center">
-        {type === 'double' && 'A double = sign(1) + exponent(11) + mantissa(52) bits. The decimal 42.17 cannot be represented exactly — try 42.17 in the IEEE 754 lesson.'}
+        {type === 'double' && 'A double = sign(1) + exponent(11) + mantissa(52) bits. The decimal 42.17 cannot be represented exactly, try 42.17 in the IEEE 754 lesson.'}
         {type === 'int' && 'Two\'s complement: the top bit contributes −2³¹, giving the symmetric signed range.'}
         {type.startsWith('int[') && 'Contiguous elements; address arithmetic A[i] = base + i × sizeof(element).'}
         {!type.startsWith('int[') && type !== 'double' && type !== 'int' && 'Fixed-width storage; size is platform-dependent for some types.'}
@@ -120,6 +124,8 @@ export function ComplexityCompare({ params }: { params: Record<string, unknown> 
 
 function safe(expr: string): (n: number) => number {
   // Replace log with Math.log, ^ with ** handled below via simple transforms
+
+
   const js = expr.replace(/\^/g, '**').replace(/\blog\b/g, 'Math.log').replace(/\bexp\b/g, 'Math.exp')
     .replace(/\bsqrt\b/g, 'Math.sqrt').replace(/\bn\b/g, 'x');
   try {
@@ -156,9 +162,13 @@ export function SortingVisual({ params }: { params: Record<string, unknown> }) {
           }
         }
         // full pass check
+
+
         for (let i = 0; i < a.length - 1; i++) if (a[i].v > a[i + 1].v) done = false;
       } else if (algo === 'insertion') {
         // one insertion step from current partial order: find first inversion from left
+
+
         for (let i = 1; i < a.length; i++) {
           comps++;
           if (a[i].v < a[i - 1].v) {
@@ -171,6 +181,8 @@ export function SortingVisual({ params }: { params: Record<string, unknown> }) {
         for (let i = 0; i < a.length - 1; i++) if (a[i].v > a[i + 1].v) done = false;
       } else {
         // selection: move min of suffix
+
+
         for (let i = 0; i < a.length - 1; i++) {
           if (a[i].v > a[i + 1].v) {
             let minI = i;
@@ -200,7 +212,7 @@ export function SortingVisual({ params }: { params: Record<string, unknown> }) {
   React.useEffect(() => () => { if (timer.current) clearInterval(timer.current); }, []);
   const sortedIdx = arr.map((a, i) => a.v <= Math.min(...arr.slice(i).map(x => x.v)) && arr.slice(0, i).every(x => x.v <= a.v));
   return (
-    <LabFrame title={`${algo} sort — one comparison per step`} caption={`Comparisons so far: ${comparisons}. ${algo === 'bubble' ? 'Bubble sort is O(n²) — watch how many steps the last few elements need.' : algo === 'insertion' ? 'Insertion sort is excellent on nearly-sorted data — try it after one swap.' : 'Selection sort makes exactly n−1 swaps but still compares O(n²) times.'}`}>
+    <LabFrame title={`${algo} sort, one comparison per step`} caption={`Comparisons so far: ${comparisons}. ${algo === 'bubble' ? 'Bubble sort is O(n²), watch how many steps the last few elements need.' : algo === 'insertion' ? 'Insertion sort is excellent on nearly-sorted data, try it after one swap.' : 'Selection sort makes exactly n−1 swaps but still compares O(n²) times.'}`}>
       <div className="flex items-end gap-1 h-32 justify-center">
         {arr.map((a, i) => (
           <div key={a.id} className="flex flex-col items-center gap-1" style={{ width: `${Math.max(120 / arr.length, 4)}%` }}>
@@ -278,6 +290,8 @@ export function BSTVisual({ params }: { params: Record<string, unknown> }) {
       }
     }
     // layout: in-order index = x, depth = y
+
+
     const pos: { x: number; y: number }[] = new Array(nodes.length);
     let order = 0;
     const walk = (i: number, depth: number) => {
@@ -291,6 +305,8 @@ export function BSTVisual({ params }: { params: Record<string, unknown> }) {
     return { nodes, pos, depth: Math.max(...pos.map(p => p.y)) };
   })();
   // search path
+
+
   const path = (() => {
     const out: number[] = [];
     let cur = 0;
@@ -307,7 +323,7 @@ export function BSTVisual({ params }: { params: Record<string, unknown> }) {
   const px = (i: number) => 30 + (tree.pos[i].x / Math.max(values.length - 1, 1)) * (W - 60);
   const py = (i: number) => 26 + tree.pos[i].y * 52;
   return (
-    <LabFrame title="Binary search tree" caption={`Search path for ${target}: ${path.map(i => tree.nodes[i].v).join(' → ')} — ${path.length} comparisons instead of up to ${values.length}. Balanced trees keep this path O(log n).`}>
+    <LabFrame title="Binary search tree" caption={`Search path for ${target}: ${path.map(i => tree.nodes[i].v).join(' → ')}, ${path.length} comparisons instead of up to ${values.length}. Balanced trees keep this path O(log n).`}>
       <svg viewBox={`0 0 ${W} ${Math.max(H, 160)}`} className="w-full h-auto">
         {tree.nodes.map((n, i) => (
           <g key={`e${i}`}>

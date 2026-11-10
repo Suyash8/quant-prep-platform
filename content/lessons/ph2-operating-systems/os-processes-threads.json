@@ -4,7 +4,9 @@
   "title": "Processes, Threads and Scheduling",
   "estMinutes": 26,
   "difficulty": "core",
-  "prereqs": ["linux-permissions-processes"],
+  "prereqs": [
+    "linux-permissions-processes"
+  ],
   "objectives": [
     "Explain what a process and a thread are, and exactly what each shares or owns",
     "Describe the stages of a context switch and quantify its direct and indirect costs",
@@ -19,7 +21,7 @@
     },
     {
       "type": "p",
-      "md": "A **process** is a program in execution: the kernel gives it a private virtual address space, its own file-descriptor table, credentials and a process ID (PID). A **thread** is the unit the scheduler actually runs. Every process starts with one thread; adding threads via pthread_create or std::thread gives each new thread its own stack, register set and thread-local storage, while everything else - heap, globals, open files, signal dispositions - stays shared. That split explains both the appeal and the danger of threads: sharing memory makes communication nearly free, and makes corruption easy."
+      "md": "A **process** is a program in execution: the kernel gives it a private virtual address space, its own file-descriptor table, credentials and a process ID (PID). A **thread** is the unit the scheduler actually runs. Every process starts with one thread; adding threads via pthread_create or std::thread gives each new thread its own stack, register set and thread-local storage, while everything else, heap, globals, open files, signal dispositions, stays shared. That split explains both the appeal and the danger of threads: sharing memory makes communication nearly free, and makes corruption easy."
     },
     {
       "type": "interactive",
@@ -27,27 +29,65 @@
       "params": {
         "title": "Process address space (x86-64 Linux)",
         "regions": [
-          { "name": "text (code)", "address": "0x00400000", "size": "a few MiB", "note": "read-only, shared via the page cache" },
-          { "name": "data + heap", "address": "just above text, grows up", "size": "brk/malloc territory", "note": "order-book objects live here" },
-          { "name": "mmap region", "address": "~0x7f0000000000", "size": "file mappings + large mallocs", "note": "libraries and big allocations land here" },
-          { "name": "stack", "address": "~0x7ffd..., grows down", "size": "8 MiB reserve per thread", "note": "each thread gets its own" }
+          {
+            "name": "text (code)",
+            "address": "0x00400000",
+            "size": "a few MiB",
+            "note": "read-only, shared via the page cache"
+          },
+          {
+            "name": "data + heap",
+            "address": "just above text, grows up",
+            "size": "brk/malloc territory",
+            "note": "order-book objects live here"
+          },
+          {
+            "name": "mmap region",
+            "address": "~0x7f0000000000",
+            "size": "file mappings + large mallocs",
+            "note": "libraries and big allocations land here"
+          },
+          {
+            "name": "stack",
+            "address": "~0x7ffd..., grows down",
+            "size": "8 MiB reserve per thread",
+            "note": "each thread gets its own"
+          }
         ]
       },
-      "caption": "Click through the regions: all threads of one process see this same map - only their stacks and thread-local storage differ."
+      "caption": "Click through the regions: all threads of one process see this same map, only their stacks and thread-local storage differ."
     },
     {
       "type": "p",
-      "md": "The layout above is the map every address in your process resolves against. Threads of the same process see exactly this map - same text, same heap - differing only in stack and TLS. A second *process* (created by fork) gets a private copy of the mapping; pages are not physically copied until one side writes (copy-on-write), so fork is cheap to issue but expensive the moment either side starts writing heavily."
+      "md": "The layout above is the map every address in your process resolves against. Threads of the same process see exactly this map, same text, same heap, differing only in stack and TLS. A second *process* (created by fork) gets a private copy of the mapping; pages are not physically copied until one side writes (copy-on-write), so fork is cheap to issue but expensive the moment either side starts writing heavily."
     },
     {
       "type": "table",
-      "headers": ["Resource", "Per thread or shared?"],
+      "headers": [
+        "Resource",
+        "Per thread or shared?"
+      ],
       "rows": [
-        ["Heap and global variables", "shared - one address space"],
-        ["Open file descriptors", "shared (per-process table)"],
-        ["Stack and registers", "per thread"],
-        ["Thread-local storage (TLS)", "per thread"],
-        ["Signal handlers", "shared, process-wide"]
+        [
+          "Heap and global variables",
+          "shared, one address space"
+        ],
+        [
+          "Open file descriptors",
+          "shared (per-process table)"
+        ],
+        [
+          "Stack and registers",
+          "per thread"
+        ],
+        [
+          "Thread-local storage (TLS)",
+          "per thread"
+        ],
+        [
+          "Signal handlers",
+          "shared, process-wide"
+        ]
       ]
     },
     {
@@ -56,7 +96,7 @@
     },
     {
       "type": "p",
-      "md": "A **context switch** is the kernel suspending one task and resuming another: save the old task's registers into its control block, load the next task's, switch the memory-map if the new task is a different process (invalidating TLB entries for the old address space), and jump back to user mode. The direct cost is a microsecond or two. The indirect cost - cold L1/L2 cache and TLB lines, because the new task touches different memory - is often several times worse. Two threads of one process switch cheaper: no address-space change, no TLB flush."
+      "md": "A **context switch** is the kernel suspending one task and resuming another: save the old task's registers into its control block, load the next task's, switch the memory-map if the new task is a different process (invalidating TLB entries for the old address space), and jump back to user mode. The direct cost is a microsecond or two. The indirect cost, cold L1/L2 cache and TLB lines, because the new task touches different memory, is often several times worse. Two threads of one process switch cheaper: no address-space change, no TLB flush."
     },
     {
       "type": "steps",
@@ -72,7 +112,7 @@
       "type": "callout",
       "variant": "quant",
       "title": "Tail latency is a scheduling problem",
-      "md": "A backtest measures your strategy; the scheduler decides whether production matches it. A 12 ms scheduling delay on a \\$5M order is 12 ms of unapproved risk. CPU pinning (sched_setaffinity), core isolation and real-time scheduling exist so that the 99.9th percentile - not the average - stays inside budget. A desk that only measures the mean will ship a system that works beautifully except when it matters."
+      "md": "A backtest measures your strategy; the scheduler decides whether production matches it. A 12 ms scheduling delay on a \\$5M order is 12 ms of unapproved risk. CPU pinning (sched_setaffinity), core isolation and real-time scheduling exist so that the 99.9th percentile, not the average, stays inside budget. A desk that only measures the mean will ship a system that works beautifully except when it matters."
     },
     {
       "type": "h2",
@@ -89,7 +129,7 @@
         "Setup: 16 runnable threads, 4 cores, slice = 3 ms.",
         "One full round requires $16 \\times 3 = 48$ ms of CPU time.",
         "Spread over 4 cores: $48 / 4 = 12$ ms of wall-clock time per round.",
-        "So any thread can be forced to wait up to about **12 ms** between turns - at trading scale an eternity: light crosses the Atlantic in roughly 30 ms."
+        "So any thread can be forced to wait up to about **12 ms** between turns, at trading scale an eternity: light crosses the Atlantic in roughly 30 ms."
       ]
     },
     {
@@ -104,22 +144,22 @@
     },
     {
       "type": "p",
-      "md": "Threads bring their own arithmetic. Linux reserves 8 MiB of *virtual* address space per thread stack by default - usually almost untouched, so resident memory stays small, but 10,000 threads still commit 80 GiB of address space plus kernel-side bookkeeping per thread. Oversubscription (runnable threads far above the core count) turns every slice expiry into a switch; the fix is thread pools sized to the workload, spinning instead of sleeping on the hottest paths, and affinity so a thread's cache stays warm."
+      "md": "Threads bring their own arithmetic. Linux reserves 8 MiB of *virtual* address space per thread stack by default, usually almost untouched, so resident memory stays small, but 10,000 threads still commit 80 GiB of address space plus kernel-side bookkeeping per thread. Oversubscription (runnable threads far above the core count) turns every slice expiry into a switch; the fix is thread pools sized to the workload, spinning instead of sleeping on the hottest paths, and affinity so a thread's cache stays warm."
     },
     {
       "type": "list",
       "ordered": false,
       "items": [
-        "Involuntary preemption at slice expiry - mitigate with affinity, isolation and RT priorities.",
-        "Voluntary blocking on I/O or a contended lock - mitigate by reducing sharing or wait time.",
-        "Interrupt handling landing on your core (NIC, timer) - steer IRQs elsewhere."
+        "Involuntary preemption at slice expiry, mitigate with affinity, isolation and RT priorities.",
+        "Voluntary blocking on I/O or a contended lock, mitigate by reducing sharing or wait time.",
+        "Interrupt handling landing on your core (NIC, timer), steer IRQs elsewhere."
       ]
     },
     {
       "type": "code",
       "lang": "c",
       "code": "#include <pthread.h>\n#include <stdio.h>\n\nstatic __thread int slot_id;       // thread-local: private per thread\n\nstatic void *worker(void *arg) {\n    slot_id = *(int *)arg;\n    printf(\"worker sees slot %d\\n\", slot_id);\n    return NULL;\n}\n\nint main(void) {\n    pthread_t t[2];\n    int ids[2] = {1, 2};\n    for (int i = 0; i < 2; i++)\n        pthread_create(&t[i], NULL, worker, &ids[i]);\n    for (int i = 0; i < 2; i++)\n        pthread_join(t[i], NULL);\n    return 0;\n}",
-      "caption": "Build with -pthread. slot_id is private to each thread even though both share the process heap - the distinction this whole lesson hangs on."
+      "caption": "Build with -pthread. slot_id is private to each thread even though both share the process heap, the distinction this whole lesson hangs on."
     }
   ],
   "guidedExercise": {
@@ -128,7 +168,7 @@
       "Average = per-event cost divided by the event interval.",
       "6 microseconds out of a 20 microsecond budget is what fraction?"
     ],
-    "solution": "(a) $6\\,\\mu s / 2{,}000 = 0.003\\,\\mu s = 3$ ns per event - undetectable in the mean. (b) $6 / 20 = 30\\%$ of the budget consumed by one unlucky event. (c) Only (b) matters for trading: pinning trades a little throughput for a collapsed tail, which is exactly what a latency budget cares about."
+    "solution": "(a) $6\\,\\mu s / 2{,}000 = 0.003\\,\\mu s = 3$ ns per event, undetectable in the mean. (b) $6 / 20 = 30\\%$ of the budget consumed by one unlucky event. (c) Only (b) matters for trading: pinning trades a little throughput for a collapsed tail, which is exactly what a latency budget cares about."
   },
   "independentExercise": {
     "prompt": "A service runs on 6 cores with 42 runnable threads under round-robin, slice 5 ms. (a) Compute the worst-case scheduling delay in ms. (b) The team cuts to 12 threads by moving background work to another machine; recompute. (c) Name one further mitigation and its trade-off.",
@@ -140,8 +180,8 @@
   },
   "commonMistakes": [
     "Equating threads with speed: beyond the core count, extra runnable threads mostly buy context switches, not parallelism.",
-    "Reading a thread's 8 MiB stack reservation as real memory use - it is virtual; RSS is what counts.",
-    "Assuming fork() copies the whole address space up front - pages are shared copy-on-write until someone writes.",
+    "Reading a thread's 8 MiB stack reservation as real memory use, it is virtual; RSS is what counts.",
+    "Assuming fork() copies the whole address space up front, pages are shared copy-on-write until someone writes.",
     "Counting only the register-save cost of a context switch and ignoring the cache/TLB refill that usually dominates."
   ],
   "realWorldApplication": "Every container orchestrator, database and network server lives under this scheduler; sizing thread pools and interpreting runqueue statistics are exactly this lesson's arithmetic.",
@@ -207,15 +247,24 @@
         "Busy-spin on an isolated core instead of sleeping between events",
         "Steer NIC interrupts onto a different core than the hot thread"
       ],
-      "answerIndices": [0, 3, 4],
+      "answerIndices": [
+        0,
+        3,
+        4
+      ],
       "explanation": "+19 demotes the thread behind every other task, and oversubscription multiplies switches. Pinning, spinning on isolated cores and moving IRQs away all keep the hot path uninterrupted."
     },
     {
       "id": "q6",
       "type": "short",
       "prompt": "In one or two sentences: what is preemption, and when does the kernel perform it?",
-      "modelAnswer": "Preemption is the kernel forcibly suspending a running task - typically when its time slice expires or a higher-priority task becomes runnable - saving its state so it can resume later.",
-      "keywords": ["kernel", "time slice", "priority", "suspend"],
+      "modelAnswer": "Preemption is the kernel forcibly suspending a running task, typically when its time slice expires or a higher-priority task becomes runnable, saving its state so it can resume later.",
+      "keywords": [
+        "kernel",
+        "time slice",
+        "priority",
+        "suspend"
+      ],
       "explanation": "Preemption is involuntary scheduling: the task did not block or exit, the kernel took the CPU back, usually on a timer interrupt or a wake-up of a higher-priority task."
     }
   ],
@@ -233,7 +282,7 @@
     {
       "type": "concept",
       "front": "Direct vs indirect context-switch cost",
-      "back": "Direct: register save/restore + mode switch (~1-2 microseconds). Indirect: cold caches/TLB afterwards, often several times worse - the part that hurts tail latency."
+      "back": "Direct: register save/restore + mode switch (~1-2 microseconds). Indirect: cold caches/TLB afterwards, often several times worse, the part that hurts tail latency."
     },
     {
       "type": "concept",
@@ -242,9 +291,20 @@
     }
   ],
   "references": [
-    { "label": "man7 - sched(7): Linux scheduling policies", "url": "https://man7.org/linux/man-pages/man7/sched.7.html" },
-    { "label": "man7 - pthreads(7): POSIX threads", "url": "https://man7.org/linux/man-pages/man7/pthreads.7.html" },
-    { "label": "man7 - fork(2)", "url": "https://man7.org/linux/man-pages/man2/fork.2.html" }
+    {
+      "label": "man7: sched(7): Linux scheduling policies",
+      "url": "https://man7.org/linux/man-pages/man7/sched.7.html"
+    },
+    {
+      "label": "man7: pthreads(7): POSIX threads",
+      "url": "https://man7.org/linux/man-pages/man7/pthreads.7.html"
+    },
+    {
+      "label": "man7: fork(2)",
+      "url": "https://man7.org/linux/man-pages/man2/fork.2.html"
+    }
   ],
-  "skills": ["operating-systems"]
+  "skills": [
+    "operating-systems"
+  ]
 }

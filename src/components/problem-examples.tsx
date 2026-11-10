@@ -50,7 +50,7 @@ function ExampleCard({ example, index }: { example: ProblemExample; index: numbe
         document.execCommand('copy');
         document.body.removeChild(ta);
         flash();
-      } catch { /* clipboard unavailable — no-op */ }
+      } catch { /* clipboard unavailable, no-op */ }
     }
   }
 

@@ -9,7 +9,7 @@ import {
   Activity, ArrowRight, Clock, Compass, Gauge, ListChecks, Route, ShieldCheck, Zap,
 } from 'lucide-react';
 
-export const metadata = { title: 'Diagnostic — QuantFoundry' };
+export const metadata = { title: 'Diagnostic. QuantFoundry' };
 
 const POP_DELAYS = ['0ms', '70ms', '140ms'];
 const STEP_DELAYS = ['0ms', '80ms', '160ms'];
@@ -19,7 +19,7 @@ const STEPS = [
     icon: ListChecks,
     tile: 'icon-tile-info',
     title: 'Answer 28 real questions',
-    body: 'Arithmetic to finance fundamentals, escalating difficulty — no trick questions, and you can move freely between sections.',
+    body: 'Arithmetic to finance fundamentals, escalating difficulty, no trick questions, and you can move freely between sections.',
   },
   {
     icon: Gauge,
@@ -31,7 +31,7 @@ const STEPS = [
     icon: Route,
     tile: 'icon-tile-accent',
     title: 'Your path is tuned',
-    body: 'We place you at the right phase and calibrate lesson difficulty — skip what you already know, drill what you don’t.',
+    body: 'We place you at the right phase and calibrate lesson difficulty, skip what you already know, drill what you don’t.',
   },
 ];
 
@@ -49,7 +49,7 @@ export default async function DiagnosticPage() {
           <div className="qf-empty">
             <span className="empty-emoji" aria-hidden>🧭</span>
             <h2 className="font-extrabold text-lg">Diagnostic not installed</h2>
-            <p className="mt-1 text-sm text-muted">Run the content seed and reload this page — your path is waiting.</p>
+            <p className="mt-1 text-sm text-muted">Run the content seed and reload this page, your path is waiting.</p>
           </div>
         </div>
       </AppShell>
@@ -70,9 +70,9 @@ export default async function DiagnosticPage() {
 
   return (
     <AppShell user={{ name: user.name, email: user.email, role: user.role }} isAdmin={user.role === 'admin'}>
-      <div className="max-w-3xl mx-auto px-4 lg:px-6 py-8">
+      <div className="max-w-5xl mx-auto px-4 lg:px-6 py-8">
         <header className="page-hero anim-slide-up">
-          <span className="icon-tile icon-tile-danger"><Activity /></span>
+          <span className="icon-tile icon-tile-accent"><Activity /></span>
           <div>
             <h1>Diagnostic</h1>
             <p className="page-sub">Find your true starting point</p>
@@ -89,8 +89,7 @@ export default async function DiagnosticPage() {
             <span className="chip chip-accent"><Route className="h-3 w-3" /> PHASE 0 · ORIENTATION</span>
             <h2 className="mt-3 text-2xl font-extrabold tracking-tight">Find your true starting point</h2>
             <p className="mt-2.5 text-sm text-muted leading-relaxed max-w-xl">
-              Seven mini-sections — arithmetic, algebra, logic, programming, CS fundamentals, probability and finance —
-              escalate from quick warm-ups to genuinely challenging problems.
+              Seven mini-sections, arithmetic, algebra, logic, programming, CS fundamentals, probability and finance, escalate from quick warm-ups to genuinely challenging problems.
             </p>
             <p className="mt-2 text-sm text-muted leading-relaxed max-w-xl">
               No studying needed first: the score exists to place you at the right phase and calibrate difficulty, not to grade you.
@@ -139,12 +138,12 @@ export default async function DiagnosticPage() {
         <div className="mt-6 flex items-center gap-3 anim-slide-up" style={{ animationDelay: STEP_DELAYS[2] }}>
           <span className="icon-tile icon-tile-accent"><ShieldCheck /></span>
           <p className="font-semibold text-sm sm:text-base">
-            No stakes — results only tune your path
+            No stakes, results only tune your path
             <span className="text-muted font-semibold"> · nothing is shared, and you can retake it any time.</span>
           </p>
         </div>
 
-        {/* the player itself — compact strip, the hero above already sells it */}
+        {/* the player itself, compact strip, the hero above already sells it */}
         <div id="diagnostic-player" className="mt-8 scroll-mt-24">
           <AssessmentPlayer assessment={player} compactIntro />
         </div>

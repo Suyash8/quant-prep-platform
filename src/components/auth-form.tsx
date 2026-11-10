@@ -15,15 +15,27 @@ export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
   const [error, setError] = useState<string | null>(null);
 
   // After a successful sign-in we send the user back to whatever they were
+
+
   // trying to reach (the `next` param), falling back to the dashboard.
+
+
   // A hard navigation is used deliberately: it guarantees the page loads
+
+
   // even if the client-side router is in a bad state, and it picks up the
+
+
   // fresh session cookie on the first request.
+
+
   function destination(): string {
     if (typeof window === 'undefined') return '/dashboard';
     const params = new URLSearchParams(window.location.search);
     const next = params.get('next');
-    // Only allow same-site relative paths — never an external redirect.
+    // Only allow same-site relative paths, never an external redirect.
+
+
     if (next && next.startsWith('/') && !next.startsWith('//')) return next;
     return '/dashboard';
   }
@@ -44,10 +56,10 @@ export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
         setBusy(false);
         return;
       }
-      toast.success(mode === 'register' ? 'Account created — welcome aboard.' : `Welcome back, ${data.name}.`);
+      toast.success(mode === 'register' ? 'Account created, welcome aboard.' : `Welcome back, ${data.name}.`);
       window.location.assign(destination());
     } catch {
-      setError('Network error — is the server running?');
+      setError('Network error, is the server running?');
       setBusy(false);
     }
   }
@@ -57,7 +69,7 @@ export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
         { icon: BookOpenCheck, text: '283 lessons sequenced by a real prerequisite graph' },
         { icon: Code2, text: 'Code graded by actual compilers, not multiple choice' },
         { icon: Undo2, text: 'Spaced repetition that keeps what you learn' },
-        { icon: ShieldCheck, text: 'No job promises — just honest, measurable progress' },
+        { icon: ShieldCheck, text: 'No job promises, just honest, measurable progress' },
       ]
     : [
         { icon: Flame, text: 'Your streak is counting the days without you' },
@@ -73,7 +85,7 @@ export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
       <div className="pointer-events-none absolute -right-16 bottom-8 h-56 w-56 rounded-full bg-info-soft blur-2xl" aria-hidden />
 
       <div className="w-full max-w-4xl relative grid lg:grid-cols-[1fr_400px] gap-8 items-center">
-        {/* the pitch panel — fills the left half with real content */}
+        {/* the pitch panel, fills the left half with real content */}
         <aside className="hidden lg:block">
           <div className="qf-card-flat p-6 relative overflow-hidden bg-dots">
             <div className="absolute -right-8 -top-8 h-28 w-28 rounded-full bg-accent-soft" aria-hidden />
@@ -91,8 +103,8 @@ export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
               {mode === 'login' ? (
                 <div className="mt-5 flex flex-wrap gap-2">
                   <span className="hud-pill"><Flame className="h-4 w-4 text-flame anim-flame" /> 7-day streak</span>
-                  <span className="hud-pill"><Zap className="h-4 w-4 text-warning" /> 1,480 XP</span>
-                  <span className="hud-pill"><Trophy className="h-4 w-4 text-violet" /> Level 4</span>
+                  <span className="hud-pill !text-gold"><Zap className="h-4 w-4 text-gold" /> 1,480 XP</span>
+                  <span className="hud-pill"><Trophy className="h-4 w-4 text-accent-deep dark:text-accent" /> Level 4</span>
                 </div>
               ) : (
                 <div className="mt-5 grid grid-cols-3 gap-2.5">
@@ -149,8 +161,8 @@ export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
             </h1>
             <p className="mt-1 text-sm font-semibold text-muted">
               {mode === 'register'
-                ? 'Takes thirty seconds — then the diagnostic finds your starting point.'
-                : 'Pick up where you left off — streaks are waiting.'}
+                ? 'Takes thirty seconds, then the diagnostic finds your starting point.'
+                : 'Pick up where you left off, streaks are waiting.'}
             </p>
           </div>
           <form onSubmit={submit} className="qf-card p-6 space-y-4">

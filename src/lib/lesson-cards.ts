@@ -4,7 +4,7 @@ import type { Block, Lesson } from '@/lib/content';
  * Lesson → card deck segmentation.
  *
  * Pure, isomorphic (server and client safe): turns a lesson document into a
- * Duolingo-style sequence of bite-sized cards — one concept per screen, labs
+ * Duolingo-style sequence of bite-sized cards, one concept per screen, labs
  * and tables on their own cards, one quiz question per card.
  *
  * This module must stay dependency-free so it can be unit tested and used in
@@ -49,6 +49,8 @@ function blockWeight(b: Block): number {
     case 'table': return b.rows.flat().join('').length / 2;
     case 'steps': return b.items.join('').length;
     case 'interactive': return 9999; // always its own card
+
+
     case 'ref': return 60;
   }
 }
@@ -117,19 +119,27 @@ export function buildLessonCards(lesson: Lesson): PlayerCard[] {
         break;
       case 'code':
         // Code sticks with a following explanation? Keep it standalone for focus.
+
+
         flush();
         cards.push({ kind: 'concept', title: '', blocks: [block] });
         break;
       case 'ref':
         // References stay in reference mode; skipped in the card flow.
+
+
         break;
       default: {
-        // p, math, callout, list, steps — accumulate into the current concept.
+        // p, math, callout, list, steps, accumulate into the current concept.
+
+
         ensureCurrent();
         if (current!.weight + w > CARD_CHAR_LIMIT && current!.blocks.length > 0) {
           flush();
           ensureCurrent(current?.title);
           current!.title = ''; // continuation card keeps its own identity quiet
+
+
         }
         current!.blocks.push(block);
         current!.weight += w;
@@ -149,7 +159,7 @@ export function buildLessonCards(lesson: Lesson): PlayerCard[] {
   });
   cards.push({
     kind: 'exercise',
-    title: 'Your turn — independent exercise',
+    title: 'Your turn, independent exercise',
     exKind: 'independent',
     prompt: lesson.independentExercise.prompt,
     hints: lesson.independentExercise.hints,

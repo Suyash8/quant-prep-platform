@@ -4,15 +4,17 @@
   "title": "Static vs Dynamic Linking and the ABI",
   "estMinutes": 26,
   "difficulty": "advanced",
-  "prereqs": ["cpp-internals-vtable-layout"],
+  "prereqs": [
+    "cpp-internals-vtable-layout"
+  ],
   "objectives": [
     "Contrast static archives (.a) and shared objects (.so) in terms of when code enters a process, disk footprint and upgrade mechanics",
     "Build and consume both an archive and a shared object, and verify the result with ldd and nm",
     "Load symbols at runtime with dlopen/dlsym and explain why plugin entry points are extern \"C\"",
-    "Enumerate what an ABI covers - mangling, calling convention, struct and vtable layout, standard-library internals - and diagnose dual-ABI mismatches",
+    "Enumerate what an ABI covers, mangling, calling convention, struct and vtable layout, standard-library internals, and diagnose dual-ABI mismatches",
     "Justify why trading firms pin compiler and standard-library versions across an entire release stack"
   ],
-  "motivation": "One pricing library, three consumers: the overnight backtester links it statically, the risk server loads it as a .so so a patch rolls out without relinking, and the Python research tools grab it with ctypes through dlopen. Make one of those consumers with a different compiler or ABI flag and the system either refuses to link - or, worse, silently corrupts data across the boundary. Choosing linkage modes and respecting the ABI is what keeps a desk's binaries coherent.",
+  "motivation": "One pricing library, three consumers: the overnight backtester links it statically, the risk server loads it as a .so so a patch rolls out without relinking, and the Python research tools grab it with ctypes through dlopen. Make one of those consumers with a different compiler or ABI flag and the system either refuses to link, or, worse, silently corrupts data across the boundary. Choosing linkage modes and respecting the ABI is what keeps a desk's binaries coherent.",
   "blocks": [
     {
       "type": "h2",
@@ -20,7 +22,7 @@
     },
     {
       "type": "p",
-      "md": "A **static archive** (`.a`) is just a bundle of object files. At link time the linker *copies* the needed `.o` code into each executable: the result is self-contained, starts without extra resolution work, and has no runtime library dependency - but every binary carries its own copy, and fixing a bug means relinking every consumer. A **shared object** (`.so`) stays separate: the executable records only a dependency, and at process start (or later) the dynamic linker maps the `.so` into the address space and resolves symbols. Many processes share one copy of the code pages, and you can swap the library without touching the applications - at the price of deployment and versioning discipline."
+      "md": "A **static archive** (`.a`) is just a bundle of object files. At link time the linker *copies* the needed `.o` code into each executable: the result is self-contained, starts without extra resolution work, and has no runtime library dependency, but every binary carries its own copy, and fixing a bug means relinking every consumer. A **shared object** (`.so`) stays separate: the executable records only a dependency, and at process start (or later) the dynamic linker maps the `.so` into the address space and resolves symbols. Many processes share one copy of the code pages, and you can swap the library without touching the applications, at the price of deployment and versioning discipline."
     },
     {
       "type": "code",
@@ -30,13 +32,37 @@
     },
     {
       "type": "table",
-      "headers": ["Property", "Static (.a)", "Dynamic (.so)"],
+      "headers": [
+        "Property",
+        "Static (.a)",
+        "Dynamic (.so)"
+      ],
       "rows": [
-        ["Code enters the binary", "at link time, copied in", "at load/run time, mapped in"],
-        ["On disk", "one copy per linked binary", "one copy, shared"],
-        ["Library bugfix", "relink every consumer", "replace the .so (if ABI-compatible)"],
-        ["Binary size / startup", "bigger, no resolution needed", "smaller, small load-time cost"],
-        ["Typical failure mode", "stale code baked into old binaries", "wrong .so version picked up at runtime"]
+        [
+          "Code enters the binary",
+          "at link time, copied in",
+          "at load/run time, mapped in"
+        ],
+        [
+          "On disk",
+          "one copy per linked binary",
+          "one copy, shared"
+        ],
+        [
+          "Library bugfix",
+          "relink every consumer",
+          "replace the .so (if ABI-compatible)"
+        ],
+        [
+          "Binary size / startup",
+          "bigger, no resolution needed",
+          "smaller, small load-time cost"
+        ],
+        [
+          "Typical failure mode",
+          "stale code baked into old binaries",
+          "wrong .so version picked up at runtime"
+        ]
       ]
     },
     {
@@ -45,13 +71,13 @@
     },
     {
       "type": "p",
-      "md": "Plugins go one step further than `.so` dependencies: the program decides *after launch* what to load. `dlopen` maps a library and (with `RTLD_NOW`) resolves its symbols immediately; `dlsym` looks a function up **by name string**. Strings match nothing mangled - which is why the previous lesson's `extern \"C\"` is the entry-point convention for every plugin and ctypes boundary. Always check `dlerror()`; a missing symbol or a path typo should fail loudly, not as a mysterious crash on first call."
+      "md": "Plugins go one step further than `.so` dependencies: the program decides *after launch* what to load. `dlopen` maps a library and (with `RTLD_NOW`) resolves its symbols immediately; `dlsym` looks a function up **by name string**. Strings match nothing mangled, which is why the previous lesson's `extern \"C\"` is the entry-point convention for every plugin and ctypes boundary. Always check `dlerror()`; a missing symbol or a path typo should fail loudly, not as a mysterious crash on first call."
     },
     {
       "type": "code",
       "lang": "cpp",
       "code": "// pricer.cpp  (built into libpricer.so)\n#include <cmath>\n\nextern \"C\" double norm_cdf(double x) {\n    return 0.5 * std::erfc(-x / std::sqrt(2.0));   // Phi(x) = erfc identity\n}\n\n// loader.cpp\n#include <dlfcn.h>\n#include <cstdio>\n\nint main() {\n    void* lib = dlopen(\"./libpricer.so\", RTLD_NOW);\n    if (!lib) { std::printf(\"dlopen: %s\\n\", dlerror()); return 1; }\n\n    using NormCdf = double (*)(double);\n    auto norm_cdf = reinterpret_cast<NormCdf>(dlsym(lib, \"norm_cdf\"));\n    if (!norm_cdf) { std::printf(\"dlsym: %s\\n\", dlerror()); return 1; }\n\n    std::printf(\"N(0.25) = %.4f\\n\", norm_cdf(0.25));\n    dlclose(lib);\n}",
-      "caption": "Build with: g++ loader.cpp -ldl -o loader. The function pointer type must match the library's signature exactly - dlsym cannot check it for you."
+      "caption": "Build with: g++ loader.cpp -ldl -o loader. The function pointer type must match the library's signature exactly, dlsym cannot check it for you."
     },
     {
       "type": "code",
@@ -71,7 +97,7 @@
     },
     {
       "type": "p",
-      "md": "A header defines the **API** - what you may call. The **Application Binary Interface** defines what the machine code must assume: the name-mangling scheme, the calling convention (which arguments travel in which registers - `rdi`, `rsi`, `xmm0` on x86-64 System V), struct and object layout including vtable shape, exception propagation, and the binary layout of the standard library itself. Two translation units cooperate only if they agree on all of it. Because layout details are not standardised by ISO C++, each compiler *toolchain* defines its own ABI - gcc/clang follow the Itanium C++ ABI on Linux, MSVC has its own."
+      "md": "A header defines the **API**, what you may call. The **Application Binary Interface** defines what the machine code must assume: the name-mangling scheme, the calling convention (which arguments travel in which registers - `rdi`, `rsi`, `xmm0` on x86-64 System V), struct and object layout including vtable shape, exception propagation, and the binary layout of the standard library itself. Two translation units cooperate only if they agree on all of it. Because layout details are not standardised by ISO C++, each compiler *toolchain* defines its own ABI, gcc/clang follow the Itanium C++ ABI on Linux, MSVC has its own."
     },
     {
       "type": "p",
@@ -83,26 +109,26 @@
     },
     {
       "type": "p",
-      "md": "Trading systems are long-lived binaries that talk to each other through IPC structs, shared-memory books and serialised snapshots - all ABI artefacts. A compiler upgrade can change struct padding, mangling, std::string internals, and - as the next lesson shows - the code the optimiser legally produces for the same source. So desks treat toolchain changes like protocol changes: the compiler and libstdc++ are **pinned per release train**, the entire stack is rebuilt atomically rather than one component at a time, and upgrades go through full re-validation. Reproducibility is the point: the binary that passed sign-off must be bit-for-bit the binary that trades."
+      "md": "Trading systems are long-lived binaries that talk to each other through IPC structs, shared-memory books and serialised snapshots, all ABI artefacts. A compiler upgrade can change struct padding, mangling, std::string internals, and, as the next lesson shows, the code the optimiser legally produces for the same source. So desks treat toolchain changes like protocol changes: the compiler and libstdc++ are **pinned per release train**, the entire stack is rebuilt atomically rather than one component at a time, and upgrades go through full re-validation. Reproducibility is the point: the binary that passed sign-off must be bit-for-bit the binary that trades."
     }
   ],
   "guidedExercise": {
     "prompt": "You build `desk` twice from the same main.cpp against the same libpricer:\n\n```bash\ng++ -c pricer.cpp -o pricer.o && ar rcs libpricer.a pricer.o\ng++ -O2 -fPIC -shared pricer.cpp -o libpricer.so\ng++ main.cpp -L. -lpricer -o desk_static   # archive chosen (no .so preferred?)\n```\n\n(a) What does `ldd desk` show when linked against the archive, versus against the .so? (b) After a one-line bugfix in pricer.cpp, which consumer needs relinking? (c) Why does building the .so require -fPIC while the archive does not?",
     "hints": [
       "ldd lists the .so files a binary needs at load time.",
-      "Static code is copied in - there is no runtime library to list.",
+      "Static code is copied in, there is no runtime library to list.",
       "Shared code must be position-independent because its load address is not fixed."
     ],
-    "solution": "(a) The statically linked binary's `ldd` shows only system libraries (libc, libstdc++, ...) - no `libpricer` entry, because its code is copied inside. The dynamically linked one shows a line like `libpricer.so => ./libpricer.so`. (b) The static consumer must be relinked; the dynamic consumer only needs the rebuilt .so installed - provided the new .so is ABI-compatible with the old one. (c) A .so may be mapped at any virtual address, so its code must be position-independent (no absolute addresses); archive object files are linked into a known layout, so no -fPIC is needed."
+    "solution": "(a) The statically linked binary's `ldd` shows only system libraries (libc, libstdc++, ...), no `libpricer` entry, because its code is copied inside. The dynamically linked one shows a line like `libpricer.so => ./libpricer.so`. (b) The static consumer must be relinked; the dynamic consumer only needs the rebuilt .so installed, provided the new .so is ABI-compatible with the old one. (c) A .so may be mapped at any virtual address, so its code must be position-independent (no absolute addresses); archive object files are linked into a known layout, so no -fPIC is needed."
   },
   "independentExercise": {
-    "prompt": "A risk server (gcc 13, defaults) `dlopen`s a legacy vendor library built in 2014 with gcc 4.8. Its entry point is `extern \"C\" void latest_report(std::string& out);`. Loading succeeds, the first call crashes inside the string destructor with a nonsense pointer. (a) Why did linking/load succeed if the ABIs differ? (b) Name the macro and values involved in gcc's dual ABI and what each layout is called. (c) Propose two concrete fixes and say which is more robust for the boundary.",
+    "prompt": "A risk server (gcc 13, defaults) `dlopen`s a legacy vendor library built in 2014 with gcc 4.8. Its entry point is `extern \"C\" void latest_report(std::string& out);`. Loading succeeds, the first call crashes inside the string destructor with a nonsense pointer. (a) Why did linking/load succeed if the ABIs differ? (b) Name the macro and values involved in gcc's dual ABI and what each layout is called. (c) Propose two concrete fixes and say which is more solid for the boundary.",
     "hints": [
-      "extern \"C\" only unmangled the name - the parameter type still smuggles a C++ class across the boundary.",
+      "extern \"C\" only unmangled the name, the parameter type still smuggles a C++ class across the boundary.",
       "The two libstdc++ ABIs disagree about sizeof(std::string) and its internals.",
       "Cross-language boundaries are safest with plain C types."
     ],
-    "solution": "(a) `extern \"C\"` made the symbol name match, so dlsym resolved it; nothing checked the parameter type. Caller (new ABI) and callee (old ABI) disagree about the layout of `std::string`, so one side frees memory the other side laid out differently. (b) `_GLIBCXX_USE_CXX11_ABI`: `1` selects the post-gcc5 layout (symbols mangled with `__cxx11`), `0` the pre-gcc5 layout. (c) Fix 1: rebuild the vendor library with matching `_GLIBCXX_USE_CXX11_ABI` (or rebuild the app with `=0`) so the whole stack agrees. Fix 2, more robust: change the boundary to `void latest_report(char* buf, size_t cap)` - C-compatible types cannot silently change meaning between toolchains."
+    "solution": "(a) `extern \"C\"` made the symbol name match, so dlsym resolved it; nothing checked the parameter type. Caller (new ABI) and callee (old ABI) disagree about the layout of `std::string`, so one side frees memory the other side laid out differently. (b) `_GLIBCXX_USE_CXX11_ABI`: `1` selects the post-gcc5 layout (symbols mangled with `__cxx11`), `0` the pre-gcc5 layout. (c) Fix 1: rebuild the vendor library with matching `_GLIBCXX_USE_CXX11_ABI` (or rebuild the app with `=0`) so the whole stack agrees. Fix 2, more solid: change the boundary to `void latest_report(char* buf, size_t cap)` - C-compatible types cannot silently change meaning between toolchains."
   },
   "commonMistakes": [
     "Treating .a vs .so as a style choice: static baking means old code survives a library patch; dynamic means a wrong-version .so can be picked up at runtime.",
@@ -116,7 +142,7 @@
   "quantFinanceApplication": "Desks ship pricing kernels as .so files loaded by both the C++ stack (dlopen) and Python (ctypes); because a mis-versioned library can misprice an entire book, release engineering pins toolchains and rebuilds the whole binary set atomically on every toolchain change.",
   "summary": [
     "Static archives copy machine code into each binary at link time (self-contained, relink-on-fix); shared objects are mapped at load time, shared between processes and replaceable if ABI-compatible.",
-    "dlopen/dlsym load code after launch and look symbols up by string - hence plain extern \"C\" entry points and mandatory dlerror() checks.",
+    "dlopen/dlsym load code after launch and look symbols up by string, hence plain extern \"C\" entry points and mandatory dlerror() checks.",
     "The ABI is the below-the-API contract: mangling, calling convention, struct/vtable layout, exception propagation and standard-library internals; it is toolchain-defined, not ISO-standard.",
     "gcc's dual ABI (_GLIBCXX_USE_CXX11_ABI 0 vs 1) changed std::string layout; mixing values yields __cxx11 undefined references or silent corruption.",
     "Trading firms pin compilers and rebuild atomically because binaries live for years and share layout-sensitive structures across processes."
@@ -140,7 +166,7 @@
       "type": "numeric",
       "prompt": "Six services each statically link the same librisk.a. How many copies of librisk's machine code exist on disk across those binaries?",
       "answer": 6,
-      "explanation": "One per statically linked binary - six. Had they linked dynamically, there would be one .so shared by all six."
+      "explanation": "One per statically linked binary, six. Had they linked dynamically, there would be one .so shared by all six."
     },
     {
       "id": "q3",
@@ -161,8 +187,12 @@
         "The shape and slot order of vtables",
         "Whether the language has a for statement"
       ],
-      "answerIndices": [0, 1, 2],
-      "explanation": "Mangling, standard-library internals, object/vtable layout, calling conventions and exception propagation are all binary contracts. The `for` statement is pure source-level language - it exists identically in every ABI."
+      "answerIndices": [
+        0,
+        1,
+        2
+      ],
+      "explanation": "Mangling, standard-library internals, object/vtable layout, calling conventions and exception propagation are all binary contracts. The `for` statement is pure source-level language, it exists identically in every ABI."
     },
     {
       "id": "q5",
@@ -170,7 +200,7 @@
       "prompt": "A link fails with `undefined reference to std::__cxx11::basic_string<...>`. The most likely cause is:",
       "options": [
         "You forgot to link libm",
-        "Some objects were compiled with a different _GLIBCXX_USE_CXX11_ABI value - a dual-ABI mismatch",
+        "Some objects were compiled with a different _GLIBCXX_USE_CXX11_ABI value, a dual-ABI mismatch",
         "The code uses C++20 features in a C++17 build",
         "A virtual function was declared but not defined"
       ],
@@ -182,7 +212,13 @@
       "type": "short",
       "prompt": "In one or two sentences: why do trading firms pin compiler and libstdc++ versions rather than always upgrading?",
       "modelAnswer": "Binaries live for years and exchange layout-sensitive data (IPC structs, shared-memory books), and the ABI plus optimiser behaviour can change between compilers. Pinning keeps the validated, reproducible binary set coherent; upgrades are treated like protocol changes and done as a full atomic rebuild with re-validation.",
-      "keywords": ["abi", "layout", "reproducib", "rebuild", "validat"],
+      "keywords": [
+        "abi",
+        "layout",
+        "reproducib",
+        "rebuild",
+        "validat"
+      ],
       "explanation": "Three overlapping reasons: binary compatibility across long-lived components, reproducibility of validated binaries, and the legal right of the optimiser to change code generation (next lesson). A compiler bump is a compatibility event, not a free upgrade."
     }
   ],
@@ -200,21 +236,21 @@
     {
       "type": "definition",
       "front": "dlopen / dlsym",
-      "back": "dlopen(path, RTLD_NOW) maps a .so and resolves symbols; dlsym(lib, \"name\") looks a symbol up by string - which is why plugin entry points are extern \"C\". Check dlerror() after both."
+      "back": "dlopen(path, RTLD_NOW) maps a .so and resolves symbols; dlsym(lib, \"name\") looks a symbol up by string, which is why plugin entry points are extern \"C\". Check dlerror() after both."
     },
     {
       "type": "error-identification",
-      "front": "Link error mentions std::__cxx11::basic_string - diagnosis?",
+      "front": "Link error mentions std::__cxx11::basic_string: diagnosis?",
       "back": "gcc dual-ABI mismatch: some TUs compiled with _GLIBCXX_USE_CXX11_ABI=1 (new string layout), others =0 (pre-gcc5). Rebuild with one consistent value."
     }
   ],
   "references": [
     {
-      "label": "man7.org - dlopen(3): Linux programmer's manual",
+      "label": "man7.org: dlopen(3): Linux programmer's manual",
       "url": "https://man7.org/linux/man-pages/man3/dlopen.3.html"
     },
     {
-      "label": "GCC wiki - Dual ABI (_GLIBCXX_USE_CXX11_ABI)",
+      "label": "GCC wiki: Dual ABI (_GLIBCXX_USE_CXX11_ABI)",
       "url": "https://gcc.gnu.org/onlinedocs/libstdc++/manual/using_dual_abi.html"
     },
     {
@@ -222,5 +258,8 @@
       "url": "https://itanium-cxx-abi.github.io/cxx-abi/abi.html"
     }
   ],
-  "skills": ["cpp-internals", "cpp-performance"]
+  "skills": [
+    "cpp-internals",
+    "cpp-performance"
+  ]
 }

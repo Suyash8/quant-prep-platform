@@ -47,6 +47,8 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ action: st
       return NextResponse.json(out);
     }
     // submit: server supplies the tests - client never sends expected outputs
+
+
     const out = await runnerPost<Record<string, unknown>>('/submit', {
       language, code,
       tests: problem.tests.map(t => ({ input: t.input, expected: t.expected })),
@@ -65,6 +67,8 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ action: st
       },
     });
     // Gamification: full XP on the first solve of a problem only.
+
+
     let xpAwarded = 0;
     if (verdict === 'passed') {
       const passedCount = await db.problemAttempt.count({
@@ -80,7 +84,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ action: st
     const msg = e instanceof Error ? e.message : 'unknown';
     if (msg.startsWith('RUNNER_UNAVAILABLE')) {
       if (process.env.VERCEL === '1') {
-        return NextResponse.json({ error: 'Code execution is not available on this serverless deployment yet. Lessons, quizzes and everything else work normally — run code locally or point CODE_RUNNER_URL at a runner host.' }, { status: 503 });
+        return NextResponse.json({ error: 'Code execution is not available on this serverless deployment yet. Lessons, quizzes and everything else work normally, run code locally or point CODE_RUNNER_URL at a runner host.' }, { status: 503 });
       }
       return NextResponse.json({ error: 'The code runner service is starting up - try again in a few seconds.' }, { status: 503 });
     }

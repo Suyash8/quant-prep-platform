@@ -3,7 +3,7 @@
  * Post-build step: when `output: "standalone"` is produced (local / Docker builds),
  * copy static assets and public files into the standalone bundle so `node server.js`
  * works. On Vercel, `output: "standalone"` is ignored and .next/standalone does not
- * exist — in that case this is a no-op so the build succeeds.
+ * exist, in that case this is a no-op so the build succeeds.
  */
 const fs = require('fs');
 const path = require('path');
@@ -12,7 +12,7 @@ const root = process.cwd();
 const standalone = path.join(root, '.next', 'standalone');
 
 if (!fs.existsSync(standalone)) {
-  console.log('[post-build] .next/standalone not found (hosted build, e.g. Vercel) — nothing to do.');
+  console.log('[post-build] .next/standalone not found (hosted build, e.g. Vercel), nothing to do.');
   process.exit(0);
 }
 

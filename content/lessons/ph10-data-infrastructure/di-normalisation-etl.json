@@ -13,7 +13,7 @@
     "Detect gaps and outages using cadence checks, sequence numbers and venue reconciliation counts",
     "Specify the fields of a data-lineage record and explain how lineage bounds the blast radius of a bad transform"
   ],
-  "motivation": "The same share of Apple arrives from three vendors as AAPL, AAPL.O and US0378331005, and yesterday's prices quietly changed overnight because of a dividend. Raw vendor data cannot be joined, backtested or reconciled until it is normalised - and every misstep here is silent: a wrong symbol mapping double-counts a position, an unadjusted split looks like a -49% crash, and a missing hour of ticks simply never shows up unless you go looking for it.",
+  "motivation": "The same share of Apple arrives from three vendors as AAPL, AAPL.O and US0378331005, and yesterday's prices quietly changed overnight because of a dividend. Raw vendor data cannot be joined, backtested or reconciled until it is normalised, and every misstep here is silent: a wrong symbol mapping double-counts a position, an unadjusted split looks like a -49% crash, and a missing hour of ticks simply never shows up unless you go looking for it.",
   "blocks": [
     {
       "type": "h2",
@@ -21,7 +21,7 @@
     },
     {
       "type": "p",
-      "md": "Each data vendor invents its own identifier and each has a different lifecycle. The exchange tape uses the ticker (AAPL); a Reuters-style RIC adds a suffix (AAPL.O); Bloomberg-style tickers append country codes; the **ISIN** (US0378331005) is venue-agnostic but changes on corporate restructurings and is not unique across share classes in some markets. None of these is the *instrument* - they are labels."
+      "md": "Each data vendor invents its own identifier and each has a different lifecycle. The exchange tape uses the ticker (AAPL); a Reuters-style RIC adds a suffix (AAPL.O); Bloomberg-style tickers append country codes; the **ISIN** (US0378331005) is venue-agnostic but changes on corporate restructurings and is not unique across share classes in some markets. None of these is the *instrument*, they are labels."
     },
     {
       "type": "table",
@@ -55,13 +55,13 @@
     },
     {
       "type": "p",
-      "md": "The failure modes are concrete. A naive string join on \"AAPL\" collides across venues and misses \"AAPL.O\"; prefix or fuzzy matching silently joins the wrong instrument; a ticker reused years later (as exchange tickers often are) attaches old history to a new company. The cure is a **symbol map**: resolve every incoming label to one internal id at ingest, then join everything downstream on the internal id - exactly, never approximately."
+      "md": "The failure modes are concrete. A naive string join on \"AAPL\" collides across venues and misses \"AAPL.O\"; prefix or fuzzy matching silently joins the wrong instrument; a ticker reused years later (as exchange tickers often are) attaches old history to a new company. The cure is a **symbol map**: resolve every incoming label to one internal id at ingest, then join everything downstream on the internal id, exactly, never approximately."
     },
     {
       "type": "callout",
       "variant": "pitfall",
       "title": "Never join on vendor strings",
-      "md": "The symbol map is data, versioned and reviewed like code. Hard-coding \"AAPL.O means AAPL\" in a query works until a vendor changes conventions, a listing moves venue, or a dual-listed name appears - and then the join is wrong in a way nobody notices until PnL or volume totals disagree across vendors."
+      "md": "The symbol map is data, versioned and reviewed like code. Hard-coding \"AAPL.O means AAPL\" in a query works until a vendor changes conventions, a listing moves venue, or a dual-listed name appears, and then the join is wrong in a way nobody notices until PnL or volume totals disagree across vendors."
     },
     {
       "type": "h2",
@@ -83,7 +83,7 @@
     },
     {
       "type": "p",
-      "md": "Two consequences matter operationally. First, adjustments compound: after several actions, history is the product of many factors, so always store the **raw** series plus the action events, and re-derive adjusted prices on demand. Second, back-adjustment is not stable - the whole adjusted series changes every time a new action occurs, which is why derived datasets must record how they were built (lineage, below)."
+      "md": "Two consequences matter operationally. First, adjustments compound: after several actions, history is the product of many factors, so always store the **raw** series plus the action events, and re-derive adjusted prices on demand. Second, back-adjustment is not stable, the whole adjusted series changes every time a new action occurs, which is why derived datasets must record how they were built (lineage, below)."
     },
     {
       "type": "h2",
@@ -91,11 +91,11 @@
     },
     {
       "type": "p",
-      "md": "Validation runs on ingest, in layers. **Sanity rules** reject the impossible: price must be positive and inside a plausible band (for example within $\\pm 20\\%$ of the last seen price, else flagged); size must be non-negative; timestamps must be monotonic within a stream. **Cadence checks** catch silence: a symbol that normally prints ~2,400 updates per minute printing zero for three minutes is an outage, not a quiet market - no trades for 180 seconds on a liquid name is a data incident."
+      "md": "Validation runs on ingest, in layers. **Sanity rules** reject the impossible: price must be positive and inside a plausible band (for example within $\\pm 20\\%$ of the last seen price, else flagged); size must be non-negative; timestamps must be monotonic within a stream. **Cadence checks** catch silence: a symbol that normally prints ~2,400 updates per minute printing zero for three minutes is an outage, not a quiet market, no trades for 180 seconds on a liquid name is a data incident."
     },
     {
       "type": "p",
-      "md": "**Reconciliation** closes the loop against the source. The venue's end-of-day summary reports 1,482,610 trades; your capture holds 1,482,015 - so 595 are missing, and sequence numbers locate them exactly:"
+      "md": "**Reconciliation** closes the loop against the source. The venue's end-of-day summary reports 1,482,610 trades; your capture holds 1,482,015, so 595 are missing, and sequence numbers locate them exactly:"
     },
     {
       "type": "code",
@@ -107,7 +107,7 @@
       "type": "callout",
       "variant": "quant",
       "title": "Why reconciliation catches what validation cannot",
-      "md": "Validation sees only what arrived; reconciliation compares what arrived against what *should* have arrived (venue counts, sequence continuity, cross-vendor volume). A capture layer that drops 0.05% of ticks passes every per-record sanity check and still corrupts every statistic computed on the series - the discrepancy is only visible from outside the dataset."
+      "md": "Validation sees only what arrived; reconciliation compares what arrived against what *should* have arrived (venue counts, sequence continuity, cross-vendor volume). A capture layer that drops 0.05% of ticks passes every per-record sanity check and still corrupts every statistic computed on the series, the discrepancy is only visible from outside the dataset."
     },
     {
       "type": "h2",
@@ -115,7 +115,7 @@
     },
     {
       "type": "p",
-      "md": "Every derived dataset - normalised ticks, adjusted daily bars, consolidated books - carries a lineage record: source feed and vendor, ingestion window, the transform and its version (a git hash), input dataset ids, output id, record counts in and out, and a checksum. Lineage is what makes a discovered bug *bounded*: if transform v2.3 mishandled dividends for three weeks, you replay exactly the affected partitions with v2.4 and prove the counts match - instead of distrusting three years of research."
+      "md": "Every derived dataset, normalised ticks, adjusted daily bars, consolidated books, carries a lineage record: source feed and vendor, ingestion window, the transform and its version (a git hash), input dataset ids, output id, record counts in and out, and a checksum. Lineage is what makes a discovered bug *bounded*: if transform v2.3 mishandled dividends for three weeks, you replay exactly the affected partitions with v2.4 and prove the counts match, instead of distrusting three years of research."
     },
     {
       "type": "interactive",
@@ -131,14 +131,14 @@
         ],
         "query": 11025
       },
-      "caption": "The symbol map behaves like a hash table: vendor labels resolve to one internal id in O(1) at ingest, and every downstream join uses that key - never the raw string."
+      "caption": "The symbol map behaves like a hash table: vendor labels resolve to one internal id in O(1) at ingest, and every downstream join uses that key, never the raw string."
     }
   ],
   "guidedExercise": {
     "prompt": "A stock's cum-dividend close is $100.00 and it pays a cash dividend of \\$4.00. (a) Compute the back-adjustment factor $f = (P - D)/P$. (b) A raw price of \\$82.50 from before the ex-date needs adjusting - what is its adjusted value? (c) A raw close of \\$98.50 from two days before the ex-date adjusts to what value, and if the post-ex close is \\$99.10, what is the adjusted return over that span?",
     "hints": [
       "The factor applies multiplicatively to every price before the ex-date.",
-      "The post-ex price needs no adjustment - it is already 'post'."
+      "The post-ex price needs no adjustment, it is already 'post'."
     ],
     "solution": "(a) $f = (100 - 4)/100 = 0.96$. (b) $82.50 \\times 0.96 = 79.20$. (c) Adjusted pre-ex price $= 98.50 \\times 0.96 = 94.56$; adjusted return $= 99.10 / 94.56 - 1 = 0.04801 \\approx \\textbf{+4.80\\%}$. The naive raw return $99.10/98.50 - 1 = +0.61\\%$ hides the dividend."
   },
@@ -151,18 +151,18 @@
     "solution": "(a) Naive: $121.80 / 357.00 - 1 = -65.88\\%$ - an artifact. (b) Adjusted pre close $= 357 / 3 = 119.00$; true return $= 121.80 / 119.00 - 1 = +2.35\\%$. (c) Before: 400 shares $\\times$ $; after: 1,200 shares $\\times$ $; gain $= 3{,}360 / 142{,}800 = +2.35\\%$ - consistent with (b)."
   },
   "commonMistakes": [
-    "Joining feeds on vendor ticker strings instead of a mapped internal id - collisions, missed suffix variants, and reused tickers silently corrupt the result.",
+    "Joining feeds on vendor ticker strings instead of a mapped internal id, collisions, missed suffix variants, and reused tickers silently corrupt the result.",
     "Multiplying post-split prices instead of back-adjusting history: an N-for-1 split means divide *older* prices by N.",
     "Storing only adjusted prices: every new dividend or split rewrites all history, so the raw series plus action events must be preserved and adjusted series re-derived.",
-    "Treating a venue outage as 'the market was quiet' - zero ticks on a liquid symbol is a capture incident to reconcile and replay, not an observation.",
+    "Treating a venue outage as 'the market was quiet', zero ticks on a liquid symbol is a capture incident to reconcile and replay, not an observation.",
     "Shipping derived datasets without lineage: when a transform bug surfaces, there is no way to know which outputs to rebuild."
   ],
   "realWorldApplication": "Market-data teams at banks and funds spend a large share of their time on exactly this pipeline: symbol master maintenance, corporate-action processing, gap replay from vendor retransmission, and lineage tracking for audit.",
-  "quantFinanceApplication": "An unadjusted split turning into a -65.9% fake crash is not hypothetical - it happens to anyone who backtests on raw vendor prices. Reconciliation against venue counts is the control that detects silent capture loss before it reaches a model.",
+  "quantFinanceApplication": "An unadjusted split turning into a -65.9% fake crash is not hypothetical, it happens to anyone who backtests on raw vendor prices. Reconciliation against venue counts is the control that detects silent capture loss before it reaches a model.",
   "summary": [
     "Vendors label instruments differently (ticker, RIC, ISIN); resolve everything to one internal id at ingest and join only on that key.",
     "Corporate actions require back-adjustment: a 2:1 split makes $-49.0\\%$ naive into $+1.94\\%$ real; keep raw series plus actions and re-derive adjusted prices.",
-    "Validation catches impossible records, but only reconciliation (venue counts, sequence continuity) detects *missing* data - the most dangerous failure mode.",
+    "Validation catches impossible records, but only reconciliation (venue counts, sequence continuity) detects *missing* data, the most dangerous failure mode.",
     "Lineage (source, transform version, counts, checksum) bounds the blast radius of a bad transform and makes replay targeted instead of a full distrust."
   ],
   "quiz": [
@@ -240,7 +240,7 @@
     {
       "type": "definition",
       "front": "What is an ISIN?",
-      "back": "An ISO 6166 identifier (e.g. US0378331005) that is venue-agnostic, unlike tickers and vendor RICs - but it can still change on corporate restructuring."
+      "back": "An ISO 6166 identifier (e.g. US0378331005) that is venue-agnostic, unlike tickers and vendor RICs, but it can still change on corporate restructuring."
     },
     {
       "type": "formula",
@@ -260,15 +260,15 @@
   ],
   "references": [
     {
-      "label": "ISO 6166 / ISIN - overview",
+      "label": "ISO 6166 / ISIN: overview",
       "url": "https://en.wikipedia.org/wiki/International_Securities_Identification_Number"
     },
     {
-      "label": "OpenFIGI - instrument identifier standards",
+      "label": "OpenFIGI: instrument identifier standards",
       "url": "https://www.openfigi.com/about/figi"
     },
     {
-      "label": "Wikipedia - Corporate action (splits and dividends)",
+      "label": "Wikipedia: Corporate action (splits and dividends)",
       "url": "https://en.wikipedia.org/wiki/Corporate_action"
     }
   ],

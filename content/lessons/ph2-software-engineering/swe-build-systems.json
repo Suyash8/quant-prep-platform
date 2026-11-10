@@ -13,7 +13,7 @@
     "Write a CMakeLists.txt using target-based commands (add_library, add_executable, target_link_libraries) with out-of-source builds",
     "Configure build types and flags (Debug vs Release, warnings, sanitizers) and explain why Debug-only bugs appear in CI Release builds"
   ],
-  "motivation": "A pricing library of 400 source files cannot be compiled by hand - and more importantly, when one header changes, recompiling all 400 files wastes minutes on every developer, dozens of times a day. Build systems turn 'what depends on what' into a graph and rebuild exactly the minimum. For a C++ trading desk there is a second reason: the flags the build passes to the compiler (optimisation, warnings, sanitizers) determine both the speed of the binaries that trade and the bugs that escape to production.",
+  "motivation": "A pricing library of 400 source files cannot be compiled by hand, and more importantly, when one header changes, recompiling all 400 files wastes minutes on every developer, dozens of times a day. Build systems turn 'what depends on what' into a graph and rebuild exactly the minimum. For a C++ trading desk there is a second reason: the flags the build passes to the compiler (optimisation, warnings, sanitizers) determine both the speed of the binaries that trade and the bugs that escape to production.",
   "blocks": [
     {
       "type": "h2",
@@ -21,7 +21,7 @@
     },
     {
       "type": "p",
-      "md": "A C++ translation unit goes through three tools. The **preprocessor** handles `#include` and macros, producing one big translation unit - which is why headers must contain declarations, not definitions, or you get duplicate-symbol errors at link time. The **compiler** translates each unit to an **object file** (`.o`): machine code for that file's functions plus a symbol table of what it defines and what it still needs. The **linker** stitches object files and libraries together, resolving every referenced symbol against some definition; an unresolved symbol is the classic `undefined reference to ...` error. **Separate compilation** is the performance win: after editing `fills.cpp`, only `fills.o` recompiles and the link step re-runs - not every file."
+      "md": "A C++ translation unit goes through three tools. The **preprocessor** handles `#include` and macros, producing one big translation unit, which is why headers must contain declarations, not definitions, or you get duplicate-symbol errors at link time. The **compiler** translates each unit to an **object file** (`.o`): machine code for that file's functions plus a symbol table of what it defines and what it still needs. The **linker** stitches object files and libraries together, resolving every referenced symbol against some definition; an unresolved symbol is the classic `undefined reference to ...` error. **Separate compilation** is the performance win: after editing `fills.cpp`, only `fills.o` recompiles and the link step re-runs, not every file."
     },
     {
       "type": "code",
@@ -35,7 +35,7 @@
     },
     {
       "type": "p",
-      "md": "Typing `g++` by hand fails at team scale for four reasons. A **dependency graph** must be tracked: which headers does each file include, so the build knows what is stale? **Incremental builds** must skip everything up to date - the difference between 30-second and 10-minute feedback loops. **Parallelism** must compile independent units at once (`-j`), since a 16-core machine should not compile serially. And **portability** must hide the differences between Linux, macOS and CI images. Build systems do this bookkeeping; CMake additionally is a **generator**: it writes the actual build files (Makefiles or Ninja) for the platform, so one CMakeLists.txt drives all of them."
+      "md": "Typing `g++` by hand fails at team scale for four reasons. A **dependency graph** must be tracked: which headers does each file include, so the build knows what is stale? **Incremental builds** must skip everything up to date, the difference between 30-second and 10-minute feedback loops. **Parallelism** must compile independent units at once (`-j`), since a 16-core machine should not compile serially. And **portability** must hide the differences between Linux, macOS and CI images. Build systems do this bookkeeping; CMake additionally is a **generator**: it writes the actual build files (Makefiles or Ninja) for the platform, so one CMakeLists.txt drives all of them."
     },
     {
       "type": "h2",
@@ -43,7 +43,7 @@
     },
     {
       "type": "p",
-      "md": "Modern CMake is **target-based**: you declare targets (libraries, executables, tests) and attach include directories, compile options and dependencies to each target, not to the whole project. A library that publishes its include directory via `PUBLIC` propagates it to everything that links it - the caller never hand-lists header paths. Builds are **out-of-source**: all generated files land in a build directory, so `git status` stays clean and deleting the directory is a full clean."
+      "md": "Modern CMake is **target-based**: you declare targets (libraries, executables, tests) and attach include directories, compile options and dependencies to each target, not to the whole project. A library that publishes its include directory via `PUBLIC` propagates it to everything that links it, the caller never hand-lists header paths. Builds are **out-of-source**: all generated files land in a build directory, so `git status` stays clean and deleting the directory is a full clean."
     },
     {
       "type": "code",
@@ -78,15 +78,15 @@
               "[7/7] Linking CXX executable pricer",
               "Link time: 1.9s"
             ],
-            "note": "Build: only what changed recompiles — the whole point of a build system."
+            "note": "Build: only what changed recompiles, the whole point of a build system."
           },
           {
             "cmd": "head -4 build/compile_commands.json",
             "out": [
               "[",
-              "  {",
-              "    \"directory\": \"/work/pricer/build\",",
-              "    \"command\": \"/usr/bin/g++ -std=c++20 -O2 -c …\""
+              " {",
+              " \"directory\": \"/work/pricer/build\",",
+              " \"command\": \"/usr/bin/g++ -std=c++20 -O2 -c …\""
             ]
           }
         ]
@@ -98,13 +98,13 @@
     },
     {
       "type": "p",
-      "md": "The **build type** is a flag bundle: Debug typically `-g -O0` (symbols, no optimisation, fast compile) and Release `-O2/-O3 -DNDEBUG` (optimised, asserts compiled out). This explains a classic CI failure: code that works in Debug and crashes in Release usually relies on **undefined behaviour** the optimiser rearranged - an uninitialised variable or an out-of-bounds read that 'happened' to be harmless at `-O0`. The defenses are mechanical: treat warnings as errors (`-Werror`) so new problems cannot accumulate, and run **sanitizers** in one CI build (`-fsanitize=address,undefined` in a Debug-type build) to make UB crash loudly. Deterministic, reproducible builds - pinned compiler versions and flags - matter extra in finance, where you must be able to rebuild the exact binary that traded."
+      "md": "The **build type** is a flag bundle: Debug typically `-g -O0` (symbols, no optimisation, fast compile) and Release `-O2/-O3 -DNDEBUG` (optimised, asserts compiled out). This explains a classic CI failure: code that works in Debug and crashes in Release usually relies on **undefined behaviour** the optimiser rearranged, an uninitialised variable or an out-of-bounds read that 'happened' to be harmless at `-O0`. The defenses are mechanical: treat warnings as errors (`-Werror`) so new problems cannot accumulate, and run **sanitizers** in one CI build (`-fsanitize=address,undefined` in a Debug-type build) to make UB crash loudly. Deterministic, reproducible builds, pinned compiler versions and flags, matter extra in finance, where you must be able to rebuild the exact binary that traded."
     },
     {
       "type": "callout",
       "variant": "pitfall",
       "title": "Stale artefacts and committed builds",
-      "md": "Two hygiene rules. First, never commit build outputs: `build/` belongs in .gitignore, and binaries in a repository make history enormous and reviews meaningless. Second, when builds behave inexplicably - phantom 'undefined reference' after renaming a header - suspect a stale build directory and reconfigure from scratch; incremental builds are only as correct as their dependency data."
+      "md": "Two hygiene rules. First, never commit build outputs: `build/` belongs in .gitignore, and binaries in a repository make history enormous and reviews meaningless. Second, when builds behave inexplicably, phantom 'undefined reference' after renaming a header, suspect a stale build directory and reconfigure from scratch; incremental builds are only as correct as their dependency data."
     }
   ],
   "guidedExercise": {
@@ -119,18 +119,18 @@
   "independentExercise": {
     "prompt": "A developer's build passes locally (Debug) but the CI Release build crashes in the position-update path with garbage numbers. (a) Name the most likely class of bug and why Debug hides it. (b) Give the compile-flag changes that make CI catch it mechanically, and the one-line code smell to hunt first.",
     "hints": [
-      "Debug = -O0 -g; Release = -O2 -DNDEBUG - the optimiser reorders code that the standard calls undefined.",
+      "Debug = -O0 -g; Release = -O2 -DNDEBUG, the optimiser reorders code that the standard calls undefined.",
       "Sanitizers turn undefined behaviour into a loud crash instead of silent garbage.",
       "An uninitialised double read before first write is the classic."
     ],
-    "solution": "(a) Most likely **undefined behaviour** - typically reading an uninitialised variable (or an out-of-bounds access) that happens to read benign memory at `-O0`. At `-O2` the optimiser assumes UB never happens, reorders/eliminates code accordingly, and the garbage becomes visible. It is not 'the optimiser's bug' - the source violated the contract.\n\n(b) Mechanical defences:\n\n```cmake\ntarget_compile_options(risk PRIVATE -Wall -Wextra -Werror)\n# plus a sanitizer build target in CI:\ntarget_compile_options(risk_sanitized PRIVATE -fsanitize=address,undefined -g)\ntarget_link_options(risk_sanitized PRIVATE -fsanitize=address,undefined)\n```\n\nWarnings-as-errors stops new suspicious code at review; the sanitizer build crashes loudly with a stack trace instead of producing wrong numbers. The first thing to hunt: a `double` (e.g. `avg_cost`) declared without an initialiser and read before every path assigns it."
+    "solution": "(a) Most likely **undefined behaviour**, typically reading an uninitialised variable (or an out-of-bounds access) that happens to read benign memory at `-O0`. At `-O2` the optimiser assumes UB never happens, reorders/eliminates code accordingly, and the garbage becomes visible. It is not 'the optimiser's bug', the source violated the contract.\n\n(b) Mechanical defences:\n\n```cmake\ntarget_compile_options(risk PRIVATE -Wall -Wextra -Werror)\n# plus a sanitizer build target in CI:\ntarget_compile_options(risk_sanitized PRIVATE -fsanitize=address,undefined -g)\ntarget_link_options(risk_sanitized PRIVATE -fsanitize=address,undefined)\n```\n\nWarnings-as-errors stops new suspicious code at review; the sanitizer build crashes loudly with a stack trace instead of producing wrong numbers. The first thing to hunt: a `double` (e.g. `avg_cost`) declared without an initialiser and read before every path assigns it."
   },
   "commonMistakes": [
-    "Putting definitions in headers so multiple translation units each define the same symbol - duplicate-symbol link errors.",
+    "Putting definitions in headers so multiple translation units each define the same symbol, duplicate-symbol link errors.",
     "Committing build/ directories or binaries into the repository.",
     "Debugging a Release failure with Debug reasoning: -O2 plus -DNDEBUG (asserts removed) changes program behaviour only when the code relied on undefined behaviour.",
     "Adding include directories globally with include_directories() instead of per-target PUBLIC/PRIVATE propagation.",
-    "Assuming an incremental build is correct after moving/renaming files - when in doubt, reconfigure a fresh build directory."
+    "Assuming an incremental build is correct after moving/renaming files, when in doubt, reconfigure a fresh build directory."
   ],
   "realWorldApplication": "Every C++ shop on a trading floor runs CMake (or Bazel) driving Ninja/Make, with CI matrix builds across compilers; reproducible Release binaries are an audit requirement because you must be able to rebuild the exact code that executed a trade.",
   "quantFinanceApplication": "Latency-critical paths are built Release with profile-guided optimisation and checked with sanitizers in parallel CI builds; the Debug-passes-Release-crashes pattern here is a daily reality in low-latency C++ teams.",
@@ -166,14 +166,14 @@
         "A linker replacement"
       ],
       "answerIndex": 1,
-      "explanation": "CMake does not compile anything itself - it generates the files that drive the actual build tools, which is what makes one CMakeLists.txt portable across platforms."
+      "explanation": "CMake does not compile anything itself, it generates the files that drive the actual build tools, which is what makes one CMakeLists.txt portable across platforms."
     },
     {
       "id": "q3",
       "type": "numeric",
       "prompt": "A project has 5 .cpp files, each compiled separately. How many object files does a full (non-incremental) build produce?",
       "answer": 5,
-      "explanation": "One .o per translation unit - 5 object files - then a single link step combines them into the executable."
+      "explanation": "One .o per translation unit, 5 object files, then a single link step combines them into the executable."
     },
     {
       "id": "q4",
@@ -209,13 +209,13 @@
       "type": "mcq",
       "prompt": "A team's Release build passes `-DNDEBUG`. What is the consequence for the code?",
       "options": [
-        "No consequences - NDEBUG affects only linker output",
+        "No consequences. NDEBUG affects only linker output",
         "assert() checks are compiled out entirely",
         "All warnings become errors",
         "The binary gains debug symbols"
       ],
       "answerIndex": 1,
-      "explanation": "NDEBUG disables the standard assert macro - which is why invariant checks that must always run should not rely on assert, and why Debug-vs-Release behaviour can legitimately differ."
+      "explanation": "NDEBUG disables the standard assert macro, which is why invariant checks that must always run should not rely on assert, and why Debug-vs-Release behaviour can legitimately differ."
     }
   ],
   "flashcards": [
@@ -246,7 +246,7 @@
       "url": "https://cmake.org/cmake/help/latest/guide/tutorial/index.html"
     },
     {
-      "label": "GCC Online Docs - Optimize options and NDEBUG",
+      "label": "GCC Online Docs: Optimize options and NDEBUG",
       "url": "https://gcc.gnu.org/onlinedocs/gcc/Optimize-Options.html"
     }
   ],

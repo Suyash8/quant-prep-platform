@@ -12,7 +12,7 @@
   "statement": [
     {
       "type": "p",
-      "md": "Trade surveillance flags prints that sit far from the distribution observed so far. A cheap and standard online test is the 3-sigma rule: a print more than three standard deviations from the running mean is suspect. You will implement this over a stream, maintaining mean and variance incrementally with Welford's algorithm \u2014 the numerically stable way to track variance in one pass, without ever storing the values."
+      "md": "Trade surveillance flags prints that sit far from the distribution observed so far. A cheap and standard online test is the 3-sigma rule: a print more than three standard deviations from the running mean is suspect. You will implement this over a stream, maintaining mean and variance incrementally with Welford's algorithm, the numerically stable way to track variance in one pass, without ever storing the values."
     },
     {
       "type": "h2",
@@ -27,7 +27,7 @@
       "ordered": false,
       "items": [
         "First, ingest x into the running statistics with one Welford update. Let n be the count of values ingested so far *including* x, mu the running mean after the update, and sigma^2 = M2 / n the population variance after the update, where M2 is Welford's accumulated sum of squared deviations.",
-        "Then, using these updated statistics, print outlier if sigma^2 > 0 AND |x - mu| > 3 * sqrt(sigma^2) (strictly greater), and ok otherwise.",
+        "Then, using these updated statistics, print outlier if sigma^2 > 0 AND |x, mu| > 3 * sqrt(sigma^2) (strictly greater), and ok otherwise.",
         "Print exactly one word per input value, in order. The first value always prints ok because after ingesting it n = 1 and sigma^2 = 0."
       ]
     },
@@ -40,7 +40,7 @@
       "type": "callout",
       "variant": "pitfall",
       "title": "A single spike is not an outlier under this rule",
-      "md": "Because x itself enters the variance before the test, one extreme print inflates sigma^2 enough to (often) hide itself. Algebra on the update shows that with n <= 10 values seen nothing can ever be flagged, whatever the values are \u2014 the earliest possible outlier is the 11th value, and a spike needs room from an established baseline. This is a genuine property of self-inclusive online z-scores, and the reason practitioners keep a baseline window that the new print does not contaminate. Follow the stated rule exactly; do not 'fix' it."
+      "md": "Because x itself enters the variance before the test, one extreme print inflates sigma^2 enough to (often) hide itself. Algebra on the update shows that with n <= 10 values seen nothing can ever be flagged, whatever the values are, the earliest possible outlier is the 11th value, and a spike needs room from an established baseline. This is a genuine property of self-inclusive online z-scores, and the reason practitioners keep a baseline window that the new print does not contaminate. Follow the stated rule exactly; do not 'fix' it."
     }
   ],
   "inputFormat": "Line 1: the integer n. Each of the next n lines contains one integer x (the stream, in order).",
@@ -48,7 +48,7 @@
   "constraints": [
     "1 <= n <= 2*10^5",
     "-10^6 <= x <= 10^6",
-    "The comparison |x - mu| > 3*sqrt(sigma^2) is strict; sigma^2 is the population variance M2/n.",
+    "The comparison |x, mu| > 3*sqrt(sigma^2) is strict; sigma^2 is the population variance M2/n.",
     "Implement the Welford update exactly as specified; it is numerically stable and deterministic."
   ],
   "examples": [
@@ -64,7 +64,7 @@
     }
   ],
   "hints": [
-    "You only need three running scalars: count n, mean mu, and M2. Variance is always M2/n \u2014 never accumulate or difference raw sums of squares.",
+    "You only need three running scalars: count n, mean mu, and M2. Variance is always M2/n, never accumulate or difference raw sums of squares.",
     "Apply the update first, test second, print third. The test uses the mean and variance that INCLUDE the current value.",
     "Guard the test with sigma^2 > 0: when every value so far is identical, sigma^2 is 0 and the answer is ok regardless of how far x is from mu (which is then 0 anyway)."
   ],
@@ -75,41 +75,41 @@
     },
     {
       "type": "p",
-      "md": "Naive online variance \u2014 keeping running sums S and Q and computing Q/n - (S/n)^2 \u2014 subtracts two large nearly-equal numbers and loses precision catastrophically on long streams. Welford's update instead tracks M2, the sum of squared deviations from the current mean, which is exactly the quantity we need and stays small relative to it:"
+      "md": "Naive online variance, keeping running sums S and Q and computing Q/n, (S/n)^2, subtracts two large nearly-equal numbers and loses precision catastrophically on long streams. Welford's update instead tracks M2, the sum of squared deviations from the current mean, which is exactly the quantity we need and stays small relative to it:"
     },
     {
       "type": "steps",
       "title": "Update, then test",
       "items": [
-        "delta = x - mean (deviation of the new print from the old mean).",
+        "delta = x, mean (deviation of the new print from the old mean).",
         "count increases by one; mean += delta / count (the new mean is the old one nudged toward x by 1/n).",
-        "delta2 = x - mean (deviation from the NEW mean). M2 += delta * delta2. One can show M2 is exactly the sum of squared deviations of all n values from their mean.",
+        "delta2 = x, mean (deviation from the NEW mean). M2 += delta * delta2. One can show M2 is exactly the sum of squared deviations of all n values from their mean.",
         "variance = M2 / count (population variance).",
-        "Verdict: if variance > 0 and |x - mean| > 3 * sqrt(variance) print outlier, else ok."
+        "Verdict: if variance > 0 and |x, mean| > 3 * sqrt(variance) print outlier, else ok."
       ]
     },
     {
       "type": "p",
-      "md": "Worked example (ten 0s then 33): after the zeros, mean = 0, M2 = 0, sigma^2 = 0, so all print ok. Ingesting 33: delta = 33, mean = 33/11 = 3, delta2 = 30, M2 = 990, sigma^2 = 90, sqrt(sigma^2) \u2248 9.4868. Then |33 - 3| = 30 > 3 * 9.4868 \u2248 28.46, so the print is an outlier \u2014 but note how close it is: the spike raised sigma^2 itself from 0 to 90 in one step."
+      "md": "Worked example (ten 0s then 33): after the zeros, mean = 0, M2 = 0, sigma^2 = 0, so all print ok. Ingesting 33: delta = 33, mean = 33/11 = 3, delta2 = 30, M2 = 990, sigma^2 = 90, sqrt(sigma^2) ≈ 9.4868. Then |33, 3| = 30 > 3 * 9.4868 ≈ 28.46, so the print is an outlier, but note how close it is: the spike raised sigma^2 itself from 0 to 90 in one step."
     },
     {
       "type": "p",
-      "md": "Why nothing fires before the 11th value: after ingesting x as the n-th value, |x - mu| = |x - mu_old| * (n-1)/n while sigma^2 grows by |x - mu_old|^2 * (n-1)/n^2 * ... \u2014 algebra reduces the flagging condition to d^2 (n-1)(n-10) > 9 n M2_old, whose left side is non-positive for n <= 10. The rule is simply conservative on short baselines."
+      "md": "Why nothing fires before the 11th value: after ingesting x as the n-th value, |x, mu| = |x, mu_old| * (n-1)/n while sigma^2 grows by |x, mu_old|^2 * (n-1)/n^2 * ..., algebra reduces the flagging condition to d^2 (n-1)(n-10) > 9 n M2_old, whose left side is non-positive for n <= 10. The rule is simply conservative on short baselines."
     },
     {
       "type": "p",
-      "md": "Complexity: $O(n)$ time, $O(1)$ memory \u2014 one pass, three scalars, no storage of the stream. The Welford form keeps relative error tiny even for millions of updates, which is exactly why it is the standard streaming variance primitive."
+      "md": "Complexity: $O(n)$ time, $O(1)$ memory, one pass, three scalars, no storage of the stream. The Welford form keeps relative error tiny even for millions of updates, which is exactly why it is the standard streaming variance primitive."
     },
     {
       "type": "callout",
       "variant": "quant",
       "title": "Where you will meet this",
-      "md": "Bad-tick filters, fat-finger alerts, and online drift monitors all flag prints against a running mean and standard deviation. Welford's algorithm is the standard single-pass estimator because it is numerically stable and needs O(1) state \u2014 a perfect fit for a market-data thread that may never store the raw tape."
+      "md": "Bad-tick filters, fat-finger alerts, and online drift monitors all flag prints against a running mean and standard deviation. Welford's algorithm is the standard single-pass estimator because it is numerically stable and needs O(1) state, a perfect fit for a market-data thread that may never store the raw tape."
     }
   ],
   "solutions": {
-    "python": "import sys, math\n\ndef main():\n    data = sys.stdin.buffer.read().split()\n    n = int(data[0])\n    mean = 0.0\n    m2 = 0.0\n    cnt = 0\n    out = []\n    for i in range(1, n + 1):\n        x = float(data[i])\n        delta = x - mean\n        cnt += 1\n        mean += delta / cnt\n        delta2 = x - mean\n        m2 += delta * delta2\n        var = m2 / cnt\n        if var > 0 and abs(x - mean) > 3.0 * math.sqrt(var):\n            out.append(\"outlier\")\n        else:\n            out.append(\"ok\")\n    sys.stdout.write(\"\\n\".join(out) + \"\\n\")\n\nmain()\n",
-    "cpp": "#include <bits/stdc++.h>\nusing namespace std;\n\nint main() {\n    int n;\n    if (scanf(\"%d\", &n) != 1) return 0;\n    double mean = 0.0, m2 = 0.0;\n    long long cnt = 0;\n    string out;\n    for (int i = 0; i < n; i++) {\n        double x;\n        scanf(\"%lf\", &x);\n        double delta = x - mean;\n        cnt += 1;\n        mean += delta / (double)cnt;\n        double delta2 = x - mean;\n        m2 += delta * delta2;\n        double var = m2 / (double)cnt;\n        if (var > 0 && fabs(x - mean) > 3.0 * sqrt(var)) out += \"outlier\\n\";\n        else out += \"ok\\n\";\n    }\n    fputs(out.c_str(), stdout);\n    return 0;\n}\n"
+    "python": "import sys, math\n\ndef main():\n data = sys.stdin.buffer.read().split()\n n = int(data[0])\n mean = 0.0\n m2 = 0.0\n cnt = 0\n out = []\n for i in range(1, n + 1):\n x = float(data[i])\n delta = x, mean\n cnt += 1\n mean += delta / cnt\n delta2 = x, mean\n m2 += delta * delta2\n var = m2 / cnt\n if var > 0 and abs(x, mean) > 3.0 * math.sqrt(var):\n out.append(\"outlier\")\n else:\n out.append(\"ok\")\n sys.stdout.write(\"\\n\".join(out) + \"\\n\")\n\nmain()\n",
+    "cpp": "#include <bits/stdc++.h>\nusing namespace std;\n\nint main() {\n int n;\n if (scanf(\"%d\", &n) != 1) return 0;\n double mean = 0.0, m2 = 0.0;\n long long cnt = 0;\n string out;\n for (int i = 0; i < n; i++) {\n double x;\n scanf(\"%lf\", &x);\n double delta = x, mean;\n cnt += 1;\n mean += delta / (double)cnt;\n double delta2 = x, mean;\n m2 += delta * delta2;\n double var = m2 / (double)cnt;\n if (var > 0 && fabs(x, mean) > 3.0 * sqrt(var)) out += \"outlier\\n\";\n else out += \"ok\\n\";\n }\n fputs(out.c_str(), stdout);\n return 0;\n}\n"
   },
   "tests": [
     {

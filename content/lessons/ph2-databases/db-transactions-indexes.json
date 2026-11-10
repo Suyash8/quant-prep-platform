@@ -14,7 +14,7 @@
     "Design single-column and composite B-tree indexes for given query predicates and justify the column order",
     "Weigh read speed against the write-time and storage cost of extra indexes"
   ],
-  "motivation": "Two fills for the same account arrive milliseconds apart. Each one updates the position row: read quantity 1,000, add its shares, write back. If the database interleaves the two updates, one fill is silently lost and the desk's position - and every risk number derived from it - is wrong by 200 shares. Transactions prevent exactly this class of interleaving bug, and indexes decide whether the position row is found in microseconds or seconds when thousands of fills per second need it.",
+  "motivation": "Two fills for the same account arrive milliseconds apart. Each one updates the position row: read quantity 1,000, add its shares, write back. If the database interleaves the two updates, one fill is silently lost and the desk's position, and every risk number derived from it, is wrong by 200 shares. Transactions prevent exactly this class of interleaving bug, and indexes decide whether the position row is found in microseconds or seconds when thousands of fills per second need it.",
   "blocks": [
     {
       "type": "h2",
@@ -22,13 +22,13 @@
     },
     {
       "type": "p",
-      "md": "A **transaction** is a group of statements that either all succeed or all vanish - there is no in-between state anyone can observe. Applying one fill to a position touches at least two tables: the position quantity and average cost, and the cash ledger. If the process dies between the two updates, a non-transactional store would leave the position updated but the cash missing - unreconciled by thousands. Wrapping both statements in `BEGIN ... COMMIT` makes the pair atomic: the engine's undo log rolls back every effect if anything fails, and `ROLLBACK` lets you back out explicitly on an error you detect."
+      "md": "A **transaction** is a group of statements that either all succeed or all vanish, there is no in-between state anyone can observe. Applying one fill to a position touches at least two tables: the position quantity and average cost, and the cash ledger. If the process dies between the two updates, a non-transactional store would leave the position updated but the cash missing, unreconciled by thousands. Wrapping both statements in `BEGIN ... COMMIT` makes the pair atomic: the engine's undo log rolls back every effect if anything fails, and `ROLLBACK` lets you back out explicitly on an error you detect."
     },
     {
       "type": "code",
       "lang": "sql",
       "code": "-- Apply one fill: position update and cash movement must live or die together.\n-- cash_movements(account_id, amount, memo, created_at) is a small ledger table.\nBEGIN;\n\nUPDATE positions\nSET    quantity = quantity + 250,\n       avg_cost = (avg_cost * quantity + 42.17 * 250) / (quantity + 250)\nWHERE  symbol = 'AAPL';\n\nINSERT INTO cash_movements (account_id, amount, memo)\nVALUES (7, -10542.50, 'BUY 250 AAPL @ 42.17');\n\nCOMMIT;",
-      "caption": "Inside one UPDATE, all right-hand side expressions read the pre-update row, so the weighted-average formula uses the OLD quantity - that is standard SQL semantics, not a bug."
+      "caption": "Inside one UPDATE, all right-hand side expressions read the pre-update row, so the weighted-average formula uses the OLD quantity, that is standard SQL semantics, not a bug."
     },
     {
       "type": "h2",
@@ -36,7 +36,7 @@
     },
     {
       "type": "p",
-      "md": "**Atomicity**: half-done work is impossible - crash mid-transaction and the engine replays or discards the whole unit. **Consistency**: each transaction moves the database from one valid state to another, because constraints (foreign keys, CHECKs) are re-checked at commit. **Isolation**: concurrent transactions behave as if they ran one at a time, at whatever isolation level you choose. **Durability**: once `COMMIT` returns, the change survives power loss - the engine wrote it to a write-ahead log on disk before acknowledging. Every one of these maps to a real incident: the half-applied fill (atomicity), the negative quantity (consistency), the lost update below (isolation), the acknowledged trade missing after a crash (durability)."
+      "md": "**Atomicity**: half-done work is impossible, crash mid-transaction and the engine replays or discards the whole unit. **Consistency**: each transaction moves the database from one valid state to another, because constraints (foreign keys, CHECKs) are re-checked at commit. **Isolation**: concurrent transactions behave as if they ran one at a time, at whatever isolation level you choose. **Durability**: once `COMMIT` returns, the change survives power loss, the engine wrote it to a write-ahead log on disk before acknowledging. Every one of these maps to a real incident: the half-applied fill (atomicity), the negative quantity (consistency), the lost update below (isolation), the acknowledged trade missing after a crash (durability)."
     },
     {
       "type": "h2",
@@ -44,7 +44,7 @@
     },
     {
       "type": "p",
-      "md": "The standard defines four levels, trading correctness against concurrency. A **dirty read** sees another transaction's uncommitted work (which it may roll back). A **non-repeatable read** re-reads a row it read before and finds it changed. A **phantom** re-runs a range query and finds new rows. The nastiest for position-keeping is the **lost update**: two transactions read quantity 1,000, each writes 1,000 + its own fill, and the second write clobbers the first - final quantity reflects one fill, not two."
+      "md": "The standard defines four levels, trading correctness against concurrency. A **dirty read** sees another transaction's uncommitted work (which it may roll back). A **non-repeatable read** re-reads a row it read before and finds it changed. A **phantom** re-runs a range query and finds new rows. The nastiest for position-keeping is the **lost update**: two transactions read quantity 1,000, each writes 1,000 + its own fill, and the second write clobbers the first, final quantity reflects one fill, not two."
     },
     {
       "type": "table",
@@ -85,7 +85,7 @@
       "type": "callout",
       "variant": "pitfall",
       "title": "Lost update needs a lock or an atomic statement",
-      "md": "READ COMMITTED - most engines' default - does NOT prevent lost updates, because each read sees the committed 1,000. Fix it by making the increment atomic (`UPDATE positions SET quantity = quantity + 200 ...`, whose right side reads the current row under the update lock) or by taking the row lock first (`SELECT ... FOR UPDATE`) so the second transaction waits."
+      "md": "READ COMMITTED, most engines' default, does NOT prevent lost updates, because each read sees the committed 1,000. Fix it by making the increment atomic (`UPDATE positions SET quantity = quantity + 200 ...`, whose right side reads the current row under the update lock) or by taking the row lock first (`SELECT ... FOR UPDATE`) so the second transaction waits."
     },
     {
       "type": "h2",
@@ -93,13 +93,13 @@
     },
     {
       "type": "p",
-      "md": "Without an index, a predicate like `WHERE symbol = 'AAPL' AND executed_at >= ...` forces a **full scan**: the engine reads every row. A **B-tree index** is a sorted, balanced tree over the indexed columns, so a lookup descends roughly $\\log_2 n$ levels: for 1,000,000 fills that is about 20 page reads instead of 1,000,000 - five orders of magnitude. Equality predicates consume the index's leading columns; a **composite index** `(symbol, executed_at)` serves `symbol = ? AND executed_at BETWEEN ? AND ?` perfectly, but a query filtering only on `executed_at` cannot efficiently skip past the leading `symbol` column. Order composite columns as: equality columns first, then the range or sort column."
+      "md": "Without an index, a predicate like `WHERE symbol = 'AAPL' AND executed_at >= ...` forces a **full scan**: the engine reads every row. A **B-tree index** is a sorted, balanced tree over the indexed columns, so a lookup descends roughly $\\log_2 n$ levels: for 1,000,000 fills that is about 20 page reads instead of 1,000,000, five orders of magnitude. Equality predicates consume the index's leading columns; a **composite index** `(symbol, executed_at)` serves `symbol = ? AND executed_at BETWEEN ? AND ?` perfectly, but a query filtering only on `executed_at` cannot efficiently skip past the leading `symbol` column. Order composite columns as: equality columns first, then the range or sort column."
     },
     {
       "type": "code",
       "lang": "sql",
       "code": "-- Query: WHERE symbol = ? AND executed_at BETWEEN ? AND ? ORDER BY executed_at\nCREATE INDEX idx_fills_symbol_time ON fills (symbol, executed_at);\n\n-- Query: WHERE order_id = ? (foreign key joins and per-order lookups)\nCREATE INDEX idx_fills_order ON fills (order_id);",
-      "caption": "Index the columns you filter and join on - a foreign key does not create an index automatically in most engines."
+      "caption": "Index the columns you filter and join on, a foreign key does not create an index automatically in most engines."
     },
     {
       "type": "interactive",
@@ -144,42 +144,42 @@
         "xLabel": "rows in table",
         "yLabel": "pages read"
       },
-      "caption": "Pages read to find one row: the scan grows linearly with table size while the B-tree seek crawls - 20 reads even at a million rows."
+      "caption": "Pages read to find one row: the scan grows linearly with table size while the B-tree seek crawls, 20 reads even at a million rows."
     },
     {
       "type": "p",
-      "md": "Indexes are not free: every index on `fills` must be updated on every INSERT, so a table with ten indexes ingests market data ten times slower in the worst case, and each index consumes storage. The discipline is to index for the queries you actually run - check with `EXPLAIN` which plans the engine picks - and to drop indexes nobody uses. A **covering index** that includes all columns a hot query needs (`INCLUDE` columns in some engines) can answer from the index alone, never touching the table."
+      "md": "Indexes are not free: every index on `fills` must be updated on every INSERT, so a table with ten indexes ingests market data ten times slower in the worst case, and each index consumes storage. The discipline is to index for the queries you actually run, check with `EXPLAIN` which plans the engine picks, and to drop indexes nobody uses. A **covering index** that includes all columns a hot query needs (`INCLUDE` columns in some engines) can answer from the index alone, never touching the table."
     },
     {
       "type": "callout",
       "variant": "quant",
       "title": "The fill-ingest trade-off",
-      "md": "A position keeper ingesting thousands of fills per second keeps few, wide-value indexes; an end-of-day reporting copy of the same data keeps many. Same schema, opposite index policy - workload decides, not taste."
+      "md": "A position keeper ingesting thousands of fills per second keeps few, wide-value indexes; an end-of-day reporting copy of the same data keeps many. Same schema, opposite index policy, workload decides, not taste."
     }
   ],
   "guidedExercise": {
     "prompt": "A post-mortem shows: position quantity was 1,000; two transactions concurrently applied fills of 200 shares each; the final quantity recorded was 1,200 instead of 1,400. (a) Name the anomaly. (b) Rewrite the application code as a transaction that cannot lose an update, using row locking.",
     "hints": [
-      "Each transaction read 1,000, computed 1,000 + 200 locally, and wrote it back - the second write overwrote the first.",
+      "Each transaction read 1,000, computed 1,000 + 200 locally, and wrote it back, the second write overwrote the first.",
       "SELECT ... FOR UPDATE locks the row until COMMIT; the second transaction waits, then reads 1,200.",
       "Alternatively one UPDATE with quantity = quantity + 200 is atomic on its own."
     ],
-    "solution": "(a) A **lost update** - a classic read-modify-write race that READ COMMITTED does not prevent.\n\n(b) Locking version:\n\n```sql\nBEGIN;\n\nSELECT quantity\nFROM   positions\nWHERE  symbol = 'AAPL'\nFOR UPDATE;              -- row lock: the other transaction now blocks here\n\nUPDATE positions\nSET    quantity = quantity + 200\nWHERE  symbol = 'AAPL';\n\nCOMMIT;                  -- lock released; the other transaction reads 1,200\n```\n\nThe atomic one-statement alternative needs no explicit lock:\n\n```sql\nUPDATE positions SET quantity = quantity + 200 WHERE symbol = 'AAPL';\n```\n\nIts right-hand `quantity` is re-read from the current committed row under the update lock, so concurrent increments queue instead of clobbering. Both fixes give 1,400."
+    "solution": "(a) A **lost update**, a classic read-modify-write race that READ COMMITTED does not prevent.\n\n(b) Locking version:\n\n```sql\nBEGIN;\n\nSELECT quantity\nFROM   positions\nWHERE  symbol = 'AAPL'\nFOR UPDATE;              -- row lock: the other transaction now blocks here\n\nUPDATE positions\nSET    quantity = quantity + 200\nWHERE  symbol = 'AAPL';\n\nCOMMIT;                  -- lock released; the other transaction reads 1,200\n```\n\nThe atomic one-statement alternative needs no explicit lock:\n\n```sql\nUPDATE positions SET quantity = quantity + 200 WHERE symbol = 'AAPL';\n```\n\nIts right-hand `quantity` is re-read from the current committed row under the update lock, so concurrent increments queue instead of clobbering. Both fixes give 1,400."
   },
   "independentExercise": {
     "prompt": "The fills table serves three hot queries: (a) `WHERE symbol = ? AND executed_at BETWEEN ? AND ?`, (b) `WHERE order_id = ?` from the orders join, and (c) a nightly `SELECT symbol, SUM(...) FROM fills GROUP BY symbol`. The table also ingests ~3,000 inserts per second. Propose an index set, justify each choice and each omission, and state the write-time cost you accept.",
     "hints": [
       "Composite column order: equality column first, range column second.",
-      "A GROUP BY over the whole table every night probably scans anyway - decide honestly whether an index helps.",
+      "A GROUP BY over the whole table every night probably scans anyway, decide honestly whether an index helps.",
       "Every extra index is paid on all 3,000 inserts per second."
     ],
-    "solution": "Indexes:\n\n```sql\nCREATE INDEX idx_fills_symbol_time ON fills (symbol, executed_at);\nCREATE INDEX idx_fills_order ON fills (order_id);\n```\n\n- (a) is served perfectly by `idx_fills_symbol_time`: `symbol` equality consumes the leading column, the date range scans a contiguous slice of the second column - even ORDER BY executed_at within the symbol comes out pre-sorted.\n- (b) is served by `idx_fills_order`; without it every join probes a full scan.\n- (c) aggregates the entire table once per night; a full scan of 1M rows is fine for a batch job, and an index on `symbol` alone would add write cost for little gain. Omit it.\n\nAccepted cost: two secondary indexes means two extra B-tree maintenance writes per INSERT (~3,000/s), plus storage - cheap relative to the five-orders-of-magnitude read savings on (a) and (b)."
+    "solution": "Indexes:\n\n```sql\nCREATE INDEX idx_fills_symbol_time ON fills (symbol, executed_at);\nCREATE INDEX idx_fills_order ON fills (order_id);\n```\n\n- (a) is served perfectly by `idx_fills_symbol_time`: `symbol` equality consumes the leading column, the date range scans a contiguous slice of the second column, even ORDER BY executed_at within the symbol comes out pre-sorted.\n- (b) is served by `idx_fills_order`; without it every join probes a full scan.\n- (c) aggregates the entire table once per night; a full scan of 1M rows is fine for a batch job, and an index on `symbol` alone would add write cost for little gain. Omit it.\n\nAccepted cost: two secondary indexes means two extra B-tree maintenance writes per INSERT (~3,000/s), plus storage, cheap relative to the five-orders-of-magnitude read savings on (a) and (b)."
   },
   "commonMistakes": [
-    "Assuming the default isolation level prevents lost updates - READ COMMITTED does not; you need locking reads or atomic updates.",
+    "Assuming the default isolation level prevents lost updates. READ COMMITTED does not; you need locking reads or atomic updates.",
     "Doing read-then-write across two statements without a transaction, then calling the result 'a bug in the database'.",
     "Creating an index whose leading column is never constrained: (executed_at, symbol) does not help `symbol = ?` queries efficiently.",
-    "Indexing every column 'to be safe' - each index taxes every INSERT, UPDATE and DELETE, and slow ingestion is a trading-system outage.",
+    "Indexing every column 'to be safe', each index taxes every INSERT, UPDATE and DELETE, and slow ingestion is a trading-system outage.",
     "Forgetting that a failed statement inside a transaction leaves the whole unit uncommitted until you COMMIT or ROLLBACK."
   ],
   "realWorldApplication": "Bank ledger cores, exchange matching engines and payment processors are all exercises in isolation levels and index design: the anomaly taxonomy here is literally the failure list in their post-mortems.",
@@ -223,7 +223,7 @@
         "Lost update"
       ],
       "answerIndex": 1,
-      "explanation": "Reading uncommitted data is a dirty read - it may observe work that A later rolls back. Only READ UNCOMMITTED allows it."
+      "explanation": "Reading uncommitted data is a dirty read, it may observe work that A later rolls back. Only READ UNCOMMITTED allows it."
     },
     {
       "id": "q3",
@@ -236,7 +236,7 @@
         "SERIALIZABLE"
       ],
       "answerIndex": 1,
-      "explanation": "READ COMMITTED guarantees you only see committed data, but still allows non-repeatable reads and phantoms - the next levels up prevent those."
+      "explanation": "READ COMMITTED guarantees you only see committed data, but still allows non-repeatable reads and phantoms, the next levels up prevent those."
     },
     {
       "id": "q4",
@@ -244,7 +244,7 @@
       "prompt": "A B-tree index lookup on a table with 1,000,000 rows needs roughly how many page reads? (Use ceil(log2(1,000,000)).)",
       "answer": 20,
       "tolerance": 1,
-      "explanation": "2^19 = 524,288 < 1,000,000 <= 2^20 = 1,048,576, so about 20 levels - versus 1,000,000 pages for a full scan. That gap is why indexes exist."
+      "explanation": "2^19 = 524,288 < 1,000,000 <= 2^20 = 1,048,576, so about 20 levels, versus 1,000,000 pages for a full scan. That gap is why indexes exist."
     },
     {
       "id": "q5",
@@ -281,7 +281,7 @@
     {
       "type": "definition",
       "front": "Dirty read",
-      "back": "Reading another transaction's uncommitted changes - possible only at READ UNCOMMITTED."
+      "back": "Reading another transaction's uncommitted changes, possible only at READ UNCOMMITTED."
     },
     {
       "type": "concept",
@@ -296,11 +296,11 @@
   ],
   "references": [
     {
-      "label": "PostgreSQL Tutorial - Transactions / MVCC",
+      "label": "PostgreSQL Tutorial: Transactions / MVCC",
       "url": "https://www.postgresql.org/docs/current/tutorial-transactions.html"
     },
     {
-      "label": "Use The Index, Luke - B-Tree indexes",
+      "label": "Use The Index, Luke: B-Tree indexes",
       "url": "https://use-the-index-luke.com/sql/anatomy"
     }
   ],

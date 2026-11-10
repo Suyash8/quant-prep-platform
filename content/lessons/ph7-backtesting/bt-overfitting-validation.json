@@ -4,39 +4,110 @@
   "title": "Overfitting, Train-Test Separation and Walk-Forward Testing",
   "estMinutes": 27,
   "difficulty": "advanced",
-  "prereqs": ["bt-lookahead-costs"],
+  "prereqs": [
+    "bt-lookahead-costs"
+  ],
   "objectives": [
     "Explain overfitting as fitting noise and why in-sample performance overstates out-of-sample performance",
     "Apply a train-test split correctly, including why test data must be touched once",
     "Design a walk-forward validation scheme and state its advantages over a single split",
     "Describe how multiple testing and data snooping inflate reported strategy performance"
   ],
-  "motivation": "With enough parameters, any model can fit any history perfectly - including a history that was mostly noise. Overfitting is the quant's occupational disease because financial datasets are short, noisy and endlessly re-analysable, and because every backtest you run on the same data silently consumes a degree of freedom. Validation methodology is what separates research from curve-fitting.",
+  "motivation": "With enough parameters, any model can fit any history perfectly, including a history that was mostly noise. Overfitting is the quant's occupational disease because financial datasets are short, noisy and endlessly re-analysable, and because every backtest you run on the same data silently consumes a degree of freedom. Validation methodology is what separates research from curve-fitting.",
   "blocks": [
-    { "type": "h2", "text": "What overfitting actually is" },
-    { "type": "p", "md": "A model has two things to fit: signal and noise. In-sample, more flexible models fit *both*, so in-sample error falls as you add parameters whether or not real signal exists. Out-of-sample, the fitted noise reverses - patterns that were accidents of the sample do not recur - and performance collapses toward zero or below. In finance the noise share is enormous: daily returns have tiny signal-to-noise ratios, so a flexible rule can look spectacular purely by harvesting 30 years of accidents." },
-    { "type": "callout", "variant": "quant", "title": "The 100-strategies thought experiment", "md": "Generate 100 strategies that trade pure noise - zero true edge. In-sample, their Sharpe ratios scatter around 0; the *best* of the 100 will show a Sharpe well above 1 purely by chance. Select the best on the sample you measured it on, and you have selected luck, dressed as skill. Now imagine every backtest you have ever run on your dataset is one of those draws - your current 'best' parameter set is the maximum of all your trials. Reported in-sample performance is the max of the noise, and it never repeats out-of-sample." },
-    { "type": "h2", "text": "Train-test separation: the basic discipline" },
-    { "type": "steps", "title": "A correct single split", "items": [
-      "Split history in two: e.g. 2010-2019 as **train**, 2020-2023 as **test** (never shuffle time-series - temporal order is the whole point).",
-      "Do *all* research on train: parameter search, feature selection, model choice.",
-      "Lock the final configuration, run it once on test, and record the number. The test Sharpe is an unbiased estimate of what the strategy does on unseen data.",
-      "If you dislike the test result, change the strategy and re-test - you have just started using the test set for training. Each additional peek burns its independence; after a handful, the 'test' number is itself overfit."
-    ] },
-    { "type": "p", "md": "The test set is a **budget**: one honest draw. Professional shops archive test-set usage (some literally log every evaluation), and hold out a third split - validation - for the iteration loop, keeping test truly virgin for a final single verdict. Nested splits (train / validation / test) are the financial analogue of standard machine-learning practice, adapted to time order." },
-    { "type": "h2", "text": "Walk-forward testing: validation that mimics deployment" },
-    { "type": "p", "md": "A single split wastes most of history and answers one question. **Walk-forward** validation rolls through time: optimise on a 12-month window, trade the result on the next 3 months, roll forward a quarter, repeat. Every period gets used both as training (before it) and as honest test (for its own quarter), and the concatenation of out-of-sample quarters is the reported performance curve." },
-    { "type": "table", "headers": ["Window", "Optimise on", "Test on (out-of-sample)"], "rows": [
-      ["1", "2019 Q1-Q4", "2020 Q1"],
-      ["2", "2019 Q2-2020 Q1", "2020 Q2"],
-      ["3", "2019 Q3-2020 Q2", "2020 Q3"],
-      ["...", "...", "..."],
-      ["k", "up to 2022 Q4", "2023 Q1"]
-    ] },
-    { "type": "p", "md": "Walk-forward also captures **regime change**: parameters re-fit as the world shifts, which a fixed frozen configuration cannot. Its costs: heavy computation, a design choice over window lengths (itself a parameter - do not over-tune it on the same data), and the same caution about repeated testing: walk-forward evaluates *one* strategy design fairly, it does not license evaluating fifty designs and reporting the best walk-forward curve." },
-    { "type": "h2", "text": "Data snooping and multiple testing" },
-    { "type": "p", "md": "Backtests share a dataset, and search across many strategies, parameters and universes is implicitly a massive multiple-testing exercise. Corrections exist - White's reality check, Hansen's SPA test, and the **deflated Sharpe ratio**, which adjusts a reported Sharpe for the number of trials, sample length and skew - but the cheapest defence is honesty about trial counts: keep a research log of every configuration tried, and treat a Sharpe earned over 500 trials with far more suspicion than one from a hypothesis stated in advance." },
-    { "type": "callout", "variant": "pitfall", "title": "Backtest overfitting is invisible to the backtest", "md": "The simulation has no mechanism to tell you it is overfit - in-sample metrics look excellent *because* of the overfitting, not despite it. The only signals are external: honest out-of-sample decay, out-of-time performance, and consistency of the economic rationale. A strategy whose story you cannot explain in one sentence is usually a curve fit in a trench coat." }
+    {
+      "type": "h2",
+      "text": "What overfitting actually is"
+    },
+    {
+      "type": "p",
+      "md": "A model has two things to fit: signal and noise. In-sample, more flexible models fit *both*, so in-sample error falls as you add parameters whether or not real signal exists. Out-of-sample, the fitted noise reverses, patterns that were accidents of the sample do not recur, and performance collapses toward zero or below. In finance the noise share is enormous: daily returns have tiny signal-to-noise ratios, so a flexible rule can look spectacular purely by harvesting 30 years of accidents."
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "The 100-strategies thought experiment",
+      "md": "Generate 100 strategies that trade pure noise, zero true edge. In-sample, their Sharpe ratios scatter around 0; the *best* of the 100 will show a Sharpe well above 1 purely by chance. Select the best on the sample you measured it on, and you have selected luck, dressed as skill. Now imagine every backtest you have ever run on your dataset is one of those draws, your current 'best' parameter set is the maximum of all your trials. Reported in-sample performance is the max of the noise, and it never repeats out-of-sample."
+    },
+    {
+      "type": "h2",
+      "text": "Train-test separation: the basic discipline"
+    },
+    {
+      "type": "steps",
+      "title": "A correct single split",
+      "items": [
+        "Split history in two: e.g. 2010-2019 as **train**, 2020-2023 as **test** (never shuffle time-series, temporal order is the whole point).",
+        "Do *all* research on train: parameter search, feature selection, model choice.",
+        "Lock the final configuration, run it once on test, and record the number. The test Sharpe is an unbiased estimate of what the strategy does on unseen data.",
+        "If you dislike the test result, change the strategy and re-test, you have just started using the test set for training. Each additional peek burns its independence; after a handful, the 'test' number is itself overfit."
+      ]
+    },
+    {
+      "type": "p",
+      "md": "The test set is a **budget**: one honest draw. Professional shops archive test-set usage (some literally log every evaluation), and hold out a third split, validation, for the iteration loop, keeping test truly virgin for a final single verdict. Nested splits (train / validation / test) are the financial analogue of standard machine-learning practice, adapted to time order."
+    },
+    {
+      "type": "h2",
+      "text": "Walk-forward testing: validation that mimics deployment"
+    },
+    {
+      "type": "p",
+      "md": "A single split wastes most of history and answers one question. **Walk-forward** validation rolls through time: optimise on a 12-month window, trade the result on the next 3 months, roll forward a quarter, repeat. Every period gets used both as training (before it) and as honest test (for its own quarter), and the concatenation of out-of-sample quarters is the reported performance curve."
+    },
+    {
+      "type": "table",
+      "headers": [
+        "Window",
+        "Optimise on",
+        "Test on (out-of-sample)"
+      ],
+      "rows": [
+        [
+          "1",
+          "2019 Q1-Q4",
+          "2020 Q1"
+        ],
+        [
+          "2",
+          "2019 Q2-2020 Q1",
+          "2020 Q2"
+        ],
+        [
+          "3",
+          "2019 Q3-2020 Q2",
+          "2020 Q3"
+        ],
+        [
+          "...",
+          "...",
+          "..."
+        ],
+        [
+          "k",
+          "up to 2022 Q4",
+          "2023 Q1"
+        ]
+      ]
+    },
+    {
+      "type": "p",
+      "md": "Walk-forward also captures **regime change**: parameters re-fit as the world shifts, which a fixed frozen configuration cannot. Its costs: heavy computation, a design choice over window lengths (itself a parameter, do not over-tune it on the same data), and the same caution about repeated testing: walk-forward evaluates *one* strategy design fairly, it does not license evaluating fifty designs and reporting the best walk-forward curve."
+    },
+    {
+      "type": "h2",
+      "text": "Data snooping and multiple testing"
+    },
+    {
+      "type": "p",
+      "md": "Backtests share a dataset, and search across many strategies, parameters and universes is implicitly a massive multiple-testing exercise. Corrections exist. White's reality check, Hansen's SPA test, and the **deflated Sharpe ratio**, which adjusts a reported Sharpe for the number of trials, sample length and skew, but the cheapest defence is honesty about trial counts: keep a research log of every configuration tried, and treat a Sharpe earned over 500 trials with far more suspicion than one from a hypothesis stated in advance."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Backtest overfitting is invisible to the backtest",
+      "md": "The simulation has no mechanism to tell you it is overfit, in-sample metrics look excellent *because* of the overfitting, not despite it. The only signals are external: honest out-of-sample decay, out-of-time performance, and consistency of the economic rationale. A strategy whose story you cannot explain in one sentence is usually a curve fit in a trench coat."
+    }
   ],
   "guidedExercise": {
     "prompt": "You have daily data 2005-2023 and one strategy family with 12 parameter combinations. (a) Design a walk-forward scheme with a 3-year optimisation window and 1-year test window, starting 2008. (b) List the optimise/test year pairs through 2021. (c) State what the final reported performance is composed of.",
@@ -44,7 +115,7 @@
       "The first test year is the year right after the first optimisation window.",
       "Each year belongs to many optimisation windows and exactly one test window."
     ],
-    "solution": "(a) Optimise 2005-2007, test 2008; then roll the 3-year window forward one year at a time. (b) Optimise/test pairs: 2005-2007/2008, 2006-2008/2009, 2007-2009/2010, 2008-2010/2011, 2009-2011/2012, 2010-2012/2013, 2011-2013/2014, 2012-2014/2015, 2013-2015/2016, 2014-2016/2017, 2015-2017/2018, 2016-2018/2019, 2017-2019/2020, 2018-2020/2021. (c) The reported curve is the concatenation of the out-of-sample test years 2008-2021 - every point was traded by a model that never saw it during optimisation. The 12 parameter combinations were selected inside each window only; if you also *picked the family* by comparing walk-forward results across families, that selection needs its own untouched test data."
+    "solution": "(a) Optimise 2005-2007, test 2008; then roll the 3-year window forward one year at a time. (b) Optimise/test pairs: 2005-2007/2008, 2006-2008/2009, 2007-2009/2010, 2008-2010/2011, 2009-2011/2012, 2010-2012/2013, 2011-2013/2014, 2012-2014/2015, 2013-2015/2016, 2014-2016/2017, 2015-2017/2018, 2016-2018/2019, 2017-2019/2020, 2018-2020/2021. (c) The reported curve is the concatenation of the out-of-sample test years 2008-2021, every point was traded by a model that never saw it during optimisation. The 12 parameter combinations were selected inside each window only; if you also *picked the family* by comparing walk-forward results across families, that selection needs its own untouched test data."
   },
   "independentExercise": {
     "prompt": "A colleague reports a 2.4 in-sample Sharpe from a 3-year backtest after trying 64 parameter sets, and proposes running the same search again on the test period 'to confirm'. (a) Explain in two sentences what is wrong with that proposal. (b) Propose a defensible alternative design on data 2010-2023. (c) Briefly: what should you expect the honest out-of-sample Sharpe to look like relative to 2.4, and why?",
@@ -52,10 +123,10 @@
       "Running the search on test data converts test into training.",
       "Selection over many trials raises the expected maximum."
     ],
-    "solution": "(a) Re-running the search on the test set uses the test data to make choices, destroying its independence - the resulting 'confirmation' is just more in-sample fitting on new data, and the best-of-64 selection bias repeats. (b) Split temporally: research and select on 2010-2019 (ideally with walk-forward inside), freeze one configuration, evaluate once on 2020-2023; log the trial count and apply a deflated-Sharpe style adjustment when reporting. (c) Expect substantial decay - the 2.4 includes selection over 64 trials of a noisy statistic, so the honest out-of-sample number is often a fraction of it (empirically, in-sample Sharpe commonly halves or worse); the size of the gap is itself evidence of how much noise was fitted."
+    "solution": "(a) Re-running the search on the test set uses the test data to make choices, destroying its independence, the resulting 'confirmation' is just more in-sample fitting on new data, and the best-of-64 selection bias repeats. (b) Split temporally: research and select on 2010-2019 (ideally with walk-forward inside), freeze one configuration, evaluate once on 2020-2023; log the trial count and apply a deflated-Sharpe style adjustment when reporting. (c) Expect substantial decay, the 2.4 includes selection over 64 trials of a noisy statistic, so the honest out-of-sample number is often a fraction of it (empirically, in-sample Sharpe commonly halves or worse); the size of the gap is itself evidence of how much noise was fitted."
   },
   "commonMistakes": [
-    "Shuffling time-series data randomly before splitting - it smears future information into training.",
+    "Shuffling time-series data randomly before splitting, it smears future information into training.",
     "Re-using the test set after every iteration until the result looks good; a test set is a one-shot budget.",
     "Tuning walk-forward window lengths on the same data used for the final report.",
     "Reporting best-of-N backtests without disclosing N or applying a multiple-testing correction."
@@ -69,22 +140,116 @@
     "Multiple testing and data snooping inflate reported Sharpe; log trial counts and use deflated-Sharpe-style corrections."
   ],
   "quiz": [
-    { "id": "q1", "type": "mcq", "prompt": "A strategy with zero true edge is tried 100 times on the same history. The best in-sample result will typically be:", "options": ["Sharpe near 0 - no edge means no performance", "Clearly positive - pure selection over noise draws", "Infinite", "Undefined"], "answerIndex": 1, "explanation": "Random luck produces a spread of Sharpe estimates; the maximum of 100 draws is well above 0. Selecting the best in-sample picks luck, and it will not repeat out-of-sample." },
-    { "id": "q2", "type": "mcq", "prompt": "You re-run your parameter search on the test period after a disappointing test result. The test set is now:", "options": ["Still a valid out-of-sample estimate", "Part of the training process - its independence is spent", "More accurate because it is bigger", "Unaffected if you only change one parameter"], "answerIndex": 1, "explanation": "Test-set validity comes from being untouched by design choices. Any further search on it - even one parameter - converts it into training data and the 'result' becomes another in-sample fit." },
-    { "id": "q3", "type": "short", "prompt": "State the two defining properties of a correct walk-forward scheme.", "modelAnswer": "Optimisation always uses only data before the test window (strict temporal order), and the reported performance is the concatenation of out-of-sample test windows - no period is evaluated by a model that saw it during fitting.", "keywords": ["temporal", "out-of-sample"], "explanation": "Strict time ordering and fully out-of-sample evaluation of the reported curve are the essence; everything else is window design." },
-    { "id": "q4", "type": "ms", "prompt": "Which practices reduce backtest overfitting?", "options": ["Logging the number of configurations tried and adjusting expectations for selection", "Holding out a final untouched test segment", "Tuning the walk-forward window length until the report looks best", "Preferring strategies with a plausible economic rationale"], "answerIndices": [0, 1, 3], "explanation": "Trial logging, virgin test data and economic rationale are the defences; tuning the validation design on the reported data is itself snooping." },
-    { "id": "q5", "type": "mcq", "prompt": "Why must time-series data NOT be shuffled before a train-test split?", "options": ["It slows computation", "Shuffling lets training data contain observations from after the test period, leaking future information", "It changes the variance of returns", "Random splits are standard for financial data"], "answerIndex": 1, "explanation": "Temporal order is the causal structure: a random split places future observations into training, which is look-ahead bias by construction." },
-    { "id": "q6", "type": "numeric", "prompt": "In a walk-forward with a 3-year optimisation window and 1-year test window starting in 2008 (data from 2005), how many complete test years exist through 2021 inclusive?", "answer": 14, "tolerance": 0.1, "explanation": "Test years 2008 through 2021 inclusive: $2021 - 2008 + 1 = 14$ out-of-sample years." }
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "A strategy with zero true edge is tried 100 times on the same history. The best in-sample result will typically be:",
+      "options": [
+        "Sharpe near 0, no edge means no performance",
+        "Clearly positive, pure selection over noise draws",
+        "Infinite",
+        "Undefined"
+      ],
+      "answerIndex": 1,
+      "explanation": "Random luck produces a spread of Sharpe estimates; the maximum of 100 draws is well above 0. Selecting the best in-sample picks luck, and it will not repeat out-of-sample."
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "You re-run your parameter search on the test period after a disappointing test result. The test set is now:",
+      "options": [
+        "Still a valid out-of-sample estimate",
+        "Part of the training process, its independence is spent",
+        "More accurate because it is bigger",
+        "Unaffected if you only change one parameter"
+      ],
+      "answerIndex": 1,
+      "explanation": "Test-set validity comes from being untouched by design choices. Any further search on it, even one parameter, converts it into training data and the 'result' becomes another in-sample fit."
+    },
+    {
+      "id": "q3",
+      "type": "short",
+      "prompt": "State the two defining properties of a correct walk-forward scheme.",
+      "modelAnswer": "Optimisation always uses only data before the test window (strict temporal order), and the reported performance is the concatenation of out-of-sample test windows, no period is evaluated by a model that saw it during fitting.",
+      "keywords": [
+        "temporal",
+        "out-of-sample"
+      ],
+      "explanation": "Strict time ordering and fully out-of-sample evaluation of the reported curve are the essence; everything else is window design."
+    },
+    {
+      "id": "q4",
+      "type": "ms",
+      "prompt": "Which practices reduce backtest overfitting?",
+      "options": [
+        "Logging the number of configurations tried and adjusting expectations for selection",
+        "Holding out a final untouched test segment",
+        "Tuning the walk-forward window length until the report looks best",
+        "Preferring strategies with a plausible economic rationale"
+      ],
+      "answerIndices": [
+        0,
+        1,
+        3
+      ],
+      "explanation": "Trial logging, virgin test data and economic rationale are the defences; tuning the validation design on the reported data is itself snooping."
+    },
+    {
+      "id": "q5",
+      "type": "mcq",
+      "prompt": "Why must time-series data NOT be shuffled before a train-test split?",
+      "options": [
+        "It slows computation",
+        "Shuffling lets training data contain observations from after the test period, leaking future information",
+        "It changes the variance of returns",
+        "Random splits are standard for financial data"
+      ],
+      "answerIndex": 1,
+      "explanation": "Temporal order is the causal structure: a random split places future observations into training, which is look-ahead bias by construction."
+    },
+    {
+      "id": "q6",
+      "type": "numeric",
+      "prompt": "In a walk-forward with a 3-year optimisation window and 1-year test window starting in 2008 (data from 2005), how many complete test years exist through 2021 inclusive?",
+      "answer": 14,
+      "tolerance": 0.1,
+      "explanation": "Test years 2008 through 2021 inclusive: $2021 - 2008 + 1 = 14$ out-of-sample years."
+    }
   ],
   "flashcards": [
-    { "type": "definition", "front": "Overfitting", "back": "Fitting sample-specific noise alongside signal; in-sample performance rises with flexibility, out-of-sample performance decays toward the true (often zero) edge." },
-    { "type": "concept", "front": "Test set budget", "back": "A held-out test segment supports exactly one honest evaluation; every further search on it converts it into training data." },
-    { "type": "definition", "front": "Walk-forward validation", "back": "Rolling scheme: optimise on a trailing window, evaluate out-of-sample on the next period, roll forward; reported performance is all out-of-sample." },
-    { "type": "definition", "front": "Deflated Sharpe ratio", "back": "A Sharpe adjusted for multiple testing, sample length and return skew - corrects for the selection that produced the best-of-N backtest." }
+    {
+      "type": "definition",
+      "front": "Overfitting",
+      "back": "Fitting sample-specific noise alongside signal; in-sample performance rises with flexibility, out-of-sample performance decays toward the true (often zero) edge."
+    },
+    {
+      "type": "concept",
+      "front": "Test set budget",
+      "back": "A held-out test segment supports exactly one honest evaluation; every further search on it converts it into training data."
+    },
+    {
+      "type": "definition",
+      "front": "Walk-forward validation",
+      "back": "Rolling scheme: optimise on a trailing window, evaluate out-of-sample on the next period, roll forward; reported performance is all out-of-sample."
+    },
+    {
+      "type": "definition",
+      "front": "Deflated Sharpe ratio",
+      "back": "A Sharpe adjusted for multiple testing, sample length and return skew, corrects for the selection that produced the best-of-N backtest."
+    }
   ],
   "references": [
-    { "label": "Bailey, Borwein, Lopez de Prado & Zhu - The probability of backtest overfitting", "url": "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2326253" },
-    { "label": "Lopez de Prado - Advances in Financial Machine Learning (overview)", "url": "https://www.wiley.com/en-us/Advances+in+Financial+Machine+Learning-p-9781119482089" }
+    {
+      "label": "Bailey, Borwein, Lopez de Prado & Zhu: The probability of backtest overfitting",
+      "url": "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2326253"
+    },
+    {
+      "label": "Lopez de Prado: Advances in Financial Machine Learning (overview)",
+      "url": "https://www.wiley.com/en-us/Advances+in+Financial+Machine+Learning-p-9781119482089"
+    }
   ],
-  "skills": ["backtesting", "statistics"]
+  "skills": [
+    "backtesting",
+    "statistics"
+  ]
 }

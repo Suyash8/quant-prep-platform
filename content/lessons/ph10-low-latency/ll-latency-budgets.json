@@ -13,7 +13,7 @@
     "Distinguish fixed physical costs from costs software can influence",
     "Use a latency budget to accept or reject a design"
   ],
-  "motivation": "'Make it fast' is not an engineering goal. A trading system that must react within a few microseconds needs an explicit ledger: how many nanoseconds for the network, the kernel, the parse, the decision, the risk check, the send? This lesson builds that ledger - the latency budget - because every later optimisation is a claim against it.",
+  "motivation": "'Make it fast' is not an engineering goal. A trading system that must react within a few microseconds needs an explicit ledger: how many nanoseconds for the network, the kernel, the parse, the decision, the risk check, the send? This lesson builds that ledger, the latency budget, because every later optimisation is a claim against it.",
   "blocks": [
     {
       "type": "h2",
@@ -21,7 +21,7 @@
     },
     {
       "type": "p",
-      "md": "**Tick-to-trade** latency is the time from a market-data packet *arriving at your NIC* to your order packet *leaving it* - decision time included. Nothing else counts: backtests, research and dashboards live outside the budget. The path decomposes into stages, each with an owner and a cost. The numbers below are **orders of magnitude, not guarantees** - real values depend on NICs, kernel, CPU and venue - but the discipline is the point: measure each stage, write its cost in the budget, and defend every microsecond against the total."
+      "md": "**Tick-to-trade** latency is the time from a market-data packet *arriving at your NIC* to your order packet *leaving it*, decision time included. Nothing else counts: backtests, research and dashboards live outside the budget. The path decomposes into stages, each with an owner and a cost. The numbers below are **orders of magnitude, not guarantees**, real values depend on NICs, kernel, CPU and venue, but the discipline is the point: measure each stage, write its cost in the budget, and defend every microsecond against the total."
     },
     {
       "type": "table",
@@ -44,7 +44,7 @@
         [
           "Kernel stack, NIC to app",
           "~1-2 µs per direction",
-          "Syscalls, interrupts, copies - bypassable (later lessons)"
+          "Syscalls, interrupts, copies, bypassable (later lessons)"
         ],
         [
           "Decode + normalise",
@@ -65,19 +65,19 @@
     },
     {
       "type": "p",
-      "md": "Treat the budget as a **contract**, not a wish list: the sum of stage allowances plus margin must not exceed the target, and every new feature must buy its microseconds from another stage. Note also what the budget *excludes*: the venue's matching time and the trip across town are real delays, but they belong to the end-to-end round trip, not to tick-to-trade - conflating the two is how teams chase numbers no local optimisation can reach. Your budget covers exactly what you own: the NIC-to-NIC span of your own machines."
+      "md": "Treat the budget as a **contract**, not a wish list: the sum of stage allowances plus margin must not exceed the target, and every new feature must buy its microseconds from another stage. Note also what the budget *excludes*: the venue's matching time and the trip across town are real delays, but they belong to the end-to-end round trip, not to tick-to-trade, conflating the two is how teams chase numbers no local optimisation can reach. Your budget covers exactly what you own: the NIC-to-NIC span of your own machines."
     },
     {
       "type": "p",
-      "md": "A latency budget is an accounting document: the target tick-to-trade time, decomposed into every component that spends time, each with an owner and a measured cost. Its discipline is the same as any budget — components must *sum* to the total, every number must be *measured* not guessed, and any overrun must be *paid for* somewhere. Teams that skip the budget discover latency the way individuals discover debt: all at once, in a crisis."
+      "md": "A latency budget is an accounting document: the target tick-to-trade time, decomposed into every component that spends time, each with an owner and a measured cost. Its discipline is the same as any budget, components must *sum* to the total, every number must be *measured* not guessed, and any overrun must be *paid for* somewhere. Teams that skip the budget discover latency the way individuals discover debt: all at once, in a crisis."
     },
     {
       "type": "steps",
       "title": "A realistic budget, wire-to-wire (illustrative, exchange colo)",
       "items": [
-        "**Wire + switch hop**: 800 ns. Photon in fibre plus one switch — this is physics; you cannot optimise it, only shorten the path.",
-        "**NIC + driver**: 2,500 ns. Interrupt coalescing is a *choice* here: batching raises throughput and p50 but wrecks p99 — a budget line, not a free lunch.",
-        "**Kernel network stack**: 3,200 ns in a standard stack. This is the line that kernel-bypass (DPDK, Solarflare/OpenOnload, AF_XDP) exists to delete — but each bypass moves work into your process and your responsibility.",
+        "**Wire + switch hop**: 800 ns. Photon in fibre plus one switch, this is physics; you cannot optimise it, only shorten the path.",
+        "**NIC + driver**: 2,500 ns. Interrupt coalescing is a *choice* here: batching raises throughput and p50 but wrecks p99, a budget line, not a free lunch.",
+        "**Kernel network stack**: 3,200 ns in a standard stack. This is the line that kernel-bypass (DPDK, Solarflare/OpenOnload, AF_XDP) exists to delete, but each bypass moves work into your process and your responsibility.",
         "**Decode + strategy + risk checks + order build**: 8,000 ns. The only line that is *yours* end-to-end: the strategy logic, pre-trade risk (position limits, rate limits, self-trade checks) and FIX/OUCH serialisation.",
         "**Total**: ~14.5 µs tick-to-trade. Comfortably fast for most strategies; HFT market makers target single-digit microseconds and pay for it in every line above. The budget makes the *next* decision obvious: the strategy block is 55% of the total, so micro-optimising the kernel stack first would be misallocation."
       ]
@@ -86,7 +86,7 @@
       "type": "callout",
       "variant": "pitfall",
       "title": "Averages lie about the tail",
-      "md": "A budget satisfied at the mean and blown at p99 is blown — the exchange prices your slow orders, not your average ones. Every line in the budget needs a percentile attached (\"p99 strategy time ≤ 4 µs\"), and periodic GC pauses, page faults and cache misses are exactly the events that live between p99 and max. Measure the distribution, budget the percentile you care about."
+      "md": "A budget satisfied at the mean and blown at p99 is blown, the exchange prices your slow orders, not your average ones. Every line in the budget needs a percentile attached (\"p99 strategy time ≤ 4 µs\"), and periodic GC pauses, page faults and cache misses are exactly the events that live between p99 and max. Measure the distribution, budget the percentile you care about."
     },
     {
       "type": "interactive",
@@ -118,7 +118,7 @@
       "items": [
         "Target: tick-to-trade ≤ $10\\,\\mu s$ on a kernel-stack path (illustrative).",
         "Assign: kernel in/out $2 + 2 = 4\\,\\mu s$; decode $1$; decision $2$; risk gate $1$; encode $1$ - all µs.",
-        "Sum $= 4 + 1 + 2 + 1 + 1 = 9\\,\\mu s$; the remaining $1\\,\\mu s$ is **margin**, not spare budget - tails eat it.",
+        "Sum $= 4 + 1 + 2 + 1 + 1 = 9\\,\\mu s$; the remaining $1\\,\\mu s$ is **margin**, not spare budget, tails eat it.",
         "Consequence: a decode costing $3\\,\\mu s$ is not 'a bit slow', it is $2\\,\\mu s$ stolen from the decision or the margin. Optimise where the budget says, not where the code is ugliest."
       ]
     },
@@ -126,7 +126,7 @@
       "type": "callout",
       "variant": "quant",
       "title": "Latency buys survival, not wins",
-      "md": "Being fast does not make your model right; being slow makes it wrong *later than the market* - your quote is stale exactly when someone knows something. The tail is what hurts: the slow 1% of your quotes is the 1% that gets picked off. That is why budgets carry margin and why percentiles (final lesson of this module) outrank averages."
+      "md": "Being fast does not make your model right; being slow makes it wrong *later than the market*, your quote is stale exactly when someone knows something. The tail is what hurts: the slow 1% of your quotes is the 1% that gets picked off. That is why budgets carry margin and why percentiles (final lesson of this module) outrank averages."
     },
     {
       "type": "h2",
@@ -134,13 +134,13 @@
     },
     {
       "type": "p",
-      "md": "Propagation is fixed. Light in fibre travels at ≈ $2 \\times 10^8$ m/s, giving the handy anchor **≈ 5 µs per km one-way** (approximate). An 80 km link therefore costs ≈ $80 \\times 5 = 400\\,\\mu s$ one-way - forty times the entire compute budget of the worked example above. This is why firms pay for colocation and microwave paths: distance is the one line item no compiler flag touches. Everything in the *processing* rows, by contrast, is negotiable - and that is where the rest of this module lives."
+      "md": "Propagation is fixed. Light in fibre travels at ≈ $2 \\times 10^8$ m/s, giving the handy anchor **≈ 5 µs per km one-way** (approximate). An 80 km link therefore costs ≈ $80 \\times 5 = 400\\,\\mu s$ one-way, forty times the entire compute budget of the worked example above. This is why firms pay for colocation and microwave paths: distance is the one line item no compiler flag touches. Everything in the *processing* rows, by contrast, is negotiable, and that is where the rest of this module lives."
     }
   ],
   "guidedExercise": {
     "prompt": "Measured (approximate) stage costs on one path, in µs: kernel in 2.1, decode 0.4, decision 1.2, risk 0.3, encode+kernel out 1.5. (a) Total? (b) With an $8\\,\\mu s$ budget, how much margin remains? (c) Which stage is the obvious next optimisation target and why?",
     "hints": [
-      "Add the stages; margin = budget - total.",
+      "Add the stages; margin = budget, total.",
       "Target the stage with the largest cost you can actually influence."
     ],
     "solution": "(a) $2.1 + 0.4 + 1.2 + 0.3 + 1.5 = 5.5\\,\\mu s$. (b) $8 - 5.5 = 2.5\\,\\mu s$ of margin. (c) Kernel in/out at $3.6\\,\\mu s$ combined is the biggest *influenceable* cost (kernel-bypass techniques target it), then the decision at 1.2. Propagation is absent from this list precisely because software cannot change it."
@@ -151,10 +151,10 @@
       "Time = distance x per-km cost.",
       "Light in air is close to the vacuum speed of 3x10^8 m/s, hence ≈ 3.3 µs/km."
     ],
-    "solution": "(a) $1{,}100 \\times 5 = 5{,}500\\,\\mu s = 5.5$ ms one-way (approximate). (b) $1{,}100 \\times 3.3 = 3{,}630\\,\\mu s ≈ 3.6$ ms floor (approximate; real paths bend, so actual is higher). (c) Order of $5.5 - 3.6 ≈ 1.9$ ms saved one-way - the reason microwave links exist despite costing millions."
+    "solution": "(a) $1{,}100 \\times 5 = 5{,}500\\,\\mu s = 5.5$ ms one-way (approximate). (b) $1{,}100 \\times 3.3 = 3{,}630\\,\\mu s ≈ 3.6$ ms floor (approximate; real paths bend, so actual is higher). (c) Order of $5.5 - 3.6 ≈ 1.9$ ms saved one-way, the reason microwave links exist despite costing millions."
   },
   "commonMistakes": [
-    "Treating vendor 'typical latency' numbers as guarantees - they are orders of magnitude until measured on your path.",
+    "Treating vendor 'typical latency' numbers as guarantees, they are orders of magnitude until measured on your path.",
     "Spending the margin in the happy path; margin exists for tails.",
     "Optimising arithmetic while ignoring the 1-2 µs kernel overhead in front of it (approximate).",
     "Forgetting propagation in budgets that span distance."
@@ -164,7 +164,7 @@
   "summary": [
     "Tick-to-trade = packet in -> decision -> order out; budgets name every stage and its µs allowance.",
     "Orders of magnitude (approximate): kernel path 1-2 µs/direction, parse ~0.1 µs, switch hops ~0.1-0.5 µs, fibre ≈ 5 µs/km.",
-    "Propagation is fixed physics; processing is negotiable - optimise where the budget says.",
+    "Propagation is fixed physics; processing is negotiable, optimise where the budget says.",
     "Always keep margin: the tail (p99+) is what consumes unallocated time."
   ],
   "quiz": [
@@ -179,7 +179,7 @@
         "Serialisation of the order into JSON"
       ],
       "answerIndex": 1,
-      "explanation": "Kernel overhead runs ~1-2 µs per direction (approximate) while the arithmetic of a decision is nanoseconds - which is why kernel bypass exists."
+      "explanation": "Kernel overhead runs ~1-2 µs per direction (approximate) while the arithmetic of a decision is nanoseconds, which is why kernel bypass exists."
     },
     {
       "id": "q2",
@@ -195,7 +195,7 @@
       "prompt": "Your total budget is 10 µs and the decode stage measures 3.5 µs. How much remains for every other stage combined?",
       "answer": 6.5,
       "tolerance": 0.05,
-      "explanation": "$10 - 3.5 = 6.5\\,\\mu s$. A stage overshoot is a direct subtraction from everyone else - that is what a budget means."
+      "explanation": "$10 - 3.5 = 6.5\\,\\mu s$. A stage overshoot is a direct subtraction from everyone else, that is what a budget means."
     },
     {
       "id": "q4",
@@ -225,7 +225,7 @@
         "Because the kernel copies packets"
       ],
       "answerIndex": 1,
-      "explanation": "Propagation delay is distance divided by speed of light in the medium - fixed by physics. Only shorter or faster paths (colocation, microwave) change it."
+      "explanation": "Propagation delay is distance divided by speed of light in the medium, fixed by physics. Only shorter or faster paths (colocation, microwave) change it."
     },
     {
       "id": "q6",
@@ -269,7 +269,7 @@
       "url": "https://gist.github.com/jboner/2841832"
     },
     {
-      "label": "Wikipedia - Optical fiber (propagation speed)",
+      "label": "Wikipedia: Optical fiber (propagation speed)",
       "url": "https://en.wikipedia.org/wiki/Optical_fiber"
     }
   ],

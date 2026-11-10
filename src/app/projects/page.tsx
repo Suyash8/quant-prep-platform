@@ -7,7 +7,7 @@ import {
   ArrowRight, CheckCircle2, Clock, Code2, Flame, Layers, PlayCircle, Rocket, Trophy,
 } from 'lucide-react';
 
-export const metadata = { title: 'Projects — QuantFoundry' };
+export const metadata = { title: 'Projects. QuantFoundry' };
 
 const TIER_META: Record<string, { tile: string; chip: string; icon: typeof Code2 }> = {
   core: { tile: 'icon-tile-info', chip: 'chip-info', icon: Code2 },
@@ -40,11 +40,14 @@ export default async function ProjectsPage() {
   const cards = projects.map(p => {
     const full = getProject(p.slug);
     const hours = full ? full.milestones.reduce((n, m) => n + m.estHours, 0) : 0;
-    // first sentence only, trimmed to a sane length — never cut mid-word
+    const milestoneTotal = full ? full.milestones.length : 0;
+    // first sentence only, trimmed to a sane length, never cut mid-word
+
+
     const raw = full ? full.context.replace(/[#*`>]/g, '').replace(/\s+/g, ' ').trim() : '';
     const firstSentence = raw.split(/(?<=[.!?])\s/)[0] ?? raw;
     const desc = firstSentence.length > 170 ? firstSentence.slice(0, firstSentence.lastIndexOf(' ', 167)).trimEnd() + '…' : firstSentence;
-    return { ...p, hours, desc };
+    return { ...p, hours, desc, milestoneTotal };
   });
 
   const statTiles = [
@@ -64,7 +67,7 @@ export default async function ProjectsPage() {
       </header>
       <p className="-mt-2.5 mb-6 max-w-3xl text-sm text-muted font-semibold leading-relaxed anim-slide-up">
         Ten projects that progressively combine mathematics, programming, finance and systems. Each has requirements,
-        milestones, design guidance, evaluation criteria and extension challenges — the finished portfolio is the
+        milestones, design guidance, evaluation criteria and extension challenges, the finished portfolio is the
         demonstrable engineering experience employers ask about.
       </p>
 
@@ -89,9 +92,12 @@ export default async function ProjectsPage() {
           return (
             <div
               key={p.slug}
-              className="qf-card p-5 flex flex-col anim-slide-up hover:-translate-y-0.5 hover:shadow-lg transition-all"
+              className={`qf-card p-5 flex flex-col anim-slide-up hover:-translate-y-0.5 hover:shadow-lg transition-all ${prog?.status === 'completed' ? '!border-gold/70 relative overflow-hidden' : ''}`}
               style={{ animationDelay: SLIDE_DELAYS[i % SLIDE_DELAYS.length] }}
             >
+              {prog?.status === 'completed' && (
+                <span className="absolute right-4 top-4 icon-tile icon-tile-gold !h-8 !w-8 anim-bob"><Trophy className="!h-4 !w-4" /></span>
+              )}
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <div className="flex items-center gap-2.5">
                   <span className={`icon-tile ${tier.tile}`}><TierIcon /></span>
@@ -101,7 +107,7 @@ export default async function ProjectsPage() {
                   prog.status === 'completed' ? (
                     <span className="chip chip-success anim-pop-in"><CheckCircle2 className="h-3 w-3" /> completed</span>
                   ) : (
-                    <span className="chip tnum">{Math.min(prog.milestonesDone, 99)} milestones logged · {prog.status.replace('_', ' ')}</span>
+                    <span className="chip chip-warning">in progress</span>
                   )
                 ) : (
                   <span className="chip">Not started</span>
@@ -116,6 +122,17 @@ export default async function ProjectsPage() {
                 <span className="chip tnum"><Clock className="h-3 w-3" /> ~{p.hours}h</span>
               </div>
               <p className="mt-2.5 text-sm text-muted leading-relaxed line-clamp-2">{p.desc}</p>
+              {prog && prog.status !== 'completed' && (
+                <div className="mt-3">
+                  <div className="flex items-center justify-between text-[11px] font-black uppercase tracking-wider mb-1.5">
+                    <span className="text-faint">Milestones</span>
+                    <span className="tnum text-warning-strong dark:text-warning">{prog.milestonesDone}/{p.milestoneTotal || ', '}</span>
+                  </div>
+                  <div className="prog-track h-2.5">
+                    <div className="prog-fill prog-fill-gold" style={{ width: `${Math.min(100, Math.round((prog.milestonesDone / Math.max(p.milestoneTotal || 1, 1)) * 100))}%` }} />
+                  </div>
+                </div>
+              )}
               <div className="mt-auto pt-4">
                 <Link href={`/projects/${p.slug}`} className="btn3d btn3d-sm">
                   Open spec <ArrowRight className="h-3.5 w-3.5" />
@@ -132,7 +149,7 @@ export default async function ProjectsPage() {
           <div className="flex items-center gap-4 min-w-0">
             <span className="icon-tile bg-surface text-accent-deep dark:text-accent"><Rocket /></span>
             <div>
-              <h2 className="font-extrabold text-lg tracking-tight">Projects are the portfolio — the curriculum is the engine</h2>
+              <h2 className="font-extrabold text-lg tracking-tight">Projects are the portfolio, the curriculum is the engine</h2>
               <p className="text-sm text-muted">Stuck on a spec? The phase-by-phase curriculum behind each prerequisite has you covered.</p>
             </div>
           </div>

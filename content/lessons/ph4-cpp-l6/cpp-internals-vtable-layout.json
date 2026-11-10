@@ -4,7 +4,9 @@
   "title": "vtables, Object Layout, Alignment and Padding",
   "estMinutes": 27,
   "difficulty": "advanced",
-  "prereqs": ["cpp-internals-linking"],
+  "prereqs": [
+    "cpp-internals-linking"
+  ],
   "objectives": [
     "Compute sizeof, alignof and member offsets for a struct by applying the padding rules, and reorder members to shrink it",
     "Explain where the vptr lives, what the vtable contains, and the exact machine steps of a virtual call",
@@ -12,7 +14,7 @@
     "Use alignof/alignas and static_assert to encode layout requirements in code",
     "Relate padding to real costs in hot loops over large vectors of objects"
   ],
-  "motivation": "Your market-data handler stores ten million fills in a `std::vector<Fill>`, and a naive member ordering quietly doubles its memory footprint and halves your cache hit rate. Meanwhile a virtual call in the pricing loop is two memory loads and an indirect branch the compiler cannot usually inline. Neither cost appears in the source code - both are consequences of object layout, and after this lesson you will be able to compute them by hand.",
+  "motivation": "Your market-data handler stores ten million fills in a `std::vector<Fill>`, and a naive member ordering quietly doubles its memory footprint and halves your cache hit rate. Meanwhile a virtual call in the pricing loop is two memory loads and an indirect branch the compiler cannot usually inline. Neither cost appears in the source code, both are consequences of object layout, and after this lesson you will be able to compute them by hand.",
   "blocks": [
     {
       "type": "h2",
@@ -20,17 +22,41 @@
     },
     {
       "type": "p",
-      "md": "A trivially copyable C++ object is just a sequence of bytes. Non-static data members occupy consecutive offsets in declaration order, but the compiler inserts **padding** so that every member sits at an offset that is a multiple of its **alignment**, and it pads the total size so the next element in an array also satisfies that rule. A struct's own alignment is the maximum of its members' alignments. On x86-64 (System V ABI): `char` 1/1, `short` 2/2, `int` 4/4, `double` 8/8, pointers 8/8 (size/alignment). Nothing else is added: no type tag, no length, no magic - a `double` in a struct is the same 8 bytes as anywhere else."
+      "md": "A trivially copyable C++ object is just a sequence of bytes. Non-static data members occupy consecutive offsets in declaration order, but the compiler inserts **padding** so that every member sits at an offset that is a multiple of its **alignment**, and it pads the total size so the next element in an array also satisfies that rule. A struct's own alignment is the maximum of its members' alignments. On x86-64 (System V ABI): `char` 1/1, `short` 2/2, `int` 4/4, `double` 8/8, pointers 8/8 (size/alignment). Nothing else is added: no type tag, no length, no magic, a `double` in a struct is the same 8 bytes as anywhere else."
     },
     {
       "type": "table",
-      "headers": ["Type (x86-64)", "sizeof", "alignof"],
+      "headers": [
+        "Type (x86-64)",
+        "sizeof",
+        "alignof"
+      ],
       "rows": [
-        ["char", "1", "1"],
-        ["short", "2", "2"],
-        ["int", "4", "4"],
-        ["double", "8", "8"],
-        ["T*", "8", "8"]
+        [
+          "char",
+          "1",
+          "1"
+        ],
+        [
+          "short",
+          "2",
+          "2"
+        ],
+        [
+          "int",
+          "4",
+          "4"
+        ],
+        [
+          "double",
+          "8",
+          "8"
+        ],
+        [
+          "T*",
+          "8",
+          "8"
+        ]
       ],
       "caption": "The sizes everything else is built from."
     },
@@ -41,7 +67,7 @@
         "value": 42.17,
         "type": "double"
       },
-      "caption": "A price field in your struct is one of these 8-byte doubles - byte by byte, sign, exponent, fraction. Padding is just where the compiler spaces such chunks out."
+      "caption": "A price field in your struct is one of these 8-byte doubles, byte by byte, sign, exponent, fraction. Padding is just where the compiler spaces such chunks out."
     },
     {
       "type": "code",
@@ -59,10 +85,10 @@
       "type": "steps",
       "title": "Worked layout: same members, two orders",
       "items": [
-        "**Bad order (as written):** `side` at offset 0. `price` needs alignment 8, so offsets 1-7 are padding - 7 wasted bytes. `price` at 8-15, `qty` at 16-19. Size 20 must round up to a multiple of the struct's alignment (8), so bytes 20-23 are tail padding. **sizeof = 24.**",
+        "**Bad order (as written):** `side` at offset 0. `price` needs alignment 8, so offsets 1-7 are padding, 7 wasted bytes. `price` at 8-15, `qty` at 16-19. Size 20 must round up to a multiple of the struct's alignment (8), so bytes 20-23 are tail padding. **sizeof = 24.**",
         "**Good order:** `price` at 0-7, `qty` at 8-11, `side` at 12, one byte of tail padding to reach 16. **sizeof = 16**, same data.",
         "Rule of thumb: declare members **largest-alignment first**; you can rarely lose with that.",
-        "At ten million fills, 24 vs 16 bytes each is 240 MB vs 160 MB of RAM and of cache traffic - padding is not a trivia question, it is your memory bandwidth."
+        "At ten million fills, 24 vs 16 bytes each is 240 MB vs 160 MB of RAM and of cache traffic, padding is not a trivia question, it is your memory bandwidth."
       ]
     },
     {
@@ -77,7 +103,7 @@
     },
     {
       "type": "p",
-      "md": "The moment a class declares or inherits a **virtual** function, the object gains a hidden pointer. Under the Itanium ABI (gcc/clang on Linux) the **vptr** is the first thing in the object, and it points at the class's **vtable** - one table *per class*, never per object, holding the addresses of that class's virtual functions (plus RTTI and offset bookkeeping). A virtual call `p.price(s)` through a base reference therefore means: load the vptr, load the slot, call indirectly. The compiler cannot know the target at compile time, so it usually cannot inline - and it must keep both loads."
+      "md": "The moment a class declares or inherits a **virtual** function, the object gains a hidden pointer. Under the Itanium ABI (gcc/clang on Linux) the **vptr** is the first thing in the object, and it points at the class's **vtable**, one table *per class*, never per object, holding the addresses of that class's virtual functions (plus RTTI and offset bookkeeping). A virtual call `p.price(s)` through a base reference therefore means: load the vptr, load the slot, call indirectly. The compiler cannot know the target at compile time, so it usually cannot inline, and it must keep both loads."
     },
     {
       "type": "code",
@@ -95,11 +121,11 @@
       "type": "code",
       "lang": "text",
       "code": "double quote(const Base& p, double s):   # gcc -O2, x86-64 (illustrative)\n        mov    (%rdi),%rax        # rax = vptr (first 8 bytes of the object)\n        callq  *0x10(%rax)        # call vtable slot 2 = &price  (0x10 = 16 bytes)\n        ret                       # price already returned in xmm0",
-      "caption": "A virtual call is one pointer load plus an indirect call. The slot offset depends on declaration order and ABI - here the virtual destructor occupies slots 0-1, so price sits at 0x10."
+      "caption": "A virtual call is one pointer load plus an indirect call. The slot offset depends on declaration order and ABI, here the virtual destructor occupies slots 0-1, so price sits at 0x10."
     },
     {
       "type": "p",
-      "md": "**Multiple inheritance** with several polymorphic bases gives an object several vptrs - one per polymorphic base subobject - so `sizeof` grows by 8 per additional base with virtuals, and every cross-base conversion adjusts the pointer by a constant offset. Virtual inheritance adds yet another layer of indirection. This is why latency-critical quant code often prefers composition or CRTP (compile-time polymorphism) over deep virtual hierarchies: layout stays flat, calls stay direct and inlinable. When the compiler *can* prove the dynamic type (e.g. the class is `final`), it devirtualises - turning the indirect call back into a direct, inlinable one."
+      "md": "**Multiple inheritance** with several polymorphic bases gives an object several vptrs, one per polymorphic base subobject, so `sizeof` grows by 8 per additional base with virtuals, and every cross-base conversion adjusts the pointer by a constant offset. Virtual inheritance adds yet another layer of indirection. This is why latency-critical quant code often prefers composition or CRTP (compile-time polymorphism) over deep virtual hierarchies: layout stays flat, calls stay direct and inlinable. When the compiler *can* prove the dynamic type (e.g. the class is `final`), it devirtualises, turning the indirect call back into a direct, inlinable one."
     },
     {
       "type": "h2",
@@ -129,26 +155,26 @@
     "prompt": "A risk system has:\n\n```cpp\nstruct Instrument {\n    virtual ~Instrument() = default;\n    virtual double price() const;\n    double mid;\n};\nstruct Swap : Instrument {\n    double spread;\n    double notional;\n};\n```\n\n(a) Give sizeof(Instrument) and sizeof(Swap) on x86-64 with member offsets. (b) How many vptrs does a Swap carry and why? (c) A vector holds 2,000,000 Instrument pointers pointing at mixed instruments - what does the vptr let each call site do, and what two operations does each `instr->price()` perform before entering the function body?",
     "hints": [
       "The vptr is the first 8 bytes; then data members in declaration order.",
-      "Derived adds its members after the base subobject - the base's layout is fixed.",
-      "Single inheritance shares one vtable slot chain - no second vptr appears."
+      "Derived adds its members after the base subobject, the base's layout is fixed.",
+      "Single inheritance shares one vtable slot chain, no second vptr appears."
     ],
-    "solution": "(a) Instrument: vptr@0-7, mid@8-15, sizeof = **16**. Swap: vptr@0-7, mid@8-15, spread@16-23, notional@24-31, sizeof = **32**, alignof 8. (b) Exactly **one** vptr: single public inheritance means Derived reuses the base's vptr and points it at Derived's own vtable. (c) The vptr lets the same call site reach the right override for the object's dynamic type; each call performs (1) a load of the vptr from the object and (2) a load of the function address from the vtable slot - then an indirect call that normally cannot be inlined."
+    "solution": "(a) Instrument: vptr@0-7, mid@8-15, sizeof = **16**. Swap: vptr@0-7, mid@8-15, spread@16-23, notional@24-31, sizeof = **32**, alignof 8. (b) Exactly **one** vptr: single public inheritance means Derived reuses the base's vptr and points it at Derived's own vtable. (c) The vptr lets the same call site reach the right override for the object's dynamic type; each call performs (1) a load of the vptr from the object and (2) a load of the function address from the vtable slot, then an indirect call that normally cannot be inlined."
   },
   "commonMistakes": [
-    "Assuming sizeof equals the sum of member sizes - padding between members and tail padding both inflate it.",
+    "Assuming sizeof equals the sum of member sizes, padding between members and tail padding both inflate it.",
     "Declaring members in 'logical' order (flags first) instead of largest-alignment-first, silently doubling memory.",
     "Thinking the vtable is stored inside each object: the object stores an 8-byte vptr; the table itself is once per class in read-only memory.",
-    "Counting non-virtual member functions or plain data members as vtable slots - only virtual functions occupy slots.",
+    "Counting non-virtual member functions or plain data members as vtable slots, only virtual functions occupy slots.",
     "Forgetting that adding the first virtual function to a widely-copied POD struct changes sizeof everywhere (8 extra bytes per object and per array element).",
     "Using raw new/malloc for over-aligned types (alignas(32/64)) with a pre-C++17 toolchain and silently misaligning AVX loads."
   ],
-  "realWorldApplication": "Every wire-format struct, shared-memory ring buffer and zero-copy parser depends on exact member offsets - teams pin layouts with static_assert(offsetof(...)) so compilers cannot quietly rearrange their binary formats.",
+  "realWorldApplication": "Every wire-format struct, shared-memory ring buffer and zero-copy parser depends on exact member offsets, teams pin layouts with static_assert(offsetof(...)) so compilers cannot quietly rearrange their binary formats.",
   "quantFinanceApplication": "An order-book fed from a shared-memory ring of fixed-size structs must match the producer's layout byte for byte: padding rules, alignof and offsetof are the contract between the feed handler and the strategy process, and vptr costs decide whether the hot pricing loop uses virtual dispatch or CRTP.",
   "summary": [
     "Object layout = members in declaration order + padding so each member's offset is a multiple of its alignment + tail padding so sizeof is a multiple of the struct's alignment (= max member alignment).",
     "Member ordering is free performance: largest-alignment-first shrank the worked example from 24 to 16 bytes per object.",
     "A polymorphic object stores a vptr (first bytes under the Itanium ABI) pointing at one vtable per class; virtual call = vptr load + slot load + indirect call, usually un-inlinable unless devirtualised.",
-    "Multiple polymorphic bases mean multiple vptrs and growing objects - a reason hot-path code prefers composition or CRTP.",
+    "Multiple polymorphic bases mean multiple vptrs and growing objects, a reason hot-path code prefers composition or CRTP.",
     "alignof/alignas/offsetof/static_assert let you specify and verify layout instead of discovering it in a debugger."
   ],
   "quiz": [
@@ -166,7 +192,7 @@
       "language": "cpp",
       "code": "#include <cstdio>\nstruct A { char c; };\nstruct B { double d; char c; };\nstruct C { char a, b; double d; };\n\nint main() {\n    std::printf(\"%zu %zu %zu\\n\", sizeof(A), sizeof(B), sizeof(C));\n}",
       "answer": "1 16 16",
-      "explanation": "A is one byte. B: d@0-7, c@8, tail pad to 16. C: a@0, b@1, pad 2-7, d@8-15 = 16. Same total, different padding positions - the lesson of member order."
+      "explanation": "A is one byte. B: d@0-7, c@8, tail pad to 16. C: a@0, b@1, pad 2-7, d@8-15 = 16. Same total, different padding positions, the lesson of member order."
     },
     {
       "id": "q3",
@@ -174,7 +200,7 @@
       "prompt": "What does an object's vptr point to?",
       "options": [
         "The object's first virtual function, directly",
-        "The vtable of the object's dynamic class - one table per class, shared by all objects of it",
+        "The vtable of the object's dynamic class, one table per class, shared by all objects of it",
         "A per-object table listing that object's overrides",
         "The base class subobject"
       ],
@@ -191,8 +217,12 @@
         "Non-virtual member functions occupy slots in the vtable",
         "A virtual call costs an extra pointer load plus an indirect call, and usually cannot be inlined"
       ],
-      "answerIndices": [0, 1, 3],
-      "explanation": "Non-virtual functions are ordinary direct calls resolved at link time - they never appear in the vtable. The other three statements are exactly the mechanism we disassembled."
+      "answerIndices": [
+        0,
+        1,
+        3
+      ],
+      "explanation": "Non-virtual functions are ordinary direct calls resolved at link time, they never appear in the vtable. The other three statements are exactly the mechanism we disassembled."
     },
     {
       "id": "q5",
@@ -205,9 +235,15 @@
       "id": "q6",
       "type": "short",
       "prompt": "Why can the compiler not normally inline `p.price(s)` when `p` is a `const Pricer&`, and what technique lets it do so anyway?",
-      "modelAnswer": "Through a base reference the dynamic type is unknown at compile time, so the call target comes from the vtable at runtime - an indirect call that cannot be inlined. If the compiler can prove the dynamic type (concrete object, class marked final, or profile-guided speculation), it devirtualises: replaces the indirect call with a direct, inlinable one.",
-      "keywords": ["dynamic type", "vtable", "indirect", "devirtualis", "final"],
-      "explanation": "Inlining needs a statically known callee; dynamic dispatch hides it behind two loads. Devirtualisation (provable dynamic type, final, LTO) restores direct calls - this is precisely why final is a performance keyword on hot paths."
+      "modelAnswer": "Through a base reference the dynamic type is unknown at compile time, so the call target comes from the vtable at runtime, an indirect call that cannot be inlined. If the compiler can prove the dynamic type (concrete object, class marked final, or profile-guided speculation), it devirtualises: replaces the indirect call with a direct, inlinable one.",
+      "keywords": [
+        "dynamic type",
+        "vtable",
+        "indirect",
+        "devirtualis",
+        "final"
+      ],
+      "explanation": "Inlining needs a statically known callee; dynamic dispatch hides it behind two loads. Devirtualisation (provable dynamic type, final, LTO) restores direct calls, this is precisely why final is a performance keyword on hot paths."
     }
   ],
   "flashcards": [
@@ -224,27 +260,30 @@
     {
       "type": "code-output",
       "front": "x86-64: `struct S { char c; double d; };` - sizeof and alignof?",
-      "back": "sizeof 16 (c@0, pad 1-7, d@8-15), alignof 8. Same size as {double; char} - but the padding sits in different bytes."
+      "back": "sizeof 16 (c@0, pad 1-7, d@8-15), alignof 8. Same size as {double; char}, but the padding sits in different bytes."
     },
     {
       "type": "error-identification",
       "front": "A teammate adds one virtual method to a POD struct used in millions of array elements and reports 8 bytes more memory per element. What happened?",
-      "back": "The struct became polymorphic: every object now carries a vptr (8 bytes on x86-64) as its first member, and sizeof rounds up accordingly. It is not a compiler bug - it is the cost of dynamic dispatch."
+      "back": "The struct became polymorphic: every object now carries a vptr (8 bytes on x86-64) as its first member, and sizeof rounds up accordingly. It is not a compiler bug, it is the cost of dynamic dispatch."
     }
   ],
   "references": [
     {
-      "label": "cppreference - sizeof, alignof, offsetof",
+      "label": "cppreference: sizeof, alignof, offsetof",
       "url": "https://en.cppreference.com/w/cpp/language/sizeof"
     },
     {
-      "label": "Itanium C++ ABI - object layout and vtable components",
+      "label": "Itanium C++ ABI: object layout and vtable components",
       "url": "https://itanium-cxx-abi.github.io/cxx-abi/abi.html#objlayout"
     },
     {
-      "label": "CppCon (Chandler Carruth) - 'No Sane Compiler Will Optimize This' - devirtualisation",
+      "label": "CppCon (Chandler Carruth): 'No Sane Compiler Will Optimize This': devirtualisation",
       "url": "https://www.youtube.com/watch?v=yG1OZzHnnA4"
     }
   ],
-  "skills": ["cpp-internals", "cpp-performance"]
+  "skills": [
+    "cpp-internals",
+    "cpp-performance"
+  ]
 }

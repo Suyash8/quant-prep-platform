@@ -4,14 +4,16 @@
   "title": "Fault Tolerance, Recovery and Deployment Discipline",
   "estMinutes": 26,
   "difficulty": "advanced",
-  "prereqs": ["pe-observability"],
+  "prereqs": [
+    "pe-observability"
+  ],
   "objectives": [
-    "Design graceful shutdown: stop intake, drain in-flight work, persist state, commit offsets - and know what SIGKILL costs",
+    "Design graceful shutdown: stop intake, drain in-flight work, persist state, commit offsets, and know what SIGKILL costs",
     "Recover service state by replaying an append-only log from a checkpoint, and compute replay work and recovery time",
     "Size a canary deployment and judge a result with basic sample-size reasoning before promoting or rolling back",
     "Write runbooks that are owned, versioned and rehearsed"
   ],
-  "motivation": "The most common self-inflicted outage is a deploy. The most expensive one is a process killed mid-fill: a -9 during order handling can drop a fill that the venue has already matched, leaving the position keeper wrong all day and reconciliation hunting a phantom. Reliability here is not heroics under pressure - it is graceful shutdown, replayable state, small careful deploys and pre-written procedures, all built while nothing is on fire.",
+  "motivation": "The most common self-inflicted outage is a deploy. The most expensive one is a process killed mid-fill: a -9 during order handling can drop a fill that the venue has already matched, leaving the position keeper wrong all day and reconciliation hunting a phantom. Reliability here is not heroics under pressure, it is graceful shutdown, replayable state, small careful deploys and pre-written procedures, all built while nothing is on fire.",
   "blocks": [
     {
       "type": "h2",
@@ -19,7 +21,7 @@
     },
     {
       "type": "p",
-      "md": "Fault tolerance starts with redundancy: N+1 processes with leader/follower election and heartbeats, so a follower takes over when the leader stops. Two disciplines separate the teams who sleep from the teams who don't. First, treat *your own deploys* as failures to tolerate - every deploy is a rolling restart, so recovery machinery gets exercised weekly whether or not anything breaks. Second, beware **split-brain**: two processes both believing they are leader is worse than none, which is why leader election needs a quorum (e.g. 2 of 3 nodes agree), not a timer and optimism."
+      "md": "Fault tolerance starts with redundancy: N+1 processes with leader/follower election and heartbeats, so a follower takes over when the leader stops. Two disciplines separate the teams who sleep from the teams who don't. First, treat *your own deploys* as failures to tolerate, every deploy is a rolling restart, so recovery machinery gets exercised weekly whether or not anything breaks. Second, beware **split-brain**: two processes both believing they are leader is worse than none, which is why leader election needs a quorum (e.g. 2 of 3 nodes agree), not a timer and optimism."
     },
     {
       "type": "h2",
@@ -44,7 +46,7 @@
       "type": "callout",
       "variant": "warn",
       "title": "SIGKILL is always a possibility",
-      "md": "OOM killers, node failures and misconfigured grace periods mean the shutdown you designed may be skipped entirely. That is why durable state lives in an append-only WAL *continuously*, not only in a shutdown handler - recovery must work from 'process vanished at an arbitrary instruction', not from 'process said goodbye politely'."
+      "md": "OOM killers, node failures and misconfigured grace periods mean the shutdown you designed may be skipped entirely. That is why durable state lives in an append-only WAL *continuously*, not only in a shutdown handler, recovery must work from 'process vanished at an arbitrary instruction', not from 'process said goodbye politely'."
     },
     {
       "type": "h2",
@@ -52,7 +54,7 @@
     },
     {
       "type": "p",
-      "md": "State is rebuilt as checkpoint $\\oplus$ tail: load the last checkpoint (a snapshot of state at sequence $N$), then re-apply events $N{+}1 \\ldots$ from the log. Determinism makes this sound: applying the same events in the same order to the same checkpoint yields the same state - the same fold that built the live state in the first place. The arithmetic of recovery is then simple:"
+      "md": "State is rebuilt as checkpoint $\\oplus$ tail: load the last checkpoint (a snapshot of state at sequence $N$), then re-apply events $N{+}1 \\ldots$ from the log. Determinism makes this sound: applying the same events in the same order to the same checkpoint yields the same state, the same fold that built the live state in the first place. The arithmetic of recovery is then simple:"
     },
     {
       "type": "steps",
@@ -60,13 +62,13 @@
       "items": [
         "Checkpoint written at sequence 42,000 (09:35:00). The log's head is at sequence 42,310.",
         "Events to replay: $42{,}310 - 42{,}000 = 310$.",
-        "At 3 ms per event, replay takes $310 \\times 3 = 930$ ms - under a second to full state.",
+        "At 3 ms per event, replay takes $310 \\times 3 = 930$ ms, under a second to full state.",
         "Checkpoints are the dial: checkpointing 4x more often quarters the replay tail (at 4x the snapshot cost). Choose by recovery-time objective, not by preference."
       ]
     },
     {
       "type": "p",
-      "md": "One caveat connects to streaming semantics: replay re-executes side effects - a replayed fill re-sends its downstream update. Downstream dedupe on the event id (venue + sequence) is what turns 'replay' from 'duplicate everything' into 'rebuild state idempotently'."
+      "md": "One caveat connects to streaming semantics: replay re-executes side effects, a replayed fill re-sends its downstream update. Downstream dedupe on the event id (venue + sequence) is what turns 'replay' from 'duplicate everything' into 'rebuild state idempotently'."
     },
     {
       "type": "h2",
@@ -83,7 +85,7 @@
         "Baseline: 40,000 orders/day at a 1% failure rate. Canary takes 2% of traffic: $40{,}000 \\times 0.02 = 800$ orders.",
         "Expected failures on the canary at baseline quality: $800 \\times 0.01 = 8$.",
         "Observed: 12 failures. Is that signal? Standard deviation of the count $\\approx \\sqrt{800 \\times 0.01 \\times 0.99} \\approx 2.81$.",
-        "Excess: $(12 - 8) / 2.81 \\approx 1.4$ standard deviations - below the conventional $2\\sigma$ bar. Verdict: suggestive, not significant; extend the canary window or widen it before promoting or condemning."
+        "Excess: $(12 - 8) / 2.81 \\approx 1.4$ standard deviations, below the conventional $2\\sigma$ bar. Verdict: suggestive, not significant; extend the canary window or widen it before promoting or condemning."
       ]
     },
     {
@@ -94,11 +96,11 @@
         "se": 0.004,
         "confidence": 0.95
       },
-      "caption": "A canary's measured improvement is an estimate with uncertainty: +0.5% with a 95% interval of roughly -0.3% to +1.3% spans zero - not evidence to promote on."
+      "caption": "A canary's measured improvement is an estimate with uncertainty: +0.5% with a 95% interval of roughly -0.3% to +1.3% spans zero, not evidence to promote on."
     },
     {
       "type": "p",
-      "md": "Rollback must be as automated as promotion: a canary that trips its error-rate threshold reverts to the previous build without a meeting. And rollback is only trustworthy if the previous build's config and data layout still work - which is the coupling that config versioning (next lesson) exists to manage."
+      "md": "Rollback must be as automated as promotion: a canary that trips its error-rate threshold reverts to the previous build without a meeting. And rollback is only trustworthy if the previous build's config and data layout still work, which is the coupling that config versioning (next lesson) exists to manage."
     },
     {
       "type": "h2",
@@ -112,44 +114,44 @@
       "type": "list",
       "ordered": false,
       "items": [
-        "**Trigger** - the exact alert and threshold that calls for this procedure",
-        "**Diagnose** - commands to run, and what healthy vs broken output looks like",
-        "**Act** - the decision tree, including 'if unsure, page the owner and roll back'",
-        "**Escalate** - who to call, in order, with what context they need",
-        "**Verify and follow up** - how to confirm recovery, and the post-incident review that updates the runbook"
+        "**Trigger**, the exact alert and threshold that calls for this procedure",
+        "**Diagnose**, commands to run, and what healthy vs broken output looks like",
+        "**Act**, the decision tree, including 'if unsure, page the owner and roll back'",
+        "**Escalate**, who to call, in order, with what context they need",
+        "**Verify and follow up**, how to confirm recovery, and the post-incident review that updates the runbook"
       ]
     }
   ],
   "guidedExercise": {
-    "prompt": "An order-state consumer processes 2,500 messages per second. SIGTERM arrives while its consumer lag is 4,000 messages; the orchestrator's grace period is 5 seconds. (a) Can it drain in-flight work inside the grace period, and how long does draining actually take? (b) Suppose the lag had been 20,000 messages - what happens, and which delivery semantics and safeguards make the outcome safe?",
+    "prompt": "An order-state consumer processes 2,500 messages per second. SIGTERM arrives while its consumer lag is 4,000 messages; the orchestrator's grace period is 5 seconds. (a) Can it drain in-flight work inside the grace period, and how long does draining actually take? (b) Suppose the lag had been 20,000 messages, what happens, and which delivery semantics and safeguards make the outcome safe?",
     "hints": [
       "Drain time = lag / processing rate.",
       "If draining exceeds the grace period, SIGKILL arrives mid-flight; think at-least-once."
     ],
-    "solution": "(a) $4{,}000 / 2{,}500 = 1.6$ s $\\le 5$ s - **yes**, it drains and exits cleanly, committing all offsets. (b) $20{,}000 / 2{,}500 = 8$ s $> 5$ s - the orchestrator sends **SIGKILL** mid-drain. Outcome is still safe *because* delivery is at-least-once: uncommitted messages are redelivered to the restarted consumer, and downstream dedupe on venue + sequence makes the reprocessing idempotent."
+    "solution": "(a) $4{,}000 / 2{,}500 = 1.6$ s $\\le 5$ s, **yes**, it drains and exits cleanly, committing all offsets. (b) $20{,}000 / 2{,}500 = 8$ s $> 5$ s, the orchestrator sends **SIGKILL** mid-drain. Outcome is still safe *because* delivery is at-least-once: uncommitted messages are redelivered to the restarted consumer, and downstream dedupe on venue + sequence makes the reprocessing idempotent."
   },
   "independentExercise": {
-    "prompt": "An order-state store consumes 120 events per second during a 6.5-hour session (that is $120 \\times 23{,}400 = 2{,}808{,}000$ events/day) and checkpoints every 15 minutes. At 14:05:00 the process dies; its last checkpoint was written at 14:00:00. (a) How many events must be replayed? (b) Replay throughput is 2,000 events per second - how long does replay take? (c) Detection took 20 seconds. What is the total recovery time from death to serving again? (d) If checkpoint frequency doubled, what would the replay tail have been?",
+    "prompt": "An order-state store consumes 120 events per second during a 6.5-hour session (that is $120 \\times 23{,}400 = 2{,}808{,}000$ events/day) and checkpoints every 15 minutes. At 14:05:00 the process dies; its last checkpoint was written at 14:00:00. (a) How many events must be replayed? (b) Replay throughput is 2,000 events per second, how long does replay take? (c) Detection took 20 seconds. What is the total recovery time from death to serving again? (d) If checkpoint frequency doubled, what would the replay tail have been?",
     "hints": [
       "Replay tail = events since the last checkpoint.",
       "Recovery time = detection + replay; checkpoints every 15 min already cover 14:00."
     ],
-    "solution": "(a) From 14:00:00 to 14:05:00 is 300 s: $300 \\times 120 = \\textbf{36{,}000}$ events. (b) $36{,}000 / 2{,}000 = \\textbf{18}$ s. (c) $20 + 18 = \\textbf{38}$ s total. (d) At every 7.5 min the tail is at most 450 s $\\times 120 = 54{,}000$... but for *this* crash the checkpoint at ~14:07:30 does not exist yet, so the effective last checkpoint is still 14:00:00 only if 14:07:30 is in the future - at 14:05 the tail is the same 36,000 events; the doubling pays off for crashes after 14:07:30 (tail $\\le 27{,}000$ events, replay $\\le 13.5$ s). Checkpoint frequency caps the worst case, not every case."
+    "solution": "(a) From 14:00:00 to 14:05:00 is 300 s: $300 \\times 120 = \\textbf{36{,}000}$ events. (b) $36{,}000 / 2{,}000 = \\textbf{18}$ s. (c) $20 + 18 = \\textbf{38}$ s total. (d) At every 7.5 min the tail is at most 450 s $\\times 120 = 54{,}000$... but for *this* crash the checkpoint at ~14:07:30 does not exist yet, so the effective last checkpoint is still 14:00:00 only if 14:07:30 is in the future, at 14:05 the tail is the same 36,000 events; the doubling pays off for crashes after 14:07:30 (tail $\\le 27{,}000$ events, replay $\\le 13.5$ s). Checkpoint frequency caps the worst case, not every case."
   },
   "commonMistakes": [
-    "Doing all state persistence in the SIGTERM handler: SIGKILL (OOM, node loss, short grace periods) skips handlers entirely - durable state must be continuously logged, not only politely saved.",
+    "Doing all state persistence in the SIGTERM handler: SIGKILL (OOM, node loss, short grace periods) skips handlers entirely, durable state must be continuously logged, not only politely saved.",
     "Committing queue offsets before draining completes, so a restart skips events that were received but never processed.",
-    "Judging a canary on tiny samples: 12 failures vs 8 expected in 800 orders is ~1.4σ - promoting (or condemning) on it is noise-fitting.",
+    "Judging a canary on tiny samples: 12 failures vs 8 expected in 800 orders is ~1.4σ, promoting (or condemning) on it is noise-fitting.",
     "Checkpointing too rarely 'for performance': the replay tail is your recovery time; checkpoint interval is a recovery-time decision with a measurable cost.",
-    "Writing runbooks that have never been executed, or keeping them in someone's head - unrehearsed procedures fail exactly when they are needed."
+    "Writing runbooks that have never been executed, or keeping them in someone's head, unrehearsed procedures fail exactly when they are needed."
   ],
   "realWorldApplication": "Orchestrated fleets (Kubernetes-style) send SIGTERM with a terminationGracePeriod and then SIGKILL; release trains run canary stages with automated rollback; trading firms rehearse 'rebuild the book from the log' drills weekly.",
-  "quantFinanceApplication": "A fill dropped during a hard kill misstates position and PnL until reconciliation finds it; the checkpoint-plus-replay design bounds that window - in the worked example, 38 seconds from death to a fully consistent order state.",
+  "quantFinanceApplication": "A fill dropped during a hard kill misstates position and PnL until reconciliation finds it; the checkpoint-plus-replay design bounds that window, in the worked example, 38 seconds from death to a fully consistent order state.",
   "summary": [
-    "Graceful shutdown is ordered choreography - stop intake, drain, flush WAL, commit offsets - and must assume SIGKILL anyway: durability lives in the continuous log.",
+    "Graceful shutdown is ordered choreography, stop intake, drain, flush WAL, commit offsets, and must assume SIGKILL anyway: durability lives in the continuous log.",
     "Recovery is checkpoint $\\oplus$ replay: state at seq 42,000 plus events 42,001-42,310 (310 events, 930 ms at 3 ms each); checkpoint frequency caps replay time.",
     "Replayed events re-execute side effects, so downstream dedupe on event ids is what makes replay idempotent rather than double-applying.",
-    "Canaries need honest math: 2% of 40,000 orders = 800 samples, 12 vs 8 expected failures is ~1.4σ - not significant. Promote, extend, or roll back on evidence, and rehearse the runbook that does it."
+    "Canaries need honest math: 2% of 40,000 orders = 800 samples, 12 vs 8 expected failures is ~1.4σ, not significant. Promote, extend, or roll back on evidence, and rehearse the runbook that does it."
   ],
   "quiz": [
     {
@@ -158,12 +160,12 @@
       "prompt": "What is the essential difference between SIGTERM and SIGKILL?",
       "options": [
         "SIGTERM is faster; SIGKILL waits for the grace period",
-        "SIGTERM can be handled by the process; SIGKILL cannot - the process gets no chance to clean up",
+        "SIGTERM can be handled by the process; SIGKILL cannot, the process gets no chance to clean up",
         "SIGKILL commits offsets; SIGTERM does not",
         "They are identical, just different signal numbers on different OSes"
       ],
       "answerIndex": 1,
-      "explanation": "SIGTERM (15) is a request a handler can intercept to drain and flush. SIGKILL (9) terminates immediately with no handler - which is why durability must be continuous, not shutdown-time."
+      "explanation": "SIGTERM (15) is a request a handler can intercept to drain and flush. SIGKILL (9) terminates immediately with no handler, which is why durability must be continuous, not shutdown-time."
     },
     {
       "id": "q2",
@@ -193,7 +195,11 @@
         "Promote as soon as any metric looks green once",
         "Canary 100% of traffic for maximum statistical power"
       ],
-      "answerIndices": [0, 1, 2],
+      "answerIndices": [
+        0,
+        1,
+        2
+      ],
       "explanation": "A canary is a controlled comparison with adequate sample size and automatic rollback. Promoting on one green tick is noise-fitting; canarying 100% is not a canary, it is the deploy."
     },
     {
@@ -202,15 +208,20 @@
       "prompt": "A canary receives 800 orders. The baseline failure rate is 1%. How many failures are expected on the canary if its quality matches baseline?",
       "answer": 8,
       "tolerance": 0,
-      "explanation": "$800 \\times 0.01 = 8$. Observing 12 is $\\approx 1.4\\sigma$ above (sd $\\approx \\sqrt{800 \\times 0.01 \\times 0.99} \\approx 2.81$) - suggestive, not significant."
+      "explanation": "$800 \\times 0.01 = 8$. Observing 12 is $\\approx 1.4\\sigma$ above (sd $\\approx \\sqrt{800 \\times 0.01 \\times 0.99} \\approx 2.81$), suggestive, not significant."
     },
     {
       "id": "q6",
       "type": "short",
       "prompt": "Why must runbooks be rehearsed (game days), not just written?",
       "modelAnswer": "An unrehearsed runbook is untested documentation: steps rot as systems change, commands fail, and the on-call engineer is executing it for the first time under stress. Rehearsals catch broken steps and build the memory that makes 2 a.m. execution work.",
-      "keywords": ["untested", "rehearse", "stress", "stale"],
-      "explanation": "A game day converts the runbook from a hope into a verified procedure - and updates it while the cost of being wrong is a drill, not an outage."
+      "keywords": [
+        "untested",
+        "rehearse",
+        "stress",
+        "stale"
+      ],
+      "explanation": "A game day converts the runbook from a hope into a verified procedure, and updates it while the cost of being wrong is a drill, not an outage."
     }
   ],
   "flashcards": [
@@ -232,16 +243,16 @@
     {
       "type": "concept",
       "front": "What a runbook must contain",
-      "back": "Trigger (which alert), diagnosis commands with expected output, decision tree including rollback, escalation order, and verification steps - versioned in git and rehearsed."
+      "back": "Trigger (which alert), diagnosis commands with expected output, decision tree including rollback, escalation order, and verification steps, versioned in git and rehearsed."
     }
   ],
   "references": [
     {
-      "label": "Google SRE Book - Release Engineering (canaries and ramps)",
+      "label": "Google SRE Book: Release Engineering (canaries and ramps)",
       "url": "https://sre.google/sre-book/release-engineering/"
     },
     {
-      "label": "PostgreSQL - Write-Ahead Logging (WAL) concepts",
+      "label": "PostgreSQL: Write-Ahead Logging (WAL) concepts",
       "url": "https://www.postgresql.org/docs/current/wal.html"
     },
     {
@@ -249,5 +260,7 @@
       "url": "https://dataintensive.net/"
     }
   ],
-  "skills": ["production-engineering"]
+  "skills": [
+    "production-engineering"
+  ]
 }

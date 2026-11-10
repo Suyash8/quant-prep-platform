@@ -27,6 +27,8 @@ export async function POST(req: NextRequest) {
   if (notes !== undefined) data.notes = notes;
   if (status === 'completed') data.milestonesDone = 999; // markers completed
 
+
+
   const progress = await db.projectProgress.upsert({
     where: { userId_projectSlug: { userId: user.id, projectSlug } },
     create: {

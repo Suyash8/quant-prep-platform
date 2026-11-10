@@ -13,7 +13,7 @@
     "Use window functions (SUM OVER, LAG, ROW_NUMBER) to compute running totals and per-row context that GROUP BY cannot express",
     "Explain the order of evaluation that separates WHERE, GROUP BY, HAVING and window functions"
   ],
-  "motivation": "Normalisation split our data into orders and fills, but every desk question recombines them: 'how much of order 1042 is still open?', 'what was our VWAP in AAPL this morning?', 'which fill pushed this order over its quantity?'. Joins put the pieces back together, GROUP BY collapses them into summaries, and window functions summarise *without* collapsing - three tools that together answer almost every operational finance question asked of a database.",
+  "motivation": "Normalisation split our data into orders and fills, but every desk question recombines them: 'how much of order 1042 is still open?', 'what was our VWAP in AAPL this morning?', 'which fill pushed this order over its quantity?'. Joins put the pieces back together, GROUP BY collapses them into summaries, and window functions summarise *without* collapsing, three tools that together answer almost every operational finance question asked of a database.",
   "blocks": [
     {
       "type": "h2",
@@ -21,7 +21,7 @@
     },
     {
       "type": "p",
-      "md": "An **INNER JOIN** pairs each row of one table with matching rows of another using the `ON` condition, and keeps only the pairs. Joining `orders` to `fills` on `order_id` produces one output row per (order, fill) combination - exactly the grain needed for execution reports. A **LEFT JOIN** keeps every row of the left table even when no match exists, filling the right side with NULLs. That asymmetry is the tool for negative questions: which orders have *no* fills yet, which accounts traded nothing today. Forgetting the difference silently deletes open orders from your report - a correct-looking query with a wrong answer."
+      "md": "An **INNER JOIN** pairs each row of one table with matching rows of another using the `ON` condition, and keeps only the pairs. Joining `orders` to `fills` on `order_id` produces one output row per (order, fill) combination, exactly the grain needed for execution reports. A **LEFT JOIN** keeps every row of the left table even when no match exists, filling the right side with NULLs. That asymmetry is the tool for negative questions: which orders have *no* fills yet, which accounts traded nothing today. Forgetting the difference silently deletes open orders from your report, a correct-looking query with a wrong answer."
     },
     {
       "type": "code",
@@ -33,7 +33,7 @@
       "type": "callout",
       "variant": "pitfall",
       "title": "The unfilled-orders trap",
-      "md": "`SELECT o.order_id FROM orders o JOIN fills f ON f.order_id = o.order_id WHERE f.quantity = 0` does NOT list unfilled orders - it lists nothing, because an unfilled order has no fill row to join to. The idiomatic pattern is `LEFT JOIN fills f ... WHERE f.fill_id IS NULL`, which keeps each order and keeps only those whose join produced no match."
+      "md": "`SELECT o.order_id FROM orders o JOIN fills f ON f.order_id = o.order_id WHERE f.quantity = 0` does NOT list unfilled orders, it lists nothing, because an unfilled order has no fill row to join to. The idiomatic pattern is `LEFT JOIN fills f ... WHERE f.fill_id IS NULL`, which keeps each order and keeps only those whose join produced no match."
     },
     {
       "type": "h2",
@@ -41,12 +41,12 @@
     },
     {
       "type": "p",
-      "md": "Aggregate functions (`SUM`, `COUNT`, `AVG`, `MIN`, `MAX`) collapse many rows into one. `GROUP BY symbol` partitions the rows by symbol and computes one summary per partition. The finance workhorse is **VWAP** - volume-weighted average price - the average fill price where each price counts in proportion to the shares traded at it, not equally:"
+      "md": "Aggregate functions (`SUM`, `COUNT`, `AVG`, `MIN`, `MAX`) collapse many rows into one. `GROUP BY symbol` partitions the rows by symbol and computes one summary per partition. The finance workhorse is **VWAP**, volume-weighted average price, the average fill price where each price counts in proportion to the shares traded at it, not equally:"
     },
     {
       "type": "math",
       "tex": "\\text{VWAP} = \\frac{\\sum_i p_i q_i}{\\sum_i q_i}",
-      "caption": "Notional divided by shares - never AVG(price), which weights every fill equally regardless of size."
+      "caption": "Notional divided by shares, never AVG(price), which weights every fill equally regardless of size."
     },
     {
       "type": "steps",
@@ -56,7 +56,7 @@
         "Notional per fill: 100 x 42.10 = 4,210.00; 150 x 42.16 = 6,324.00; 250 x 42.20 = 10,550.00.",
         "Total notional = 4,210 + 6,324 + 10,550 = \\$21,084.00.",
         "Total shares = 100 + 150 + 250 = 500.",
-        "VWAP = 21,084.00 / 500 = \\$42.168. Compare with the simple AVG(price) = (42.10 + 42.16 + 42.20) / 3 = \\$42.1533, which sits *below* VWAP because the largest fill traded at the highest price - equal-weighting ignores size."
+        "VWAP = 21,084.00 / 500 = \\$42.168. Compare with the simple AVG(price) = (42.10 + 42.16 + 42.20) / 3 = \\$42.1533, which sits *below* VWAP because the largest fill traded at the highest price, equal-weighting ignores size."
       ]
     },
     {
@@ -75,7 +75,7 @@
     },
     {
       "type": "p",
-      "md": "GROUP BY collapses; a **window function** computes an aggregate *over a peer group* but returns it on every row. `SUM(quantity) OVER (PARTITION BY order_id ORDER BY executed_at)` produces a running total per order, in execution order - each fill row survives, now annotated with everything filled before it. `LAG(price)` fetches the previous row's price in the same partition, turning a column of prices into a column of price *changes*. `ROW_NUMBER()` gives a unique sequence per partition, the standard tool for 'latest row per key' deduplication. The `OVER` clause defines the window; `PARTITION BY` is a per-group GROUP BY that never collapses."
+      "md": "GROUP BY collapses; a **window function** computes an aggregate *over a peer group* but returns it on every row. `SUM(quantity) OVER (PARTITION BY order_id ORDER BY executed_at)` produces a running total per order, in execution order, each fill row survives, now annotated with everything filled before it. `LAG(price)` fetches the previous row's price in the same partition, turning a column of prices into a column of price *changes*. `ROW_NUMBER()` gives a unique sequence per partition, the standard tool for 'latest row per key' deduplication. The `OVER` clause defines the window; `PARTITION BY` is a per-group GROUP BY that never collapses."
     },
     {
       "type": "code",
@@ -85,7 +85,7 @@
     },
     {
       "type": "p",
-      "md": "Joins and aggregations are the whole query language in practice: joins assemble the business question's data into one table, aggregations reduce it to the answer. Everything else — window functions, CTEs, indexes — exists to make those two steps fast or readable. The way to fluency is not memorising syntax; it is keeping a mental model of the *shape* of the intermediate table at every step, which is exactly what you practise when you write queries step by step instead of one heroic expression."
+      "md": "Joins and aggregations are the whole query language in practice: joins assemble the business question's data into one table, aggregations reduce it to the answer. Everything else, window functions, CTEs, indexes, exists to make those two steps fast or readable. The way to fluency is not memorising syntax; it is keeping a mental model of the *shape* of the intermediate table at every step, which is exactly what you practise when you write queries step by step instead of one heroic expression."
     },
     {
       "type": "code",
@@ -95,7 +95,7 @@
     },
     {
       "type": "p",
-      "md": "Joins and aggregations are the whole query language in practice: joins assemble the business question's data into one table, aggregations reduce it to the answer. Everything else — window functions, CTEs, indexes — exists to make those two steps fast or readable. The way to fluency is not memorising syntax; it is keeping a mental model of the *shape* of the intermediate table at every step, which is exactly what you practise when you write queries step by step instead of one heroic expression."
+      "md": "Joins and aggregations are the whole query language in practice: joins assemble the business question's data into one table, aggregations reduce it to the answer. Everything else, window functions, CTEs, indexes, exists to make those two steps fast or readable. The way to fluency is not memorising syntax; it is keeping a mental model of the *shape* of the intermediate table at every step, which is exactly what you practise when you write queries step by step instead of one heroic expression."
     },
     {
       "type": "code",
@@ -105,7 +105,7 @@
     },
     {
       "type": "p",
-      "md": "Read that query as a pipeline, because that is what it is. The CTE assembles one clean row per execution (joins). The outer query collapses it to one row per symbol (aggregation), filters groups (HAVING — note it must be HAVING, not WHERE, because the filter references an aggregate), and orders by the interesting metric. Two details separate professionals from tutorial-graduates: WHERE filters *rows before* grouping, HAVING filters *groups after*; and every join should have an explicit ON with keys you can name — a cartesian product at tick volume is how databases get taken down politely."
+      "md": "Read that query as a pipeline, because that is what it is. The CTE assembles one clean row per execution (joins). The outer query collapses it to one row per symbol (aggregation), filters groups (HAVING, note it must be HAVING, not WHERE, because the filter references an aggregate), and orders by the interesting metric. Two details separate professionals from tutorial-graduates: WHERE filters *rows before* grouping, HAVING filters *groups after*; and every join should have an explicit ON with keys you can name, a cartesian product at tick volume is how databases get taken down politely."
     },
     {
       "type": "table",
@@ -146,11 +146,11 @@
       "type": "callout",
       "variant": "pitfall",
       "title": "The join fan-out that quietly corrupts analytics",
-      "md": "Joining executions to a table with duplicate keys multiplies rows: 100 executions × 3 duplicate reference rows = 300 (and every SUM is tripled). It does not error — it silently lies. Two defences: check key uniqueness before joining (`GROUP BY key HAVING COUNT(*) > 1`), and sanity-check row counts across the join (`SELECT COUNT(*)` on each side and after). Reconciliation thinking applies to queries too."
+      "md": "Joining executions to a table with duplicate keys multiplies rows: 100 executions × 3 duplicate reference rows = 300 (and every SUM is tripled). It does not error, it silently lies. Two defences: check key uniqueness before joining (`GROUP BY key HAVING COUNT(*) > 1`), and sanity-check row counts across the join (`SELECT COUNT(*)` on each side and after). Reconciliation thinking applies to queries too."
     },
     {
       "type": "p",
-      "md": "Read that query as a pipeline, because that is what it is. The CTE assembles one clean row per execution (joins). The outer query collapses it to one row per symbol (aggregation), filters groups (HAVING — note it must be HAVING, not WHERE, because the filter references an aggregate), and orders by the interesting metric. Two details separate professionals from tutorial-graduates: WHERE filters *rows before* grouping, HAVING filters *groups after*; and every join should have an explicit ON with keys you can name — a cartesian product at tick volume is how databases get taken down politely."
+      "md": "Read that query as a pipeline, because that is what it is. The CTE assembles one clean row per execution (joins). The outer query collapses it to one row per symbol (aggregation), filters groups (HAVING, note it must be HAVING, not WHERE, because the filter references an aggregate), and orders by the interesting metric. Two details separate professionals from tutorial-graduates: WHERE filters *rows before* grouping, HAVING filters *groups after*; and every join should have an explicit ON with keys you can name, a cartesian product at tick volume is how databases get taken down politely."
     },
     {
       "type": "table",
@@ -191,7 +191,7 @@
       "type": "callout",
       "variant": "pitfall",
       "title": "The join fan-out that quietly corrupts analytics",
-      "md": "Joining executions to a table with duplicate keys multiplies rows: 100 executions × 3 duplicate reference rows = 300 (and every SUM is tripled). It does not error — it silently lies. Two defences: check key uniqueness before joining (`GROUP BY key HAVING COUNT(*) > 1`), and sanity-check row counts across the join (`SELECT COUNT(*)` on each side and after). Reconciliation thinking applies to queries too."
+      "md": "Joining executions to a table with duplicate keys multiplies rows: 100 executions × 3 duplicate reference rows = 300 (and every SUM is tripled). It does not error, it silently lies. Two defences: check key uniqueness before joining (`GROUP BY key HAVING COUNT(*) > 1`), and sanity-check row counts across the join (`SELECT COUNT(*)` on each side and after). Reconciliation thinking applies to queries too."
     },
     {
       "type": "interactive",
@@ -235,7 +235,7 @@
     }
   ],
   "guidedExercise": {
-    "prompt": "Using the `fills` table, write one query that returns, for each symbol traded on 2024-06-03, the VWAP, the total filled quantity and the number of fills - but only for symbols with **at least 3 fills** that day.",
+    "prompt": "Using the `fills` table, write one query that returns, for each symbol traded on 2024-06-03, the VWAP, the total filled quantity and the number of fills, but only for symbols with **at least 3 fills** that day.",
     "hints": [
       "The date window is a half-open range: >= 2024-06-03 00:00:00 AND < 2024-06-04 00:00:00.",
       "VWAP is SUM(price * quantity) / SUM(quantity), not AVG(price).",
@@ -252,16 +252,16 @@
     "solution": "```sql\nSELECT f.order_id,\n       f.fill_id,\n       f.quantity,\n       o.quantity AS ordered_qty,\n       SUM(f.quantity) OVER (PARTITION BY f.order_id\n                             ORDER BY f.executed_at, f.fill_id) AS cumulative_filled\nFROM   fills f\nJOIN   orders o ON o.order_id = f.order_id\nORDER BY f.order_id, f.executed_at, f.fill_id;\n```\nEach fill row survives with its running total; any row where `cumulative_filled > ordered_qty` flags the overfill. Note the deliberate ordering keys: `executed_at, fill_id` makes the sequence deterministic even when two fills share a timestamp."
   },
   "commonMistakes": [
-    "Using AVG(price) instead of SUM(price * quantity) / SUM(quantity) - the equal-weighted average is not VWAP.",
+    "Using AVG(price) instead of SUM(price * quantity) / SUM(quantity), the equal-weighted average is not VWAP.",
     "Filtering an aggregate or window result in WHERE; aggregates need HAVING, windows need an outer query.",
     "Writing an INNER JOIN when unfilled rows matter, then wondering why open orders vanished.",
     "Forgetting to GROUP BY every non-aggregated column in the SELECT list (standard SQL rejects it).",
-    "COUNT(column) vs COUNT(*): the first skips NULLs, the second counts rows - they differ on LEFT JOIN output."
+    "COUNT(column) vs COUNT(*): the first skips NULLs, the second counts rows, they differ on LEFT JOIN output."
   ],
-  "realWorldApplication": "End-of-day execution quality reports, broker fee reconciliation and compliance overfill checks are all joins plus aggregations plus running totals - the exact three patterns of this lesson, run nightly at scale.",
+  "realWorldApplication": "End-of-day execution quality reports, broker fee reconciliation and compliance overfill checks are all joins plus aggregations plus running totals, the exact three patterns of this lesson, run nightly at scale.",
   "quantFinanceApplication": "VWAP computed here is the benchmark execution algos are measured against, and the cumulative-filled window query is literally the logic a position keeper uses to detect an order executing past its intended size.",
   "summary": [
-    "INNER JOIN keeps only matched pairs; LEFT JOIN keeps all left rows and NULL-fills the right side - use LEFT JOIN ... IS NULL to find unmatched rows.",
+    "INNER JOIN keeps only matched pairs; LEFT JOIN keeps all left rows and NULL-fills the right side, use LEFT JOIN ... IS NULL to find unmatched rows.",
     "GROUP BY collapses groups; HAVING filters groups after aggregation; WHERE filters rows before it.",
     "VWAP = SUM(price * quantity) / SUM(quantity); AVG(price) weights fills equally and is usually wrong.",
     "Window functions (SUM OVER, LAG, ROW_NUMBER) annotate every row with a group-level computation without collapsing rows.",
@@ -306,7 +306,7 @@
     {
       "id": "q4",
       "type": "code-output",
-      "prompt": "Given fills rows: (fill_id 1, symbol 'AAPL', quantity 100), (2, 'AAPL', 300), (3, 'MSFT', 250), (4, 'AAPL', 100) - what does the query return?",
+      "prompt": "Given fills rows: (fill_id 1, symbol 'AAPL', quantity 100), (2, 'AAPL', 300), (3, 'MSFT', 250), (4, 'AAPL', 100), what does the query return?",
       "language": "sql",
       "code": "SELECT symbol, SUM(quantity)\nFROM   fills\nGROUP BY symbol\nORDER BY symbol;",
       "answer": "AAPL 500\nMSFT 250",
@@ -340,14 +340,14 @@
         1,
         3
       ],
-      "explanation": "Windows compute per-row annotations and are legal in the SELECT list. They cannot be referenced in WHERE at the same query level because WHERE runs earlier - wrap in a subquery or CTE instead."
+      "explanation": "Windows compute per-row annotations and are legal in the SELECT list. They cannot be referenced in WHERE at the same query level because WHERE runs earlier, wrap in a subquery or CTE instead."
     }
   ],
   "flashcards": [
     {
       "type": "formula",
       "front": "VWAP",
-      "back": "VWAP = SUM(price * quantity) / SUM(quantity) - notional divided by shares; AVG(price) is NOT VWAP."
+      "back": "VWAP = SUM(price * quantity) / SUM(quantity), notional divided by shares; AVG(price) is NOT VWAP."
     },
     {
       "type": "concept",
@@ -362,16 +362,16 @@
     {
       "type": "code-output",
       "front": "What does LAG(price) OVER (ORDER BY executed_at) return on the FIRST row of the partition?",
-      "back": "NULL - there is no previous row. Handle it with COALESCE or a first-fill special case."
+      "back": "NULL, there is no previous row. Handle it with COALESCE or a first-fill special case."
     }
   ],
   "references": [
     {
-      "label": "PostgreSQL Tutorial - Window Functions",
+      "label": "PostgreSQL Tutorial: Window Functions",
       "url": "https://www.postgresql.org/docs/current/tutorial-window.html"
     },
     {
-      "label": "Use The Index, Luke - Joins",
+      "label": "Use The Index, Luke: Joins",
       "url": "https://use-the-index-luke.com/sql/join"
     }
   ],

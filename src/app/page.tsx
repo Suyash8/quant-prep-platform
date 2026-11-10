@@ -21,14 +21,14 @@ export default async function LandingPage() {
   const pillars = [
     { icon: BrainCircuit, title: 'Math, from arithmetic up', desc: 'If your algebra is shaky, we fix that first. The sequence runs from fractions to stochastic calculus, and every formula shows up only after you know why it exists.', cls: 'bg-info-soft', icls: 'text-info' },
     { icon: Code2, title: 'C++ and Python, for real', desc: 'Nine C++ levels that end at lock-free concurrency, plus a Python track through NumPy and friends. You submit code, a real compiler runs it, and you see the result.', cls: 'bg-violet-soft', icls: 'text-violet' },
-    { icon: LineChart, title: 'Finance you can implement', desc: 'Not finance trivia. Order books, options pricing, portfolio math — the pieces you can actually put in code, built up from first principles.', cls: 'bg-accent-soft', icls: 'text-accent-deep dark:text-accent' },
+    { icon: LineChart, title: 'Finance you can implement', desc: 'Not finance trivia. Order books, options pricing, portfolio math, the pieces you can actually put in code, built up from first principles.', cls: 'bg-accent-soft', icls: 'text-accent-deep dark:text-accent' },
     { icon: BookOpenCheck, title: 'Progress you can trust', desc: 'Quizzes are scored on the server, exercises must be done, and lessons you “pass” come back later to be re-earned through spaced review. No participation trophies.', cls: 'bg-warning-soft', icls: 'text-warning-strong dark:text-warning' },
   ];
 
   const features = [
     { icon: Code2, title: 'Your code actually runs', desc: 'C++17/C++20 compiled with g++ and Python 3, executed in a separate sandboxed runner with CPU, memory and output limits. Not a toy textarea.' },
     { icon: Timer, title: 'Mental math drills', desc: 'Timed arithmetic practice with speed and accuracy tracking, so the easy stuff stops slowing you down later.' },
-    { icon: Undo2, title: 'Flashcards that come back', desc: 'Every lesson generates cards, scheduled by SM-2 — the same algorithm Anki uses. Miss a quiz question and it joins the queue too.' },
+    { icon: Undo2, title: 'Flashcards that come back', desc: 'Every lesson generates cards, scheduled by SM-2, the same algorithm Anki uses. Miss a quiz question and it joins the queue too.' },
     { icon: ShieldCheck, title: 'No inflated numbers', desc: 'Every metric on your dashboard is computed from what you actually did. Unfinished topics say so. We would rather be boring than fake.' },
   ];
 
@@ -70,7 +70,7 @@ export default async function LandingPage() {
               </h1>
               <p className="mt-5 text-lg text-muted max-w-2xl leading-relaxed font-semibold anim-slide-up" style={{ animationDelay: '0.1s' }}>
                 {publishedLessons} lessons in {modules} modules, {problems.length} judged coding problems and {projects.length} portfolio
-                projects — one path from “what is a variable” to pricing libraries, order books and low-latency C++.
+                projects, one path from “what is a variable” to pricing libraries, order books and low-latency C++.
                 The lessons build on each other, in order, on purpose.
               </p>
               <p className="mt-3 text-sm text-faint max-w-2xl font-semibold anim-slide-up" style={{ animationDelay: '0.15s' }}>
@@ -78,7 +78,7 @@ export default async function LandingPage() {
               </p>
               <div className="mt-8 flex flex-wrap gap-4 anim-slide-up" style={{ animationDelay: '0.2s' }}>
                 <Link href={user ? '/dashboard' : '/register'} className="btn3d !text-base !px-8 !py-4">
-                  {user ? 'Continue learning' : 'Start free — take the diagnostic'} <ArrowRight className="h-5 w-5" />
+                  {user ? 'Continue learning' : 'Start free, take the diagnostic'} <ArrowRight className="h-5 w-5" />
                 </Link>
                 <Link href="/curriculum" className="btn3d btn3d-ghost !text-base !px-8 !py-4">
                   Explore the path
@@ -94,7 +94,7 @@ export default async function LandingPage() {
               </div>
             </div>
 
-            {/* product mock — a slice of the real path UI */}
+            {/* product mock, a slice of the real path UI */}
             <div className="relative anim-pop-in" style={{ animationDelay: '0.25s' }} aria-hidden>
               <div className="qf-card p-6 rotate-1 hover:rotate-0 transition-transform duration-300 shadow-xl">
                 <div className="flex items-center justify-between">
@@ -180,7 +180,7 @@ export default async function LandingPage() {
         <section className="border-y-2 border-border bg-surface-2/60">
           <div className="max-w-6xl mx-auto px-4 lg:px-6 py-16">
             <h2 className="text-2xl lg:text-3xl font-black tracking-tight">One foundation, five directions after</h2>
-            <p className="mt-2 text-muted max-w-2xl font-semibold">Asset management, banking, HFT, research and infrastructure all draw on the same base — but they weight it differently. Pick a track and the planner tilts your schedule accordingly.</p>
+            <p className="mt-2 text-muted max-w-2xl font-semibold">Asset management, banking, HFT, research and infrastructure all draw on the same base, but they weight it differently. Pick a track and the planner tilts your schedule accordingly.</p>
             <div className="mt-8 grid md:grid-cols-2 lg:grid-cols-3 gap-4">
               {tracks.map(([key, t], i) => (
                 <Link
@@ -207,7 +207,7 @@ export default async function LandingPage() {
                 </div>
                 <h3 className="mt-3 font-black leading-snug">Take the diagnostic first</h3>
                 <p className="mt-1.5 text-sm text-muted leading-relaxed font-semibold">
-                  28 questions, ~45 minutes — it places you at the right phase and the track picks itself.
+                  28 questions, ~45 minutes, it places you at the right phase and the track picks itself.
                 </p>
               </Link>
             </div>
@@ -256,8 +256,8 @@ export default async function LandingPage() {
             <div className="flex items-center gap-3 min-w-0">
               <span className="h-10 w-10 rounded-2xl bg-accent shadow-[0_3px_0_0_var(--accent-deep)] flex items-center justify-center font-black text-white text-lg">Q</span>
               <div>
-                <p className="font-black tracking-tight">QuantFoundry</p>
-                <p className="text-xs font-semibold text-faint">Original teaching content; conventions follow cppreference, OpenStax, Python & NumPy docs.</p>
+                <p className="font-black tracking-tight">QuantFoundry <span className="chip !text-[10px] !px-1.5 !py-0 ml-1 align-middle">v3</span></p>
+                <p className="text-xs font-semibold text-faint">Original teaching content; conventions follow cppreference, OpenStax, Python & NumPy docs. Works offline.</p>
               </div>
             </div>
             <nav className="flex flex-wrap gap-2" aria-label="Footer">

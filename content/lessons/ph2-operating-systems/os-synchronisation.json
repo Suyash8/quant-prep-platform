@@ -4,7 +4,9 @@
   "title": "Race Conditions, Deadlocks and Synchronisation Primitives",
   "estMinutes": 27,
   "difficulty": "core",
-  "prereqs": ["os-virtual-memory"],
+  "prereqs": [
+    "os-virtual-memory"
+  ],
   "objectives": [
     "Identify race conditions from interleavings of unsynchronised read-modify-write code",
     "Choose between mutexes, spinlocks and atomics based on critical-section length and contention",
@@ -19,7 +21,7 @@
     },
     {
       "type": "p",
-      "md": "A **race condition** exists when two tasks read-modify-write shared state and the result depends on interleaving. It is not exotic: counter = counter + 1 is three steps - load, add, store - and the scheduler may swap threads between any two of them. The bug hides because most runs interleave benignly; only under production load does the unlucky interleaving appear, and by then it is 4:30 pm before expiry."
+      "md": "A **race condition** exists when two tasks read-modify-write shared state and the result depends on interleaving. It is not exotic: counter = counter + 1 is three steps, load, add, store, and the scheduler may swap threads between any two of them. The bug hides because most runs interleave benignly; only under production load does the unlucky interleaving appear, and by then it is 4:30 pm before expiry."
     },
     {
       "type": "steps",
@@ -29,14 +31,14 @@
         "A loads 5. The scheduler preempts A before it stores.",
         "B loads 5, adds, stores 6.",
         "A resumes with its stale value, adds, stores 6.",
-        "Final counter = 6, not 7: B's update was erased - and rerunning the program may give 7, which is why the bug hides."
+        "Final counter = 6, not 7: B's update was erased, and rerunning the program may give 7, which is why the bug hides."
       ]
     },
     {
       "type": "code",
       "lang": "c",
       "code": "#include <pthread.h>\n#include <stdio.h>\n\nstatic long counter = 0;             // shared - and unprotected on purpose\n\nstatic void *bump(void *arg) {\n    (void)arg;\n    for (int i = 0; i < 1000000; i++)\n        counter = counter + 1;       // load, add, store: three steps\n    return NULL;\n}\n\nint main(void) {\n    pthread_t t1, t2;\n    pthread_create(&t1, NULL, bump, NULL);\n    pthread_create(&t2, NULL, bump, NULL);\n    pthread_join(t1, NULL);\n    pthread_join(t2, NULL);\n    printf(\"%ld\\n\", counter);        // usually < 2000000, differs per run\n    return 0;\n}",
-      "caption": "Two threads, one million increments each. Run it repeatedly: it prints a different number below 2000000 almost every time - classic lost updates."
+      "caption": "Two threads, one million increments each. Run it repeatedly: it prints a different number below 2000000 almost every time, classic lost updates."
     },
     {
       "type": "h2",
@@ -44,7 +46,7 @@
     },
     {
       "type": "p",
-      "md": "Synchronisation primitives make critical sections exclusive. A **mutex** guarantees mutual exclusion: uncontended lock/unlock is a couple of atomic instructions in user space (~20 ns); under contention the kernel puts the loser to sleep via **futex** and wakes it when the lock is released, which costs microseconds. A **spinlock** never sleeps - it burns CPU polling - and only wins when the section is shorter than a couple of switch costs, typically on dedicated cores. **Condition variables** let threads wait for state to change without polling."
+      "md": "Synchronisation primitives make critical sections exclusive. A **mutex** guarantees mutual exclusion: uncontended lock/unlock is a couple of atomic instructions in user space (~20 ns); under contention the kernel puts the loser to sleep via **futex** and wakes it when the lock is released, which costs microseconds. A **spinlock** never sleeps, it burns CPU polling, and only wins when the section is shorter than a couple of switch costs, typically on dedicated cores. **Condition variables** let threads wait for state to change without polling."
     },
     {
       "type": "steps",
@@ -62,14 +64,39 @@
       "params": {
         "title": "One address space, two threads",
         "regions": [
-          { "name": "text + globals", "address": "shared", "size": "-", "note": "the racy counter lives here" },
-          { "name": "heap", "address": "shared", "size": "-", "note": "one order book, one mutex guarding it" },
-          { "name": "thread 1 stack", "address": "private", "size": "8 MiB reserve", "note": "locals and saved registers" },
-          { "name": "thread 2 stack", "address": "private", "size": "8 MiB reserve", "note": "same address space, different stack" },
-          { "name": "TLS", "address": "private", "size": "-", "note": "__thread / thread_local variables" }
+          {
+            "name": "text + globals",
+            "address": "shared",
+            "size": "-",
+            "note": "the racy counter lives here"
+          },
+          {
+            "name": "heap",
+            "address": "shared",
+            "size": "-",
+            "note": "one order book, one mutex guarding it"
+          },
+          {
+            "name": "thread 1 stack",
+            "address": "private",
+            "size": "8 MiB reserve",
+            "note": "locals and saved registers"
+          },
+          {
+            "name": "thread 2 stack",
+            "address": "private",
+            "size": "8 MiB reserve",
+            "note": "same address space, different stack"
+          },
+          {
+            "name": "TLS",
+            "address": "private",
+            "size": "-",
+            "note": "__thread / thread_local variables"
+          }
         ]
       },
-      "caption": "Everything except the two stacks and TLS is shared memory - which is exactly where races live."
+      "caption": "Everything except the two stacks and TLS is shared memory, which is exactly where races live."
     },
     {
       "type": "code",
@@ -89,11 +116,11 @@
       "type": "code",
       "lang": "c",
       "code": "// Order gateway fragment: every spread order touches the account book\n// AND the risk book. House rule: acquire in global order - accounts first.\n\npthread_mutex_lock(&accounts_mtx);       // 1st: accounts\npthread_mutex_lock(&risk_mtx);           // 2nd: risk\n// ... check limits, update both books ...\npthread_mutex_unlock(&risk_mtx);\npthread_mutex_unlock(&accounts_mtx);",
-      "caption": "A fragment, not a program - the comment is the invariant. Any code path that takes risk first can deadlock against this one."
+      "caption": "A fragment, not a program, the comment is the invariant. Any code path that takes risk first can deadlock against this one."
     },
     {
       "type": "p",
-      "md": "One more trap: **priority inversion**. A low-priority thread holding a lock blocks a high-priority waiter while medium-priority work preempts the holder - the well-documented 1997 Mars Pathfinder resets are the canonical public incident. The cure is priority inheritance, where the holder temporarily inherits the waiter's priority. For desk systems the moral is simpler: never run the lock-holding housekeeping thread at a lower priority than the threads that wait on it."
+      "md": "One more trap: **priority inversion**. A low-priority thread holding a lock blocks a high-priority waiter while medium-priority work preempts the holder, the well-documented 1997 Mars Pathfinder resets are the canonical public incident. The cure is priority inheritance, where the holder temporarily inherits the waiter's priority. For desk systems the moral is simpler: never run the lock-holding housekeeping thread at a lower priority than the threads that wait on it."
     },
     {
       "type": "steps",
@@ -102,7 +129,7 @@
         "A pipeline is 95% parallelisable; the 5% serial part is one shared-book mutex section. Threads: N = 16.",
         "Parallel part per thread: $0.95 / 16 = 0.0594$.",
         "Total time relative to the serial version: $0.05 + 0.0594 = 0.1094$.",
-        "Speedup = $1 / 0.1094 \\approx 9.14 \\times$, not 16x - the lock-serialised fraction caps everything."
+        "Speedup = $1 / 0.1094 \\approx 9.14 \\times$, not 16x, the lock-serialised fraction caps everything."
       ]
     }
   ],
@@ -112,21 +139,21 @@
       "Both threads can load the same stale value before either stores.",
       "Two increments of 30 applied to 100."
     ],
-    "solution": "(a) Both load 100, both store 130: final = 130. (b) One increment of 30 shares was silently dropped - a real position error, not a rounding error. (c) A mutex (or an atomic fetch-and-add) serialises the read-modify-write; the correct final value is 160."
+    "solution": "(a) Both load 100, both store 130: final = 130. (b) One increment of 30 shares was silently dropped, a real position error, not a rounding error. (c) A mutex (or an atomic fetch-and-add) serialises the read-modify-write; the correct final value is 160."
   },
   "independentExercise": {
     "prompt": "An order gateway: 4 threads submit orders through one shared mutex held 5 microseconds per order. (a) Compute the worst-case wait for a thread's order under full contention. (b) The desk shards into 4 per-instrument mutexes; state when contention reappears. (c) Spread orders touch two instruments; state the acquisition discipline that keeps deadlock impossible.",
     "hints": [
-      "Worst wait = (threads - 1) x hold time.",
+      "Worst wait = (threads, 1) x hold time.",
       "Two locks can only cycle if someone takes them in different orders."
     ],
-    "solution": "(a) $(4 - 1) \\times 5\\,\\mu s = 15\\,\\mu s$. (b) When orders on the same hot instrument cluster across threads - sharding removes contention only if traffic really separates. (c) Acquire the two instrument locks in one global order (e.g. ascending instrument ID) in every code path; circular wait then cannot form."
+    "solution": "(a) $(4 - 1) \\times 5\\,\\mu s = 15\\,\\mu s$. (b) When orders on the same hot instrument cluster across threads, sharding removes contention only if traffic really separates. (c) Acquire the two instrument locks in one global order (e.g. ascending instrument ID) in every code path; circular wait then cannot form."
   },
   "commonMistakes": [
-    "Assuming a line of C++ is atomic - counter += 1 is load, add, store: three separate steps.",
-    "Believing a mutex makes the whole program thread-safe - any shared state outside the critical section is still racy.",
+    "Assuming a line of C++ is atomic, counter += 1 is load, add, store: three separate steps.",
+    "Believing a mutex makes the whole program thread-safe, any shared state outside the critical section is still racy.",
     "Using spinlocks with many runnable threads: they burn cores the scheduler could give to real work.",
-    "Taking two locks in different orders on different code paths - a textbook circular wait.",
+    "Taking two locks in different orders on different code paths, a textbook circular wait.",
     "Forgetting the wakeup cost: a contended mutex's expense is the futex sleep/wake, not the atomic instruction."
   ],
   "realWorldApplication": "Every database, kernel and browser ships with these primitives; lock-order audits and contention profiling are standard production hygiene in any multithreaded codebase.",
@@ -134,9 +161,9 @@
   "summary": [
     "Races come from unsynchronised read-modify-write on shared state; interleaving can erase updates intermittently.",
     "Mutexes sleep under contention (futex, microseconds); spinlocks burn CPU and suit only tiny sections on dedicated cores.",
-    "Worst-case lock wait is about (N - 1) x hold time; shrink hold times or shard the data.",
+    "Worst-case lock wait is about (N, 1) x hold time; shrink hold times or shard the data.",
     "Deadlock needs all four Coffman conditions; one global lock order makes circular wait impossible.",
-    "Amdahl's law: serial or lock-serialised fractions cap speedup - 5% serial on 16 threads gives only about 9.1x."
+    "Amdahl's law: serial or lock-serialised fractions cap speedup, 5% serial on 16 threads gives only about 9.1x."
   ],
   "quiz": [
     {
@@ -145,7 +172,7 @@
       "prompt": "Two threads deadlock on mutexes A and B. Which single discipline makes the deadlock impossible no matter what they do afterwards?",
       "options": [
         "Always unlock in reverse acquisition order",
-        "Always acquire A before B - one global order",
+        "Always acquire A before B, one global order",
         "Use spinlocks instead of mutexes",
         "Increase the scheduler time slice"
       ],
@@ -167,7 +194,7 @@
       "language": "c",
       "code": "#include <pthread.h>\n#include <stdio.h>\n\nstatic long counter = 0;\nstatic pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;\n\nstatic void *bump(void *arg) {\n    (void)arg;\n    for (int i = 0; i < 1000000; i++) {\n        pthread_mutex_lock(&mtx);\n        counter = counter + 1;\n        pthread_mutex_unlock(&mtx);\n    }\n    return NULL;\n}\n\nint main(void) {\n    pthread_t t1, t2;\n    pthread_create(&t1, NULL, bump, NULL);\n    pthread_create(&t2, NULL, bump, NULL);\n    pthread_join(t1, NULL);\n    pthread_join(t2, NULL);\n    printf(\"%ld\\n\", counter);\n    return 0;\n}",
       "answer": "2000000",
-      "explanation": "Both loops are serialised by the mutex, so all 2 x 1,000,000 increments land. Remove the lock and the three-step increment interleaves - the total drops below 2000000, varying per run."
+      "explanation": "Both loops are serialised by the mutex, so all 2 x 1,000,000 increments land. Remove the lock and the three-step increment interleaves, the total drops below 2000000, varying per run."
     },
     {
       "id": "q4",
@@ -179,7 +206,10 @@
         "A spinlock is always faster than a mutex",
         "POSIX guarantees mutexes are strictly FIFO-fair"
       ],
-      "answerIndices": [0, 1],
+      "answerIndices": [
+        0,
+        1
+      ],
       "explanation": "Spinlocks win only when the section is shorter than a couple of sleep/wake costs and the core has nothing better to do. Mutexes pay microseconds to sleep/wake but stop burning CPU; POSIX promises no FIFO fairness."
     },
     {
@@ -195,7 +225,12 @@
       "type": "short",
       "prompt": "State what a deadlock is, and name the Coffman condition that global lock ordering removes.",
       "modelAnswer": "A deadlock is a cycle of tasks in which each holds a resource the next one needs, so none can proceed. Global lock ordering removes circular wait, breaking one of the four Coffman conditions.",
-      "keywords": ["cycle", "circular", "wait", "order"],
+      "keywords": [
+        "cycle",
+        "circular",
+        "wait",
+        "order"
+      ],
       "explanation": "The four conditions are mutual exclusion, hold-and-wait, no preemption and circular wait; a fixed acquisition order makes the cycle impossible."
     }
   ],
@@ -203,12 +238,12 @@
     {
       "type": "definition",
       "front": "Race condition",
-      "back": "Two or more tasks read-modify-write shared state without synchronisation, so the result depends on interleaving - e.g. two threads doing counter += 1 can lose an update entirely."
+      "back": "Two or more tasks read-modify-write shared state without synchronisation, so the result depends on interleaving, e.g. two threads doing counter += 1 can lose an update entirely."
     },
     {
       "type": "concept",
       "front": "The four Coffman conditions",
-      "back": "Mutual exclusion, hold-and-wait, no preemption, circular wait - all four must hold for deadlock; breaking any one prevents it."
+      "back": "Mutual exclusion, hold-and-wait, no preemption, circular wait, all four must hold for deadlock; breaking any one prevents it."
     },
     {
       "type": "formula",
@@ -223,13 +258,25 @@
     {
       "type": "concept",
       "front": "Futex fast path",
-      "back": "Uncontended lock/unlock stays in user space with atomics (~20 ns); only contention traps into the kernel to sleep/wake (microseconds) - so design for low contention, not for lock-free everywhere."
+      "back": "Uncontended lock/unlock stays in user space with atomics (~20 ns); only contention traps into the kernel to sleep/wake (microseconds), so design for low contention, not for lock-free everywhere."
     }
   ],
   "references": [
-    { "label": "man7 - futex(2)", "url": "https://man7.org/linux/man-pages/man2/futex.2.html" },
-    { "label": "man7 - pthreads(7)", "url": "https://man7.org/linux/man-pages/man7/pthreads.7.html" },
-    { "label": "The Little Book of Semaphores (free, Green Tea Press)", "url": "https://greenteapress.com/wp/semaphores/" }
+    {
+      "label": "man7: futex(2)",
+      "url": "https://man7.org/linux/man-pages/man2/futex.2.html"
+    },
+    {
+      "label": "man7: pthreads(7)",
+      "url": "https://man7.org/linux/man-pages/man7/pthreads.7.html"
+    },
+    {
+      "label": "The Little Book of Semaphores (free, Green Tea Press)",
+      "url": "https://greenteapress.com/wp/semaphores/"
+    }
   ],
-  "skills": ["operating-systems", "concurrency"]
+  "skills": [
+    "operating-systems",
+    "concurrency"
+  ]
 }

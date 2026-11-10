@@ -9,7 +9,7 @@ import { Toaster } from '@/components/ui/sonner';
 import { ServiceWorkerRegistrar } from '@/components/sw-registrar';
 
 export const metadata: Metadata = {
-  title: 'QuantFoundry — Zero to Quantitative Developer',
+  title: 'QuantFoundry. Zero to Quantitative Developer',
   description:
     'A rigorous, interactive learning platform that takes you from absolute zero to professional-level quantitative software engineering: mathematics, C++, Python, systems and finance.',
   applicationName: 'QuantFoundry',

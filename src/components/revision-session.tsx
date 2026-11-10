@@ -4,6 +4,7 @@ import * as React from 'react';
 import { Eye, EyeOff, Check, X, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { QMath } from '@/components/quiz';
+import { recordReviews, deleteCard, cardStateOf } from '@/lib/client/local-state';
 
 export interface DueCard {
   cardKey: string; front: string; back: string; cardType: string; source: string;
@@ -25,48 +26,28 @@ export function RevisionSession({ cards }: { cards: DueCard[] }) {
   const [idx, setIdx] = React.useState(0);
   const [revealed, setRevealed] = React.useState(false);
   const [done, setDone] = React.useState(0);
-  const sessionStart = React.useRef(Date.now());
 
   const card = queue[idx];
   const progressPct = queue.length > 0 ? Math.min(100, Math.round(((idx + 1) / queue.length) * 100)) : 0;
   const progressWidth = `${progressPct}%`;
 
-  React.useEffect(() => {
-    const t = setInterval(() => {
-      const secs = Math.round((Date.now() - sessionStart.current) / 1000);
-      if (secs > 0 && secs % 60 === 0) {
-        fetch('/api/revision/review', {
-          method: 'PUT', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ seconds: 60, reviewed: 0 }),
-        }).then(r => r.json()).then(d => {
-          if (d && d.xpAwarded > 0) {
-            toast.success(`+${d.xpAwarded} XP`);
-            window.dispatchEvent(new CustomEvent('qf:hud-refresh'));
-          }
-        }).catch(() => {});
-      }
-    }, 60000);
-    return () => clearInterval(t);
-  }, []);
-
-  async function grade(g: number) {
+  function grade(g: number) {
     if (!card) return;
-    try {
-      const res = await fetch('/api/revision/review', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cardKey: card.cardKey, grade: g }),
-      });
-      const data = await res.json();
-      if (!res.ok) { toast.error(data.error ?? 'Failed.'); return; }
-      if (data.graduated) {
-        setQueue(q => q.filter(c => c.cardKey !== card.cardKey));
-        if (idx >= queue.length - 1) setIdx(0);
-      } else {
-        setIdx(i => i + 1);
-      }
-      setRevealed(false);
-      setDone(d => d + 1);
-    } catch { toast.error('Network error.'); }
+    // v3: SM-2 runs locally, instantly, offline. Reviews sync in the background.
+    const before = cardStateOf(card.cardKey);
+    recordReviews([{ cardKey: card.cardKey, grade: g }]);
+    const after = cardStateOf(card.cardKey);
+    const graduated = card.source === 'quiz_miss' && !!before && !!after && g >= 4 && after.repetitions >= 2;
+    if (graduated) {
+      // solid twice in a row: retire the card (same rule the server used for quiz-miss cards)
+      deleteCard(card.cardKey);
+      setQueue(q => q.filter(c => c.cardKey !== card.cardKey));
+      if (idx >= queue.length - 1) setIdx(0);
+    } else {
+      setIdx(i => i + 1);
+    }
+    setRevealed(false);
+    setDone(d => d + 1);
   }
 
   if (!card) {
@@ -75,7 +56,7 @@ export function RevisionSession({ cards }: { cards: DueCard[] }) {
         <span className="mx-auto h-14 w-14 rounded-3xl bg-accent text-white flex items-center justify-center shadow-[0_5px_0_0_var(--accent-deep)] anim-bob">
           <Sparkles className="h-7 w-7" strokeWidth={2.5} />
         </span>
-        <h2 className="mt-4 text-xl font-black tracking-tight">Session complete — {done} card{done === 1 ? '' : 's'} reviewed.</h2>
+        <h2 className="mt-4 text-xl font-black tracking-tight">Session complete, {done} card{done === 1 ? '' : 's'} reviewed.</h2>
         <p className="mt-1.5 text-sm font-semibold text-muted max-w-md mx-auto">
           The scheduler has re-spaced everything you touched. Cards return as their intervals grow; lapsed cards come back sooner.
         </p>
@@ -121,7 +102,7 @@ export function RevisionSession({ cards }: { cards: DueCard[] }) {
           )}
         </div>
       </div>
-      {!revealed && <p className="mt-3 text-xs text-faint text-center font-semibold">Try to recall before revealing — retrieval effort is what builds memory.</p>}
+      {!revealed && <p className="mt-3 text-xs text-faint text-center font-semibold">Try to recall before revealing, retrieval effort is what builds memory.</p>}
       {revealed && <p className="mt-3 text-xs text-faint text-center font-semibold">Grade honestly: the SM-2 scheduler uses it to set the next interval.</p>}
     </div>
   );

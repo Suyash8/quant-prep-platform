@@ -4,6 +4,10 @@ import * as React from 'react';
 import { CheckCircle2, XCircle, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 import katex from 'katex';
+import type { QuizQuestion } from '@/lib/content';
+import { gradeAnswer } from '@/lib/grading';
+import { scoreQuiz } from '@/lib/mastery';
+import { recordLessonResult, lessonProgressOf } from '@/lib/client/local-state';
 
 export interface SafeQuestion {
   id: string; type: 'mcq' | 'ms' | 'numeric' | 'short' | 'code-output';
@@ -15,9 +19,11 @@ export interface SafeQuestion {
 }
 
 interface QuizProps {
-  endpoint?: string;         // API that scores server-side (omit for controlled mode)
+  /** v3: pass full questions for instant local grading (endpoint stays for legacy callers) */
+  endpoint?: string;
   payload?: Record<string, unknown>; // lessonId or assessmentId
   questions: SafeQuestion[];
+  fullQuestions?: QuizQuestion[];
   onResult?: (pct: number, status?: string) => void;
   onAnswersChange?: (answers: Record<string, string | string[]>) => void;
   compact?: boolean;
@@ -28,9 +34,10 @@ interface PlayerResult {
   pct: number; correct: number; total: number;
   perQuestion: Record<string, { correct: boolean; explanation: string }>;
   status?: string;
+  xpAwarded?: number;
 }
 
-export function Quiz({ endpoint, payload, questions, onResult, onAnswersChange, compact, controlledResult }: QuizProps) {
+export function Quiz({ endpoint, payload, questions, fullQuestions, onResult, onAnswersChange, compact, controlledResult }: QuizProps) {
   const [answers, setAnswers] = React.useState<Record<string, string | string[]>>({});
   const [result, setResult] = React.useState<PlayerResult | null>(controlledResult ?? null);
   const [busy, setBusy] = React.useState(false);
@@ -45,12 +52,45 @@ export function Quiz({ endpoint, payload, questions, onResult, onAnswersChange, 
     });
   }
 
-  const allAnswered = endpoint ? questions.every(q => {
+  const localMode = !!fullQuestions;
+  const allAnswered = (endpoint || localMode) ? questions.every(q => {
     const a = answers[q.id];
     return a !== undefined && (Array.isArray(a) ? a.length > 0 : String(a).length > 0);
   }) : false;
 
   async function submit() {
+    if (localMode && fullQuestions) {
+      // v3: graded locally, instantly, offline-capable. Progress syncs in the background.
+      setBusy(true);
+      try {
+        const r = scoreQuiz(fullQuestions, answers, (q, a) => {
+          const full = fullQuestions.find(x => x.id === q.id)!;
+          return gradeAnswer(full, a);
+        });
+        const perQuestion: Record<string, { correct: boolean; explanation: string }> = {};
+        for (const q of fullQuestions) {
+          const a = answers[q.id];
+          perQuestion[q.id] = { correct: a !== undefined ? gradeAnswer(q, a) : false, explanation: q.explanation };
+        }
+        const lessonId = typeof payload?.lessonId === 'string' ? payload.lessonId : '';
+        let status = 'attempted';
+        let xpAwarded = 0;
+        if (lessonId) {
+          const rec = recordLessonResult(lessonId, r.pct, lessonProgressOf(lessonId));
+          status = rec.status;
+          xpAwarded = rec.xp;
+        }
+        const data: PlayerResult = { pct: r.pct, correct: r.correct, total: r.total, status, perQuestion, xpAwarded };
+        setResult(data);
+        setAttempt(a => a + 1);
+        onResult?.(data.pct, data.status);
+        if (data.pct >= 80) toast.success(`Scored ${data.pct}%, ${status === 'mastered' ? 'mastery retained' : status === 'passed' ? 'lesson passed' : 'well done'}.`);
+        else toast.warning(`Scored ${data.pct}%, review the explanations below, then retry.`);
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
     if (!endpoint) return;
     setBusy(true);
     try {
@@ -169,7 +209,7 @@ export function Quiz({ endpoint, payload, questions, onResult, onAnswersChange, 
         </div>
       ))}
 
-      {endpoint && (
+      {(endpoint || localMode) && (
         <div className="flex items-center gap-3">
           <button
             onClick={submit} disabled={busy || !allAnswered}
@@ -189,8 +229,8 @@ export function Quiz({ endpoint, payload, questions, onResult, onAnswersChange, 
           )}
         </div>
       )}
-      {endpoint && !allAnswered && !shown && <p className="text-xs text-faint">Answer every question to submit — no guessing through, wrong answers cost a retry.</p>}
-      {endpoint && <p className="text-xs text-faint">Scoring happens server-side; correct answers never reach the browser before submission.</p>}
+      {(endpoint || localMode) && !allAnswered && !shown && <p className="text-xs text-faint">Answer every question to submit, no guessing through, wrong answers cost a retry.</p>}
+      
     </div>
   );
 }
@@ -200,6 +240,8 @@ export function QMath({ text }: { text: string }) {
   const html = React.useMemo(() => {
     try {
       const src = text.replace(/\\\$/g, '\u0000'); // escaped currency -> sentinel
+
+
       let out = '';
       let i = 0;
       let buf = '';

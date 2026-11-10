@@ -27,7 +27,7 @@ export function InteractiveBlock({ component, params, caption }: { component: st
   if (!Comp) {
     return (
       <LabFrame title="Interactive demo unavailable" note="">
-        <p className="text-sm text-faint">The component “{component}” is not registered. This is a content error — please report it.</p>
+        <p className="text-sm text-faint">The component “{component}” is not registered. This is a content error, please report it.</p>
       </LabFrame>
     );
   }

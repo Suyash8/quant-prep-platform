@@ -5,7 +5,7 @@ import { AppShell } from '@/components/app-shell';
 import { Planner, type Plan, type PlanTask } from '@/components/planner-view';
 import { CalendarDays } from 'lucide-react';
 
-export const metadata = { title: 'Study Planner — QuantFoundry' };
+export const metadata = { title: 'Study Planner. QuantFoundry' };
 
 /** Defensive parse: stored plan JSON must match the Plan contract or we treat it as absent. */
 function parsePlan(raw: string | null | undefined): Plan | null {
@@ -47,7 +47,7 @@ export default async function PlannerPage() {
           </div>
         </header>
         <p className="-mt-2.5 mb-6 max-w-3xl text-sm text-muted font-semibold leading-relaxed anim-slide-up">
-          A realistic schedule built from your constraints and the prerequisite graph — lessons, practice, revision,
+          A realistic schedule built from your constraints and the prerequisite graph, lessons, practice, revision,
           weekly self-assessments and buffer days. Regenerate any time; progress is never lost.
         </p>
         <Planner initialPlan={initialPlan} />

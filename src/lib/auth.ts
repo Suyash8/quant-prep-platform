@@ -7,6 +7,8 @@ const SESSION_COOKIE = 'qf_session';
 const SESSION_DAYS = 30;
 
 // ---------- password hashing (scrypt, no external deps) ----------
+
+
 export function hashPassword(password: string): string {
   const salt = randomBytes(16).toString('hex');
   const hash = scryptSync(password, salt, 64).toString('hex');
@@ -22,8 +24,12 @@ export function verifyPassword(password: string, stored: string): boolean {
 }
 
 // ---------- sessions ----------
+
+
 export function sessionIdToCookie(id: string): string {
   // sign with a per-deployment secret so cookie tampering fails
+
+
   const secret = process.env.SESSION_SECRET ?? 'quantfoundry-local-dev-secret';
   const sig = createHash('sha256').update(id + secret).digest('hex').slice(0, 16);
   return `${id}.${sig}`;
@@ -79,6 +85,8 @@ export async function requireUser() {
 }
 
 // ---------- simple in-memory rate limiter ----------
+
+
 const buckets = new Map<string, { tokens: number; last: number }>();
 
 export function rateLimit(key: string, capacity = 10, refillPerSec = 0.2): boolean {

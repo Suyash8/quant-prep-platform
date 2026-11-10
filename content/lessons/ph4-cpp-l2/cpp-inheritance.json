@@ -13,7 +13,7 @@
     "Predict construction and destruction order for objects with base subobjects",
     "List what is and is not inherited, and choose composition over inheritance when has-a fits"
   ],
-  "motivation": "Desks trade futures, options and bonds that share a skeleton - symbol, currency, tick conventions - plus their own specifics. Copy-pasting the shared parts into every class is how divergence bugs start: one instrument type gets the validation fix, the others quietly miss it. Public inheritance models the is-a relationship once, and this lesson sets out exactly what derived classes can see, what they inherit, and the strict order in which their objects are built and torn down.",
+  "motivation": "Desks trade futures, options and bonds that share a skeleton, symbol, currency, tick conventions, plus their own specifics. Copy-pasting the shared parts into every class is how divergence bugs start: one instrument type gets the validation fix, the others quietly miss it. Public inheritance models the is-a relationship once, and this lesson sets out exactly what derived classes can see, what they inherit, and the strict order in which their objects are built and torn down.",
   "blocks": [
     {
       "type": "h2",
@@ -31,7 +31,7 @@
     },
     {
       "type": "p",
-      "md": "Two details in the snippet matter. The Future constructor must initialize the base through its constructor - `Instrument{std::move(symbol)}` - because the base has no default constructor; omitting it would be a compile error. Alternatively, `using Instrument::Instrument;` inside Future **inherits** the base constructors, which works when every added member has a default initializer. And note that `symbol_` still exists inside every Future - private members are inherited as part of the subobject - but Future code cannot name it; that is exactly why the public `symbol()` accessor exists."
+      "md": "Two details in the snippet matter. The Future constructor must initialize the base through its constructor - `Instrument{std::move(symbol)}` - because the base has no default constructor; omitting it would be a compile error. Alternatively, `using Instrument::Instrument;` inside Future **inherits** the base constructors, which works when every added member has a default initializer. And note that `symbol_` still exists inside every Future, private members are inherited as part of the subobject, but Future code cannot name it; that is exactly why the public `symbol()` accessor exists."
     },
     {
       "type": "table",
@@ -60,7 +60,7 @@
     },
     {
       "type": "p",
-      "md": "`private` means \"this class only\". `protected` is a promise to subclass authors - convenient today, a liability tomorrow, because any future subclass can now depend on the field and the base can never change it freely. `public` is the contract with the world. Treat protected as the exception: default to private plus public accessors, and hand subclasses the narrow protected interface they actually need."
+      "md": "`private` means \"this class only\". `protected` is a promise to subclass authors, convenient today, a liability tomorrow, because any future subclass can now depend on the field and the base can never change it freely. `public` is the contract with the world. Treat protected as the exception: default to private plus public accessors, and hand subclasses the narrow protected interface they actually need."
     },
     {
       "type": "h2",
@@ -68,13 +68,13 @@
     },
     {
       "type": "p",
-      "md": "The rule: **base first, members in declaration order, then the constructor body**; destruction runs exactly backwards - derived destructor body first, then members in reverse, then the base. The base must be complete before derived code runs, because derived constructors and destructors are allowed to call base member functions."
+      "md": "The rule: **base first, members in declaration order, then the constructor body**; destruction runs exactly backwards, derived destructor body first, then members in reverse, then the base. The base must be complete before derived code runs, because derived constructors and destructors are allowed to call base member functions."
     },
     {
       "type": "code",
       "lang": "cpp",
       "code": "#include <iostream>\n\nstruct Base {\n    Base() { std::cout << \"Base ctor\\n\"; }\n    virtual ~Base() { std::cout << \"Base dtor\\n\"; }   // virtual: next lesson\n};\n\nstruct Derived : Base {\n    Derived() { std::cout << \"Derived ctor\\n\"; }\n    ~Derived() { std::cout << \"Derived dtor\\n\"; }\n};\n\nint main() {\n    Derived d;\n}",
-      "caption": "Output: Base ctor, Derived ctor, Derived dtor, Base dtor - nested, never interleaved."
+      "caption": "Output: Base ctor, Derived ctor, Derived dtor, Base dtor, nested, never interleaved."
     },
     {
       "type": "callout",
@@ -91,9 +91,9 @@
       "ordered": false,
       "items": [
         "Constructors are not inherited by default; `using Instrument::Instrument;` pulls them in when the added members have defaults.",
-        "Destructors and copy assignment: every class gets its own generated version. The base destructor still runs as part of the destruction sequence - it is just not reused as the derived one.",
+        "Destructors and copy assignment: every class gets its own generated version. The base destructor still runs as part of the destruction sequence, it is just not reused as the derived one.",
         "Friendship is not inherited: a friend of Instrument has no access to Future.",
-        "Everything else - ordinary member functions, operators, data members - is inherited at its access level, adjusted by the inheritance mode: public inheritance keeps public members public; private inheritance makes them private in the derived class."
+        "Everything else, ordinary member functions, operators, data members, is inherited at its access level, adjusted by the inheritance mode: public inheritance keeps public members public; private inheritance makes them private in the derived class."
       ]
     },
     {
@@ -118,7 +118,7 @@
       "The derived constructor initializer list calls Account{cash} before initializing limit_.",
       "protected lets MarginAccount read balance_ directly; main is neither Account nor a derived class."
     ],
-    "solution": "buyingPower() is $10000 + 40000 = 50000$; balance() is 10000. `m.balance_` is protected, and non-member code (main) may only touch public members - that is the access ladder doing its job.\n\n```cpp\n#include <iostream>\n\nclass Account {\npublic:\n    explicit Account(double cash) : balance_{cash} {}\n    void deposit(double amt) { if (amt > 0.0) balance_ += amt; }\n    void withdraw(double amt) { if (amt > 0.0 && amt <= balance_) balance_ -= amt; }\n    double balance() const { return balance_; }\nprotected:\n    double balance_;   // subclasses may use; outsiders may not\n};\n\nclass MarginAccount : public Account {\npublic:\n    explicit MarginAccount(double cash, double limit)\n        : Account{cash}, limit_{limit} {}          // base subobject first\n    double buyingPower() const { return balance_ + limit_; }\nprivate:\n    double limit_;\n};\n\nint main() {\n    MarginAccount m{10000.0, 40000.0};\n    std::cout << m.buyingPower() << '\\n';   // 50000\n    std::cout << m.balance() << '\\n';       // 10000\n    // m.balance_ = 1e9;   // compile error: protected, and main is not a member\n}\n```"
+    "solution": "buyingPower() is $10000 + 40000 = 50000$; balance() is 10000. `m.balance_` is protected, and non-member code (main) may only touch public members, that is the access ladder doing its job.\n\n```cpp\n#include <iostream>\n\nclass Account {\npublic:\n    explicit Account(double cash) : balance_{cash} {}\n    void deposit(double amt) { if (amt > 0.0) balance_ += amt; }\n    void withdraw(double amt) { if (amt > 0.0 && amt <= balance_) balance_ -= amt; }\n    double balance() const { return balance_; }\nprotected:\n    double balance_;   // subclasses may use; outsiders may not\n};\n\nclass MarginAccount : public Account {\npublic:\n    explicit MarginAccount(double cash, double limit)\n        : Account{cash}, limit_{limit} {}          // base subobject first\n    double buyingPower() const { return balance_ + limit_; }\nprivate:\n    double limit_;\n};\n\nint main() {\n    MarginAccount m{10000.0, 40000.0};\n    std::cout << m.buyingPower() << '\\n';   // 50000\n    std::cout << m.balance() << '\\n';       // 10000\n    // m.balance_ = 1e9;   // compile error: protected, and main is not a member\n}\n```"
   },
   "independentExercise": {
     "prompt": "Extend the Instrument hierarchy from the lesson. Add `class Bond : public Instrument` with a private `double coupon_`, and `class EquityOption : public Instrument` with a private `double strike_` and `double intrinsic(double spot) const` returning `std::max(spot - strike_, 0.0)`. Both constructors must forward the symbol to the base constructor. In `main`, construct Bond{\"UST10Y\", 0.0425} and EquityOption{\"AAPL 260115C150\", 150.0}; print the bond symbol and coupon, then the option intrinsic value at spot 155.0.",
@@ -129,20 +129,20 @@
     "solution": "Intrinsic at spot 155 with strike 150 is $\\max(155 - 150, 0) = 5$.\n\n```cpp\n#include <algorithm>\n#include <iostream>\n#include <string>\n#include <utility>\n\nclass Instrument {\npublic:\n    explicit Instrument(std::string symbol) : symbol_{std::move(symbol)} {}\n    const std::string& symbol() const { return symbol_; }\nprotected:\n    double tickSize_ = 0.01;\nprivate:\n    std::string symbol_;\n};\n\nclass Bond : public Instrument {\npublic:\n    Bond(std::string symbol, double coupon)\n        : Instrument{std::move(symbol)}, coupon_{coupon} {}\n    double coupon() const { return coupon_; }\nprivate:\n    double coupon_;\n};\n\nclass EquityOption : public Instrument {\npublic:\n    EquityOption(std::string symbol, double strike)\n        : Instrument{std::move(symbol)}, strike_{strike} {}\n    double intrinsic(double spot) const { return std::max(spot - strike_, 0.0); }\nprivate:\n    double strike_;\n};\n\nint main() {\n    Bond b{\"UST10Y\", 0.0425};\n    EquityOption o{\"AAPL 260115C150\", 150.0};\n    std::cout << b.symbol() << \" coupon \" << b.coupon() << '\\n';\n    std::cout << o.symbol() << \" intrinsic at 155: \" << o.intrinsic(155.0) << '\\n';\n}\n```"
   },
   "commonMistakes": [
-    "Writing `class D : B` without `public` and losing the base interface - class inheritance defaults to private.",
+    "Writing `class D : B` without `public` and losing the base interface, class inheritance defaults to private.",
     "Deriving when you mean composition: an Order is not an Instrument, it has one.",
     "Granting protected access casually; every future subclass can then depend on the field, weakening the invariant.",
     "Forgetting to pass base constructor arguments in the initializer list when the base has no default constructor.",
-    "Assuming friends of the base are friends of the derived class - friendship is not inherited.",
+    "Assuming friends of the base are friends of the derived class, friendship is not inherited.",
     "Expecting members declared private in the base to be callable or nameable in derived code."
   ],
   "realWorldApplication": "Exchange connectivity libraries model protocol messages as a base class with derived tick/trade/depth types; shared header logic is written and tested once in the base while derived types add payload-specific decoding.",
   "quantFinanceApplication": "Instrument hierarchies (Instrument -> Future/Option/Bond) mirror risk-system class diagrams: shared conventions live in the base, product-specific payoff logic stays in the derived classes.",
   "summary": [
     "Public inheritance models is-a: the derived object contains a complete base subobject that is constructed first and destroyed last.",
-    "private: this class only; protected: this class plus subclasses; public: everyone - protected trades encapsulation for subclass convenience.",
+    "private: this class only; protected: this class plus subclasses; public: everyone, protected trades encapsulation for subclass convenience.",
     "Construction order is base, members in declaration order, then body; destruction is the exact reverse.",
-    "class defaults to private inheritance and struct to public inheritance - always write `: public` deliberately.",
+    "class defaults to private inheritance and struct to public inheritance, always write `: public` deliberately.",
     "Constructors, destructors, copy assignment operators and friends are not inherited as-is; a using-declaration can inherit base constructors."
   ],
   "quiz": [
@@ -196,7 +196,7 @@
         1,
         2
       ],
-      "explanation": "Each class declares its own constructors, destructor and copy assignment (generated unless user-provided); the base versions participate in the build/destroy sequence but are not inherited as the derived class own. Ordinary member functions - virtual or not - are inherited."
+      "explanation": "Each class declares its own constructors, destructor and copy assignment (generated unless user-provided); the base versions participate in the build/destroy sequence but are not inherited as the derived class own. Ordinary member functions, virtual or not, are inherited."
     },
     {
       "id": "q5",
@@ -229,7 +229,7 @@
     {
       "type": "code-output",
       "front": "struct B prints \"B\" in its ctor and \"~B\" in its dtor; struct D : B prints \"D\"/\"~D\". What does `{ D d; }` print across its lifetime?",
-      "back": "B D ~D ~B - base constructed first, destroyed last."
+      "back": "B D ~D ~B, base constructed first, destroyed last."
     },
     {
       "type": "error-identification",
@@ -239,7 +239,7 @@
     {
       "type": "definition",
       "front": "What does protected access promise, and to whom?",
-      "back": "That the member is usable inside the class and inside derived classes - a contract with subclass authors only, invisible to outside code."
+      "back": "That the member is usable inside the class and inside derived classes, a contract with subclass authors only, invisible to outside code."
     },
     {
       "type": "concept",
@@ -249,19 +249,19 @@
   ],
   "references": [
     {
-      "label": "cppreference — Derived classes",
+      "label": "cppreference. Derived classes",
       "url": "https://en.cppreference.com/w/cpp/language/derived_class"
     },
     {
-      "label": "cppreference — Member access",
+      "label": "cppreference. Member access",
       "url": "https://en.cppreference.com/w/cpp/language/access"
     },
     {
-      "label": "cppreference — using-declaration",
+      "label": "cppreference, using-declaration",
       "url": "https://en.cppreference.com/w/cpp/language/using_declaration"
     },
     {
-      "label": "ISO C++ FAQ — Private inheritance",
+      "label": "ISO C++ FAQ. Private inheritance",
       "url": "https://isocpp.org/wiki/faq/private-inheritance"
     }
   ],

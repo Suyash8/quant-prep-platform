@@ -13,7 +13,7 @@
     "Explain slow start, head-of-line blocking and why fresh TCP connections ramp up slowly",
     "Justify why market data distribution uses UDP multicast with sequenced packets and gap recovery"
   ],
-  "motivation": "One exchange publishes 200,000 quote updates per second, and 400 firms need them. Sending 400 TCP copies means 400 connections to maintain and 400 chances for one firm's slow link to back-pressure everyone; a single lost segment can stall delivery of *later* quotes behind it. The transport you choose - and where you deploy its costs - is an architectural decision worth \\$millions in missed hedges. This lesson explains both contracts and the classic resolution: TCP for orders, UDP multicast for market data.",
+  "motivation": "One exchange publishes 200,000 quote updates per second, and 400 firms need them. Sending 400 TCP copies means 400 connections to maintain and 400 chances for one firm's slow link to back-pressure everyone; a single lost segment can stall delivery of *later* quotes behind it. The transport you choose, and where you deploy its costs, is an architectural decision worth \\$millions in missed hedges. This lesson explains both contracts and the classic resolution: TCP for orders, UDP multicast for market data.",
   "blocks": [
     {
       "type": "h2",
@@ -21,7 +21,7 @@
     },
     {
       "type": "p",
-      "md": "**TCP** offers a connection: a reliable, **ordered byte stream** between two endpoints. It retransmits anything lost, delivers bytes in send order, paces the sender with flow and congestion control, and costs at least 20 bytes of header per segment. **UDP** offers none of that: each datagram is an independent, best-effort message with an 8-byte header - no ordering, no retransmission, no connection state, no rate control. Neither is 'better'; they trade guarantees for overhead. TCP is the right tool when every byte must arrive in order (orders, file transfer); UDP is right when *freshness beats completeness* and the application can detect and repair gaps itself (market data, telemetry)."
+      "md": "**TCP** offers a connection: a reliable, **ordered byte stream** between two endpoints. It retransmits anything lost, delivers bytes in send order, paces the sender with flow and congestion control, and costs at least 20 bytes of header per segment. **UDP** offers none of that: each datagram is an independent, best-effort message with an 8-byte header, no ordering, no retransmission, no connection state, no rate control. Neither is 'better'; they trade guarantees for overhead. TCP is the right tool when every byte must arrive in order (orders, file transfer); UDP is right when *freshness beats completeness* and the application can detect and repair gaps itself (market data, telemetry)."
     },
     {
       "type": "table",
@@ -69,7 +69,7 @@
     },
     {
       "type": "p",
-      "md": "Establishing a TCP connection takes the famous **three-way handshake**: client sends SYN, server replies SYN-ACK, client confirms with ACK (which may already carry the first data byte). That is exactly **one RTT** before the first request can be delivered end-to-end - a fixed setup tax per connection. Worse for short-lived connections is **slow start**: TCP begins with a tiny congestion window and roughly doubles it every RTT, so a fresh connection ramps up its send rate over several RTTs and cannot immediately saturate the path. The standard cure is persistence: long-lived, pre-established connections amortize the handshake and the ramp; per-message reconnects pay both every time."
+      "md": "Establishing a TCP connection takes the famous **three-way handshake**: client sends SYN, server replies SYN-ACK, client confirms with ACK (which may already carry the first data byte). That is exactly **one RTT** before the first request can be delivered end-to-end, a fixed setup tax per connection. Worse for short-lived connections is **slow start**: TCP begins with a tiny congestion window and roughly doubles it every RTT, so a fresh connection ramps up its send rate over several RTTs and cannot immediately saturate the path. The standard cure is persistence: long-lived, pre-established connections amortize the handshake and the ramp; per-message reconnects pay both every time."
     },
     {
       "type": "steps",
@@ -78,13 +78,13 @@
         "Two sites 30 km apart on fiber: one-way propagation $\\approx 0.15$ ms, RTT $\\approx 0.3$ ms.",
         "TCP client: SYN at $t = 0$; SYN-ACK arrives $t = 0.3$ ms (one RTT); ACK + request leaves at $t = 0.3$ ms.",
         "Server processes the request for $0.1$ ms, so the response leaves at $t = 0.4$ ms and arrives at $t = 0.55$ ms.",
-        "A UDP request skips the handshake: request at $t = 0$, response at $0.15 + 0.1 + 0.15 = 0.4$ ms - the handshake cost exactly one round trip.",
+        "A UDP request skips the handshake: request at $t = 0$, response at $0.15 + 0.1 + 0.15 = 0.4$ ms, the handshake cost exactly one round trip.",
         "Hence gateways keep sessions alive for months, and per-order reconnect designs are treated as a latency bug."
       ]
     },
     {
       "type": "p",
-      "md": "The other TCP property that matters for streams is **head-of-line blocking**: TCP guarantees order, so when segment 47 is lost, segments 48, 49, ... must wait in the receive buffer until it is retransmitted - even if they arrived fine and are individually useful. For a quote stream, stale-then-fresh-in-order is often worse than fresh-with-a-gap. UDP has no head-of-line blocking because it has no delivery ordering to enforce; the application decides what a gap means (skip it, interpolate it, or fetch a retransmission)."
+      "md": "The other TCP property that matters for streams is **head-of-line blocking**: TCP guarantees order, so when segment 47 is lost, segments 48, 49, ... must wait in the receive buffer until it is retransmitted, even if they arrived fine and are individually useful. For a quote stream, stale-then-fresh-in-order is often worse than fresh-with-a-gap. UDP has no head-of-line blocking because it has no delivery ordering to enforce; the application decides what a gap means (skip it, interpolate it, or fetch a retransmission)."
     },
     {
       "type": "h2",
@@ -92,52 +92,52 @@
     },
     {
       "type": "p",
-      "md": "A feed publisher has one message stream and thousands of subscribers. TCP fan-out multiplies work by subscriber count: $N$ connections, $N$ copies of every segment, and one slow receiver's flow control pressuring the publisher's buffers. **IP multicast** does the opposite: the publisher sends one packet addressed to a group (e.g. 239.x.x.x), and switches replicate it only toward interested receivers - one copy per network link regardless of how many subscribers hang off it. Combined with UDP's no-state model, the publisher's job stays constant as the audience grows."
+      "md": "A feed publisher has one message stream and thousands of subscribers. TCP fan-out multiplies work by subscriber count: $N$ connections, $N$ copies of every segment, and one slow receiver's flow control pressuring the publisher's buffers. **IP multicast** does the opposite: the publisher sends one packet addressed to a group (e.g. 239.x.x.x), and switches replicate it only toward interested receivers, one copy per network link regardless of how many subscribers hang off it. Combined with UDP's no-state model, the publisher's job stays constant as the audience grows."
     },
     {
       "type": "list",
       "ordered": false,
       "items": [
-        "Packets carry **sequence numbers**, so every receiver can detect gaps immediately - the feed's loss-recovery contract.",
+        "Packets carry **sequence numbers**, so every receiver can detect gaps immediately, the feed's loss-recovery contract.",
         "Recovery runs on separate channels: a TCP or unicast UDP **retransmission request** service, plus periodic **snapshot** channels that resynchronize slow consumers.",
-        "Venues often publish dual **A/B feeds** on diverse paths; consumers arbitrate by sequence number and take whichever arrives first - duplicating packets to cut tail latency.",
-        "Subscribers must keep up: if your consumer cannot sustain the rate, the *application* must decide what to drop - the network will not pace for you."
+        "Venues often publish dual **A/B feeds** on diverse paths; consumers arbitrate by sequence number and take whichever arrives first, duplicating packets to cut tail latency.",
+        "Subscribers must keep up: if your consumer cannot sustain the rate, the *application* must decide what to drop, the network will not pace for you."
       ]
     },
     {
       "type": "callout",
       "variant": "quant",
       "title": "The standard topology",
-      "md": "Orders go out over persistent TCP sessions (reliability and in-order acknowledgment are worth the overhead at order rates of thousands per second); market data arrives over UDP multicast with sequence-based gap detection and a TCP recovery channel. Each transport is doing the job it was designed for - that split is the backbone of every production trading topology."
+      "md": "Orders go out over persistent TCP sessions (reliability and in-order acknowledgment are worth the overhead at order rates of thousands per second); market data arrives over UDP multicast with sequence-based gap detection and a TCP recovery channel. Each transport is doing the job it was designed for, that split is the backbone of every production trading topology."
     }
   ],
   "guidedExercise": {
-    "prompt": "A client and server are 30 km apart (one-way 0.15 ms, RTT 0.3 ms). The server needs 0.1 ms to process each request. (a) How long after client start does the first response arrive over TCP, including the three-way handshake? (b) Over UDP with no handshake? (c) The client instead sends 1,000 sequential requests over one already-established TCP connection - roughly what per-request overhead does the connection setup add now?",
+    "prompt": "A client and server are 30 km apart (one-way 0.15 ms, RTT 0.3 ms). The server needs 0.1 ms to process each request. (a) How long after client start does the first response arrive over TCP, including the three-way handshake? (b) Over UDP with no handshake? (c) The client instead sends 1,000 sequential requests over one already-established TCP connection, roughly what per-request overhead does the connection setup add now?",
     "hints": [
       "The handshake consumes exactly one RTT before the first request is delivered.",
       "Divide the one-time setup cost by the number of requests."
     ],
-    "solution": "(a) Handshake (0.3 ms RTT) + processing (0.1 ms) + one-way response (0.15 ms) $= 0.55$ ms. (b) UDP: $0.15 + 0.1 + 0.15 = 0.4$ ms - exactly one RTT cheaper. (c) The 0.3 ms setup amortizes to $0.3 / 1000 = 0.3$ µs per request - effectively free, which is why persistent connections are the default."
+    "solution": "(a) Handshake (0.3 ms RTT) + processing (0.1 ms) + one-way response (0.15 ms) $= 0.55$ ms. (b) UDP: $0.15 + 0.1 + 0.15 = 0.4$ ms, exactly one RTT cheaper. (c) The 0.3 ms setup amortizes to $0.3 / 1000 = 0.3$ µs per request, effectively free, which is why persistent connections are the default."
   },
   "independentExercise": {
-    "prompt": "A venue publishes 50,000 market-data messages per second, each 200 bytes of payload. (a) What payload bandwidth does the publisher emit (in MB/s)? (b) If each of 300 subscriber firms instead pulled its own dedicated TCP unicast stream from the venue's edge, what total bandwidth would the edge need to emit? (c) A 10 Gb/s link carries about 1.25 GB/s - is 300-way TCP fan-out feasible on one edge link? (d) What does multicast require from that same edge link?",
+    "prompt": "A venue publishes 50,000 market-data messages per second, each 200 bytes of payload. (a) What payload bandwidth does the publisher emit (in MB/s)? (b) If each of 300 subscriber firms instead pulled its own dedicated TCP unicast stream from the venue's edge, what total bandwidth would the edge need to emit? (c) A 10 Gb/s link carries about 1.25 GB/s, is 300-way TCP fan-out feasible on one edge link? (d) What does multicast require from that same edge link?",
     "hints": [
       "Bandwidth = messages/s × bytes per message.",
       "Unicast fan-out multiplies the stream by the number of subscribers; multicast does not."
     ],
-    "solution": "(a) $50{,}000 \\times 200 = 10{,}000{,}000$ B/s $= 10$ MB/s. (b) $300 \\times 10 = 3{,}000$ MB/s $= 3$ GB/s. (c) No: 3 GB/s far exceeds the $\\approx 1.25$ GB/s line rate of 10 Gb/s. (d) Multicast still needs just 10 MB/s out of the publisher - switches replicate toward receivers, so the publisher's bandwidth is independent of subscriber count."
+    "solution": "(a) $50{,}000 \\times 200 = 10{,}000{,}000$ B/s $= 10$ MB/s. (b) $300 \\times 10 = 3{,}000$ MB/s $= 3$ GB/s. (c) No: 3 GB/s far exceeds the $\\approx 1.25$ GB/s line rate of 10 Gb/s. (d) Multicast still needs just 10 MB/s out of the publisher, switches replicate toward receivers, so the publisher's bandwidth is independent of subscriber count."
   },
   "commonMistakes": [
-    "Believing TCP 'guarantees delivery' in all cases - it guarantees in-order bytes *while the connection lives*; a partition or peer crash still loses data permanently.",
-    "Counting the handshake as two RTTs - SYN, SYN-ACK, ACK costs one RTT because the ACK can carry the first data bytes.",
-    "Assuming UDP is 'faster' in general - on a clean network TCP throughput can exceed UDP-based application throughput; UDP wins on latency freshness and fan-out, not raw speed.",
-    "Joining a multicast group and expecting reliability - without application-level sequence numbers you will never know what you missed."
+    "Believing TCP 'guarantees delivery' in all cases, it guarantees in-order bytes *while the connection lives*; a partition or peer crash still loses data permanently.",
+    "Counting the handshake as two RTTs. SYN, SYN-ACK, ACK costs one RTT because the ACK can carry the first data bytes.",
+    "Assuming UDP is 'faster' in general, on a clean network TCP throughput can exceed UDP-based application throughput; UDP wins on latency freshness and fan-out, not raw speed.",
+    "Joining a multicast group and expecting reliability, without application-level sequence numbers you will never know what you missed."
   ],
-  "realWorldApplication": "Video conferencing, online gaming and DNS all ride UDP for freshness or simplicity; web traffic, file transfer and most APIs ride TCP/HTTP for reliability - the same trade, made everywhere.",
+  "realWorldApplication": "Video conferencing, online gaming and DNS all ride UDP for freshness or simplicity; web traffic, file transfer and most APIs ride TCP/HTTP for reliability, the same trade, made everywhere.",
   "quantFinanceApplication": "Exchange feeds (e.g. ITCH-style protocols) are UDP multicast with sequence numbers, A/B dual feeds and TCP-based retransmission services; order entry is persistent TCP with the handshake amortized over months of session uptime.",
   "summary": [
     "TCP: connected, reliable, ordered byte stream with congestion/flow control and ~20-byte headers. UDP: stateless, best-effort datagrams with 8-byte headers.",
-    "The three-way handshake costs exactly one RTT before the first request is delivered; slow start then ramps a fresh connection over several RTTs - persistence amortizes both.",
+    "The three-way handshake costs exactly one RTT before the first request is delivered; slow start then ramps a fresh connection over several RTTs, persistence amortizes both.",
     "Head-of-line blocking: one lost TCP segment stalls all later segments in a stream; UDP has no such stall, but the application owns gap detection.",
     "Market data uses UDP multicast: one publisher packet per link regardless of subscriber count, sequenced for gap detection, recovered via TCP/unichannel retransmission and snapshots; orders stay on persistent TCP."
   ],
@@ -173,14 +173,14 @@
         "The congestion window shrinking to one segment"
       ],
       "answerIndex": 0,
-      "explanation": "Because TCP must deliver in order, one hole freezes everything behind it at the receiver - the key reason lossy streams prefer UDP. The other options describe other mechanisms, not HOL blocking."
+      "explanation": "Because TCP must deliver in order, one hole freezes everything behind it at the receiver, the key reason lossy streams prefer UDP. The other options describe other mechanisms, not HOL blocking."
     },
     {
       "id": "q4",
       "type": "numeric",
       "prompt": "A feed publishes 50,000 messages/s at 200 bytes each. What is the publisher's payload bandwidth in MB/s?",
       "answer": 10,
-      "explanation": "$50{,}000 \\times 200 = 10{,}000{,}000$ B/s $= 10$ MB/s - the same whether 1 or 1,000 receivers listen, if the distribution is multicast."
+      "explanation": "$50{,}000 \\times 200 = 10{,}000{,}000$ B/s $= 10$ MB/s, the same whether 1 or 1,000 receivers listen, if the distribution is multicast."
     },
     {
       "id": "q5",
@@ -197,7 +197,7 @@
         1,
         3
       ],
-      "explanation": "Fan-out, freedom from HOL blocking and zero per-receiver state are the three wins. UDP guarantees no ordering and no reliability - the application adds sequence numbers and recovery instead."
+      "explanation": "Fan-out, freedom from HOL blocking and zero per-receiver state are the three wins. UDP guarantees no ordering and no reliability, the application adds sequence numbers and recovery instead."
     },
     {
       "id": "q6",
@@ -207,7 +207,7 @@
       "keywords": [
         "slow start"
       ],
-      "explanation": "Slow start is why fresh connections cannot emit at full speed immediately - a second reason (besides the handshake) to keep long-lived sessions."
+      "explanation": "Slow start is why fresh connections cannot emit at full speed immediately, a second reason (besides the handshake) to keep long-lived sessions."
     }
   ],
   "flashcards": [
@@ -219,7 +219,7 @@
     {
       "type": "concept",
       "front": "Head-of-line blocking",
-      "back": "TCP's order guarantee makes later, arrived segments wait for a missing earlier one; UDP has no such stall - the application decides what gaps mean."
+      "back": "TCP's order guarantee makes later, arrived segments wait for a missing earlier one; UDP has no such stall, the application decides what gaps mean."
     },
     {
       "type": "formula",
@@ -234,15 +234,15 @@
   ],
   "references": [
     {
-      "label": "RFC 9293 - Transmission Control Protocol (TCP)",
+      "label": "RFC 9293: Transmission Control Protocol (TCP)",
       "url": "https://datatracker.ietf.org/doc/html/rfc9293"
     },
     {
-      "label": "RFC 768 - User Datagram Protocol (UDP)",
+      "label": "RFC 768: User Datagram Protocol (UDP)",
       "url": "https://datatracker.ietf.org/doc/html/rfc768"
     },
     {
-      "label": "RFC 1112 - Internet Group Management (IP multicast)",
+      "label": "RFC 1112: Internet Group Management (IP multicast)",
       "url": "https://datatracker.ietf.org/doc/html/rfc1112"
     }
   ],

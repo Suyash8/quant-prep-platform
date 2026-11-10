@@ -13,7 +13,7 @@
     "Use pure virtual functions to define abstract pricing interfaces",
     "State why polymorphic base classes require virtual destructors and what happens without one"
   ],
-  "motivation": "One pricing loop must value cash, futures and options side by side without type switches sprinkled through the hot path. Virtual functions give C++ exactly that: call through an Instrument& and the object itself decides at runtime which implementation runs. The price is one hidden pointer per object plus one rule you may never break - delete through a base pointer and the base must have a virtual destructor, or the code has undefined behaviour.",
+  "motivation": "One pricing loop must value cash, futures and options side by side without type switches sprinkled through the hot path. Virtual functions give C++ exactly that: call through an Instrument& and the object itself decides at runtime which implementation runs. The price is one hidden pointer per object plus one rule you may never break, delete through a base pointer and the base must have a virtual destructor, or the code has undefined behaviour.",
   "blocks": [
     {
       "type": "h2",
@@ -21,7 +21,7 @@
     },
     {
       "type": "p",
-      "md": "A variable has a **static type** - what the compiler sees - and, for a pointer or reference to a base class, the object behind it can have a different **dynamic type** - what was actually constructed. When a member function is declared `virtual`, a call such as `p->pv()` binds to the dynamic type: each polymorphic object carries a hidden **vptr** pointing to its class **vtable**, a table of function pointers, and the call goes through that table at runtime. Non-virtual functions bind statically by the static type. The indirection costs a couple of memory accesses - real money in nanosecond paths, revisited in the internals module - but it buys extensibility: new instrument types drop into existing loops unchanged."
+      "md": "A variable has a **static type**, what the compiler sees, and, for a pointer or reference to a base class, the object behind it can have a different **dynamic type**, what was actually constructed. When a member function is declared `virtual`, a call such as `p->pv()` binds to the dynamic type: each polymorphic object carries a hidden **vptr** pointing to its class **vtable**, a table of function pointers, and the call goes through that table at runtime. Non-virtual functions bind statically by the static type. The indirection costs a couple of memory accesses, real money in nanosecond paths, revisited in the internals module, but it buys extensibility: new instrument types drop into existing loops unchanged."
     },
     {
       "type": "code",
@@ -31,13 +31,13 @@
     },
     {
       "type": "p",
-      "md": "Writing `override` on every redeclaration makes the compiler verify you are genuinely overriding - same name, same parameter types, same const-ness. Without it, a signature typo silently declares a brand-new function and the base version keeps running: the classic polymorphism bug. `final` seals an override against further overriding, or marks a whole class non-derivable. Destructors participate too: `~Derived() override` is legal and common."
+      "md": "Writing `override` on every redeclaration makes the compiler verify you are genuinely overriding, same name, same parameter types, same const-ness. Without it, a signature typo silently declares a brand-new function and the base version keeps running: the classic polymorphism bug. `final` seals an override against further overriding, or marks a whole class non-derivable. Destructors participate too: `~Derived() override` is legal and common."
     },
     {
       "type": "callout",
       "variant": "pitfall",
       "title": "Dispatch needs indirection",
-      "md": "Virtual dispatch happens only through a pointer or a reference. Calling pv() on an `Instrument` **value** uses the static type - and initializing that value from an Option slices it (next lesson). A `std::vector<Instrument>` for heterogeneous instruments is almost always a design bug; store pointers instead."
+      "md": "Virtual dispatch happens only through a pointer or a reference. Calling pv() on an `Instrument` **value** uses the static type, and initializing that value from an Option slices it (next lesson). A `std::vector<Instrument>` for heterogeneous instruments is almost always a design bug; store pointers instead."
     },
     {
       "type": "h2",
@@ -45,7 +45,7 @@
     },
     {
       "type": "p",
-      "md": "Appending `= 0` makes a function **pure virtual**: the base declares the operation but deliberately supplies no body, and the class becomes **abstract** - you cannot construct an Instrument, only derived classes that implement every pure virtual function. This is how C++ expresses an interface: a pricing engine written against Instrument works for any instrument type added next quarter with zero changes to the loop. A pure virtual function may still have a definition, invoked explicitly as `Instrument::pv()`, but ordinary calls dispatch to the overrides."
+      "md": "Appending `= 0` makes a function **pure virtual**: the base declares the operation but deliberately supplies no body, and the class becomes **abstract**, you cannot construct an Instrument, only derived classes that implement every pure virtual function. This is how C++ expresses an interface: a pricing engine written against Instrument works for any instrument type added next quarter with zero changes to the loop. A pure virtual function may still have a definition, invoked explicitly as `Instrument::pv()`, but ordinary calls dispatch to the overrides."
     },
     {
       "type": "code",
@@ -59,13 +59,13 @@
     },
     {
       "type": "p",
-      "md": "Deleting a Derived object through a `Base*` must run the whole destructor chain - but the delete only dispatches dynamically if the base destructor is `virtual`. Otherwise the behaviour is **undefined**: on typical implementations only ~Base runs and the derived part is never destroyed, but the standard promises nothing whatsoever. Hence the standing rule: any class intended as a polymorphic base gets a public virtual destructor (or a protected non-virtual one, for bases that are never deleted polymorphically)."
+      "md": "Deleting a Derived object through a `Base*` must run the whole destructor chain, but the delete only dispatches dynamically if the base destructor is `virtual`. Otherwise the behaviour is **undefined**: on typical implementations only ~Base runs and the derived part is never destroyed, but the standard promises nothing whatsoever. Hence the standing rule: any class intended as a polymorphic base gets a public virtual destructor (or a protected non-virtual one, for bases that are never deleted polymorphically)."
     },
     {
       "type": "code",
       "lang": "cpp",
       "code": "#include <iostream>\n\nstruct Base {\n    virtual ~Base() { std::cout << \"~Base\\n\"; }\n};\nstruct Derived : Base {\n    ~Derived() override { std::cout << \"~Derived\\n\"; }\n};\n\nint main() {\n    Base* p = new Derived;\n    delete p;   // dispatches dynamically: ~Derived runs, then ~Base\n}",
-      "caption": "Output: ~Derived, then ~Base - the full chain, in reverse construction order."
+      "caption": "Output: ~Derived, then ~Base, the full chain, in reverse construction order."
     },
     {
       "type": "code",
@@ -83,7 +83,7 @@
           "expiry_ (4 B + padding)"
         ]
       },
-      "caption": "Every object of a polymorphic class pays one hidden pointer - the vptr - linking it to its class vtable. That pointer is what makes delete and virtual calls dispatch correctly."
+      "caption": "Every object of a polymorphic class pays one hidden pointer, the vptr, linking it to its class vtable. That pointer is what makes delete and virtual calls dispatch correctly."
     }
   ],
   "guidedExercise": {
@@ -97,10 +97,10 @@
   "independentExercise": {
     "prompt": "The program below compiles but prints 0 instead of 59.5, and its cleanup is broken. Identify both bugs, fix them minimally, and name the rule each bug breaks.\n\n```cpp\n#include <iostream>\n#include <vector>\n\nclass Instrument {\npublic:\n    ~Instrument() {}                    // bug lives here too\n    double pv() const { return 0.0; }   // and here\n};\n\nclass Option : public Instrument {\npublic:\n    explicit Option(double pv) : pv_{pv} {}\n    double pv() const { return pv_; }   // hides the base function\nprivate:\n    double pv_;\n};\n\nint main() {\n    std::vector<Instrument*> book{new Option{42.5}, new Option{17.0}};\n    double total = 0.0;\n    for (const Instrument* i : book) total += i->pv();\n    std::cout << total << '\\n';          // prints 0, not 59.5\n    for (Instrument* i : book) delete i; // and this is worse than a leak\n}\n```",
     "hints": [
-      "Which version of pv() does i->pv() call when the function is not virtual - static or dynamic binding?",
+      "Which version of pv() does i->pv() call when the function is not virtual, static or dynamic binding?",
       "What does delete through Base* run when ~Base is not virtual?"
     ],
-    "solution": "Bug 1: `pv()` is not virtual, so `i->pv()` binds **statically** to Instrument::pv() and returns 0.0 for every element - the sum prints 0. Mark it `virtual` in Instrument (and add `override` in Option). Bug 2: `~Instrument()` is not virtual, so `delete` through `Instrument*` is **undefined behaviour**; typically the derived destructor never runs. Give Instrument a `virtual ~Instrument() = default;`. Fixed, the program prints 59.5 ($42.5 + 17.0$) and destroys both Options cleanly. Rules: only virtual functions bind dynamically through base pointers/references; polymorphic bases need virtual destructors.\n\n```cpp\nclass Instrument {\npublic:\n    virtual ~Instrument() = default;\n    virtual double pv() const { return 0.0; }\n};\n\nclass Option : public Instrument {\npublic:\n    explicit Option(double pv) : pv_{pv} {}\n    double pv() const override { return pv_; }\nprivate:\n    double pv_;\n};\n```"
+    "solution": "Bug 1: `pv()` is not virtual, so `i->pv()` binds **statically** to Instrument::pv() and returns 0.0 for every element, the sum prints 0. Mark it `virtual` in Instrument (and add `override` in Option). Bug 2: `~Instrument()` is not virtual, so `delete` through `Instrument*` is **undefined behaviour**; typically the derived destructor never runs. Give Instrument a `virtual ~Instrument() = default;`. Fixed, the program prints 59.5 ($42.5 + 17.0$) and destroys both Options cleanly. Rules: only virtual functions bind dynamically through base pointers/references; polymorphic bases need virtual destructors.\n\n```cpp\nclass Instrument {\npublic:\n    virtual ~Instrument() = default;\n    virtual double pv() const { return 0.0; }\n};\n\nclass Option : public Instrument {\npublic:\n    explicit Option(double pv) : pv_{pv} {}\n    double pv() const override { return pv_; }\nprivate:\n    double pv_;\n};\n```"
   },
   "commonMistakes": [
     "Forgetting override and mistyping the signature, silently creating a new function while the base version keeps running.",
@@ -108,9 +108,9 @@
     "Expecting virtual dispatch through an object value or a sliced copy instead of a pointer or reference.",
     "Declaring the override with different const-ness or parameters and wondering why the base version is called.",
     "Trying to instantiate an abstract class whose pure virtual functions are not all overridden.",
-    "Marking a static member function or a constructor virtual - neither can be virtual."
+    "Marking a static member function or a constructor virtual, neither can be virtual."
   ],
-  "realWorldApplication": "Market data and order-management frameworks dispatch on message and instrument type through virtual interfaces, so new products plug in without touching the dispatch loop - the Open/Closed Principle running in production code.",
+  "realWorldApplication": "Market data and order-management frameworks dispatch on message and instrument type through virtual interfaces, so new products plug in without touching the dispatch loop, the Open/Closed Principle running in production code.",
   "quantFinanceApplication": "A portfolio pricer iterating a std::vector<Instrument*> and calling pv() on each element is the canonical design: instrument-specific math lives in overrides, and the book-level loop never changes.",
   "summary": [
     "virtual turns calls through base pointers/references into runtime dispatch on the object dynamic type, via its hidden vptr and vtable.",
@@ -123,10 +123,10 @@
     {
       "id": "q1",
       "type": "mcq",
-      "prompt": "Given `Option opt;` and `const Instrument& i = opt;`, with `double pv() const` virtual in Instrument and overridden in Option - what does `i.pv()` do?",
+      "prompt": "Given `Option opt;` and `const Instrument& i = opt;`, with `double pv() const` virtual in Instrument and overridden in Option, what does `i.pv()` do?",
       "options": [
         "Always calls Instrument::pv()",
-        "Calls Option::pv() - dynamic binding through the reference",
+        "Calls Option::pv(), dynamic binding through the reference",
         "Does not compile",
         "Undefined behaviour"
       ],
@@ -149,7 +149,7 @@
       "language": "cpp",
       "code": "#include <iostream>\n\nstruct Base {\n    virtual ~Base() { std::cout << \"~Base\\n\"; }\n};\nstruct Derived : Base {\n    ~Derived() override { std::cout << \"~Derived\\n\"; }\n};\n\nint main() {\n    Base* p = new Derived;\n    delete p;\n}",
       "answer": "~Derived\n~Base",
-      "explanation": "The virtual destructor makes delete dispatch to the most-derived destructor: ~Derived runs first, then the base part is destroyed by ~Base - reverse construction order."
+      "explanation": "The virtual destructor makes delete dispatch to the most-derived destructor: ~Derived runs first, then the base part is destroyed by ~Base, reverse construction order."
     },
     {
       "id": "q4",
@@ -158,11 +158,11 @@
       "options": [
         "Only ~Base runs, cleanly",
         "Only ~Derived runs",
-        "Nothing is guaranteed - the behaviour is undefined",
+        "Nothing is guaranteed, the behaviour is undefined",
         "The compiler refuses to compile"
       ],
       "answerIndex": 2,
-      "explanation": "Deleting through a Base* whose destructor is not virtual is undefined behaviour. On common implementations only ~Base runs and the derived part leaks - but the standard allows anything. Compilers warn with -Wdelete-non-virtual-dtor."
+      "explanation": "Deleting through a Base* whose destructor is not virtual is undefined behaviour. On common implementations only ~Base runs and the derived part leaks, but the standard allows anything. Compilers warn with -Wdelete-non-virtual-dtor."
     },
     {
       "id": "q5",
@@ -195,12 +195,12 @@
     {
       "type": "definition",
       "front": "What is a virtual member function?",
-      "back": "A function whose binding is decided at runtime by the object dynamic type - through its vptr and vtable - when called via a pointer or reference."
+      "back": "A function whose binding is decided at runtime by the object dynamic type, through its vptr and vtable, when called via a pointer or reference."
     },
     {
       "type": "code-output",
       "front": "struct Base { virtual int price() const { return 10; } int fee() const { return 1; } }; struct D : Base { int price() const override { return 20; } }; f(const Base& b) returns b.price() + b.fee(); what does f(D{}) return?",
-      "back": "21 - price() dispatches dynamically (20), fee() binds statically (1)."
+      "back": "21, price() dispatches dynamically (20), fee() binds statically (1)."
     },
     {
       "type": "error-identification",
@@ -215,24 +215,24 @@
     {
       "type": "concept",
       "front": "Why must a polymorphic base class have a virtual destructor?",
-      "back": "So delete through Base* dispatches to the derived destructor; without virtual it is undefined behaviour - typically only the base dtor runs and the derived part is never destroyed."
+      "back": "So delete through Base* dispatches to the derived destructor; without virtual it is undefined behaviour, typically only the base dtor runs and the derived part is never destroyed."
     }
   ],
   "references": [
     {
-      "label": "cppreference — Virtual functions",
+      "label": "cppreference. Virtual functions",
       "url": "https://en.cppreference.com/w/cpp/language/virtual"
     },
     {
-      "label": "cppreference — Abstract classes",
+      "label": "cppreference. Abstract classes",
       "url": "https://en.cppreference.com/w/cpp/language/abstract_class"
     },
     {
-      "label": "cppreference — Destructors",
+      "label": "cppreference. Destructors",
       "url": "https://en.cppreference.com/w/cpp/language/destructor"
     },
     {
-      "label": "ISO C++ FAQ — Virtual functions",
+      "label": "ISO C++ FAQ. Virtual functions",
       "url": "https://isocpp.org/wiki/faq/virtual-functions"
     }
   ],

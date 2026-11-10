@@ -4,7 +4,9 @@
   "title": "Rule of Three, Five and Zero",
   "estMinutes": 27,
   "difficulty": "core",
-  "prereqs": ["cpp-shared-weak-ptr"],
+  "prereqs": [
+    "cpp-shared-weak-ptr"
+  ],
   "objectives": [
     "Name the six special member functions and state which ones the compiler generates, deletes or omits given the ones you declare",
     "Explain why a user-declared destructor silently removes implicit move operations",
@@ -19,25 +21,45 @@
     },
     {
       "type": "p",
-      "md": "C++ gives every class up to six special members: the **default constructor**, **destructor**, **copy constructor**, **copy assignment**, **move constructor** and **move assignment**. You write none of them, the compiler may generate them implicitly; you write one, and the compiler's decisions about the others change - sometimes silently. The historically dangerous case: declare a destructor (say, to free a buffer or just to log), and the compiler still generates **implicit copy operations** that copy member-by-member - for a raw pointer that is a shallow copy, two owners, one delete. Worse, the implicit **move operations are simply not generated**, so every apparent move is a hidden copy. Your code compiles and behaves 'reasonably' until the aliasing bites."
+      "md": "C++ gives every class up to six special members: the **default constructor**, **destructor**, **copy constructor**, **copy assignment**, **move constructor** and **move assignment**. You write none of them, the compiler may generate them implicitly; you write one, and the compiler's decisions about the others change, sometimes silently. The historically dangerous case: declare a destructor (say, to free a buffer or just to log), and the compiler still generates **implicit copy operations** that copy member-by-member, for a raw pointer that is a shallow copy, two owners, one delete. Worse, the implicit **move operations are simply not generated**, so every apparent move is a hidden copy. Your code compiles and behaves 'reasonably' until the aliasing bites."
     },
     {
       "type": "table",
-      "headers": ["If you declare...", "Copy operations", "Move operations"],
+      "headers": [
+        "If you declare...",
+        "Copy operations",
+        "Move operations"
+      ],
       "rows": [
-        ["nothing", "both implicit (when needed)", "both implicit (when needed)"],
-        ["a destructor only", "both implicit (deprecated behaviour)", "none generated - copies used instead"],
-        ["a copy constructor only", "copy assignment implicit", "none generated"],
-        ["a move constructor", "both copy operations implicitly deleted", "move assignment not generated"]
+        [
+          "nothing",
+          "both implicit (when needed)",
+          "both implicit (when needed)"
+        ],
+        [
+          "a destructor only",
+          "both implicit (deprecated behaviour)",
+          "none generated, copies used instead"
+        ],
+        [
+          "a copy constructor only",
+          "copy assignment implicit",
+          "none generated"
+        ],
+        [
+          "a move constructor",
+          "both copy operations implicitly deleted",
+          "move assignment not generated"
+        ]
       ]
     },
     {
       "type": "h2",
-      "text": "Rule of Three - and the bug it prevents"
+      "text": "Rule of Three, and the bug it prevents"
     },
     {
       "type": "p",
-      "md": "**Rule of Three** (pre-C++11): if a class needs a custom destructor, a custom copy constructor or a custom copy assignment, it almost certainly needs **all three** - the presence of one signals that the class manages a resource the defaults mishandle. Watch the default copy alias the buffer:"
+      "md": "**Rule of Three** (pre-C++11): if a class needs a custom destructor, a custom copy constructor or a custom copy assignment, it almost certainly needs **all three**, the presence of one signals that the class manages a resource the defaults mishandle. Watch the default copy alias the buffer:"
     },
     {
       "type": "code",
@@ -47,11 +69,11 @@
     },
     {
       "type": "h2",
-      "text": "Rule of Five - the full contract"
+      "text": "Rule of Five, the full contract"
     },
     {
       "type": "p",
-      "md": "Since C++11, the three grow to **five**: destructor, copy constructor, copy assignment, move constructor, move assignment. A resource-owning class defines all five (or deletes some) so that every operation is deliberate. Two details separate correct implementations from subtly broken ones. First, assignment operators must handle **self-assignment** (`a = a`) and must free the old resource only *after* the new data is secured - the version below allocates the replacement first, giving the strong guarantee. Second, move operations must be **noexcept**: vector promises not to use a throwing move during reallocation (it would break the strong guarantee), so a non-noexcept move silently degrades reallocation to copies."
+      "md": "Since C++11, the three grow to **five**: destructor, copy constructor, copy assignment, move constructor, move assignment. A resource-owning class defines all five (or deletes some) so that every operation is deliberate. Two details separate correct implementations from subtly broken ones. First, assignment operators must handle **self-assignment** (`a = a`) and must free the old resource only *after* the new data is secured, the version below allocates the replacement first, giving the strong guarantee. Second, move operations must be **noexcept**: vector promises not to use a throwing move during reallocation (it would break the strong guarantee), so a non-noexcept move silently degrades reallocation to copies."
     },
     {
       "type": "code",
@@ -61,11 +83,11 @@
     },
     {
       "type": "p",
-      "md": "The moved-from Buffer is deliberately **valid but empty**: `data_ == nullptr`, `n_ == 0`. Assigning to it or destroying it is fine - that is the contract move operations must uphold, because vector reallocation moves elements and later destroys the husks."
+      "md": "The moved-from Buffer is deliberately **valid but empty**: `data_ == nullptr`, `n_ == 0`. Assigning to it or destroying it is fine, that is the contract move operations must uphold, because vector reallocation moves elements and later destroys the husks."
     },
     {
       "type": "h2",
-      "text": "Rule of Zero - the destination"
+      "text": "Rule of Zero, the destination"
     },
     {
       "type": "p",
@@ -81,7 +103,7 @@
       "type": "callout",
       "variant": "pitfall",
       "title": "The logging destructor that killed performance",
-      "md": "A team added `~Order() { log(\"order destroyed\"); }` to trace lifetimes - and reallocation of `std::vector<Order>` slowed 40x. Declaring the destructor suppressed the implicit move operations, so every reallocation copied every Order (strings, vectors and all) instead of moving. Fix: `~Order() { log(...); }` stays, but the class gains `Order(Order&&) = default; Order& operator=(Order&&) = default;` - and the copy operations are then implicitly deleted, which is exactly what you want for an RAII type."
+      "md": "A team added `~Order() { log(\"order destroyed\"); }` to trace lifetimes, and reallocation of `std::vector<Order>` slowed 40x. Declaring the destructor suppressed the implicit move operations, so every reallocation copied every Order (strings, vectors and all) instead of moving. Fix: `~Order() { log(...); }` stays, but the class gains `Order(Order&&) = default; Order& operator=(Order&&) = default;` - and the copy operations are then implicitly deleted, which is exactly what you want for an RAII type."
     },
     {
       "type": "h2",
@@ -89,17 +111,57 @@
     },
     {
       "type": "p",
-      "md": "Two keywords complete the toolkit. `= default` asks the compiler to generate a member it would otherwise have suppressed - the standard way to keep moves alive after declaring a destructor. `= delete` forbids a member entirely: delete the copy constructor of a connection class and attempts to copy it fail at compile time with a clear message, turning the double-close bug into a build failure. Explicitly defaulting the destructor (`~T() = default;`) also documents intent without changing behaviour."
+      "md": "Two keywords complete the toolkit. `= default` asks the compiler to generate a member it would otherwise have suppressed, the standard way to keep moves alive after declaring a destructor. `= delete` forbids a member entirely: delete the copy constructor of a connection class and attempts to copy it fail at compile time with a clear message, turning the double-close bug into a build failure. Explicitly defaulting the destructor (`~T() = default;`) also documents intent without changing behaviour."
     },
     {
       "type": "interactive",
       "component": "MemoryLayout",
       "params": {
         "regions": [
-          { "name": "stack: before move", "objects": [{ "label": "Buffer a { ptr, n }", "size": 16 }, { "label": "Buffer b = a (shallow copy!)", "size": 16 }] },
-          { "name": "heap (before)", "objects": [{ "label": "int[4] - owned by BOTH a and b", "size": 16 }] },
-          { "name": "stack: after move-assign", "objects": [{ "label": "Buffer a { ptr, n }", "size": 16 }, { "label": "Buffer b { nullptr, 0 } (moved-from)", "size": 16 }] },
-          { "name": "heap (after)", "objects": [{ "label": "int[4] - owned by a only", "size": 16 }] }
+          {
+            "name": "stack: before move",
+            "objects": [
+              {
+                "label": "Buffer a { ptr, n }",
+                "size": 16
+              },
+              {
+                "label": "Buffer b = a (shallow copy!)",
+                "size": 16
+              }
+            ]
+          },
+          {
+            "name": "heap (before)",
+            "objects": [
+              {
+                "label": "int[4]: owned by BOTH a and b",
+                "size": 16
+              }
+            ]
+          },
+          {
+            "name": "stack: after move-assign",
+            "objects": [
+              {
+                "label": "Buffer a { ptr, n }",
+                "size": 16
+              },
+              {
+                "label": "Buffer b { nullptr, 0 } (moved-from)",
+                "size": 16
+              }
+            ]
+          },
+          {
+            "name": "heap (after)",
+            "objects": [
+              {
+                "label": "int[4]: owned by a only",
+                "size": 16
+              }
+            ]
+          }
         ]
       },
       "caption": "The whole lesson in one picture: implicit copy aliases the heap block (double free); a correct move leaves the source empty and the single owner unambiguous."
@@ -108,36 +170,36 @@
   "guidedExercise": {
     "prompt": "Instrument a Probe class with a distinct marker in each special member, then predict the exact output of main before running it. Explain each marker's position.\n\n```cpp\n#include <iostream>\n#include <utility>\n\nclass Probe {\npublic:\n    Probe() { std::cout << \"ctor \"; }\n    Probe(const Probe&) { std::cout << \"copy \"; }\n    Probe(Probe&&) noexcept { std::cout << \"move \"; }\n    Probe& operator=(const Probe&) { std::cout << \"copy= \"; return *this; }\n    Probe& operator=(Probe&&) noexcept { std::cout << \"move= \"; return *this; }\n    ~Probe() { std::cout << \"~ \"; }\n};\n\nint main() {\n    Probe a;\n    Probe b = a;             // copy ctor or assignment?\n    Probe c = std::move(a);  // move ctor or assignment?\n    b = a;                   // which operator=?\n    b = std::move(c);        // which operator=?\n}\n```",
     "hints": [
-      "`T x = expr;` initialises a NEW object - that is a constructor, never assignment.",
+      "`T x = expr;` initialises a NEW object, that is a constructor, never assignment.",
       "Assignment applies to an object that already exists (b was built before).",
       "Destruction of locals happens in reverse construction order: c, then b, then a."
     ],
-    "solution": "Output: `ctor copy move copy= move= ~ ~ ~ `\n\n- `Probe a;` \u2192 **ctor**.\n- `Probe b = a;` initialises b from a: **copy** constructor (assignment never constructs).\n- `Probe c = std::move(a);` initialises c from an rvalue: **move** constructor.\n- `b = a;` assigns to the existing b: **copy=**.\n- `b = std::move(c);` assigns an rvalue: **move=**.\n- At scope exit, destruction runs in reverse construction order: **~** for c, **~** for b, **~** for a.\n\nNote that assigning from the moved-from `a` in `b = a;` is legal - a is valid, merely unspecified as to content."
+    "solution": "Output: `ctor copy move copy= move= ~ ~ ~ `\n\n- `Probe a;` → **ctor**.\n- `Probe b = a;` initialises b from a: **copy** constructor (assignment never constructs).\n- `Probe c = std::move(a);` initialises c from an rvalue: **move** constructor.\n- `b = a;` assigns to the existing b: **copy=**.\n- `b = std::move(c);` assigns an rvalue: **move=**.\n- At scope exit, destruction runs in reverse construction order: **~** for c, **~** for b, **~** for a.\n\nNote that assigning from the moved-from `a` in `b = a;` is legal, a is valid, merely unspecified as to content."
   },
   "independentExercise": {
     "prompt": "class Ticket owns a C resource: `FILE* f_` opened in the constructor, closed in the destructor. (a) List exactly what goes wrong with the compiler-generated copy and move operations. (b) Write the Rule-of-Five version using `= default` and `= delete` wherever the compiler's version is already correct. (c) Then rewrite the class to reach Rule of Zero, holding the resource as a member `std::unique_ptr<std::FILE, decltype(&fclose)> f_` - and state what remains to be written by hand.",
     "hints": [
       "(a) Both copies would close the same FILE* twice; what would the implicit moves even do here?",
       "(b) The destructor body is the only hand-written member; everything else is a policy statement.",
-      "(c) unique_ptr with a function-pointer deleter calls fclose at destruction - what is left is construction policy, not cleanup."
+      "(c) unique_ptr with a function-pointer deleter calls fclose at destruction, what is left is construction policy, not cleanup."
     ],
-    "solution": "(a) The implicit copy constructor/assignment copy `f_` - two Tickets closing one FILE* in their destructors (double close, UB). The implicit moves are not generated at all (destructor declared), so a moved Ticket actually copies - aliasing again. (b) ```cpp\n#include <cstdio>\n#include <stdexcept>\n\nclass Ticket {\n    std::FILE* f_;\npublic:\n    explicit Ticket(const char* path) : f_(std::fopen(path, \"r\")) {\n        if (!f_) throw std::runtime_error(\"open failed\");\n    }\n    ~Ticket() { if (f_) std::fclose(f_); }\n    Ticket(const Ticket&) = delete;                 // one owner\n    Ticket& operator=(const Ticket&) = delete;\n    Ticket(Ticket&& other) noexcept : f_(std::exchange(other.f_, nullptr)) {}  // steal, leave empty\n    Ticket& operator=(Ticket&& other) noexcept {\n        if (this != &other) {\n            if (f_) std::fclose(f_);\n            f_ = std::exchange(other.f_, nullptr);\n        }\n        return *this;\n    }\n};\n``` Copies are deleted (ownership is exclusive), moves steal the handle and null the source - valid but empty. (c) ```cpp\nstruct Ticket {\n    std::unique_ptr<std::FILE, decltype(&fclose)> f_;\n    explicit Ticket(const char* path)\n        : f_(std::fopen(path, \"r\"), &fclose) {\n        if (!f_) throw std::runtime_error(\"open failed\");\n    }\n};\n``` Nothing special is declared: unique_ptr's destructor calls fclose, moves are automatically correct, copies are automatically deleted. Only the constructor policy (open-or-throw) remains hand-written."
+    "solution": "(a) The implicit copy constructor/assignment copy `f_` - two Tickets closing one FILE* in their destructors (double close, UB). The implicit moves are not generated at all (destructor declared), so a moved Ticket actually copies - aliasing again. (b) ```cpp\n#include <cstdio>\n#include <stdexcept>\n\nclass Ticket {\n    std::FILE* f_;\npublic:\n    explicit Ticket(const char* path) : f_(std::fopen(path, \"r\")) {\n        if (!f_) throw std::runtime_error(\"open failed\");\n    }\n    ~Ticket() { if (f_) std::fclose(f_); }\n    Ticket(const Ticket&) = delete;                 // one owner\n    Ticket& operator=(const Ticket&) = delete;\n    Ticket(Ticket&& other) noexcept : f_(std::exchange(other.f_, nullptr)) {}  // steal, leave empty\n    Ticket& operator=(Ticket&& other) noexcept {\n        if (this != &other) {\n            if (f_) std::fclose(f_);\n            f_ = std::exchange(other.f_, nullptr);\n        }\n        return *this;\n    }\n};\n``` Copies are deleted (ownership is exclusive), moves steal the handle and null the source - valid but empty. (c) ```cpp\nstruct Ticket {\n std::unique_ptr<std::FILE, decltype(&fclose)> f_;\n explicit Ticket(const char* path)\n : f_(std::fopen(path, \"r\"), &fclose) {\n if (!f_) throw std::runtime_error(\"open failed\");\n }\n};\n``` Nothing special is declared: unique_ptr's destructor calls fclose, moves are automatically correct, copies are automatically deleted. Only the constructor policy (open-or-throw) remains hand-written."
   },
   "commonMistakes": [
-    "Declaring a destructor (even just for logging) and unknowingly losing implicit move operations - copies silently take over in vector reallocation.",
-    "Writing operator= that assigns members before releasing the old resource - self-assignment or a throwing copy then corrupts or leaks.",
+    "Declaring a destructor (even just for logging) and unknowingly losing implicit move operations, copies silently take over in vector reallocation.",
+    "Writing operator= that assigns members before releasing the old resource, self-assignment or a throwing copy then corrupts or leaks.",
     "Handling self-assignment only in the copy assignment and forgetting it in the move assignment.",
     "Omitting noexcept on move operations: std::vector falls back to copies during reallocation, quietly erasing the optimisation.",
-    "Applying Rule of Five to classes composed of self-managing members - declare nothing instead (Rule of Zero) and let the members work."
+    "Applying Rule of Five to classes composed of self-managing members, declare nothing instead (Rule of Zero) and let the members work."
   ],
   "realWorldApplication": "Code review for resource-owning classes is a checklist against these rules: does it own anything raw? then all five members are visible and deliberate. Does it compose from containers and smart pointers? then none of the six are declared. Almost every C++ style guide encodes exactly this decision procedure.",
-  "quantFinanceApplication": "A position class holding a raw fill-history buffer without Rule of Five double-frees the first time a desk copies it into an archive; the Rule-of-Zero rewrite (vector + unique_ptr members) ships with zero resource-management code - and the move operations it gets implicitly are what make rebalancing pipelines cheap.",
+  "quantFinanceApplication": "A position class holding a raw fill-history buffer without Rule of Five double-frees the first time a desk copies it into an archive; the Rule-of-Zero rewrite (vector + unique_ptr members) ships with zero resource-management code, and the move operations it gets implicitly are what make rebalancing pipelines cheap.",
   "summary": [
     "Six special members: default ctor, dtor, copy ctor/assign, move ctor/assign; what the compiler generates depends on what you declare.",
-    "Declaring a destructor keeps implicit copies (deprecated) but suppresses implicit moves - 'moves' become hidden copies.",
+    "Declaring a destructor keeps implicit copies (deprecated) but suppresses implicit moves, 'moves' become hidden copies.",
     "Rule of Three (dtor + copy ctor + copy assign) governs pre-C++11 resource classes; Rule of Five adds noexcept move ctor and move assign.",
     "Correct assignment secures new resources before releasing old ones, handles self-assignment, and move operations leave the source valid but empty.",
-    "Rule of Zero: compose from RAII members and declare nothing - correct copies, moves and destruction come for free."
+    "Rule of Zero: compose from RAII members and declare nothing, correct copies, moves and destruction come for free."
   ],
   "quiz": [
     {
@@ -155,7 +217,7 @@
       "prompt": "A class gains a user-declared destructor. What happens to its implicit copy and move operations (C++17)?",
       "options": [
         "Copies and moves both remain implicit",
-        "Copies remain implicit (deprecated), move operations are not generated - apparent moves become copies",
+        "Copies remain implicit (deprecated), move operations are not generated, apparent moves become copies",
         "Copies are deleted, moves remain implicit",
         "Both copies and moves are deleted"
       ],
@@ -172,7 +234,11 @@
         "Default constructor",
         "Move constructor and move assignment"
       ],
-      "answerIndices": [0, 1, 3],
+      "answerIndices": [
+        0,
+        1,
+        3
+      ],
       "explanation": "Rule of Five = destructor + copy ctor + copy assign + move ctor + move assign. The default constructor is not part of the rule (it is one of the six special members, but resource management turns on the other five)."
     },
     {
@@ -201,8 +267,15 @@
       "id": "q6",
       "type": "short",
       "prompt": "Why must a move constructor be marked noexcept for a class stored in std::vector, and what happens if it is not?",
-      "modelAnswer": "vector guarantees the strong exception guarantee during reallocation; it only moves elements if the move is noexcept (via move_if_noexcept), otherwise it copies them so a throwing move can roll back. A non-noexcept move therefore silently degrades reallocation to copies - correctness is kept, but the optimisation is lost.",
-      "keywords": ["noexcept", "vector", "reallocation", "copy", "move_if_noexcept", "strong guarantee"],
+      "modelAnswer": "vector guarantees the strong exception guarantee during reallocation; it only moves elements if the move is noexcept (via move_if_noexcept), otherwise it copies them so a throwing move can roll back. A non-noexcept move therefore silently degrades reallocation to copies, correctness is kept, but the optimisation is lost.",
+      "keywords": [
+        "noexcept",
+        "vector",
+        "reallocation",
+        "copy",
+        "move_if_noexcept",
+        "strong guarantee"
+      ],
       "explanation": "vector::resize/push_back growth moves elements only when the move cannot throw; otherwise copying preserves the strong guarantee. The cost of forgetting noexcept is performance, not correctness."
     }
   ],
@@ -210,7 +283,7 @@
     {
       "type": "definition",
       "front": "What are the Rule of Three and Rule of Five?",
-      "back": "Three: destructor, copy ctor, copy assign - if you need one, you need all three. Five: plus move ctor and move assign (C++11), with moves marked noexcept."
+      "back": "Three: destructor, copy ctor, copy assign, if you need one, you need all three. Five: plus move ctor and move assign (C++11), with moves marked noexcept."
     },
     {
       "type": "concept",
@@ -220,12 +293,12 @@
     {
       "type": "concept",
       "front": "State the Rule of Zero.",
-      "back": "Compose classes from self-managing RAII members (vector, string, unique_ptr) and declare none of the six special members - generated operations are then correct by construction."
+      "back": "Compose classes from self-managing RAII members (vector, string, unique_ptr) and declare none of the six special members, generated operations are then correct by construction."
     },
     {
       "type": "error-identification",
       "front": "A Buffer class has `int* data_; ~Buffer() { delete[] data_; }` and uses the implicit copy ctor. Bug?",
-      "back": "Shallow copy: two Buffers own one pointer, both destructors delete it - double free. Fix: Rule of Five (deep copy + moves) or Rule of Zero (std::vector<int> member)."
+      "back": "Shallow copy: two Buffers own one pointer, both destructors delete it, double free. Fix: Rule of Five (deep copy + moves) or Rule of Zero (std::vector<int> member)."
     },
     {
       "type": "concept",
@@ -234,9 +307,20 @@
     }
   ],
   "references": [
-    { "label": "cppreference — Rule of three/five/zero", "url": "https://en.cppreference.com/w/cpp/language/rule_of_three" },
-    { "label": "C++ Core Guidelines — C.21: Define or delete all five, or none", "url": "https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#c21-if-you-define-or-delete-any-default-copy-move-or-dtor-function-define-or-delete-them-all" },
-    { "label": "cppreference — std::exchange", "url": "https://en.cppreference.com/w/cpp/utility/exchange" }
+    {
+      "label": "cppreference. Rule of three/five/zero",
+      "url": "https://en.cppreference.com/w/cpp/language/rule_of_three"
+    },
+    {
+      "label": "C++ Core Guidelines. C.21: Define or delete all five, or none",
+      "url": "https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#c21-if-you-define-or-delete-any-default-copy-move-or-dtor-function-define-or-delete-them-all"
+    },
+    {
+      "label": "cppreference, std::exchange",
+      "url": "https://en.cppreference.com/w/cpp/utility/exchange"
+    }
   ],
-  "skills": ["cpp-memory"]
+  "skills": [
+    "cpp-memory"
+  ]
 }

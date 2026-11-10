@@ -4,14 +4,16 @@
   "title": "Decision Trees, Random Forests and Gradient Boosting",
   "estMinutes": 27,
   "difficulty": "advanced",
-  "prereqs": ["ml-foundations"],
+  "prereqs": [
+    "ml-foundations"
+  ],
   "objectives": [
     "Compute entropy and information gain by hand on a small labelled table and choose the better split",
     "Explain how bagging and random feature sub-sampling reduce variance in random forests, and what OOB error measures",
     "Trace a gradient-boosting update (initial prediction, residual, learning rate) numerically",
     "Name the overfitting controls for each method and the diagnostic that detects overfitting"
   ],
-  "motivation": "Trees are the most interpretable models in the toolbox - literally flowcharts of questions - and their ensembles (forests, boosting) are among the strongest general-purpose predictors on tabular data, which is exactly what most quant feature sets are. This lesson builds the machinery on a ten-row table, computing entropy and gain by hand so 'the model chose this split' is a claim you can verify, not a rumour from a library.",
+  "motivation": "Trees are the most interpretable models in the toolbox, literally flowcharts of questions, and their ensembles (forests, boosting) are among the strongest general-purpose predictors on tabular data, which is exactly what most quant feature sets are. This lesson builds the machinery on a ten-row table, computing entropy and gain by hand so 'the model chose this split' is a claim you can verify, not a rumour from a library.",
   "blocks": [
     {
       "type": "h2",
@@ -19,7 +21,7 @@
     },
     {
       "type": "p",
-      "md": "A decision tree splits the data recursively: each node asks a yes/no question about one feature ('signal above 0?'), sends each row left or right, and leaves predict the majority label (classification) or mean (regression). The algorithm is greedy - at every node it picks the question that makes the children *purest*. Purity is measured by **entropy**:"
+      "md": "A decision tree splits the data recursively: each node asks a yes/no question about one feature ('signal above 0?'), sends each row left or right, and leaves predict the majority label (classification) or mean (regression). The algorithm is greedy, at every node it picks the question that makes the children *purest*. Purity is measured by **entropy**:"
     },
     {
       "type": "math",
@@ -36,18 +38,73 @@
     },
     {
       "type": "table",
-      "headers": ["Trade", "Feature A: signal $> 0$", "Feature B: momentum high", "Profitable (label)"],
+      "headers": [
+        "Trade",
+        "Feature A: signal $> 0$",
+        "Feature B: momentum high",
+        "Profitable (label)"
+      ],
       "rows": [
-        ["1", "Hi", "Hi", "1"],
-        ["2", "Hi", "Lo", "1"],
-        ["3", "Hi", "Hi", "1"],
-        ["4", "Hi", "Hi", "0"],
-        ["5", "Hi", "Lo", "1"],
-        ["6", "Hi", "Lo", "0"],
-        ["7", "Lo", "Lo", "0"],
-        ["8", "Lo", "Hi", "0"],
-        ["9", "Lo", "Lo", "0"],
-        ["10", "Lo", "Lo", "0"]
+        [
+          "1",
+          "Hi",
+          "Hi",
+          "1"
+        ],
+        [
+          "2",
+          "Hi",
+          "Lo",
+          "1"
+        ],
+        [
+          "3",
+          "Hi",
+          "Hi",
+          "1"
+        ],
+        [
+          "4",
+          "Hi",
+          "Hi",
+          "0"
+        ],
+        [
+          "5",
+          "Hi",
+          "Lo",
+          "1"
+        ],
+        [
+          "6",
+          "Hi",
+          "Lo",
+          "0"
+        ],
+        [
+          "7",
+          "Lo",
+          "Lo",
+          "0"
+        ],
+        [
+          "8",
+          "Lo",
+          "Hi",
+          "0"
+        ],
+        [
+          "9",
+          "Lo",
+          "Lo",
+          "0"
+        ],
+        [
+          "10",
+          "Lo",
+          "Lo",
+          "0"
+        ]
       ]
     },
     {
@@ -59,7 +116,7 @@
         "Weighted child entropy: $\\tfrac{6}{10} \\times 0.918 + \\tfrac{4}{10} \\times 0 = 0.551$.",
         "Information gain for A: $0.971 - 0.551 = 0.420$.",
         "Split on B: both children are 5 rows with 2 positive / 3 negative, entropy $0.971$ each, weighted $0.971$, gain $= 0$.",
-        "The tree splits on **A** and ignores B at the root - gain $0.420 > 0$, a verifiable choice, not magic."
+        "The tree splits on **A** and ignores B at the root, gain $0.420 > 0$, a verifiable choice, not magic."
       ]
     },
     {
@@ -72,15 +129,22 @@
       "type": "callout",
       "variant": "pitfall",
       "title": "The unpruned tree memorises",
-      "md": "Grow the tree until every leaf is pure and it will classify its own training rows perfectly - including the noise. A ten-row dataset can be memorised with nine splits that generalise to nothing. Controls: maximum depth, minimum rows per leaf, cost-complexity pruning - and the IS/OOS gap diagnostic from the validation lesson."
+      "md": "Grow the tree until every leaf is pure and it will classify its own training rows perfectly, including the noise. A ten-row dataset can be memorised with nine splits that generalise to nothing. Controls: maximum depth, minimum rows per leaf, cost-complexity pruning, and the IS/OOS gap diagnostic from the validation lesson."
     },
     {
       "type": "interactive",
       "component": "BSTVisual",
       "params": {
-        "values": [8, 3, 10, 1, 6, 14]
+        "values": [
+          8,
+          3,
+          10,
+          1,
+          6,
+          14
+        ]
       },
-      "caption": "Structurally, decision trees are binary trees like this one - each node one question, each leaf one verdict - which is what makes them auditable row by row."
+      "caption": "Structurally, decision trees are binary trees like this one, each node one question, each leaf one verdict, which is what makes them auditable row by row."
     },
     {
       "type": "h2",
@@ -88,7 +152,7 @@
     },
     {
       "type": "p",
-      "md": "A single deep tree is high-variance: resample the data and the splits change. A **random forest** builds many trees on **bootstrap** resamples (the resampling logic from the bootstrap lesson - now serving modelling instead of inference) and additionally restricts each split to a random subset of features, which decorrelates the trees so the ensemble average cancels their individual noise. Prediction is the vote (classification) or mean (regression). The out-of-bag (OOB) score is a free validation: each row was left out of about $1/e \\approx 37\\%$ of the bootstrap trees, so predict every row using only the trees that never saw it - an out-of-sample estimate without sacrificing data."
+      "md": "A single deep tree is high-variance: resample the data and the splits change. A **random forest** builds many trees on **bootstrap** resamples (the resampling logic from the bootstrap lesson, now serving modelling instead of inference) and additionally restricts each split to a random subset of features, which decorrelates the trees so the ensemble average cancels their individual noise. Prediction is the vote (classification) or mean (regression). The out-of-bag (OOB) score is a free validation: each row was left out of about $1/e \\approx 37\\%$ of the bootstrap trees, so predict every row using only the trees that never saw it, an out-of-sample estimate without sacrificing data."
     },
     {
       "type": "h2",
@@ -106,18 +170,18 @@
         "Residual: $1 - 0.4 = 0.6$ - what the ensemble is missing.",
         "Fit a small tree $h(x)$ to that residual; suppose it predicts $0.6$ for this region.",
         "Update with learning rate $\\nu = 0.1$: $F_1(x) = 0.4 + 0.1 \\times 0.6 = 0.46$.",
-        "The small, slow steps ($\\nu$ typical $0.01$-$0.1$, hundreds of trees) keep each correction modest, which is where boosting's accuracy - and its overfitting risk after many rounds - comes from."
+        "The small, slow steps ($\\nu$ typical $0.01$-$0.1$, hundreds of trees) keep each correction modest, which is where boosting's accuracy, and its overfitting risk after many rounds, comes from."
       ]
     },
     {
       "type": "callout",
       "variant": "quant",
       "title": "Where these sit on a desk",
-      "md": "Tabular feature matrices (features $\\times$ forward returns) are the native habitat of gradient-boosted trees; practitioners value them for nonlinearity, interaction capture and feature-importance diagnostics, while respecting the caveats - trees extrapolate poorly (leaves output constants), so regime shifts beyond the training range degrade them silently."
+      "md": "Tabular feature matrices (features $\\times$ forward returns) are the native habitat of gradient-boosted trees; practitioners value them for nonlinearity, interaction capture and feature-importance diagnostics, while respecting the caveats, trees extrapolate poorly (leaves output constants), so regime shifts beyond the training range degrade them silently."
     },
     {
       "type": "p",
-      "md": "Method comparison at a glance: bagging trains trees **in parallel on resamples** and averages to cut variance; boosting trains **in sequence on errors** and adds up to cut bias (and eventually to add variance if pushed too far). Forests are robust and near-tuning-free; boosted trees usually win raw accuracy but need depth limits, learning rate and early stopping to stay honest."
+      "md": "Method comparison at a glance: bagging trains trees **in parallel on resamples** and averages to cut variance; boosting trains **in sequence on errors** and adds up to cut bias (and eventually to add variance if pushed too far). Forests are solid and near-tuning-free; boosted trees usually win raw accuracy but need depth limits, learning rate and early stopping to stay honest."
     }
   ],
   "guidedExercise": {
@@ -136,21 +200,21 @@
       "$\\log_2(1/3) \\approx -1.585$, $\\log_2(2/3) \\approx -0.585$.",
       "Weighted entropy uses the $2/8$ and $6/8$ weights."
     ],
-    "solution": "(a) $H = -\\tfrac{1}{3}\\log_2\\tfrac{1}{3} - \\tfrac{2}{3}\\log_2\\tfrac{2}{3} = \\tfrac{1}{3}(1.585) + \\tfrac{2}{3}(0.585) \\approx 0.528 + 0.390 = 0.918$. (b) Weighted: $\\tfrac{2}{8} \\times 0 + \\tfrac{6}{8} \\times 0.918 = 0.689$; gain $= 1.0 - 0.689 = 0.311$. (c) $0.311 > 0.189$, so the algorithm picks the new split - one pure child outweighs a messier sibling."
+    "solution": "(a) $H = -\\tfrac{1}{3}\\log_2\\tfrac{1}{3} - \\tfrac{2}{3}\\log_2\\tfrac{2}{3} = \\tfrac{1}{3}(1.585) + \\tfrac{2}{3}(0.585) \\approx 0.528 + 0.390 = 0.918$. (b) Weighted: $\\tfrac{2}{8} \\times 0 + \\tfrac{6}{8} \\times 0.918 = 0.689$; gain $= 1.0 - 0.689 = 0.311$. (c) $0.311 > 0.189$, so the algorithm picks the new split, one pure child outweighs a messier sibling."
   },
   "commonMistakes": [
-    "Reporting training accuracy of a fully grown tree as model performance - the IS/OOS gap is the only number that matters.",
+    "Reporting training accuracy of a fully grown tree as model performance, the IS/OOS gap is the only number that matters.",
     "Forgetting the weights when averaging child entropies: the gain formula uses $\\sum (n_i/n) H_i$, not the average of entropies.",
-    "Boosting with a large learning rate and hundreds of trees on noisy financial data - the ensemble chases noise sequentially, which is worse than a single overfit tree.",
+    "Boosting with a large learning rate and hundreds of trees on noisy financial data, the ensemble chases noise sequentially, which is worse than a single overfit tree.",
     "Using trees to extrapolate beyond the training feature range: leaves output constants, so predictions flatline where the data thins."
   ],
   "realWorldApplication": "Credit scoring, churn prediction and medical triage use tree ensembles at scale; their rules are explainable to regulators and business owners, which plain neural networks are not.",
-  "quantFinanceApplication": "Gradient-boosted trees on tabular features are a workhorse for short-horizon signal research and execution-price prediction - valued for interaction capture, watched carefully for extrapolation failure in new regimes.",
+  "quantFinanceApplication": "Gradient-boosted trees on tabular features are a workhorse for short-horizon signal research and execution-price prediction, valued for interaction capture, watched carefully for extrapolation failure in new regimes.",
   "summary": [
-    "Entropy $H = -\\sum p \\log_2 p$ scores node impurity; information gain $=$ parent entropy minus weighted child entropy - our ten-row table gave gain $0.420$ for feature A and $0$ for B.",
+    "Entropy $H = -\\sum p \\log_2 p$ scores node impurity; information gain $=$ parent entropy minus weighted child entropy, our ten-row table gave gain $0.420$ for feature A and $0$ for B.",
     "Unpruned trees memorise; depth limits, minimum leaf size and pruning are the controls, with the IS/OOS gap as the detector.",
     "Random forests bootstrap-resample data and subsample features to decorrelate deep trees, cutting variance; OOB scoring validates for free.",
-    "Gradient boosting fits each new tree to the ensemble's error with a small learning rate ($0.4 \\to 0.46$ in our step) - parallel-and-average vs sequential-and-correct."
+    "Gradient boosting fits each new tree to the ensemble's error with a small learning rate ($0.4 \\to 0.46$ in our step), parallel-and-average vs sequential-and-correct."
   ],
   "quiz": [
     {
@@ -192,7 +256,11 @@
         "Growing trees until every leaf is pure",
         "A small learning rate and early stopping in boosting"
       ],
-      "answerIndices": [0, 1, 3],
+      "answerIndices": [
+        0,
+        1,
+        3
+      ],
       "explanation": "Depth limits, decorrelation via resampling and gentle sequential updates all fight overfitting. Full purity is the memorisation extreme, the opposite of a control."
     },
     {
@@ -200,8 +268,13 @@
       "type": "short",
       "prompt": "State the key structural difference between bagging and boosting in one sentence.",
       "modelAnswer": "Bagging trains trees in parallel on bootstrap resamples and averages them to reduce variance, while boosting trains trees sequentially, each fitting the current ensemble's errors, to reduce bias.",
-      "keywords": ["parallel", "bootstrap", "sequential", "errors"],
-      "explanation": "Parallel-and-average vs sequential-and-correct - everything else (learning rates, weights) follows from that distinction."
+      "keywords": [
+        "parallel",
+        "bootstrap",
+        "sequential",
+        "errors"
+      ],
+      "explanation": "Parallel-and-average vs sequential-and-correct, everything else (learning rates, weights) follows from that distinction."
     },
     {
       "id": "q6",
@@ -226,7 +299,7 @@
     {
       "type": "concept",
       "front": "Bagging vs boosting",
-      "back": "Bagging: parallel trees on bootstrap resamples, averaged - variance reduction. Boosting: sequential trees on residuals/gradients with a learning rate - bias reduction first."
+      "back": "Bagging: parallel trees on bootstrap resamples, averaged, variance reduction. Boosting: sequential trees on residuals/gradients with a learning rate, bias reduction first."
     },
     {
       "type": "concept",
@@ -236,13 +309,15 @@
   ],
   "references": [
     {
-      "label": "An Introduction to Statistical Learning (free) - Tree-Based Methods",
+      "label": "An Introduction to Statistical Learning (free): Tree-Based Methods",
       "url": "https://www.statlearning.com/"
     },
     {
-      "label": "scikit-learn - Decision Trees user guide",
+      "label": "scikit-learn: Decision Trees user guide",
       "url": "https://scikit-learn.org/stable/modules/tree.html"
     }
   ],
-  "skills": ["machine-learning"]
+  "skills": [
+    "machine-learning"
+  ]
 }

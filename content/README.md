@@ -2,7 +2,7 @@
 
 This directory holds all curriculum content as structured JSON. Files are validated by
 `scripts/validate-content.mjs` and read by the platform at runtime. **Do not edit
-`content/map/curriculum.json` unless you are the integrator** — author lessons against
+`content/map/curriculum.json` unless you are the integrator**: author lessons against
 the map's module/lesson IDs.
 
 ## Lesson files
@@ -37,7 +37,7 @@ must match the `id` in the curriculum map).
   "summary": ["key point", "..."],
   "quiz": [ /* knowledge-check questions, 4-6 */ ],
   "flashcards": [ { "type": "definition|formula|concept|code-output", "front": "...", "back": "..." } ],  // 3-6
-  "references": [ { "label": "cppreference — Range-for", "url": "https://..." } ],
+  "references": [ { "label": "cppreference: Range-for", "url": "https://..." } ],
   "skills": ["arithmetic"]                      // must be ids from map.skills
 }
 ```
@@ -46,7 +46,7 @@ must match the `id` in the curriculum map).
 
 - `{ "type": "p", "md": "paragraph with **bold**, *italic* and inline math $x^2$ }`
 - `{ "type": "h2", "text": "Section heading" }` / `{ "type": "h3", "text": "Sub" }`
-- `{ "type": "math", "tex": "e^{i\\pi} + 1 = 0", "caption": "optional" }` — display equation (KaTeX)
+- `{ "type": "math", "tex": "e^{i\\pi} + 1 = 0", "caption": "optional" }` for a display equation (KaTeX)
 - `{ "type": "code", "lang": "cpp|python|bash|sql|text", "code": "...", "caption": "optional" }`
 - `{ "type": "callout", "variant": "info|warn|pitfall|quant", "title": "...", "md": "..." }`
 - `{ "type": "list", "ordered": false, "items": ["markdown item"] }`
@@ -55,7 +55,7 @@ must match the `id` in the curriculum map).
 - `{ "type": "interactive", "component": "ComponentName", "params": { ... }, "caption": "..." }`
 - `{ "type": "ref", "items": [{ "label": "...", "url": "https://..." }] }`
 
-### Interactive components (registered names — use exactly)
+### Interactive components (registered names: use exactly)
 
 `NumberLine`, `FractionVisual`, `CompoundGrowth`, `FunctionPlotter`, `DerivativeLab`,
 `IntegralLab`, `TaylorLab`, `VectorVisual`, `MatrixTransform`, `ProbabilitySimulator`,
@@ -168,7 +168,7 @@ All test inputs are static strings. 8–15 tests per problem including edge case
 3. **Originality.** Write original explanations/examples; never copy textbooks.
 4. **Correctness.** Verify every numeric example by hand (or reason it through carefully).
    Code samples must be correct for the stated language version and MUST be self-contained.
-5. **Honesty.** No fabricated market data — use clearly-hypothetical illustrative numbers.
+5. **Honesty.** No fabricated market data: use clearly-hypothetical illustrative numbers.
 6. **LaTeX** uses KaTeX: `$...$` inline, `{"type":"math"}` display. Escape backslashes in JSON (`\\`).
    **Currency is NOT math**: write dollar amounts as `\$42.17` (escaped) so they are not parsed as math delimiters. Use plain `$...$` only for actual equations.
 7. Quiz must actually test the objectives; distractors must be plausible, not jokes.

@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { Play, Square, Zap } from 'lucide-react';
 import { toast } from 'sonner';
+import { recordDrillSession } from '@/lib/client/local-state';
 
 type Mode = 'addition' | 'subtraction' | 'multiplication' | 'division' | 'percentages' | 'fractions' | 'squares' | 'mixed';
 interface Q { text: string; answer: number; acceptPct?: boolean }
@@ -146,18 +147,11 @@ export function DrillTrainer({ history }: { history: { mode: string; level: numb
     setRunning(false);
     const avg = times.length ? times.reduce((a, b) => a + b, 0) / times.length : 0;
     if (total > 0) {
-      fetch('/api/drills/session', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode, level, correct, total, avgMs: Math.round(avg), durationS: duration }),
-      }).then(async res => {
-        if (!res.ok) { toast.error('Could not save the session.'); return; }
-        toast.success(`Session saved: ${correct}/${total} (${total ? Math.round((correct / total) * 100) : 0}%), ${Math.round(avg)}ms average.`);
-        const data = await res.json().catch(() => null);
-        if (data && data.xpAwarded > 0) {
-          toast.success(`+${data.xpAwarded} XP`);
-          window.dispatchEvent(new CustomEvent('qf:hud-refresh'));
-        }
-      }).catch(() => toast.error('Could not save the session.'));
+      // v3: recorded locally, instantly, offline-capable. Syncs in the background.
+      const elapsed = startedAt.current ? Date.now() - startedAt.current : times.reduce((a, b) => a + b, 0);
+      const xp = recordDrillSession(correct, total, elapsed);
+      toast.success(`Session saved: ${correct}/${total} (${total ? Math.round((correct / total) * 100) : 0}%), ${Math.round(avg)}ms average.`);
+      if (xp > 0) toast.success(`+${xp} XP`);
     }
   }
 
@@ -204,25 +198,35 @@ export function DrillTrainer({ history }: { history: { mode: string; level: numb
             </>
           ) : (
             <>
-              <select value={mode} onChange={e => setMode(e.target.value as Mode)} className="qf-select-sm w-auto" aria-label="Drill mode">
-                {MODES.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
-              </select>
-              <label className="flex items-center gap-2.5 text-sm font-bold">
-                <span className="hidden sm:inline">Level</span>
-                <input type="range" min={1} max={10} value={level} onChange={e => setLevel(parseInt(e.target.value))} className="qf-range w-28" aria-label="Difficulty level" style={{ '--fill': `${((level - 1) / 9) * 100}%` } as React.CSSProperties} />
-                <span className="tnum w-6 h-6 text-center text-xs font-black rounded-lg bg-accent text-white flex items-center justify-center">{level}</span>
-              </label>
-              <div className="flex gap-1.5">
-                {DURATIONS.map(d => (
-                  <button key={d} onClick={() => setDuration(d)}
-                    className={duration === d ? 'text-xs px-3 py-1.5 rounded-xl bg-accent text-accent-foreground font-black press' : 'text-xs px-3 py-1.5 rounded-xl border-2 border-border bg-surface text-muted font-bold hover:bg-surface-2 press'}>
-                    {d < 60 ? `${d}s` : `${d / 60}m`}
-                  </button>
-                ))}
+              <div className="flex flex-wrap items-end gap-x-5 gap-y-3">
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-[10px] font-black uppercase tracking-[0.1em] text-faint">Mode</span>
+                  <select value={mode} onChange={e => setMode(e.target.value as Mode)} className="qf-select-sm h-9" aria-label="Drill mode">
+                    {MODES.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-[10px] font-black uppercase tracking-[0.1em] text-faint">Level · <span className="text-accent-deep dark:text-accent">{level}</span></span>
+                  <span className="flex items-center gap-2.5 h-9">
+                    <input type="range" min={1} max={10} value={level} onChange={e => setLevel(parseInt(e.target.value))} className="qf-range w-32" aria-label="Difficulty level" style={{ '--fill': `${((level - 1) / 9) * 100}%` } as React.CSSProperties} />
+                    <span className="text-[10px] font-bold text-faint tnum">1-10</span>
+                  </span>
+                </label>
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-[10px] font-black uppercase tracking-[0.1em] text-faint">Duration</span>
+                  <div className="flex gap-1.5 h-9 items-center">
+                    {DURATIONS.map(d => (
+                      <button key={d} onClick={() => setDuration(d)}
+                        className={duration === d ? 'text-xs px-3 h-full rounded-xl bg-accent text-accent-foreground font-black press' : 'text-xs px-3 h-full rounded-xl border-2 border-border bg-surface text-muted font-bold hover:bg-surface-2 press'}>
+                        {d < 60 ? `${d}s` : `${d / 60}m`}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <button onClick={start} className="btn3d btn3d-sm h-9 ml-auto">
+                  <Play className="h-4 w-4" strokeWidth={2.5} /> Start drill
+                </button>
               </div>
-              <button onClick={start} className="btn3d btn3d-sm ml-auto">
-                <Play className="h-4 w-4" strokeWidth={2.5} /> Start
-              </button>
             </>
           )}
         </div>
@@ -246,7 +250,7 @@ export function DrillTrainer({ history }: { history: { mode: string; level: numb
               </form>
               {feedback && (
                 <p className={feedbackCls}>
-                  {feedback.ok ? '✓ correct' : `✗ — answer: ${Number(feedback.correctAnswer.toFixed(4))}`}
+                  {feedback.ok ? '✓ correct' : `✗, answer: ${Number(feedback.correctAnswer.toFixed(4))}`}
                 </p>
               )}
             </>
@@ -262,15 +266,19 @@ export function DrillTrainer({ history }: { history: { mode: string; level: numb
                 </div>
               </div>
               <div className="mt-5 grid grid-cols-3 gap-2.5 text-center">
-                {[generate(mode, Math.max(1, level - 1), () => 0.42), generate(mode, level, () => 0.17), generate(mode, Math.min(10, level + 1), () => 0.83)].map((sample, i) => (
-                  <div key={i} className="rounded-2xl border-2 border-border bg-surface-2/50 px-3 py-3.5">
-                    <p className="text-base font-black tnum">{sample.text}</p>
-                    <p className="mt-1 text-[10px] font-black uppercase tracking-wide text-faint">sample</p>
+                {[
+                  { sample: generate(mode, Math.max(1, level - 1), () => 0.42), tag: 'easier', tagCls: 'chip-success' },
+                  { sample: generate(mode, level, () => 0.17), tag: 'at your level', tagCls: 'chip-info' },
+                  { sample: generate(mode, Math.min(10, level + 1), () => 0.83), tag: 'harder', tagCls: 'chip-warning' },
+                ].map((s, i) => (
+                  <div key={i} className="rounded-2xl border-2 border-border bg-surface-2/50 px-3 py-3 flex flex-col items-center gap-2">
+                    <p className="text-base font-black tnum leading-tight">{s.sample.text}</p>
+                    <span className={'chip !text-[10px] !px-2 !py-0.5 ' + s.tagCls}>{s.tag}</span>
                   </div>
                 ))}
               </div>
               <p className="mt-5 text-sm font-semibold text-muted leading-relaxed text-center">
-                Accuracy and speed both count — the goal is genuine numerical fluency, the kind trading-firm screens
+                Accuracy and speed both count, the goal is genuine numerical fluency, the kind trading-firm screens
                 and production debugging both demand. Sessions are saved to your analytics.
               </p>
             </div>

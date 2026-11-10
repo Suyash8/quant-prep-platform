@@ -14,7 +14,7 @@
     "Choose between an array-backed structure and a linked list for a given access pattern",
     "Estimate the memory footprint of a contiguous array from element count and element width"
   ],
-  "motivation": "Every quant system stores sequences: ticks, fills, positions, price levels. The two base choices - a contiguous array or a chain of nodes - look interchangeable in a textbook but behave completely differently under a cache-heavy workload: one is a single block of memory the CPU prefetches happily, the other is a scattered pointer chase. Choosing wrong costs an order of magnitude in latency, so the trade-offs here are not academic.",
+  "motivation": "Every quant system stores sequences: ticks, fills, positions, price levels. The two base choices, a contiguous array or a chain of nodes, look interchangeable in a textbook but behave completely differently under a cache-heavy workload: one is a single block of memory the CPU prefetches happily, the other is a scattered pointer chase. Choosing wrong costs an order of magnitude in latency, so the trade-offs here are not academic.",
   "blocks": [
     {
       "type": "h2",
@@ -38,9 +38,9 @@
       "title": "Worked example: offsets and footprints",
       "items": [
         "An array of 8-byte doubles: element 37 sits at byte offset $37 \\times 8 = 296$ from the base.",
-        "1,000,000 doubles occupy $10^6 \\times 8 = 8{,}000{,}000$ bytes = 8 MB - one allocation, fully predictable.",
+        "1,000,000 doubles occupy $10^6 \\times 8 = 8{,}000{,}000$ bytes = 8 MB, one allocation, fully predictable.",
         "A 2D price matrix stored row-major with 1024 columns: element $(r, c)$ is at offset $(1024r + c) \\times 8$ - flattening a grid into a line is just arithmetic.",
-        "Contrast: 1,000,000 doubles inside a Python list of `float` objects also cost 56 bytes of object overhead each on 64-bit CPython - roughly 56 MB on top of the 8 MB of values, because the list stores pointers to boxed objects, not raw doubles."
+        "Contrast: 1,000,000 doubles inside a Python list of `float` objects also cost 56 bytes of object overhead each on 64-bit CPython, roughly 56 MB on top of the 8 MB of values, because the list stores pointers to boxed objects, not raw doubles."
       ]
     },
     {
@@ -61,7 +61,7 @@
       "type": "code",
       "lang": "cpp",
       "code": "#include <vector>\n\n// C++: std::vector is the canonical dynamic array.\nstd::vector<double> px;\npx.reserve(1'000'000);   // preallocate: no reallocation during the session\npx.push_back(42.17);     // amortised O(1)\ndouble first = px[0];    // O(1) random access\npx.erase(px.begin());    // O(n): shifts every element left\n// px.data() hands you the raw contiguous buffer for SIMD/cache-friendly loops.",
-      "caption": "The same concepts in C++ signatures - reserve() is the preallocation lever Python's list does not expose."
+      "caption": "The same concepts in C++ signatures, reserve() is the preallocation lever Python's list does not expose."
     },
     {
       "type": "h2",
@@ -69,7 +69,7 @@
     },
     {
       "type": "p",
-      "md": "A **singly linked list** stores each element in a node that also holds a pointer to the next node. There is no contiguous block, so indexing by position means walking from the head - $O(n)$ access. The payoff is structural: **prepend** is $O(1)$ (rewire one pointer), and once you are standing on a node, inserting or removing *after* it is $O(1)$ too - no shifting, because nothing is packed together. A **doubly linked list** adds a `prev` pointer so removal and backward walks work without hunting for the predecessor."
+      "md": "A **singly linked list** stores each element in a node that also holds a pointer to the next node. There is no contiguous block, so indexing by position means walking from the head - $O(n)$ access. The payoff is structural: **prepend** is $O(1)$ (rewire one pointer), and once you are standing on a node, inserting or removing *after* it is $O(1)$ too, no shifting, because nothing is packed together. A **doubly linked list** adds a `prev` pointer so removal and backward walks work without hunting for the predecessor."
     },
     {
       "type": "code",
@@ -130,15 +130,15 @@
     },
     {
       "type": "p",
-      "md": "The bottom row deserves emphasis because Big-O cannot see it. A modern CPU takes ~4 cycles to serve an L1 hit and ~200+ cycles for a main-memory miss. Traversing an array of 1M doubles streams sequentially — the prefetcher has the next cache line before you ask. Traversing 1M linked nodes touches scattered memory: each node is a potential miss, so the *constant factor* swamps the complexity. This is why `std::vector` beats `std::list` in C++ benchmarks even for workloads lists theoretically win, and it is why market-data and backtesting code stores ticks in flat arrays (often with an arena/pool for any dynamic pieces)."
+      "md": "The bottom row deserves emphasis because Big-O cannot see it. A modern CPU takes ~4 cycles to serve an L1 hit and ~200+ cycles for a main-memory miss. Traversing an array of 1M doubles streams sequentially, the prefetcher has the next cache line before you ask. Traversing 1M linked nodes touches scattered memory: each node is a potential miss, so the *constant factor* swamps the complexity. This is why `std::vector` beats `std::list` in C++ benchmarks even for workloads lists theoretically win, and it is why market-data and backtesting code stores ticks in flat arrays (often with an arena/pool for any dynamic pieces)."
     },
     {
       "type": "steps",
       "title": "Amortised growth, worked: why push_back is O(1) amortised",
       "items": [
         "A dynamic array of capacity 4 doubles when full: 4 → 8 → 16 → 32. Pushing 32 elements triggers 3 reallocations (at sizes 4, 8, 16), copying $4+8+16 = 28$ elements total.",
-        "Total work for 32 pushes = 32 cheap writes + 28 copies = 60 operations ≈ 2 per push — *regardless of n*. Doubling makes the copies a geometric series that sums to O(n) over n pushes, hence O(1) amortised.",
-        "Why doubling and not +1 growth? Growing by a constant adds $1+2+3+\\cdots+n = O(n^2)$ total copies — 1000 pushes cost ~500k copies. The growth factor is the difference between a usable and an unusable container. (Shrink policy matters too: halving on half-empty *without hysteresis* makes an insert/delete pattern at the boundary oscillate between O(n) copies.)"
+        "Total work for 32 pushes = 32 cheap writes + 28 copies = 60 operations ≈ 2 per push, *regardless of n*. Doubling makes the copies a geometric series that sums to O(n) over n pushes, hence O(1) amortised.",
+        "Why doubling and not +1 growth? Growing by a constant adds $1+2+3+\\cdots+n = O(n^2)$ total copies, 1000 pushes cost ~500k copies. The growth factor is the difference between a usable and an unusable container. (Shrink policy matters too: halving on half-empty *without hysteresis* makes an insert/delete pattern at the boundary oscillate between O(n) copies.)"
       ]
     },
     {
@@ -151,8 +151,8 @@
       "rows": [
         [
           "Access i-th element",
-          "O(1) - address arithmetic",
-          "O(n) - walk from head"
+          "O(1), address arithmetic",
+          "O(n), walk from head"
         ],
         [
           "Append at end",
@@ -161,18 +161,18 @@
         ],
         [
           "Prepend at front",
-          "O(n) - shift everything",
-          "O(1) - rewire head"
+          "O(n), shift everything",
+          "O(1), rewire head"
         ],
         [
           "Insert/delete at known node",
-          "O(n) - shift the tail",
-          "O(1) - rewire pointers"
+          "O(n), shift the tail",
+          "O(1), rewire pointers"
         ],
         [
           "Memory locality",
-          "excellent - one contiguous block",
-          "poor - nodes scattered across the heap"
+          "excellent, one contiguous block",
+          "poor, nodes scattered across the heap"
         ],
         [
           "Memory overhead",
@@ -185,13 +185,13 @@
       "type": "callout",
       "variant": "pitfall",
       "title": "Linked lists are usually the wrong default",
-      "md": "Modern CPUs read memory in 64-byte cache lines, so scanning a contiguous array streams through memory while a linked list triggers a cache miss per node - the pointer chase can be 10-50x slower even when the big-O looks identical. Reach for a linked list only when you truly need O(1) splice-in/splice-out at arbitrary known positions (LRU caches, some schedulers); otherwise use a dynamic array, even for 'linked-list workloads'."
+      "md": "Modern CPUs read memory in 64-byte cache lines, so scanning a contiguous array streams through memory while a linked list triggers a cache miss per node, the pointer chase can be 10-50x slower even when the big-O looks identical. Reach for a linked list only when you truly need O(1) splice-in/splice-out at arbitrary known positions (LRU caches, some schedulers); otherwise use a dynamic array, even for 'linked-list workloads'."
     },
     {
       "type": "callout",
       "variant": "quant",
       "title": "Where each one shows up on a desk",
-      "md": "Tick archives, price matrices and position snapshots are arrays - read-mostly, scanned in bulk, size known in advance. Order-book level lists, undo trails and message queues with frequent mid-stream splicing historically used linked structures; production systems increasingly emulate them with arrays of indices to keep cache locality while keeping O(1) unlink."
+      "md": "Tick archives, price matrices and position snapshots are arrays, read-mostly, scanned in bulk, size known in advance. Order-book level lists, undo trails and message queues with frequent mid-stream splicing historically used linked structures; production systems increasingly emulate them with arrays of indices to keep cache locality while keeping O(1) unlink."
     }
   ],
   "guidedExercise": {
@@ -201,7 +201,7 @@
       "Deleting the head is the special case where prev is None.",
       "Array prepend must move every existing element one slot to the right."
     ],
-    "solution": "The chain is `30 -> 20 -> 10`. `delete(30)`: node starts at head (30), prev is None, match on the first step - so we take the `prev is None` branch and set `self.head = node.next`, i.e. head now points at the 20-node. Result: `head -> 20 -> 10`, size drops 3 -> 2. One pointer write, no traversal. Array prepend is O(n) because contiguous packing forces all n existing elements to shift right by one slot before the new element lands at index 0; the linked list just points its new node's `next` at the old head in constant time."
+    "solution": "The chain is `30 -> 20 -> 10`. `delete(30)`: node starts at head (30), prev is None, match on the first step, so we take the `prev is None` branch and set `self.head = node.next`, i.e. head now points at the 20-node. Result: `head -> 20 -> 10`, size drops 3 -> 2. One pointer write, no traversal. Array prepend is O(n) because contiguous packing forces all n existing elements to shift right by one slot before the new element lands at index 0; the linked list just points its new node's `next` at the old head in constant time."
   },
   "independentExercise": {
     "prompt": "An order-book engine stores 5,000 price levels. Design A keeps them in a dynamic array and scans it linearly to find the best price after every one of 1,000,000 updates. Design B keeps levels sorted and finds the best price by walking ~13 nodes ($\\log_2 5000 \\approx 12.3$). At 5 ns per touched element/node, how many nanoseconds does best-price lookup cost per update in each design, and what is the total over the session? Which operations did each design push the cost into?",
@@ -210,17 +210,17 @@
       "Design B: cost per update = 13 * 5 ns; keep units consistent (ns).",
       "Think about where each design paid instead: sorting/insertion maintenance."
     ],
-    "solution": "Design A: $5{,}000 \\times 5\\ \\text{ns} = 25{,}000\\ \\text{ns} = 25\\ \\mu\\text{s}$ per update; over $10^6$ updates that is $2.5 \\times 10^{10}\\ \\text{ns} = 25$ s of pure lookup. Design B: $13 \\times 5 = 65\\ \\text{ns}$ per update, $6.5 \\times 10^7\\ \\text{ns} = 0.065$ s total - about 385x less. Design A pushed all cost into lookup and none into maintenance (appends are amortised O(1)); Design B pays O(log n) per insertion to keep the order. The lesson: know which operation is hot before choosing the container - the array is only right if lookups are rare."
+    "solution": "Design A: $5{,}000 \\times 5\\ \\text{ns} = 25{,}000\\ \\text{ns} = 25\\ \\mu\\text{s}$ per update; over $10^6$ updates that is $2.5 \\times 10^{10}\\ \\text{ns} = 25$ s of pure lookup. Design B: $13 \\times 5 = 65\\ \\text{ns}$ per update, $6.5 \\times 10^7\\ \\text{ns} = 0.065$ s total, about 385x less. Design A pushed all cost into lookup and none into maintenance (appends are amortised O(1)); Design B pays O(log n) per insertion to keep the order. The lesson: know which operation is hot before choosing the container, the array is only right if lookups are rare."
   },
   "commonMistakes": [
-    "Believing linked lists are 'faster' in general - only pointer splicing is O(1); access is O(n) and cache behaviour is far worse.",
+    "Believing linked lists are 'faster' in general, only pointer splicing is O(1); access is O(n) and cache behaviour is far worse.",
     "Forgetting the head special case when deleting from a singly linked list.",
     "Inserting into the middle of a vector or Python list inside a hot loop and calling it O(1).",
-    "Confusing a Python list's element count with its allocated capacity - len() is the size, the backing block can be larger.",
-    "Estimating memory as elements * width only - real containers carry capacity slack and (in Python) per-object overhead."
+    "Confusing a Python list's element count with its allocated capacity, len() is the size, the backing block can be larger.",
+    "Estimating memory as elements * width only, real containers carry capacity slack and (in Python) per-object overhead."
   ],
-  "realWorldApplication": "Numerical libraries (NumPy, Eigen), file formats and network buffers all assume contiguous arrays precisely because of the base + i*width addressing model; databases and editors use gap buffers or piece tables - array-based structures - rather than pointer chains.",
-  "quantFinanceApplication": "A tick store holding a day of 8-byte prices for 1,000 instruments is 1,000 arrays whose footprints you can compute exactly from this lesson - and preallocation of those arrays (reserve/np.empty) is standard practice to keep reallocation pauses out of the trading session.",
+  "realWorldApplication": "Numerical libraries (NumPy, Eigen), file formats and network buffers all assume contiguous arrays precisely because of the base + i*width addressing model; databases and editors use gap buffers or piece tables, array-based structures, rather than pointer chains.",
+  "quantFinanceApplication": "A tick store holding a day of 8-byte prices for 1,000 instruments is 1,000 arrays whose footprints you can compute exactly from this lesson, and preallocation of those arrays (reserve/np.empty) is standard practice to keep reallocation pauses out of the trading session.",
   "summary": [
     "Arrays store same-sized elements contiguously, so element i lives at base + i*width: random access is O(1) and memory locality is excellent.",
     "Dynamic arrays double capacity on overflow, making appends amortised O(1); any insert or delete in the middle costs O(n) from shifting.",
@@ -239,7 +239,7 @@
         "Array elements are all pointers."
       ],
       "answerIndex": 1,
-      "explanation": "Contiguous same-sized storage turns 'get element i' into one multiply and one add on the address - independent of the array's length. No traversal, no cache of addresses, and sorting is irrelevant to indexing."
+      "explanation": "Contiguous same-sized storage turns 'get element i' into one multiply and one add on the address, independent of the array's length. No traversal, no cache of addresses, and sorting is irrelevant to indexing."
     },
     {
       "id": "q2",
@@ -286,7 +286,7 @@
         1,
         3
       ],
-      "explanation": "Doubling makes the total copy cost geometric (amortised O(1)), list access walks n nodes, and cache lines reward contiguity - all true. A linked list carries an 8-byte pointer per element plus scattered allocations, so it uses *more* memory, not less."
+      "explanation": "Doubling makes the total copy cost geometric (amortised O(1)), list access walks n nodes, and cache lines reward contiguity, all true. A linked list carries an 8-byte pointer per element plus scattered allocations, so it uses *more* memory, not less."
     },
     {
       "id": "q6",
@@ -295,14 +295,14 @@
       "answer": 8000000,
       "unit": "bytes",
       "tolerance": 0.5,
-      "explanation": "10^6 elements x 8 bytes = 8,000,000 bytes (8 MB) - a single allocation whose size you can budget in advance, one reason numeric engines prefer raw contiguous arrays."
+      "explanation": "10^6 elements x 8 bytes = 8,000,000 bytes (8 MB), a single allocation whose size you can budget in advance, one reason numeric engines prefer raw contiguous arrays."
     }
   ],
   "flashcards": [
     {
       "type": "formula",
       "front": "Address of element i in a contiguous array",
-      "back": "addr(i) = base + i * width - one multiply-add, which is why array indexing is O(1)."
+      "back": "addr(i) = base + i * width, one multiply-add, which is why array indexing is O(1)."
     },
     {
       "type": "concept",
@@ -317,16 +317,16 @@
     {
       "type": "code-output",
       "front": "Cost of lst.insert(0, x) on a Python list?",
-      "back": "O(n) - every existing element shifts right by one; use collections.deque.appendleft for O(1)."
+      "back": "O(n), every existing element shifts right by one; use collections.deque.appendleft for O(1)."
     }
   ],
   "references": [
     {
-      "label": "cppreference — std::vector",
+      "label": "cppreference, std::vector",
       "url": "https://en.cppreference.com/w/cpp/container/vector"
     },
     {
-      "label": "Python Wiki — TimeComplexity (list operations)",
+      "label": "Python Wiki. TimeComplexity (list operations)",
       "url": "https://wiki.python.org/moin/TimeComplexity"
     }
   ],

@@ -83,7 +83,7 @@ export function Planner({ initialPlan }: { initialPlan: Plan | null }) {
 
   const statTiles = stats ? [
     { icon: BookOpen, tile: 'icon-tile-info', value: String(stats.lessonsPerWeek), label: 'Lessons / week' },
-    { icon: Zap, tile: 'icon-tile-warning', value: String(stats.xpPerWeek), label: 'XP / week' },
+    { icon: Zap, tile: 'icon-tile-gold', value: String(stats.xpPerWeek), label: 'XP / week' },
     { icon: CalendarDays, tile: 'icon-tile-accent', value: stats.finishLabel, label: 'Finish by' },
     { icon: Clock, tile: 'icon-tile-violet', value: String(stats.hoursPerWeek), label: 'Hours / week' },
   ] : [];
@@ -123,11 +123,11 @@ export function Planner({ initialPlan }: { initialPlan: Plan | null }) {
             </span>
             <select value={track} onChange={e => setTrack(e.target.value)} className="qf-select mt-1.5" aria-label="Track">
               <option value="any">Foundation first, decide later</option>
-              <option value="A">A — Asset management</option>
-              <option value="B">B — Investment banking</option>
-              <option value="C">C — HFT / low latency</option>
-              <option value="D">D — Research engineering</option>
-              <option value="E">E — Infrastructure</option>
+              <option value="A">A. Asset management</option>
+              <option value="B">B. Investment banking</option>
+              <option value="C">C. HFT / low latency</option>
+              <option value="D">D. Research engineering</option>
+              <option value="E">E. Infrastructure</option>
             </select>
           </label>
           <label className="block">
@@ -150,7 +150,7 @@ export function Planner({ initialPlan }: { initialPlan: Plan | null }) {
             <Sparkles className="h-4 w-4" /> {busy ? 'Planning…' : plan ? 'Regenerate plan' : 'Generate plan'}
           </button>
           <p className="text-xs text-faint leading-relaxed">
-            The planner walks lessons in prerequisite order — it never schedules a lesson before its prerequisites,
+            The planner walks lessons in prerequisite order, it never schedules a lesson before its prerequisites,
             and it will not compress a 1,000-hour programme into a 90-day promise.
           </p>
         </div>
@@ -166,9 +166,6 @@ export function Planner({ initialPlan }: { initialPlan: Plan | null }) {
                 <h2>Your plan</h2>
                 <span className="chip chip-accent ml-auto tnum">{plan.weeks} weeks</span>
               </div>
-              <button onClick={generate} disabled={busy} className="btn3d btn3d-ghost btn3d-sm">
-                <RefreshCw className="h-3.5 w-3.5" /> Regenerate
-              </button>
             </div>
 
             {stats && (
@@ -249,7 +246,7 @@ export function Planner({ initialPlan }: { initialPlan: Plan | null }) {
             <span className="empty-emoji" aria-hidden>🗓️</span>
             <h2 className="font-extrabold text-lg">No plan yet</h2>
             <p className="mt-1 text-sm text-muted max-w-md mx-auto leading-relaxed">
-              Set your hours, days and pace on the left — we’ll sequence every lesson by prerequisites and fit it around your week.
+              Set your hours, days and pace on the left, we’ll sequence every lesson by prerequisites and fit it around your week.
             </p>
             <button onClick={generate} disabled={busy} className="btn3d mt-5">
               <Sparkles className="h-4 w-4" /> {busy ? 'Planning…' : 'Generate my first plan'}

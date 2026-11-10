@@ -9,7 +9,9 @@ import {
   ExternalLink, HelpCircle, Info, Layers, Route, ScrollText, ShieldCheck,
 } from 'lucide-react';
 
-// fixed track colour coding — consistent on every career page
+// fixed track colour coding, consistent on every career page
+
+
 const TRACK_CHIP: Record<string, string> = { A: 'chip-success', B: 'chip-info', C: 'chip-danger', D: 'chip-warning', E: 'chip-accent' };
 const TRACK_TILE: Record<string, string> = { A: 'icon-tile-accent', B: 'icon-tile-info', C: 'icon-tile-danger', D: 'icon-tile-warning', E: 'icon-tile-violet' };
 
@@ -110,7 +112,7 @@ export default async function CompanyPage({ params }: { params: Promise<{ slug: 
       <div className="mt-4 qf-card-flat p-4 flex items-start gap-3 anim-slide-up">
         <span className="icon-tile icon-tile-sm icon-tile-info"><Info /></span>
         <p className="text-sm text-muted italic leading-relaxed">
-          Full posting not imported — mapping inferred from track data.
+          Full posting not imported, mapping inferred from track data.
         </p>
       </div>
 
@@ -168,7 +170,6 @@ export default async function CompanyPage({ params }: { params: Promise<{ slug: 
                 </span>
                 <div className="flex-1 min-w-0">
                   <blockquote className="border-l-4 border-accent/50 pl-3.5 text-sm leading-relaxed font-semibold">
-                    <span className="text-lg font-black text-accent-deep dark:text-accent leading-none mr-0.5" aria-hidden>“</span>
                     {highlightSkills(e.claim)}
                   </blockquote>
                   <div className="mt-2.5 flex items-center gap-2 flex-wrap text-xs">
@@ -192,47 +193,47 @@ export default async function CompanyPage({ params }: { params: Promise<{ slug: 
         </ul>
       </section>
 
-      {/* competency areas + prep assessments */}
-      <section className="mt-8 grid md:grid-cols-2 gap-4">
-        <div className="qf-card p-5 anim-slide-up flex flex-col">
-          <div className="section-head">
-            <span className="icon-tile icon-tile-sm icon-tile-violet"><Layers /></span>
-            <h2>Competency areas</h2>
-            <span className="chip ml-auto tnum">{company.competencyAreas.length}</span>
-          </div>
-          <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2 flex-1 content-start">
-            {company.competencyAreas.map(a => (
-              <li key={a} className="flex items-center gap-2.5 rounded-xl bg-surface-2/60 border border-border/60 px-3 py-2.5">
-                <span className="h-6 w-6 shrink-0 rounded-lg bg-violet-soft text-violet flex items-center justify-center">
-                  <Check className="h-3.5 w-3.5" strokeWidth={3} />
-                </span>
-                <span className="text-sm font-bold capitalize truncate">{a.replace(/-/g, ' ')}</span>
-              </li>
+      {/* competency areas */}
+      <section className="mt-8">
+        <div className="section-head">
+          <span className="icon-tile icon-tile-sm icon-tile-violet"><Layers /></span>
+          <h2>Competency areas</h2>
+          <span className="chip ml-auto tnum">{company.competencyAreas.length} areas</span>
+        </div>
+        <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+          {company.competencyAreas.map(a => (
+            <li key={a} className="flex items-center gap-2.5 rounded-xl bg-surface-2/60 border border-border/60 px-3 py-2.5">
+              <span className="h-6 w-6 shrink-0 rounded-lg bg-violet-soft text-violet flex items-center justify-center">
+                <Check className="h-3.5 w-3.5" strokeWidth={3} />
+              </span>
+              <span className="text-sm font-bold capitalize leading-tight">{a.replace(/-/g, ' ')}</span>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      {/* prep assessments */}
+      <section className="mt-8">
+        <div className="section-head">
+          <span className="icon-tile icon-tile-sm icon-tile-gold"><ClipboardCheck /></span>
+          <h2>Preparation assessments</h2>
+        </div>
+        {prepAssessments.length > 0 ? (
+          <div className="grid sm:grid-cols-2 gap-2">
+            {prepAssessments.map(a => (
+              <Link key={a.id} href={`/assessments/${a.id}`} className="row-card">
+                <span className="icon-tile icon-tile-sm icon-tile-accent"><ClipboardList /></span>
+                <span className="flex-1 min-w-0 font-semibold text-sm leading-tight">{a.title}</span>
+                <span className="chip tnum shrink-0">{a.questionCount}q · {a.timeLimitMinutes}m</span>
+                <ChevronRight className="h-4 w-4 text-faint shrink-0" />
+              </Link>
             ))}
-          </ul>
-        </div>
-        <div className="qf-card p-5 anim-slide-up">
-          <div className="section-head">
-            <span className="icon-tile icon-tile-sm icon-tile-gold"><ClipboardCheck /></span>
-            <h2>Preparation assessments</h2>
           </div>
-          {prepAssessments.length > 0 ? (
-            <div className="space-y-2">
-              {prepAssessments.map(a => (
-                <Link key={a.id} href={`/assessments/${a.id}`} className="row-card">
-                  <span className="icon-tile icon-tile-sm icon-tile-accent"><ClipboardList /></span>
-                  <span className="flex-1 min-w-0 font-semibold text-sm truncate">{a.title}</span>
-                  <span className="chip tnum">{a.questionCount}q · {a.timeLimitMinutes}m</span>
-                  <ChevronRight className="h-4 w-4 text-faint shrink-0" />
-                </Link>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-muted leading-relaxed">
-              No assessments mapped yet — the curriculum modules below cover the same ground.
-            </p>
-          )}
-        </div>
+        ) : (
+          <p className="text-sm text-muted leading-relaxed">
+            No assessments mapped yet, the curriculum modules below cover the same ground.
+          </p>
+        )}
       </section>
 
       {/* curriculum modules */}

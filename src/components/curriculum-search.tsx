@@ -56,7 +56,7 @@ export function CurriculumSearch({ lessons }: { lessons: SearchRow[] }) {
         <ul className="mt-3 border rounded-xl bg-surface divide-y max-w-2xl overflow-hidden">
           {results.map(l => (
             <li key={l.id} className="px-4 py-2.5 text-sm flex items-center gap-3">
-              <span className="text-[11px] text-faint w-24 shrink-0 hidden sm:block">{l.phaseTitle.replace(' —.*', '').slice(0, 22)}</span>
+              <span className="text-[11px] text-faint w-24 shrink-0 hidden sm:block">{l.phaseTitle.replace(' , .*', '').slice(0, 22)}</span>
               {l.published ? (
                 <Link href={`/learn/${l.id}`} className="flex-1 hover:text-accent">
                   {l.title} <span className="text-[11px] text-faint">· {l.moduleTitle}</span>

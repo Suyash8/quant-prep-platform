@@ -70,6 +70,8 @@ function findMathClose(s: string, from: number): number {
 
 function styled(text: string, key: string): ReactNode[] {
   // **bold**, *italic*, `code`
+
+
   const out: ReactNode[] = [];
   const re = /(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g;
   let last = 0;

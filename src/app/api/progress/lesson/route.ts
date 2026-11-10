@@ -88,6 +88,8 @@ export async function POST(req: NextRequest) {
   });
 
   // Mastery upgrade: passed + retrieval done -> mastered
+
+
   if (progress.status === 'passed' && prev?.retrievalDone) {
     await db.lessonProgress.update({
       where: { userId_lessonId: { userId: user.id, lessonId } },
@@ -98,7 +100,11 @@ export async function POST(req: NextRequest) {
   await ensureCards(user.id, lessonId, lesson.flashcards);
 
   // Gamification: full XP the first time a lesson/exercise is cleared, small
+
+
   // trickle for repeats so review stays worth doing but can't be farmed.
+
+
   let xpAwarded = 0;
   let streakCount: number | null = null;
   const prevStatus = prev?.status ?? 'not_started';

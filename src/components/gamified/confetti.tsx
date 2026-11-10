@@ -3,7 +3,7 @@
 import * as React from 'react';
 
 /**
- * Celebration confetti — pure CSS, no dependencies. Renders N pieces that
+ * Celebration confetti, pure CSS, no dependencies. Renders N pieces that
  * fall with random drift/spin/delay/colour, then unmounts itself.
  */
 const COLORS = ['#29c463', '#1cb0f6', '#ffc800', '#ff9600', '#a566ff', '#ff5a5f'];

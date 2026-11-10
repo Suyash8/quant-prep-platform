@@ -6,9 +6,9 @@
  */
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const ROOT = '/home/z/my-project';
 const OUT = path.join(ROOT, 'content', 'problems');
 const TMP = path.join(ROOT, 'scripts', 'prob3-gen', 'tmp');
 fs.mkdirSync(OUT, { recursive: true });
@@ -399,13 +399,13 @@ const problems = [];
     tags: ['simulation', 'fixed-point-arithmetic', 'parsing'],
     estMinutes: 15,
     statement: [
-      p("A trading desk hands you a one-day blotter for a **single instrument**: $N$ fills, each tagged `B` (buy) or `S` (sell) with a quantity and an execution price carrying exactly two decimal places. The trader opens the day flat, never goes short, and closes flat — every unit bought is eventually sold — so the day's realized PnL is simply total sale proceeds minus total purchase cost:"),
+      p("A trading desk hands you a one-day blotter for a **single instrument**: $N$ fills, each tagged `B` (buy) or `S` (sell) with a quantity and an execution price carrying exactly two decimal places. The trader opens the day flat, never goes short, and closes flat, every unit bought is eventually sold, so the day's realized PnL is simply total sale proceeds minus total purchase cost:"),
       math('\\text{PnL} = \\sum_{\\text{sell fills}} q \\cdot p \\; - \\; \\sum_{\\text{buy fills}} q \\cdot p'),
       p("The catch is **money arithmetic**. A price like `10.10` is not represented exactly in binary floating point, and summing tens of thousands of products as floats can drift the final cent. The pattern used by real back-office systems is to convert each price to **integer cents** once, accumulate everything in integers, and only format a decimal string at the very end."),
-      callout('quant', 'Cents, not floats', "As a double, `0.01` is really 0.01000000000000000020816… — harmless for one trade, dangerous when compounded over a whole blotter. Integer cents make money arithmetic exact and language-independent."),
+      callout('quant', 'Cents, not floats', "As a double, `0.01` is really 0.01000000000000000020816…, harmless for one trade, dangerous when compounded over a whole blotter. Integer cents make money arithmetic exact and language-independent."),
       p("Print the total PnL in dollars with exactly two decimals, with a leading minus sign for a losing day."),
     ],
-    inputFormat: "Line 1: integer $N$ — the number of fills.\nLines 2 to $N+1$: `B q p` or `S q p` — side, integer quantity $q$, price $p$ with **exactly two decimal digits**.",
+    inputFormat: "Line 1: integer $N$, the number of fills.\nLines 2 to $N+1$: `B q p` or `S q p`, side, integer quantity $q$, price $p$ with **exactly two decimal digits**.",
     outputFormat: "One line: the day's total PnL with exactly two decimal places (for example `12.00`, `-29.00` or `0.00`).",
     constraints: [
       "1 <= N <= 100000",
@@ -425,9 +425,9 @@ const problems = [];
     ],
     editorial: [
       h2('Approach'),
-      p("Because the trader starts flat, never goes short, and ends flat, every bought unit is sold exactly once. Cash-wise each `B q p` line pays out $q \\cdot p$ and each `S q p` line takes in $q \\cdot p$, so the net cash change over the day — the realized PnL — is the signed sum of the fill values."),
+      p("Because the trader starts flat, never goes short, and ends flat, every bought unit is sold exactly once. Cash-wise each `B q p` line pays out $q \\cdot p$ and each `S q p` line takes in $q \\cdot p$, so the net cash change over the day, the realized PnL, is the signed sum of the fill values."),
       math('\\text{PnL} = \\sum_{\\text{sells}} q \\cdot p \\; - \\; \\sum_{\\text{buys}} q \\cdot p'),
-      p("Parse each price as the decimal string it is: `w.dd` maps to integer cents `w * 100 + dd`. Multiply by quantity, accumulate into one signed 64-bit counter, and convert to a `dollars.cents` string only when printing. With the given limits the accumulator's magnitude stays near $10^{14}$ cents — far inside 64-bit range."),
+      p("Parse each price as the decimal string it is: `w.dd` maps to integer cents `w * 100 + dd`. Multiply by quantity, accumulate into one signed 64-bit counter, and convert to a `dollars.cents` string only when printing. With the given limits the accumulator's magnitude stays near $10^{14}$ cents, far inside 64-bit range."),
       callout('pitfall', 'Two classic bugs', "Accumulating `qty * price` as doubles can be off by a cent after many fills; and rounding a float at print time can turn a `x.xx5` value into the wrong cent. Doing everything in integer cents kills both bugs at once."),
       p("**Complexity.** $O(N)$ time, $O(1)$ extra memory."),
     ],
@@ -459,35 +459,35 @@ const problems = [];
     tags: ['kadane', 'dynamic-programming', 'one-pass'],
     estMinutes: 15,
     statement: [
-      p("A strategy produced a daily P&L series $a_1, \\dots, a_n$ (negative entries are losing days). Risk asks for the **best contiguous streak**: the non-empty consecutive window whose summed P&L is largest. A losing day in the middle can still belong to the best streak — contiguity matters, reordering does not."),
+      p("A strategy produced a daily P&L series $a_1, \\dots, a_n$ (negative entries are losing days). Risk asks for the **best contiguous streak**: the non-empty consecutive window whose summed P&L is largest. A losing day in the middle can still belong to the best streak, contiguity matters, reordering does not."),
       math('\\max_{1 \\le l \\le r \\le n} \\; \\sum_{i=l}^{r} a_i'),
-      p("This is the classic **maximum subarray** problem. Kadane's algorithm scans once, keeping the best sum of a window that *ends* at the current element: either extend the previous window by one day or restart fresh at today's P&L — whichever is bigger."),
+      p("This is the classic **maximum subarray** problem. Kadane's algorithm scans once, keeping the best sum of a window that *ends* at the current element: either extend the previous window by one day or restart fresh at today's P&L, whichever is bigger."),
       code('python', 'cur = a[0]\nbest = a[0]\nfor x in a[1:]:\n    cur = max(x, cur + x)   # extend the streak, or restart at x\n    best = max(best, cur)', 'Kadane in three lines'),
-      callout('pitfall', 'All-negative series', "Initializing `best = 0` silently answers 0 for a series that loses money every day. The best streak must be non-empty, so for an all-negative series the true answer is the single least-bad day — a negative number."),
+      callout('pitfall', 'All-negative series', "Initializing `best = 0` silently answers 0 for a series that loses money every day. The best streak must be non-empty, so for an all-negative series the true answer is the single least-bad day, a negative number."),
     ],
     inputFormat: "Line 1: integer $n$.\nLine 2: $n$ integers $a_1 \\dots a_n$.",
-    outputFormat: "One line: the maximum subarray sum — a single integer, possibly negative.",
+    outputFormat: "One line: the maximum subarray sum, a single integer, possibly negative.",
     constraints: [
       "1 <= n <= 100000",
       "-10^9 <= a_i <= 10^9",
       "The answer fits in a signed 64-bit integer",
     ],
     examples: [
-      "The window [4, -1, 2, 1] sums to 6 — the largest achievable contiguous sum.",
+      "The window [4, -1, 2, 1] sums to 6, the largest achievable contiguous sum.",
       "Every entry is negative, so the best streak is the single least-bad day, -3.",
     ],
     hints: [
       "Define `cur` = best sum of a window ending at the current index; update with `cur = max(x, cur + x)`.",
       "Initialize both `best` and `cur` with `a[0]`, not with 0.",
-      "One pass, O(n) time, O(1) memory — no prefix sums or divide-and-conquer needed.",
+      "One pass, O(n) time, O(1) memory, no prefix sums or divide-and-conquer needed.",
     ],
     editorial: [
-      h2('Approach — Kadane'),
+      h2('Approach, Kadane'),
       p("Let $cur_i$ be the maximum sum of a subarray that **ends** at index $i$. Either the window is just $\\{a_i\\}$, or it extends the best window ending at $i-1$:"),
       math('cur_i = \\max\\bigl(a_i,\\; cur_{i-1} + a_i\\bigr), \\qquad \\text{answer} = \\max_i cur_i'),
       p("If $cur_{i-1} < 0$ it can only drag the streak down, so restarting is optimal; otherwise extending is at least as good. The recurrence is evaluated in a single scan and the answer is the running maximum over all $cur_i$."),
       p("**Why correct:** by induction $cur_i$ is exactly the best suffix-sum at $i$, and every subarray ends somewhere, so the maximum over $cur_i$ covers all candidates."),
-      p("**Complexity.** $O(n)$ time, $O(1)$ extra space. Watch the accumulation bound: with $|a_i| \\le 10^9$ and $n \\le 10^5$, sums reach $10^{14}$ — use 64-bit integers in C++."),
+      p("**Complexity.** $O(n)$ time, $O(1)$ extra space. Watch the accumulation bound: with $|a_i| \\le 10^9$ and $n \\le 10^5$, sums reach $10^{14}$, use 64-bit integers in C++."),
     ],
     py: PY_KADANE,
     cpp: CPP_KADANE,
@@ -518,10 +518,10 @@ const problems = [];
       p("An execution algorithm reviews a day's child-order sizes $a_1, \\dots, a_n$ and counts how many **unordered pairs of distinct orders** had sizes summing to exactly the target block size $T$. Pairs are counted by position: two orders of equal size still form a valid pair, and each index pair $(i, j)$ with $i < j$ counts once."),
       math('\\#\\{(i,j) \\;:\\; i < j, \\; a_i + a_j = T\\}'),
       p("With $n$ up to $10^5$, the $O(n^2)$ double loop is too slow at the top end. A single pass with a hash map of *previously seen* values answers each element in $O(1)$ expected time: when you encounter $x$, every earlier occurrence of $T - x$ forms exactly one pair with it."),
-      callout('info', 'Count before you insert', "Adding `seen[T - x]` **before** inserting `x` guarantees $i < j$ (an element never pairs with itself) and counts each unordered pair exactly once — duplicates and the $a_i = T/2$ case fall out automatically."),
+      callout('info', 'Count before you insert', "Adding `seen[T - x]` **before** inserting `x` guarantees $i < j$ (an element never pairs with itself) and counts each unordered pair exactly once, duplicates and the $a_i = T/2$ case fall out automatically."),
     ],
     inputFormat: "Line 1: integers $n$ and $T$.\nLine 2: $n$ integers $a_1 \\dots a_n$.",
-    outputFormat: "One line: the number of qualifying pairs. It can exceed the 32-bit range — use a 64-bit type in C++.",
+    outputFormat: "One line: the number of qualifying pairs. It can exceed the 32-bit range, use a 64-bit type in C++.",
     constraints: [
       "1 <= n <= 100000",
       "-10^9 <= a_i <= 10^9",
@@ -529,20 +529,20 @@ const problems = [];
       "The answer fits in a signed 64-bit integer",
     ],
     examples: [
-      "Pairs (1, 5) and (2, 4) sum to 6 — two pairs.",
+      "Pairs (1, 5) and (2, 4) sum to 6, two pairs.",
       "All six 2s pair with each other: C(6, 2) = 15 index pairs.",
     ],
     hints: [
       "Stream through the array; for each x add the number of previously seen values equal to T - x.",
       "Update the map after counting, so x never pairs with itself.",
-      "With 100000 equal values the answer is about 5 x 10^9 — it does not fit in a 32-bit int.",
+      "With 100000 equal values the answer is about 5 x 10^9, it does not fit in a 32-bit int.",
     ],
     editorial: [
-      h2('Approach — one-pass hash map'),
+      h2('Approach, one-pass hash map'),
       p("Iterate left to right maintaining a map `seen` from value to its occurrence count among $a_1, \\dots, a_{i-1}$. At index $i$ the number of new pairs ending at $i$ is exactly `seen[T - a_i]`; add it, then record $a_i$ in the map:"),
       math('\\text{answer} = \\sum_{i=1}^{n} \\;\\#\\{j < i : a_j = T - a_i\\}'),
-      p("Every pair $(i, j)$ with $i < j$ is counted exactly once — at step $j$ — and no element can pair with itself because the count is read before insertion. Duplicate values, negative values, and the even-$T$ case are all handled without special-casing."),
-      callout('quant', 'Counting at scale', "The same look-back hash pattern powers real-time screens such as 'how many pairs of today\'s fills net to the parent size' — it turns an $O(n^2)$ comparison into $O(n)$ expected work."),
+      p("Every pair $(i, j)$ with $i < j$ is counted exactly once, at step $j$, and no element can pair with itself because the count is read before insertion. Duplicate values, negative values, and the even-$T$ case are all handled without special-casing."),
+      callout('quant', 'Counting at scale', "The same look-back hash pattern powers real-time screens such as 'how many pairs of today\'s fills net to the parent size', it turns an $O(n^2)$ comparison into $O(n)$ expected work."),
       p("**Complexity.** $O(n)$ expected time with a hash map; $O(n)$ memory. In C++ accumulate into `long long`."),
     ],
     py: PY_TWOSUM,
@@ -572,7 +572,7 @@ const problems = [];
     tags: ['sliding-window', 'integer-arithmetic', 'rounding'],
     estMinutes: 18,
     statement: [
-      p("A charting tool draws the $k$-day **moving average** of an integer price series $p_1, \\dots, p_n$: for every window of $k$ consecutive prices it plots the window mean. Emit all $n - k + 1$ window averages, each rounded to two decimals with the standard **round-half-up** rule — a tie like `1.125` rounds up to `1.13`."),
+      p("A charting tool draws the $k$-day **moving average** of an integer price series $p_1, \\dots, p_n$: for every window of $k$ consecutive prices it plots the window mean. Emit all $n - k + 1$ window averages, each rounded to two decimals with the standard **round-half-up** rule, a tie like `1.125` rounds up to `1.13`."),
       p("Keep a running window sum: entering a window adds the new price and leaving subtracts the oldest, so each step costs $O(1)$ instead of re-summing $k$ values. Round **exactly**, in integer arithmetic: with window sum $s$, the value in hundredths is"),
       math('\\text{cents} = \\left\\lfloor \\frac{200\\,s + k}{2k} \\right\\rfloor = \\operatorname{round}_{\\text{half-up}}\\!\\left(\\frac{100\\,s}{k}\\right)'),
       p("Print each window as a decimal with the fractional part zero-padded to two digits."),
@@ -592,15 +592,15 @@ const problems = [];
     hints: [
       "Sliding window: initialize s = sum of the first k prices, then s += p[i] - p[i-k] as it slides.",
       "Round with integers only: t = (200*s + k) // (2*k); print t//100 and t%100 zero-padded to two digits.",
-      "There are exactly n - k + 1 windows — with k = n there is a single line.",
+      "There are exactly n - k + 1 windows, with k = n there is a single line.",
     ],
     editorial: [
-      h2('Approach — sliding window sum + exact rounding'),
+      h2('Approach, sliding window sum + exact rounding'),
       p("Maintain $s$, the sum of the current window. The first window costs $O(k)$; each subsequent update is $s \\mathrel{+}= p_i - p_{i-k}$. Every printed value is $s/k$ rounded to two decimals."),
       p("Rounding $s/k$ to hundredths with **round-half-up** is exact in integers: multiply by 200 and add $k$ (which is half of $2k$) before floor-dividing by $2k$:"),
       math('t = \\left\\lfloor \\dfrac{200s + k}{2k} \\right\\rfloor, \\qquad \\text{output} = (t \\;\\text{div}\\; 100) + \".\" + (t \\bmod 100 \\text{, zero-padded})'),
-      p("Check the tie $s = 9$, $k = 8$: the numerator is $200 \\cdot 9 + 8 = 1808$ and $1808 / 16 = 113$ exactly, so $t = 113$ and the output is `1.13` — precisely the half-up rounding of $1.125$. The formula bumps up exactly when the remainder reaches the half point."),
-      p("**Complexity.** $O(n)$ time, $O(1)$ extra memory beyond the input. Sums reach $10^{11}$ and the rounding numerator $2 \\times 10^{13}$ — both fit comfortably in signed 64-bit."),
+      p("Check the tie $s = 9$, $k = 8$: the numerator is $200 \\cdot 9 + 8 = 1808$ and $1808 / 16 = 113$ exactly, so $t = 113$ and the output is `1.13`, precisely the half-up rounding of $1.125$. The formula bumps up exactly when the remainder reaches the half point."),
+      p("**Complexity.** $O(n)$ time, $O(1)$ extra memory beyond the input. Sums reach $10^{11}$ and the rounding numerator $2 \\times 10^{13}$, both fit comfortably in signed 64-bit."),
     ],
     py: PY_MAVG,
     cpp: CPP_MAVG,
@@ -633,10 +633,10 @@ const problems = [];
     tags: ['lower-bound', 'binary-search', 'order-book'],
     estMinutes: 15,
     statement: [
-      p("A price ladder is quoted as a **sorted array** of $n$ prices in non-decreasing order. For each query price $q$, the router needs the **first entry at least $q$** — the cheapest rung that would still fill a buy limit at $q$ — reported as a 0-based index. If every rung is strictly below $q$, print `-1`."),
+      p("A price ladder is quoted as a **sorted array** of $n$ prices in non-decreasing order. For each query price $q$, the router needs the **first entry at least $q$**, the cheapest rung that would still fill a buy limit at $q$, reported as a 0-based index. If every rung is strictly below $q$, print `-1`."),
       p("This is the standard **lower bound** binary search. Maintain the half-open invariant: everything strictly left of `lo` is `< q`, everything at `hi` or beyond is `>= q`; the pointers converge on the boundary."),
       code('python', 'lo, hi = 0, n            # search within [lo, hi)\nwhile lo < hi:\n    mid = (lo + hi) // 2\n    if a[mid] >= q:\n        hi = mid         # a[mid] qualifies: answer is mid or to its left\n    else:\n        lo = mid + 1     # a[mid] too small: answer is to its right\n# lo is the first index with a[lo] >= q, or n if no rung qualifies', 'Lower-bound loop with the half-open invariant'),
-      callout('info', 'The only edge case', "`lo == n` after the loop means every element is below $q$ — report `-1`. Python's `bisect_left` and C++'s `lower_bound` implement exactly this search."),
+      callout('info', 'The only edge case', "`lo == n` after the loop means every element is below $q$, report `-1`. Python's `bisect_left` and C++'s `lower_bound` implement exactly this search."),
     ],
     inputFormat: "Line 1: integer $n$.\nLine 2: $n$ integers in non-decreasing order.\nLine 3: integer $m$.\nLine 4: $m$ query values $q_1 \\dots q_m$.",
     outputFormat: "$m$ lines: for each query, the 0-based index of the first element $\\ge q$, or `-1`.",
@@ -651,15 +651,15 @@ const problems = [];
     ],
     hints: [
       "bisect_left (Python) / lower_bound (C++) return the first index with value >= q directly.",
-      "If the returned index equals n, every element is smaller — print -1.",
+      "If the returned index equals n, every element is smaller, print -1.",
       "Duplicated values are why this is lower bound, not upper bound: the first occurrence counts.",
     ],
     editorial: [
-      h2('Approach — lower bound'),
+      h2('Approach, lower bound'),
       p("For each query we want the smallest index $i$ with $a_i \\ge q$. Binary search on the predicate $P(i) = (a_i \\ge q)$, which is monotone (false, …, false, true, …, true) because the array is sorted:"),
       math('i^* = \\min \\{ i : a_i \\ge q \\}, \\qquad \\text{output} = \\begin{cases} i^* & i^* < n \\\\ -1 & i^* = n \\end{cases}'),
       p("The half-open loop keeps the invariant *the answer lies in `[lo, hi]`*: on `a[mid] >= q` the boundary cannot be to the right of `mid`; otherwise it cannot be at `mid` or to the left. That costs $O(\\log n)$ comparisons per query and $O(1)$ memory."),
-      p("**Complexity.** $O(m \\log n)$ for the queries plus $O(n)$ to read the array — easily within limits for $n, m \\le 2 \\cdot 10^5$."),
+      p("**Complexity.** $O(m \\log n)$ for the queries plus $O(n)$ to read the array, easily within limits for $n, m \\le 2 \\cdot 10^5$."),
       callout('quant', 'Where this shows up', "Lower bound over a sorted price vector is the primitive behind price-level lookup in order books, yield-curve interpolation anchors, and barrier-level checks."),
     ],
     py: PY_BSEARCH,
@@ -689,14 +689,14 @@ const problems = [];
     statement: [
       p("You roll $n$ independent fair six-sided dice and sum the pips. Instead of simulating, compute the **expected sum exactly** and print it as a reduced fraction."),
       math('\\mathbb{E}[X_i] = \\frac{1+2+3+4+5+6}{6} = \\frac{7}{2} \\quad\\Longrightarrow\\quad \\mathbb{E}\\!\\left[\\textstyle\\sum_{i=1}^{n} X_i\\right] = \\frac{7n}{2}'),
-      p("Linearity of expectation does the work in one line — no independence needed, though it is given anyway. Reduce $\\frac{7n}{2}$ with the gcd: when $n$ is **even** the expectation is an integer and must be printed without a denominator; when $n$ is **odd** print `p/q`."),
-      callout('quant', 'Fractions over floats', "On trading floors expectations are quoted as exact fractions or basis points, not decimals — `35/2` and `17.50` carry different information when you later compare or multiply them. Exact rational output also makes automated checking unambiguous."),
+      p("Linearity of expectation does the work in one line, no independence needed, though it is given anyway. Reduce $\\frac{7n}{2}$ with the gcd: when $n$ is **even** the expectation is an integer and must be printed without a denominator; when $n$ is **odd** print `p/q`."),
+      callout('quant', 'Fractions over floats', "On trading floors expectations are quoted as exact fractions or basis points, not decimals, `35/2` and `17.50` carry different information when you later compare or multiply them. Exact rational output also makes automated checking unambiguous."),
     ],
     inputFormat: "One line: integer $n$, the number of dice.",
     outputFormat: "One line: the expected sum as a reduced fraction `p/q` (with $\\gcd(p, q) = 1$, $q > 0$), or just `p` when the reduced denominator is 1.",
     constraints: [
       "1 <= n <= 60",
-      "The expected value is 7n/2 — small integers; the difficulty is the exact output format, not overflow",
+      "The expected value is 7n/2, small integers; the difficulty is the exact output format, not overflow",
     ],
     examples: [
       "One die: E = 7/2, already reduced.",
@@ -704,15 +704,15 @@ const problems = [];
     ],
     hints: [
       "E = 7n/2; write it as the fraction (7n)/2 and reduce with gcd(7n, 2).",
-      "If n is even the gcd is 2 and the denominator becomes 1 — print the integer alone.",
+      "If n is even the gcd is 2 and the denominator becomes 1, print the integer alone.",
       "No floating point: the answer is a fraction, not a decimal.",
     ],
     editorial: [
-      h2('Approach — linearity of expectation'),
+      h2('Approach, linearity of expectation'),
       p("Let $X_i$ be the pips of die $i$. Each face contributes $\\frac{1+2+\\dots+6}{6} = \\frac{21}{6} = \\frac{7}{2}$, so by linearity (which needs no independence):"),
       math('\\mathbb{E}\\Bigl[\\sum X_i\\Bigr] = \\sum \\mathbb{E}[X_i] = n \\cdot \\frac{7}{2} = \\frac{7n}{2}'),
       p("Print the reduced form: compute $g = \\gcd(7n, 2)$, output $7n/g$ when $2/g = 1$, otherwise `p/q`. For even $n$, $g = 2$ and the result is the integer $7n/2$; for odd $n$ it is the fraction $7n/2$. With $n \\le 60$ the arithmetic is trivial, but going through the gcd makes the code honest for any numerator/denominator pair."),
-      p("**Complexity.** $O(1)$ time and memory — a gcd on numbers of at most a few hundred."),
+      p("**Complexity.** $O(1)$ time and memory, a gcd on numbers of at most a few hundred."),
     ],
     py: PY_DICE,
     cpp: CPP_DICE,
@@ -743,8 +743,8 @@ const problems = [];
     statement: [
       p("A deposit of principal $P$ (whole dollars) earns an annual rate of $r$ percent. Under **simple** interest the account earns $P \\cdot r/100$ each year on the original principal; under **compound** interest the rate applies to the running balance. After $t$ years the balances are"),
       math('S_{\\text{simple}} = P \\cdot \\frac{r\\,t}{100} \\qquad\\qquad S_{\\text{comp}} = P \\left(1 + \\frac{r}{100}\\right)^{t}'),
-      p("Print $|S_{\\text{comp}} - S_{\\text{simple}}|$ rounded to two decimals. By Bernoulli's inequality $(1+x)^t \\ge 1 + tx$ for $x \\ge 0$, the compound balance is never behind — but the gap is a difference of two large, close numbers, so it must be computed carefully."),
-      callout('warn', 'Deterministic floating point', "Compute the compound balance by **repeated multiplication**: start from `comp = P` and multiply by `(1 + r/100)` exactly `t` times, in a loop. Do not use `pow` or a logarithm identity — library exponentiation can round differently between languages, and this problem's expected output assumes the loop. The reference Python and C++ solutions use the identical operation order."),
+      p("Print $|S_{\\text{comp}} - S_{\\text{simple}}|$ rounded to two decimals. By Bernoulli's inequality $(1+x)^t \\ge 1 + tx$ for $x \\ge 0$, the compound balance is never behind, but the gap is a difference of two large, close numbers, so it must be computed carefully."),
+      callout('warn', 'Deterministic floating point', "Compute the compound balance by **repeated multiplication**: start from `comp = P` and multiply by `(1 + r/100)` exactly `t` times, in a loop. Do not use `pow` or a logarithm identity, library exponentiation can round differently between languages, and this problem's expected output assumes the loop. The reference Python and C++ solutions use the identical operation order."),
       p("The rate $r$ carries exactly two decimals (for example `5.25`); pass it through your language's decimal-to-double parser as-is."),
     ],
     inputFormat: "One line: $P$ (integer dollars), $r$ (a decimal with exactly two digits), $t$ (integer years), separated by spaces.",
@@ -761,7 +761,7 @@ const problems = [];
     ],
     hints: [
       "Simple interest is one multiplication; compound interest is the loop comp = P; repeat t times: comp *= (1 + r/100).",
-      "Take the absolute difference at the end — compound should be larger, but floating point rewards a defensive abs().",
+      "Take the absolute difference at the end, compound should be larger, but floating point rewards a defensive abs().",
       "Match the reference operation order exactly: factor = 1.0 + r/100.0 computed once, then multiplied t times.",
     ],
     editorial: [
@@ -769,7 +769,7 @@ const problems = [];
       p("Both balances follow from the definitions. Simple interest adds the same coupon $P \\cdot r/100$ for each of $t$ years; compound interest multiplies the balance by the growth factor $(1 + r/100)$ each year:"),
       math('S_{\\text{comp}} - S_{\\text{simple}} = P\\left[\\left(1 + \\tfrac{r}{100}\\right)^{t} - 1 - \\tfrac{rt}{100}\\right] \\;\\ge\\; 0'),
       p("The gap is exactly the *interest on interest*. For the implementation, determinism matters more than cleverness: build the factor `1.0 + r/100.0` once, then multiply it into a running product $t$ times. IEEE-754 arithmetic is deterministic for a fixed operation order, so Python and C++ produce bit-identical doubles, and both correctly-rounded 2-decimal conversions print the same string."),
-      callout('pitfall', 'Do not pow()', "`pow(1 + r/100, t)` may use a different internal algorithm (exp/log or repeated squaring) than the loop and can land one ulp away — enough to flip the printed cent when the true value sits near a rounding boundary. The problem guarantees test values are far from ties, so the loop's result is robust."),
+      callout('pitfall', 'Do not pow()', "`pow(1 + r/100, t)` may use a different internal algorithm (exp/log or repeated squaring) than the loop and can land one ulp away, enough to flip the printed cent when the true value sits near a rounding boundary. The problem guarantees test values are far from ties, so the loop's result is robust."),
       p("**Complexity.** $O(t)$ time, $O(1)$ memory."),
     ],
     py: PY_COMPOUND,
@@ -801,12 +801,12 @@ const problems = [];
     estMinutes: 30,
     statement: [
       p("Given $n$ coin denominations (each usable an **unlimited** number of times) and a target amount, pay exactly the amount using the **fewest coins**, or report `-1` if it is impossible."),
-      p("Greedy fails in general: with coins `{1, 5, 11}` and amount `15`, grabbing the biggest coin first yields `11+1+1+1+1` — five coins — while `5+5+5` needs only three. The reliable tool is dynamic programming over amounts."),
+      p("Greedy fails in general: with coins `{1, 5, 11}` and amount `15`, grabbing the biggest coin first yields `11+1+1+1+1`, five coins, while `5+5+5` needs only three. The reliable tool is dynamic programming over amounts."),
       math('dp[x] = \\min_{c \\in \\text{coins},\\ c \\le x} \\bigl(dp[x - c] + 1\\bigr), \\qquad dp[0] = 0'),
       p("`dp[x]` is the fewest coins that make exactly $x$. Because a coin may be reused, iterating $x$ in **increasing** order (rather than the 0/1-knapsack decreasing order) is what makes reuse legal. If `dp[amount]` is never improved from its initial infinity, the amount is unpayable."),
-      callout('pitfall', 'Sentinel discipline', "Initialize `dp[x]` to `amount + 1` — a value strictly larger than any attainable count — so the final check `dp[amount] <= amount` separates reachable from unreachable states. Initializing with `INT_MAX` and adding 1 overflows; and forgetting `dp[0] = 0` breaks every recurrence."),
+      callout('pitfall', 'Sentinel discipline', "Initialize `dp[x]` to `amount + 1`, a value strictly larger than any attainable count, so the final check `dp[amount] <= amount` separates reachable from unreachable states. Initializing with `INT_MAX` and adding 1 overflows; and forgetting `dp[0] = 0` breaks every recurrence."),
     ],
-    inputFormat: "Line 1: integer $n$, the number of denominations.\nLine 2: $n$ integers — the coin values (not necessarily distinct).\nLine 3: integer `amount`.",
+    inputFormat: "Line 1: integer $n$, the number of denominations.\nLine 2: $n$ integers, the coin values (not necessarily distinct).\nLine 3: integer `amount`.",
     outputFormat: "One line: the minimum number of coins, or `-1` if the amount cannot be formed.",
     constraints: [
       "1 <= n <= 20",
@@ -815,21 +815,21 @@ const problems = [];
       "amount = 0 requires 0 coins",
     ],
     examples: [
-      "11 = 5 + 5 + 1 — three coins is optimal.",
+      "11 = 5 + 5 + 1, three coins is optimal.",
       "Only 2s are available and 3 is odd, so it is unpayable.",
     ],
     hints: [
       "Bottom-up over amounts: dp[0] = 0, and for each x try every coin c <= x: dp[x] = min(dp[x], dp[x-c] + 1).",
-      "Iterate x upward, not downward — upward allows the same coin to be used repeatedly.",
+      "Iterate x upward, not downward, upward allows the same coin to be used repeatedly.",
       "Impossible means dp[amount] was never updated from its infinity sentinel; print -1, never the sentinel.",
     ],
     editorial: [
-      h2('Approach — unbounded coin change, bottom-up'),
+      h2('Approach, unbounded coin change, bottom-up'),
       p("Define $dp[x]$ = minimum coins summing to exactly $x$, with $dp[0] = 0$ and $dp[x] = \\infty$ initially. Each state looks one coin back: if the last coin used was $c$, the remaining amount $x - c$ must itself be formed optimally:"),
       math('dp[x] = \\min_{c \\le x} \\; dp[x - c] + 1'),
-      p("Filling $x$ in increasing order is essential: it lets $dp[x - c]$ already include further copies of $c$, which is exactly the *unbounded* (reuse allowed) knapsack. A coin larger than the amount is simply skipped. Duplicate denominations are harmless — the second pass finds no improvement."),
+      p("Filling $x$ in increasing order is essential: it lets $dp[x - c]$ already include further copies of $c$, which is exactly the *unbounded* (reuse allowed) knapsack. A coin larger than the amount is simply skipped. Duplicate denominations are harmless, the second pass finds no improvement."),
       p("**Why not greedy:** for non-canonical coin systems biggest-first is not optimal (see the `{1, 5, 11}`, amount 15 example in the statement); DP tries every last-coin choice, so it is correct by construction."),
-      p("**Complexity.** $O(n \\cdot \\text{amount})$ time — here at most $20 \\times 10^4 = 2 \\cdot 10^5$ state-coin pairs — and $O(\\text{amount})$ memory."),
+      p("**Complexity.** $O(n \\cdot \\text{amount})$ time, here at most $20 \\times 10^4 = 2 \\cdot 10^5$ state-coin pairs, and $O(\\text{amount})$ memory."),
     ],
     py: PY_COIN,
     cpp: CPP_COIN,

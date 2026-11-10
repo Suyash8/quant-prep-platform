@@ -115,7 +115,7 @@ export function ProjectTracker({ slug, milestones, initialDone, initialStatus, i
           className="btn3d btn3d-sm btn3d-ghost"
         ><Undo2 className="h-3.5 w-3.5" /> Undo</button>
         <span className="text-xs text-faint inline-flex items-center gap-1.5">
-          <Info className="h-3.5 w-3.5 shrink-0" /> Self-logged against the criteria below — be honest with yourself.
+          <Info className="h-3.5 w-3.5 shrink-0" /> Self-logged against the criteria below, be honest with yourself.
         </span>
       </div>
 

@@ -21,7 +21,7 @@
     },
     {
       "type": "p",
-      "md": "An order is not just an object; it is a **state machine**. You submit it (New), the venue acknowledges it (Accepted), it may fill in pieces (Partially Filled), and it ends in exactly one **terminal state**: Filled, Cancelled or Rejected. Every transition is driven by a message from the venue - the OMS records transitions, it never invents them. Assuming an order is live when it was actually rejected, or cancelled when it partially filled, is how firms accidentally double their exposure."
+      "md": "An order is not just an object; it is a **state machine**. You submit it (New), the venue acknowledges it (Accepted), it may fill in pieces (Partially Filled), and it ends in exactly one **terminal state**: Filled, Cancelled or Rejected. Every transition is driven by a message from the venue, the OMS records transitions, it never invents them. Assuming an order is live when it was actually rejected, or cancelled when it partially filled, is how firms accidentally double their exposure."
     },
     {
       "type": "table",
@@ -48,17 +48,17 @@
         ],
         [
           "Filled",
-          "Full quantity executed - terminal",
+          "Full quantity executed, terminal",
           "Venue"
         ],
         [
           "Cancelled",
-          "Remaining quantity removed - terminal",
+          "Remaining quantity removed, terminal",
           "Venue confirming your request"
         ],
         [
           "Rejected",
-          "Venue refused the order - terminal",
+          "Venue refused the order, terminal",
           "Venue"
         ]
       ]
@@ -73,7 +73,7 @@
     },
     {
       "type": "p",
-      "md": "Each execution report carries quantity, price, timestamp, side, order IDs and a venue-assigned **execution ID**. Capture appends every report to an immutable log - never overwrite, never delete. Deduplication happens at ingest: if execution ID $e$ was already seen, the report is a resend - ignored for bookkeeping, still logged as received. The append-only log is the firm's ground truth: nightly reconciliation compares it against the venue's ledger, and incident reviews replay it frame by frame."
+      "md": "Each execution report carries quantity, price, timestamp, side, order IDs and a venue-assigned **execution ID**. Capture appends every report to an immutable log, never overwrite, never delete. Deduplication happens at ingest: if execution ID $e$ was already seen, the report is a resend, ignored for bookkeeping, still logged as received. The append-only log is the firm's ground truth: nightly reconciliation compares it against the venue's ledger, and incident reviews replay it frame by frame."
     },
     {
       "type": "h2",
@@ -98,7 +98,7 @@
       "type": "callout",
       "variant": "quant",
       "title": "Signs and fees",
-      "md": "Fees belong in the ledger, not in a footnote: a \\$0.01/share fee on both legs of a 300-share round trip is \\$6.00 - real money against a thin edge. And keep one sign convention everywhere: sells are negative quantities, a negative position is a short, and negative PnL is a loss. Mixed conventions are where money disappears on paper."
+      "md": "Fees belong in the ledger, not in a footnote: a \\$0.01/share fee on both legs of a 300-share round trip is \\$6.00, real money against a thin edge. And keep one sign convention everywhere: sells are negative quantities, a negative position is a short, and negative PnL is a loss. Mixed conventions are where money disappears on paper."
     },
     {
       "type": "code",
@@ -108,18 +108,18 @@
     },
     {
       "type": "p",
-      "md": "Position keeping is event sourcing whether or not you call it that: the position is not a field you update, it is the *sum of a stream* — every execution, every correction, every corporate action — applied in order. This reframing explains everything about OMS design: why you persist the events (the position is derivable), why ordering is a correctness property not a nicety (sums are order-dependent once corrections exist), and why reconciliation exists (two independent event streams — yours and the venue's — will drift, and the drift must be found, not assumed away)."
+      "md": "Position keeping is event sourcing whether or not you call it that: the position is not a field you update, it is the *sum of a stream*, every execution, every correction, every corporate action, applied in order. This reframing explains everything about OMS design: why you persist the events (the position is derivable), why ordering is a correctness property not a nicety (sums are order-dependent once corrections exist), and why reconciliation exists (two independent event streams, yours and the venue's, will drift, and the drift must be found, not assumed away)."
     },
     {
       "type": "steps",
       "title": "A position's life, traced through real messages",
       "items": [
-        "09:30:01.100 — `NEWORDER` 500 BUY. Position: 0. Working orders: +500 (this is *exposure*, not position — a distinction your risk system must maintain).",
-        "09:30:01.250 — `EXEC` 300 @ 100.02. Position: +300. Working: 200. Realised: 0. Average cost: 100.02.",
-        "09:30:02.000 — `EXEC` 200 @ 100.03. Position: +500. Working: 0. Average cost: $(300 \\times 100.02 + 200 \\times 100.03)/500 = 100.024$.",
-        "09:30:05.000 — `CORRECTION`: the second fill was 100.00, not 100.03 (busted and re-reported). Position: still +500 (quantity unchanged) but average cost is now $(300 \\times 100.02 + 200 \\times 100.00)/500 = 100.012$, and every downstream P&L number that already printed is wrong until restated. Corrections are why you keep the events.",
-        "09:31:00 — `CORPORATE ACTION`: 2-for-1 split. Position: +1000, cost basis adjusted, all limit prices in working orders cancelled and re-entered by the venue. The position stream just got a non-trade event, and your schema must have had a place for it.",
-        "End of day — venue statement: +1000. Your books: +1000. ✓ Reconciled. Tomorrow it will be something else; that is the norm, not the exception."
+        "09:30:01.100, `NEWORDER` 500 BUY. Position: 0. Working orders: +500 (this is *exposure*, not position, a distinction your risk system must maintain).",
+        "09:30:01.250, `EXEC` 300 @ 100.02. Position: +300. Working: 200. Realised: 0. Average cost: 100.02.",
+        "09:30:02.000, `EXEC` 200 @ 100.03. Position: +500. Working: 0. Average cost: $(300 \\times 100.02 + 200 \\times 100.03)/500 = 100.024$.",
+        "09:30:05.000, `CORRECTION`: the second fill was 100.00, not 100.03 (busted and re-reported). Position: still +500 (quantity unchanged) but average cost is now $(300 \\times 100.02 + 200 \\times 100.00)/500 = 100.012$, and every downstream P&L number that already printed is wrong until restated. Corrections are why you keep the events.",
+        "09:31:00, `CORPORATE ACTION`: 2-for-1 split. Position: +1000, cost basis adjusted, all limit prices in working orders cancelled and re-entered by the venue. The position stream just got a non-trade event, and your schema must have had a place for it.",
+        "End of day, venue statement: +1000. Your books: +1000. ✓ Reconciled. Tomorrow it will be something else; that is the norm, not the exception."
       ]
     },
     {
@@ -161,22 +161,22 @@
       "type": "callout",
       "variant": "pitfall",
       "title": "The four sources of position truth, and none of them agree",
-      "md": "Your OMS thinks you are +500. The drop-copy feed says +502 (two fills still in flight to you). The clearing firm says +498 (a bust you have not processed). Risk is computing on +500. All four are 'correct' at different latency horizons — the system's job is not to prevent the disagreement but to bound it, flag it, and reconcile before it compounds. Design for eventual agreement, not instantaneous equality."
+      "md": "Your OMS thinks you are +500. The drop-copy feed says +502 (two fills still in flight to you). The clearing firm says +498 (a bust you have not processed). Risk is computing on +500. All four are 'correct' at different latency horizons, the system's job is not to prevent the disagreement but to bound it, flag it, and reconcile before it compounds. Design for eventual agreement, not instantaneous equality."
     },
     {
       "type": "p",
-      "md": "Position keeping is event sourcing whether or not you call it that: the position is not a field you update, it is the *sum of a stream* — every execution, every correction, every corporate action — applied in order. This reframing explains everything about OMS design: why you persist the events (the position is derivable), why ordering is a correctness property not a nicety (sums are order-dependent once corrections exist), and why reconciliation exists (two independent event streams — yours and the venue's — will drift, and the drift must be found, not assumed away)."
+      "md": "Position keeping is event sourcing whether or not you call it that: the position is not a field you update, it is the *sum of a stream*, every execution, every correction, every corporate action, applied in order. This reframing explains everything about OMS design: why you persist the events (the position is derivable), why ordering is a correctness property not a nicety (sums are order-dependent once corrections exist), and why reconciliation exists (two independent event streams, yours and the venue's, will drift, and the drift must be found, not assumed away)."
     },
     {
       "type": "steps",
       "title": "A position's life, traced through real messages",
       "items": [
-        "09:30:01.100 — `NEWORDER` 500 BUY. Position: 0. Working orders: +500 (this is *exposure*, not position — a distinction your risk system must maintain).",
-        "09:30:01.250 — `EXEC` 300 @ 100.02. Position: +300. Working: 200. Realised: 0. Average cost: 100.02.",
-        "09:30:02.000 — `EXEC` 200 @ 100.03. Position: +500. Working: 0. Average cost: $(300 \\times 100.02 + 200 \\times 100.03)/500 = 100.024$.",
-        "09:30:05.000 — `CORRECTION`: the second fill was 100.00, not 100.03 (busted and re-reported). Position: still +500 (quantity unchanged) but average cost is now $(300 \\times 100.02 + 200 \\times 100.00)/500 = 100.012$, and every downstream P&L number that already printed is wrong until restated. Corrections are why you keep the events.",
-        "09:31:00 — `CORPORATE ACTION`: 2-for-1 split. Position: +1000, cost basis adjusted, all limit prices in working orders cancelled and re-entered by the venue. The position stream just got a non-trade event, and your schema must have had a place for it.",
-        "End of day — venue statement: +1000. Your books: +1000. ✓ Reconciled. Tomorrow it will be something else; that is the norm, not the exception."
+        "09:30:01.100, `NEWORDER` 500 BUY. Position: 0. Working orders: +500 (this is *exposure*, not position, a distinction your risk system must maintain).",
+        "09:30:01.250, `EXEC` 300 @ 100.02. Position: +300. Working: 200. Realised: 0. Average cost: 100.02.",
+        "09:30:02.000, `EXEC` 200 @ 100.03. Position: +500. Working: 0. Average cost: $(300 \\times 100.02 + 200 \\times 100.03)/500 = 100.024$.",
+        "09:30:05.000, `CORRECTION`: the second fill was 100.00, not 100.03 (busted and re-reported). Position: still +500 (quantity unchanged) but average cost is now $(300 \\times 100.02 + 200 \\times 100.00)/500 = 100.012$, and every downstream P&L number that already printed is wrong until restated. Corrections are why you keep the events.",
+        "09:31:00, `CORPORATE ACTION`: 2-for-1 split. Position: +1000, cost basis adjusted, all limit prices in working orders cancelled and re-entered by the venue. The position stream just got a non-trade event, and your schema must have had a place for it.",
+        "End of day, venue statement: +1000. Your books: +1000. ✓ Reconciled. Tomorrow it will be something else; that is the norm, not the exception."
       ]
     },
     {
@@ -218,7 +218,7 @@
       "type": "callout",
       "variant": "pitfall",
       "title": "The four sources of position truth, and none of them agree",
-      "md": "Your OMS thinks you are +500. The drop-copy feed says +502 (two fills still in flight to you). The clearing firm says +498 (a bust you have not processed). Risk is computing on +500. All four are 'correct' at different latency horizons — the system's job is not to prevent the disagreement but to bound it, flag it, and reconcile before it compounds. Design for eventual agreement, not instantaneous equality."
+      "md": "Your OMS thinks you are +500. The drop-copy feed says +502 (two fills still in flight to you). The clearing firm says +498 (a bust you have not processed). Risk is computing on +500. All four are 'correct' at different latency horizons, the system's job is not to prevent the disagreement but to bound it, flag it, and reconcile before it compounds. Design for eventual agreement, not instantaneous equality."
     },
     {
       "type": "interactive",
@@ -234,27 +234,27 @@
       "Average fill price = total cost of the fills / total filled quantity.",
       "Terminal states are Filled, Cancelled and Rejected."
     ],
-    "solution": "(a) **Cancelled** - a terminal state reached with partial fills. (b) cumQty $= 150 + 150 = 300$; cost $= 150 \\times 21.40 + 150 \\times 21.60 = 3{,}210.00 + 3{,}240.00 = 6{,}450.00$; average $= 6{,}450 / 300 = \\$. (c) $600 - 300 = 200$ shares cancelled."
+    "solution": "(a) **Cancelled**, a terminal state reached with partial fills. (b) cumQty $= 150 + 150 = 300$; cost $= 150 \\times 21.40 + 150 \\times 21.60 = 3{,}210.00 + 3{,}240.00 = 6{,}450.00$; average $= 6{,}450 / 300 = \\$. (c) $600 - 300 = 200$ shares cancelled."
   },
   "independentExercise": {
     "prompt": "A desk buys 300 @ \\$44.10 and later sells 300 @ \\$44.35. Fees are \\$0.01 per share on every fill. Compute (a) gross PnL, (b) total fees, (c) net PnL, and (d) the final position.",
     "hints": [
-      "Gross PnL ignores fees: proceeds - cost.",
+      "Gross PnL ignores fees: proceeds, cost.",
       "Fees apply to 300 + 300 = 600 shares."
     ],
     "solution": "(a) Cost $= 300 \\times 44.10 = 13{,}230.00$; proceeds $= 300 \\times 44.35 = 13{,}305.00$; gross $= +75.00$. (b) $600 \\times 0.01 = \\$. (c) Net $= 75.00 - 6.00 = \\textbf{+69.00}$. (d) Flat (0)."
   },
   "commonMistakes": [
-    "Counting a retransmitted execution report twice - dedupe on execution ID.",
+    "Counting a retransmitted execution report twice, dedupe on execution ID.",
     "Treating Cancelled or Rejected as recoverable; they are terminal states.",
-    "Averaging exit prices into the entry VWAP - average entry covers opening fills only.",
+    "Averaging exit prices into the entry VWAP, average entry covers opening fills only.",
     "Forgetting fees and rebates; thin edges vanish into them."
   ],
   "realWorldApplication": "Every broker OMS, prime-brokerage ledger and regulator's audit trail is built on exactly this: a state machine per order plus an append-only capture log reconciled nightly against venue statements.",
   "quantFinanceApplication": "Position and average-entry math from this lesson is the base layer under strategy PnL attribution, risk limits and backtesting fill models.",
   "summary": [
     "Order lifecycle: New -> Accepted -> (Partially Filled) -> Filled | Cancelled | Rejected; only venue messages drive transitions.",
-    "clOrdID is the firm's idempotency key; the exchange order ID is the venue's - the OMS maps the two.",
+    "clOrdID is the firm's idempotency key; the exchange order ID is the venue's, the OMS maps the two.",
     "Trade capture is append-only and deduplicated by execution ID; it is the ground truth for reconciliation.",
     "Position = sum of signed fills; average entry = total cost / total quantity; realised PnL books on closing fills."
   ],
@@ -331,7 +331,7 @@
     {
       "type": "definition",
       "front": "Terminal order states",
-      "back": "Filled, Cancelled, Rejected - no further transitions can occur once reached."
+      "back": "Filled, Cancelled, Rejected, no further transitions can occur once reached."
     },
     {
       "type": "formula",
@@ -351,11 +351,11 @@
   ],
   "references": [
     {
-      "label": "FIX Trading Community - order lifecycle semantics",
+      "label": "FIX Trading Community: order lifecycle semantics",
       "url": "https://www.fixtrading.org/"
     },
     {
-      "label": "Wikipedia - Order management system",
+      "label": "Wikipedia: Order management system",
       "url": "https://en.wikipedia.org/wiki/Order_management_system"
     }
   ],

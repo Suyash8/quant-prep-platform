@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: 'Sign in first.' }, { status: 401 });
   if (!rateLimit(`assess:${user.id}`, 6, 0.1)) {
-    return NextResponse.json({ error: 'Too many submissions — slow down.' }, { status: 429 });
+    return NextResponse.json({ error: 'Too many submissions, slow down.' }, { status: 429 });
   }
   const parsed = schema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: 'Invalid submission.' }, { status: 400 });
@@ -63,6 +63,8 @@ export async function POST(req: NextRequest) {
   });
 
   // Retrieval mastery: passing a later cumulative assessment marks retrievalDone on passed lessons
+
+
   if (!isDiagnostic && pct >= 70) {
     const passedLessons = await db.lessonProgress.findMany({ where: { userId: user.id, status: 'passed' } });
     for (const p of passedLessons) {
@@ -71,6 +73,8 @@ export async function POST(req: NextRequest) {
   }
 
   // Gamification: assessments pay XP by score band.
+
+
   let xpAwarded = 0;
   if (allTotal >= 5 && pct >= 30) {
     const amount = Math.min(Math.floor(pct / 10) * XP_TABLE.assessmentPer10pct, XP_TABLE.assessmentCap);

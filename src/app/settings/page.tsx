@@ -2,9 +2,10 @@ import { redirect } from 'next/navigation';
 import { getCurrentUser } from '@/lib/auth';
 import { AppShell } from '@/components/app-shell';
 import { SettingsForm } from '@/components/settings-form';
+import { OfflineManager } from '@/components/learn/offline-manager';
 import { SlidersHorizontal } from 'lucide-react';
 
-export const metadata = { title: 'Settings — QuantFoundry' };
+export const metadata = { title: 'Settings · QuantFoundry' };
 
 export default async function SettingsPage() {
   const user = await getCurrentUser();
@@ -17,10 +18,11 @@ export default async function SettingsPage() {
           <span className="icon-tile icon-tile-accent"><SlidersHorizontal className="h-7 w-7" /></span>
           <div>
             <h1>Profile &amp; settings</h1>
-            <p className="page-sub">Tune your daily goal, identity and how the app looks. Everything else — progress, streaks, notes — follows you automatically.</p>
+            <p className="page-sub">Tune your daily goal, identity and how the app looks. Everything else, progress, streaks, notes, follows you automatically.</p>
           </div>
         </header>
         <SettingsForm user={{ name: user.name, email: user.email, role: user.role, memberSince: user.createdAt }} />
+        <OfflineManager />
       </div>
     </AppShell>
   );

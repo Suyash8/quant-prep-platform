@@ -4,14 +4,16 @@
   "title": "Virtual Memory, Paging and Memory Allocation",
   "estMinutes": 27,
   "difficulty": "core",
-  "prereqs": ["os-processes-threads"],
+  "prereqs": [
+    "os-processes-threads"
+  ],
   "objectives": [
     "Explain how virtual addresses translate to physical addresses through multi-level page tables",
     "Quantify TLB hits, page walks and minor/major page faults, and estimate TLB reach",
     "Choose between read(), mmap() and huge pages for a given access pattern",
     "Explain how demand paging and mlock create or remove tail latency in a trading hot path"
   ],
-  "motivation": "The same binary runs in 8 microseconds in your backtest and 108 microseconds in production - once every few thousand ticks. Nothing in your code changed; the memory system did. Cold pages, TLB misses and unmlocked mappings are the invisible tax on hot paths, and virtual memory is the machinery behind every one of them.",
+  "motivation": "The same binary runs in 8 microseconds in your backtest and 108 microseconds in production, once every few thousand ticks. Nothing in your code changed; the memory system did. Cold pages, TLB misses and unmlocked mappings are the invisible tax on hot paths, and virtual memory is the machinery behind every one of them.",
   "blocks": [
     {
       "type": "h2",
@@ -19,7 +21,7 @@
     },
     {
       "type": "p",
-      "md": "Every pointer your program holds is **virtual**. The MMU translates it to a physical RAM address at every memory access, using page tables the kernel builds. Translation happens in fixed-size **pages** - 4 KiB on x86-64 by default - so a 48-bit virtual address splits into a 36-bit page number and a 12-bit offset, and the page number is looked up through a four-level table (four levels of 9 index bits each). Isolation between processes, demand paging and shared mappings all fall out of this one indirection."
+      "md": "Every pointer your program holds is **virtual**. The MMU translates it to a physical RAM address at every memory access, using page tables the kernel builds. Translation happens in fixed-size **pages**, 4 KiB on x86-64 by default, so a 48-bit virtual address splits into a 36-bit page number and a 12-bit offset, and the page number is looked up through a four-level table (four levels of 9 index bits each). Isolation between processes, demand paging and shared mappings all fall out of this one indirection."
     },
     {
       "type": "math",
@@ -32,10 +34,30 @@
       "params": {
         "title": "Virtual layout with a market-data mapping",
         "regions": [
-          { "name": "text + data", "address": "0x00400000...", "size": "few MiB", "note": "code and globals - demand-paged too" },
-          { "name": "heap", "address": "grows up from data", "size": "brk + small mallocs", "note": "requests of 128 KiB or more escape to mmap" },
-          { "name": "file mapping: quotes.bin", "address": "0x7f2a10000000 (typical)", "size": "64 MiB", "note": "pages populate on first touch" },
-          { "name": "stack", "address": "~0x7ffd..., grows down", "size": "8 MiB per thread", "note": "a guard page below catches overflow" }
+          {
+            "name": "text + data",
+            "address": "0x00400000...",
+            "size": "few MiB",
+            "note": "code and globals, demand-paged too"
+          },
+          {
+            "name": "heap",
+            "address": "grows up from data",
+            "size": "brk + small mallocs",
+            "note": "requests of 128 KiB or more escape to mmap"
+          },
+          {
+            "name": "file mapping: quotes.bin",
+            "address": "0x7f2a10000000 (typical)",
+            "size": "64 MiB",
+            "note": "pages populate on first touch"
+          },
+          {
+            "name": "stack",
+            "address": "~0x7ffd..., grows down",
+            "size": "8 MiB per thread",
+            "note": "a guard page below catches overflow"
+          }
         ]
       },
       "caption": "The mmap region is where your 64 MiB quote mapping lives; resident pages only count against RSS once touched."
@@ -46,7 +68,7 @@
     },
     {
       "type": "p",
-      "md": "Walking four table levels per access would be fatal, so translations are cached in the **TLB**. A hit costs about a nanosecond; a miss forces a hardware **page walk** - up to four additional memory accesses, each slow if the table pages are cold. TLB capacity is quoted as *reach*: entries x page size. Huge pages (2 MiB, 1 GiB) multiply reach per entry, which is why a large order book backed by 2 MiB pages can dodge walks entirely."
+      "md": "Walking four table levels per access would be fatal, so translations are cached in the **TLB**. A hit costs about a nanosecond; a miss forces a hardware **page walk**, up to four additional memory accesses, each slow if the table pages are cold. TLB capacity is quoted as *reach*: entries x page size. Huge pages (2 MiB, 1 GiB) multiply reach per entry, which is why a large order book backed by 2 MiB pages can dodge walks entirely."
     },
     {
       "type": "steps",
@@ -54,25 +76,45 @@
       "items": [
         "An L2 TLB has 2,048 entries; pages are 4 KiB, so each entry covers 4,096 bytes.",
         "Reach = $2{,}048 \\times 4\\ \\text{KiB} = 8$ MiB.",
-        "A 256 MiB working set accessed randomly: $8 / 256 = 3.125\\%$ covered - nearly every access risks a multi-level walk.",
-        "With 2 MiB huge pages: $2{,}048 \\times 2\\ \\text{MiB} = 4$ GiB of reach - the whole working set fits, and walks vanish."
+        "A 256 MiB working set accessed randomly: $8 / 256 = 3.125\\%$ covered, nearly every access risks a multi-level walk.",
+        "With 2 MiB huge pages: $2{,}048 \\times 2\\ \\text{MiB} = 4$ GiB of reach, the whole working set fits, and walks vanish."
       ]
     },
     {
       "type": "table",
-      "headers": ["Event", "Typical cost (order of magnitude)", "Where it bites"],
+      "headers": [
+        "Event",
+        "Typical cost (order of magnitude)",
+        "Where it bites"
+      ],
       "rows": [
-        ["TLB hit", "~1 ns", "every memory access - the good case"],
-        ["TLB miss + 4-level walk", "~100 ns (up to 4 uncached loads)", "random scans of large working sets"],
-        ["Minor fault (cached / zero page)", "~1-2 microseconds", "first touch of heap or a mapped page"],
-        ["Major fault (disk / network read)", "~100 microseconds or worse", "cold files, swapped-out pages"]
+        [
+          "TLB hit",
+          "~1 ns",
+          "every memory access, the good case"
+        ],
+        [
+          "TLB miss + 4-level walk",
+          "~100 ns (up to 4 uncached loads)",
+          "random scans of large working sets"
+        ],
+        [
+          "Minor fault (cached / zero page)",
+          "~1-2 microseconds",
+          "first touch of heap or a mapped page"
+        ],
+        [
+          "Major fault (disk / network read)",
+          "~100 microseconds or worse",
+          "cold files, swapped-out pages"
+        ]
       ]
     },
     {
       "type": "callout",
       "variant": "quant",
       "title": "The 100-microsecond surprise",
-      "md": "One major page fault - the kernel pulling a cold page from disk or network storage - costs roughly 100 microseconds, ten times a typical 10 microsecond hot-path budget. This is why trading processes mlock() their hot data, pre-fault mappings with madvise(MADV_WILLNEED), and disable swap: the fault is not slow code, it is memory someone forgot to warm up."
+      "md": "One major page fault, the kernel pulling a cold page from disk or network storage, costs roughly 100 microseconds, ten times a typical 10 microsecond hot-path budget. This is why trading processes mlock() their hot data, pre-fault mappings with madvise(MADV_WILLNEED), and disable swap: the fault is not slow code, it is memory someone forgot to warm up."
     },
     {
       "type": "h2",
@@ -80,13 +122,13 @@
     },
     {
       "type": "p",
-      "md": "A **minor fault** is cheap: the page is already in RAM (page cache, or a zero page about to be copied on write) and the kernel just wires the mapping in. A **major fault** needs real I/O - a file read or a swap-in - and that is the tail-latency bomb. **Demand paging** means the first touch pays: mmap a 64 MiB feed file and nothing is loaded until you read it, one 4 KiB page at a time."
+      "md": "A **minor fault** is cheap: the page is already in RAM (page cache, or a zero page about to be copied on write) and the kernel just wires the mapping in. A **major fault** needs real I/O, a file read or a swap-in, and that is the tail-latency bomb. **Demand paging** means the first touch pays: mmap a 64 MiB feed file and nothing is loaded until you read it, one 4 KiB page at a time."
     },
     {
       "type": "code",
       "lang": "c",
       "code": "#include <fcntl.h>\n#include <stdio.h>\n#include <sys/mman.h>\n#include <unistd.h>\n\nint main(void) {\n    int fd = open(\"quotes.bin\", O_RDONLY);\n    if (fd < 0) { perror(\"open\"); return 1; }\n\n    size_t len = 64 * 1024 * 1024;                 // 64 MiB mapping\n    char *map = mmap(NULL, len, PROT_READ, MAP_PRIVATE, fd, 0);\n    if (map == MAP_FAILED) { perror(\"mmap\"); return 1; }\n\n    madvise(map, len, MADV_WILLNEED);              // hint: prefetch pages\n    mlock(map, len);                               // pin resident (needs limits)\n\n    long long checksum = 0;\n    for (size_t i = 0; i < len; i += 4096)         // one touch per 4 KiB page\n        checksum += map[i];                        // faults happen here if unpinned\n\n    printf(\"checksum %lld\\n\", checksum);\n    munlock(map, len);\n    munmap(map, len);\n    close(fd);\n    return 0;\n}",
-      "caption": "Map, prefetch, pin, then touch: faults get paid in warmup, not during trading hours. mlock needs RLIMIT_MEMLOCK - desks raise it deliberately."
+      "caption": "Map, prefetch, pin, then touch: faults get paid in warmup, not during trading hours. mlock needs RLIMIT_MEMLOCK, desks raise it deliberately."
     },
     {
       "type": "h2",
@@ -98,7 +140,7 @@
     },
     {
       "type": "p",
-      "md": "This is also the zero-copy argument. Reading the same market-data file with read() copies every byte from page cache into your buffer; mmap gives every process a window onto the same physical pages, and the copies disappear. At a million messages per second the copies are the cost. The trade-offs - first-touch faults, TLB pressure from long mappings, mlock limits - are exactly what the exercises price."
+      "md": "This is also the zero-copy argument. Reading the same market-data file with read() copies every byte from page cache into your buffer; mmap gives every process a window onto the same physical pages, and the copies disappear. At a million messages per second the copies are the cost. The trade-offs, first-touch faults, TLB pressure from long mappings, mlock limits, are exactly what the exercises price."
     }
   ],
   "guidedExercise": {
@@ -115,13 +157,13 @@
       "512 MiB / 4 KiB = number of pages.",
       "Faults x 100 microseconds, converted to seconds."
     ],
-    "solution": "(a) $512 \\times 1024 / 4 = 131{,}072$ pages, so 131,072 major faults. (b) $131{,}072 \\times 100\\,\\mu s = 13.1$ s of fault cost. (c) Roughly zero extra fault cost - pages are resident and TLB-warmed, so the pass runs at memory speed. (d) madvise(MADV_WILLNEED) to prefetch and mlock() to keep the range resident."
+    "solution": "(a) $512 \\times 1024 / 4 = 131{,}072$ pages, so 131,072 major faults. (b) $131{,}072 \\times 100\\,\\mu s = 13.1$ s of fault cost. (c) Roughly zero extra fault cost, pages are resident and TLB-warmed, so the pass runs at memory speed. (d) madvise(MADV_WILLNEED) to prefetch and mlock() to keep the range resident."
   },
   "commonMistakes": [
     "Confusing virtual size with resident memory: a 64 MiB mapping costs nothing until touched; RSS is the truth.",
-    "Assuming malloc(size) commits memory - anonymous pages are zero-filled lazily on first touch.",
+    "Assuming malloc(size) commits memory, anonymous pages are zero-filled lazily on first touch.",
     "Blaming 'slow RAM' for a 100 microsecond outlier: that is a major fault, not a cache miss (cache misses are ~100 ns).",
-    "Calling free() and expecting RSS to drop for small allocations - heap space is pooled, not returned."
+    "Calling free() and expecting RSS to drop for small allocations, heap space is pooled, not returned."
   ],
   "realWorldApplication": "Databases, JVMs and storage engines all manage page faults, huge pages and mmap windows; every profiler trace showing a mystery 100 microsecond stall is this lesson in production.",
   "quantFinanceApplication": "mmap'd tick files, mlocked order books and huge-page-backed matching engines are standard desk practice; each exists to keep the ~100 microsecond major fault and the ~100 ns TLB miss out of a 10 microsecond budget.",
@@ -172,7 +214,10 @@
         "A minor fault means the page had to be fetched from swap",
         "A TLB hit and a TLB miss cost about the same"
       ],
-      "answerIndices": [0, 1],
+      "answerIndices": [
+        0,
+        1
+      ],
       "explanation": "Major faults are I/O-bound; mlock pins pages resident so they cannot fault again while locked. Minor faults are page-cache/zero-page work, not swap; and a TLB miss costs roughly 100x a hit."
     },
     {
@@ -189,7 +234,12 @@
       "type": "short",
       "prompt": "Why does freeing a very large heap block usually return memory to the OS immediately, while freeing small blocks may not?",
       "modelAnswer": "glibc malloc serves large requests (default 128 KiB and above) from dedicated anonymous mmaps, so free() can munmap them straight back to the kernel. Small allocations live inside the brk-managed heap, which can only be released at its top, so freed space stays pooled to avoid fragmentation.",
-      "keywords": ["mmap", "threshold", "brk", "fragmentation"],
+      "keywords": [
+        "mmap",
+        "threshold",
+        "brk",
+        "fragmentation"
+      ],
       "explanation": "The 128 KiB default mmap threshold splits the two regimes; below it, memory is recycled inside the heap rather than returned."
     }
   ],
@@ -202,7 +252,7 @@
     {
       "type": "definition",
       "front": "Major vs minor page fault",
-      "back": "Minor: page already in RAM (page cache or zero page) - kernel wires the mapping, ~microseconds. Major: real I/O from disk/swap - ~100 microseconds or worse, a tail-latency hazard."
+      "back": "Minor: page already in RAM (page cache or zero page), kernel wires the mapping, ~microseconds. Major: real I/O from disk/swap, ~100 microseconds or worse, a tail-latency hazard."
     },
     {
       "type": "formula",
@@ -212,13 +262,24 @@
     {
       "type": "concept",
       "front": "Why mmap a market-data file?",
-      "back": "Zero-copy shared access to page-cache pages, demand-paged on touch, controllable via madvise/mlock - versus read()'s copy per call."
+      "back": "Zero-copy shared access to page-cache pages, demand-paged on touch, controllable via madvise/mlock, versus read()'s copy per call."
     }
   ],
   "references": [
-    { "label": "man7 - mmap(2)", "url": "https://man7.org/linux/man-pages/man2/mmap.2.html" },
-    { "label": "Ulrich Drepper - What Every Programmer Should Know About Memory", "url": "https://people.freebsd.org/~lstewart/articles/cpumemory.pdf" },
-    { "label": "Linux kernel docs - hugetlbpage", "url": "https://docs.kernel.org/admin-guide/mm/hugetlbpage.html" }
+    {
+      "label": "man7: mmap(2)",
+      "url": "https://man7.org/linux/man-pages/man2/mmap.2.html"
+    },
+    {
+      "label": "Ulrich Drepper: What Every Programmer Should Know About Memory",
+      "url": "https://people.freebsd.org/~lstewart/articles/cpumemory.pdf"
+    },
+    {
+      "label": "Linux kernel docs: hugetlbpage",
+      "url": "https://docs.kernel.org/admin-guide/mm/hugetlbpage.html"
+    }
   ],
-  "skills": ["operating-systems"]
+  "skills": [
+    "operating-systems"
+  ]
 }

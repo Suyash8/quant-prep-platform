@@ -19,7 +19,9 @@ const CATEGORIES = [
   'systems-design', 'quant-finance',
 ];
 
-// per-category icons — visual rhythm instead of 28 identical play buttons
+// per-category icons, visual rhythm instead of 28 identical play buttons
+
+
 const CATEGORY_ICON: Record<string, typeof CirclePlay> = {
   fundamentals: CirclePlay,
   'arrays-strings': Braces,
@@ -70,7 +72,9 @@ export function PracticeFilters({ problems }: { problems: Row[] }) {
     setStatus('all');
   }
 
-  // group by category when browsing everything — keeps a 28-problem wall scannable
+  // group by category when browsing everything, keeps a 28-problem wall scannable
+
+
   const grouped = category === 'all';
   const groups: { key: string; rows: Row[] }[] = React.useMemo(() => {
     if (!grouped) return [{ key: category, rows }];
@@ -81,6 +85,8 @@ export function PracticeFilters({ problems }: { problems: Row[] }) {
       map.get(p.category)!.push(p);
     }
     // sort groups: solved-first categories then by count desc
+
+
     return order.map(k => ({ key: k, rows: map.get(k)! }))
       .sort((a, b) => {
         const sa = a.rows.filter(r => r.status === 'solved').length / a.rows.length;
@@ -145,7 +151,7 @@ export function PracticeFilters({ problems }: { problems: Row[] }) {
             <span className="empty-emoji" role="img" aria-label="magnifying glass">🔍</span>
             <p className="text-lg font-extrabold">No problems match those filters</p>
             <p className="mx-auto mt-1 max-w-sm text-sm font-semibold text-muted">
-              Try a different difficulty or category — {problems.length} problems are waiting for you.
+              Try a different difficulty or category, {problems.length} problems are waiting for you.
             </p>
             <button onClick={clearFilters} className="btn3d btn3d-ghost btn3d-sm mt-5">
               <RotateCcw className="h-4 w-4" /> Clear filters
@@ -164,12 +170,18 @@ function ProblemRow({ p, delay }: { p: Row; delay: string }) {
   const solved = p.status === 'solved';
   const attempted = p.status === 'attempted';
   return (
-    <Link href={`/practice/${p.slug}`} className="row-card group anim-slide-up" style={{ animationDelay: delay }}>
-      <span className={'icon-tile ' + tileCls}><RowIcon strokeWidth={2.5} /></span>
+    <Link href={`/practice/${p.slug}`} className={`row-card group anim-slide-up ${solved ? '!bg-accent-soft/30' : ''}`} style={{ animationDelay: delay }}>
+      {solved ? (
+        <span className="icon-tile icon-tile-accent"><CheckCircle2 strokeWidth={2.5} /></span>
+      ) : (
+        <span className={'icon-tile ' + tileCls + (attempted ? ' relative' : '')}>
+          <RowIcon strokeWidth={2.5} />
+          {attempted && <span className="absolute -right-1 -bottom-1 h-3.5 w-3.5 rounded-full border-2 border-surface bg-warning" aria-hidden />}
+        </span>
+      )}
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-2">
-          <span className="truncate text-[15px] font-bold transition-colors group-hover:text-accent-deep dark:group-hover:text-accent">{p.title}</span>
-          {solved && <CheckCircle2 className="h-4 w-4 shrink-0 text-accent" strokeWidth={2.5} aria-label="solved" />}
+          <span className={`truncate text-[15px] font-bold transition-colors ${solved ? 'text-accent-deep dark:text-accent' : 'group-hover:text-accent-deep dark:group-hover:text-accent'}`}>{p.title}</span>
         </span>
         <span className="mt-1.5 flex flex-wrap items-center gap-1.5">
           <span className={diffChip}>{p.difficulty}</span>
@@ -179,10 +191,12 @@ function ProblemRow({ p, delay }: { p: Row; delay: string }) {
       </span>
       <span className="chip chip-gold shrink-0 hidden sm:inline-flex"><Zap className="h-3 w-3" /> 30 XP</span>
       {solved ? (
-        <span className="chip chip-success shrink-0 hidden md:inline-flex">solved</span>
+        <span className="chip chip-success shrink-0">solved</span>
       ) : attempted ? (
-        <span className="chip chip-warning shrink-0 hidden md:inline-flex">in progress</span>
-      ) : null}
+        <span className="chip chip-warning shrink-0">in progress</span>
+      ) : (
+        <span className="btn3d btn3d-ghost btn3d-sm !text-xs shrink-0 hidden md:inline-flex">Solve</span>
+      )}
       <ChevronRight className="h-5 w-5 shrink-0 text-faint transition-transform group-hover:translate-x-0.5 group-hover:text-accent" />
     </Link>
   );

@@ -4,14 +4,16 @@
   "title": "Cache Locality and Data-Oriented Design",
   "estMinutes": 28,
   "difficulty": "specialist",
-  "prereqs": ["arch-cache-hierarchy"],
+  "prereqs": [
+    "arch-cache-hierarchy"
+  ],
   "objectives": [
     "Compute the padding, sizeof and cache-line utilisation of a given struct layout",
     "Explain why sequential, contiguous access out-performs pointer-chasing at hardware level",
     "Convert an array-of-structs design into a struct-of-arrays layout for a stated hot loop",
     "Identify false sharing and describe how to avoid it in multi-threaded tick handlers"
   ],
-  "motivation": "A feed handler must scan one million quotes and recompute spreads on every tick. The arithmetic is trivial - one subtraction per quote - yet a naive object-oriented layout can run this loop three to five times slower than a hardware-friendly one, purely because of where the bytes sit. At 200+ cycles per DRAM access, memory locality, not FLOPs, decides who gets the fill.",
+  "motivation": "A feed handler must scan one million quotes and recompute spreads on every tick. The arithmetic is trivial, one subtraction per quote, yet a naive object-oriented layout can run this loop three to five times slower than a hardware-friendly one, purely because of where the bytes sit. At 200+ cycles per DRAM access, memory locality, not FLOPs, decides who gets the fill.",
   "blocks": [
     {
       "type": "h2",
@@ -19,7 +21,7 @@
     },
     {
       "type": "p",
-      "md": "At 3 GHz the CPU retires one instruction roughly every 0.33 ns - but register-adjacent data is only the beginning of the story. Hitting **L1** cache costs about 4 cycles, **L2** about 12, **L3** about 40, and **DRAM** 200 or more. A single main-memory stall is therefore longer than 600 instructions of actual work. The cache moves data in fixed **cache lines** - typically 64 bytes - so touching even 1 byte drags the whole line in. Two consequences dominate performance engineering: *temporal locality* (reuse data soon after touching it) and *spatial locality* (touch neighbouring bytes together, because the hardware already fetched them)."
+      "md": "At 3 GHz the CPU retires one instruction roughly every 0.33 ns, but register-adjacent data is only the beginning of the story. Hitting **L1** cache costs about 4 cycles, **L2** about 12, **L3** about 40, and **DRAM** 200 or more. A single main-memory stall is therefore longer than 600 instructions of actual work. The cache moves data in fixed **cache lines**, typically 64 bytes, so touching even 1 byte drags the whole line in. Two consequences dominate performance engineering: *temporal locality* (reuse data soon after touching it) and *spatial locality* (touch neighbouring bytes together, because the hardware already fetched them)."
     },
     {
       "type": "interactive",
@@ -28,13 +30,13 @@
         "totalBytes": 64,
         "bytesPerRow": 16
       },
-      "caption": "One 64-byte cache line. Hardware prefetchers fetch these in sequence - contiguity is what lets the CPU hide DRAM latency entirely."
+      "caption": "One 64-byte cache line. Hardware prefetchers fetch these in sequence, contiguity is what lets the CPU hide DRAM latency entirely."
     },
     {
       "type": "callout",
       "variant": "quant",
       "title": "Latency in trading terms",
-      "md": "If your tick-to-trade path takes 2 microseconds and you add 10 cache misses at ~70 ns each (L3/DRAM mix), you have just burned 0.7 microseconds - over a third of your budget - without writing any new logic. Layout is a latency decision."
+      "md": "If your tick-to-trade path takes 2 microseconds and you add 10 cache misses at ~70 ns each (L3/DRAM mix), you have just burned 0.7 microseconds, over a third of your budget, without writing any new logic. Layout is a latency decision."
     },
     {
       "type": "h2",
@@ -66,11 +68,11 @@
     },
     {
       "type": "p",
-      "md": "**Data-oriented design (DOD)** inverts the usual process: start from the hot loops, list what they touch per iteration, then choose the layout that minimises bytes moved. Practical rules: keep hot arrays contiguous and index-based (no pointer chasing - each hop is a potential cache miss the prefetcher cannot predict); split hot from cold fields; store fixed-size records so indexing is $\\text{base} + i \\times \\text{size}$ arithmetic; batch work so each cache line fetched is fully consumed. Virtual functions and per-object heap allocation fight DOD because they hide where the bytes actually are."
+      "md": "**Data-oriented design (DOD)** inverts the usual process: start from the hot loops, list what they touch per iteration, then choose the layout that minimises bytes moved. Practical rules: keep hot arrays contiguous and index-based (no pointer chasing, each hop is a potential cache miss the prefetcher cannot predict); split hot from cold fields; store fixed-size records so indexing is $\\text{base} + i \\times \\text{size}$ arithmetic; batch work so each cache line fetched is fully consumed. Virtual functions and per-object heap allocation fight DOD because they hide where the bytes actually are."
     },
     {
       "type": "p",
-      "md": "One multi-threaded trap deserves its own mention: **false sharing**. If two threads write different variables that happen to live on the *same* 64-byte line, the cache-coherence protocol shuttles the line between cores on every write, costing hundreds of cycles per access - even though the threads never share data. Fix: pad or align hot per-thread data so each thread owns whole lines."
+      "md": "One multi-threaded trap deserves its own mention: **false sharing**. If two threads write different variables that happen to live on the *same* 64-byte line, the cache-coherence protocol shuttles the line between cores on every write, costing hundreds of cycles per access, even though the threads never share data. Fix: pad or align hot per-thread data so each thread owns whole lines."
     },
     {
       "type": "code",
@@ -82,7 +84,7 @@
       "type": "callout",
       "variant": "pitfall",
       "title": "Measure, then restructure",
-      "md": "SoA is not free: field-wise arrays make single-record updates touch several distant locations, and some code gets uglier. Restructure for the loops that dominate profiles (measure first - see the benchmarking lesson), not for aesthetics."
+      "md": "SoA is not free: field-wise arrays make single-record updates touch several distant locations, and some code gets uglier. Restructure for the loops that dominate profiles (measure first, see the benchmarking lesson), not for aesthetics."
     }
   ],
   "guidedExercise": {
@@ -99,12 +101,12 @@
       "Member sizes: 8 + 8 + 16 + 4 = 36; round up to the alignment of the largest member (8).",
       "In SoA, the scanner streams two arrays of 8-byte doubles; traffic = 2 x 8 bytes per instrument."
     ],
-    "solution": "(a) $8+8+16+4 = 36$, padded to a multiple of 8 gives `sizeof = 40`. (b) AoS traffic $= 250{,}000 \\times 40 = 10^7$ bytes (10 MB), of which only 16 bytes per record are useful. (c) SoA traffic $= 250{,}000 \\times 16 = 4 \\times 10^6$ bytes (4 MB). (d) Saving $= (10-4)/10 = 60\\%$ less memory traffic - and every fetched line is now 100% useful, so the prefetcher streams perfectly."
+    "solution": "(a) $8+8+16+4 = 36$, padded to a multiple of 8 gives `sizeof = 40`. (b) AoS traffic $= 250{,}000 \\times 40 = 10^7$ bytes (10 MB), of which only 16 bytes per record are useful. (c) SoA traffic $= 250{,}000 \\times 16 = 4 \\times 10^6$ bytes (4 MB). (d) Saving $= (10-4)/10 = 60\\%$ less memory traffic, and every fetched line is now 100% useful, so the prefetcher streams perfectly."
   },
   "commonMistakes": [
     "Believing big-O alone predicts speed: two O(n) loops can differ 3-5x purely on layout and cache-line utilisation.",
     "Counting sizeof as the whole story: alignment padding inside arrays means sizeof(record) records per line, not sizeof(fields) worth of data.",
-    "Chasing pointers (linked lists, node-based containers) in hot loops - each hop can be an unpredictable cache miss.",
+    "Chasing pointers (linked lists, node-based containers) in hot loops, each hop can be an unpredictable cache miss.",
     "Letting threads write distinct variables that share a cache line (false sharing) and blaming the 'slow CPU'."
   ],
   "realWorldApplication": "Game engines, scientific codes and HFT systems all converge on SoA layouts with cache-line-aligned hot structures; the same arithmetic you did above is exactly what a feed-handler author computes before choosing the quote-store design.",
@@ -168,7 +170,7 @@
         "Increasing the struct size so records are 'rounder'"
       ],
       "answerIndex": 1,
-      "explanation": "SoA makes the touched fields one sequential stream - every fetched line is fully used and prefetchable. Pointer chasing kills prefetching; virtual calls obscure layout; bigger structs waste bandwidth."
+      "explanation": "SoA makes the touched fields one sequential stream, every fetched line is fully used and prefetchable. Pointer chasing kills prefetching; virtual calls obscure layout; bigger structs waste bandwidth."
     },
     {
       "id": "q6",
@@ -189,7 +191,7 @@
     {
       "type": "concept",
       "front": "AoS vs SoA",
-      "back": "AoS: one struct per record, all fields together - good for whole-record access. SoA: one contiguous array per field - good for hot loops touching a few fields, gives 100% cache-line utilisation and streamable prefetch."
+      "back": "AoS: one struct per record, all fields together, good for whole-record access. SoA: one contiguous array per field, good for hot loops touching a few fields, gives 100% cache-line utilisation and streamable prefetch."
     },
     {
       "type": "formula",
@@ -204,11 +206,11 @@
   ],
   "references": [
     {
-      "label": "cppreference — alignas and alignment",
+      "label": "cppreference, alignas and alignment",
       "url": "https://en.cppreference.com/w/cpp/language/alignas"
     },
     {
-      "label": "CppCon 2014 — Mike Acton, Data-Oriented Design and C++",
+      "label": "CppCon 2014. Mike Acton, Data-Oriented Design and C++",
       "url": "https://www.youtube.com/watch?v=rX0ItVEVjHc"
     },
     {

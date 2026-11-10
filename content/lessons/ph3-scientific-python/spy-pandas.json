@@ -14,7 +14,7 @@
     "Compute rolling windows (mean, std) and annualise volatility with the sqrt-252 convention",
     "Apply shift(1) to prevent lookahead bias and use groupby for split-apply-combine summaries"
   ],
-  "motivation": "Price data arrives messy: missing holidays, two vendors' feeds at different timestamps, an occasional duplicated row. Pandas is the tool that turns CSV chaos into aligned, labelled columns - and its resample/rolling/groupby verbs are the daily vocabulary of quant data work. The stakes are real: an unsorted index or a missing shift(1) makes a backtest quietly peek at the future and report returns no live strategy could earn.",
+  "motivation": "Price data arrives messy: missing holidays, two vendors' feeds at different timestamps, an occasional duplicated row. Pandas is the tool that turns CSV chaos into aligned, labelled columns, and its resample/rolling/groupby verbs are the daily vocabulary of quant data work. The stakes are real: an unsorted index or a missing shift(1) makes a backtest quietly peek at the future and report returns no live strategy could earn.",
   "blocks": [
     {
       "type": "h2",
@@ -22,13 +22,13 @@
     },
     {
       "type": "p",
-      "md": "A `Series` is a 1-D array plus an **index**; a `DataFrame` is a set of Series sharing one index - think 'labelled numpy matrix'. The killer feature and the footgun is the same: arithmetic **aligns on labels**, not positions. Adding two Series keeps the union of their indices and produces NaN wherever a label exists in only one. Access by label with `.loc`, by integer position with `.iloc` - mixing them up after a reindex is a classic source of wrong-row bugs."
+      "md": "A `Series` is a 1-D array plus an **index**; a `DataFrame` is a set of Series sharing one index, think 'labelled numpy matrix'. The killer feature and the footgun is the same: arithmetic **aligns on labels**, not positions. Adding two Series keeps the union of their indices and produces NaN wherever a label exists in only one. Access by label with `.loc`, by integer position with `.iloc` - mixing them up after a reindex is a classic source of wrong-row bugs."
     },
     {
       "type": "code",
       "lang": "python",
       "code": "import pandas as pd\n\npx = pd.DataFrame(\n    {\"AAPL\": [101.0, 103.5, 102.0], \"MSFT\": [280.0, 279.0, 285.0]},\n    index=pd.date_range(\"2026-01-05\", periods=3, freq=\"B\"),\n)\nprint(px.pct_change().round(4))",
-      "caption": "pct_change computes returns row over row. First row is NaN - there is no previous day; that NaN is honest information, not an error."
+      "caption": "pct_change computes returns row over row. First row is NaN, there is no previous day; that NaN is honest information, not an error."
     },
     {
       "type": "h2",
@@ -56,7 +56,7 @@
       "type": "code",
       "lang": "python",
       "code": "import pandas as pd\n\nr = pd.Series([0.01, -0.02, 0.03, 0.0, -0.01])\nprint(r.rolling(3).mean().round(4).tolist())\n# [nan, nan, 0.0067, 0.0033, 0.0067]\n\nprint(round(0.012 * 252 ** 0.5, 4))          # 0.1905",
-      "caption": "A daily volatility of 1.2% annualises to 0.012 x sqrt(252) = 19.05% - the sqrt-of-time rule."
+      "caption": "A daily volatility of 1.2% annualises to 0.012 x sqrt(252) = 19.05%, the sqrt-of-time rule."
     },
     {
       "type": "callout",
@@ -70,7 +70,7 @@
     },
     {
       "type": "p",
-      "md": "Split-apply-combine: `df.groupby(\"sector\")[\"ret\"].mean()` splits rows by key, applies the mean per group, combines into a new Series. For multi-source data, `pd.merge(prices, fundamentals, on=\"date\", how=\"left\")` aligns tables on a key column - the relational twin of index alignment; watch for duplicate keys multiplying rows."
+      "md": "Split-apply-combine: `df.groupby(\"sector\")[\"ret\"].mean()` splits rows by key, applies the mean per group, combines into a new Series. For multi-source data, `pd.merge(prices, fundamentals, on=\"date\", how=\"left\")` aligns tables on a key column, the relational twin of index alignment; watch for duplicate keys multiplying rows."
     },
     {
       "type": "code",
@@ -80,7 +80,7 @@
     },
     {
       "type": "p",
-      "md": "The mental model that makes pandas click: a DataFrame is a **labelled 2-D array** with aligned indexes on its rows and columns. Every operation — arithmetic, joins, window functions — aligns on those labels first and computes second. That single rule explains most pandas behaviour that looks arbitrary at first: multiply two series with different indexes and you get `NaN`s where labels do not overlap, not an error; join two frames and columns line up by *name*, not position."
+      "md": "The mental model that makes pandas click: a DataFrame is a **labelled 2-D array** with aligned indexes on its rows and columns. Every operation, arithmetic, joins, window functions, aligns on those labels first and computes second. That single rule explains most pandas behaviour that looks arbitrary at first: multiply two series with different indexes and you get `NaN`s where labels do not overlap, not an error; join two frames and columns line up by *name*, not position."
     },
     {
       "type": "p",
@@ -93,13 +93,13 @@
     },
     {
       "type": "p",
-      "md": "Three habits separate robust pandas code from notebook spaghetti. **One: never loop over rows** — if you write `for i, row in df.iterrows()` you have almost always missed a vectorised formulation. **Two: be explicit about alignment** — `shift`, `rolling` and `resample` all behave according to the index, so a sorted, unique, timezone-aware DatetimeIndex is worth building *before* any analysis. **Three: chain, don't mutate** — `df.method().method()` with a copy keeps history readable; in-place mutation across cells is where silent bugs breed."
+      "md": "Three habits separate solid pandas code from notebook spaghetti. **One: never loop over rows**, if you write `for i, row in df.iterrows()` you have almost always missed a vectorised formulation. **Two: be explicit about alignment**, `shift`, `rolling` and `resample` all behave according to the index, so a sorted, unique, timezone-aware DatetimeIndex is worth building *before* any analysis. **Three: chain, don't mutate**, `df.method().method()` with a copy keeps history readable; in-place mutation across cells is where silent bugs breed."
     },
     {
       "type": "callout",
       "variant": "quant",
       "title": "Look-ahead bias lives in the index",
-      "md": "The classic research bug: computing a signal at 09:35 that uses the 09:35 *close*, then trading at 09:35. In pandas terms, `shift(1)` before you act on anything, and when you `merge`/`join`, check `how=` and the label convention of `resample` (open-left vs closed-right) like your P&L depends on it — because it does."
+      "md": "The classic research bug: computing a signal at 09:35 that uses the 09:35 *close*, then trading at 09:35. In pandas terms, `shift(1)` before you act on anything, and when you `merge`/`join`, check `how=` and the label convention of `resample` (open-left vs closed-right) like your P&L depends on it, because it does."
     },
     {
       "type": "steps",
@@ -115,7 +115,7 @@
   "guidedExercise": {
     "prompt": "Given daily closes `s = pd.Series([100.0, 101.0, 99.0, 102.0], index=pd.date_range(\"2026-01-05\", periods=4, freq=\"B\"))` (Mon-Thu):\n\n(a) Compute `s.rolling(2).mean().tolist()` - how many NaNs and why?\n(b) What is `s.resample(\"W-FRI\").last()`?\n(c) Write the expression for 'yesterday's price as a signal available today', and give its values.",
     "hints": [
-      "A rolling window of size 2 needs 2 observations - the first row cannot produce a value.",
+      "A rolling window of size 2 needs 2 observations, the first row cannot produce a value.",
       "All four days sit in one week (Mon-Thu of the same week, Friday ends it).",
       "shift(1) moves values one row forward in the index."
     ],
@@ -125,27 +125,27 @@
     "prompt": "A week of daily returns: `r = pd.Series([0.01, -0.005, 0.02, -0.015, 0.01, 0.03])` on a business-day index starting 2026-01-05. Compute, with pandas:\n\n(a) the equity curve from 100 (cumprod of 1+r) and its final value,\n(b) the max drawdown using `cummax`,\n(c) the last 3-day rolling standard deviation (`rolling(3).std()`, ddof=1),\n(d) that daily vol annualised with the sqrt-252 convention.\n\nGive all four numbers, and state one sentence on why the rolling std must use ddof=1 for a sample estimate.",
     "hints": [
       "equity = 100 * (1 + r).cumprod()",
-      "dd = (equity / equity.cummax() - 1).min()",
-      "pandas rolling().std() defaults to ddof=1; numpy np.var defaults to ddof=0 - know which you are using."
+      "dd = (equity / equity.cummax(), 1).min()",
+      "pandas rolling().std() defaults to ddof=1; numpy np.var defaults to ddof=0, know which you are using."
     ],
     "solution": "```python\nimport pandas as pd, numpy as np\nr = pd.Series([0.01, -0.005, 0.02, -0.015, 0.01, 0.03],\n              index=pd.date_range(\"2026-01-05\", periods=6, freq=\"B\"))\nequity = 100 * (1 + r).cumprod()\nprint(round(float(equity.iloc[-1]), 2))          # 105.04\nprint(round(float((equity / equity.cummax() - 1).min()), 4))  # -0.015\nv = float(r.rolling(3).std().iloc[-1])\nprint(round(v, 6), round(v * np.sqrt(252), 4))   # 0.022546  0.3579\n```\n(a) Final equity $105.04$ from a start of 100. (b) Max drawdown $-1.5\\%$: the trough after day 4 measured against the day-3 peak. (c) 3-day realised vol $0.0225$. (d) Annualised: $0.0225 \\times \\sqrt{252} = 0.3579$, i.e. ~35.8%. ddof=1 (dividing by $n-1$) gives the unbiased *sample* estimate of variance from a finite window; ddof=0 would systematically understate vol slightly."
   },
   "commonMistakes": [
-    "Running pct_change or resample on an unsorted index - always sort_index() first.",
+    "Running pct_change or resample on an unsorted index, always sort_index() first.",
     "Trading on a signal without shift(1): the backtest peeks at same-day information and reports impossible returns.",
-    "Forgetting that aligned arithmetic produces NaN on non-overlapping labels - silent NaN propagation into aggregates.",
-    "Using .loc with integer positions after a reindex, or .iloc with dates - loc is label-based, iloc positional.",
+    "Forgetting that aligned arithmetic produces NaN on non-overlapping labels, silent NaN propagation into aggregates.",
+    "Using .loc with integer positions after a reindex, or .iloc with dates, loc is label-based, iloc positional.",
     "Treating the rolling window as excluding the current row (it includes it), or misreading which end of the window the NaNs appear at.",
-    "np.cov-style rowvar confusion carries into pandas: pd.DataFrame.cov() computes per-column covariances - check orientation before blaming the data."
+    "np.cov-style rowvar confusion carries into pandas: pd.DataFrame.cov() computes per-column covariances, check orientation before blaming the data."
   ],
-  "realWorldApplication": "Any data engineering task with timestamps - sensor feeds, web analytics, operations metrics - uses these same pandas verbs: set a DatetimeIndex, resample to reporting frequency, ffill gaps, roll windows for smoothed metrics.",
+  "realWorldApplication": "Any data engineering task with timestamps, sensor feeds, web analytics, operations metrics, uses these same pandas verbs: set a DatetimeIndex, resample to reporting frequency, ffill gaps, roll windows for smoothed metrics.",
   "quantFinanceApplication": "Daily-to-weekly NAV aggregation via resample('W-FRI').last(), 20-day annualised realised vol for the risk report, and shift(1) discipline in every backtest signal are literally the first lines of most production pandas pipelines on a desk.",
   "summary": [
-    "Pandas aligns arithmetic on index labels, not positions - mismatches become NaN; .loc is label-based, .iloc positional; sort_index() before anything temporal.",
+    "Pandas aligns arithmetic on index labels, not positions, mismatches become NaN; .loc is label-based, .iloc positional; sort_index() before anything temporal.",
     "resample('W-SUN'/'W-FRI'/'ME') buckets a DatetimeIndex into periods and aggregates (.last/.mean/.ohlc); ffill carries prices over missing calendar days.",
     "rolling(n) includes the current row; rolling(20).std() * sqrt(252) is annualised realised volatility (sqrt-of-time rule: 0.012 daily -> 0.1905).",
     "shift(1) is the anti-lookahead tool: row t holds only t-1 information in a tradable backtest.",
-    "groupby is split-apply-combine (sector means); pd.merge joins tables on key columns - beware duplicate keys."
+    "groupby is split-apply-combine (sector means); pd.merge joins tables on key columns, beware duplicate keys."
   ],
   "quiz": [
     {
@@ -155,7 +155,7 @@
       "language": "python",
       "code": "import pandas as pd\ns = pd.Series([100.0, 110.0, 99.0], index=pd.date_range(\"2026-01-01\", periods=3))\nprint(s.pct_change().round(4).tolist())",
       "answer": "[nan, 0.1, -0.1]",
-      "explanation": "pct_change gives (today - yesterday)/yesterday: 110/100 - 1 = 0.1, 99/110 - 1 = -0.1, and NaN for the first row where no previous value exists."
+      "explanation": "pct_change gives (today, yesterday)/yesterday: 110/100, 1 = 0.1, 99/110, 1 = -0.1, and NaN for the first row where no previous value exists."
     },
     {
       "id": "q2",
@@ -177,7 +177,7 @@
         "Use iloc instead of loc"
       ],
       "answerIndex": 1,
-      "explanation": "shift(1) moves every value one period forward in the index, so decisions at time t are made only from information available at t-1 - removing the lookahead bias."
+      "explanation": "shift(1) moves every value one period forward in the index, so decisions at time t are made only from information available at t-1, removing the lookahead bias."
     },
     {
       "id": "q4",
@@ -199,7 +199,7 @@
         "NaN",
         "index"
       ],
-      "explanation": "Label alignment is pandas' core behaviour - the union index with NaN on the non-overlap - which is powerful for time alignment and dangerous when unnoticed."
+      "explanation": "Label alignment is pandas' core behaviour, the union index with NaN on the non-overlap, which is powerful for time alignment and dangerous when unnoticed."
     },
     {
       "id": "q6",
@@ -216,14 +216,14 @@
         1,
         2
       ],
-      "explanation": "The first n-1 rows yield NaN with the default min_periods=n (that is exactly option 4's falsity) - partial output requires lowering min_periods. W-SUN buckets weeks ending Sunday; rolling includes the current observation."
+      "explanation": "The first n-1 rows yield NaN with the default min_periods=n (that is exactly option 4's falsity), partial output requires lowering min_periods. W-SUN buckets weeks ending Sunday; rolling includes the current observation."
     }
   ],
   "flashcards": [
     {
       "type": "code-output",
       "front": "s.pct_change() on [100, 110, 99] gives what list?",
-      "back": "[nan, 0.1, -0.1] - returns row-over-row, NaN on the first row (no prior value)."
+      "back": "[nan, 0.1, -0.1], returns row-over-row, NaN on the first row (no prior value)."
     },
     {
       "type": "definition",
@@ -248,15 +248,15 @@
   ],
   "references": [
     {
-      "label": "pandas user guide - Time series / date functionality",
+      "label": "pandas user guide: Time series / date functionality",
       "url": "https://pandas.pydata.org/docs/user_guide/timeseries.html"
     },
     {
-      "label": "pandas user guide - Windowing operations",
+      "label": "pandas user guide: Windowing operations",
       "url": "https://pandas.pydata.org/docs/user_guide/window.html"
     },
     {
-      "label": "pandas user guide - Group by",
+      "label": "pandas user guide: Group by",
       "url": "https://pandas.pydata.org/docs/user_guide/groupby.html"
     }
   ],

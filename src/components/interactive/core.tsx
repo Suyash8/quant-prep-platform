@@ -76,6 +76,8 @@ export function compileExpression(expr: string): (x: number) => number {
     if (peek() === '^') {
       next();
       const exp = parseUnary(); // right-associative
+
+
       return x => Math.pow(base(x), exp(x));
     }
     return base;
@@ -148,6 +150,8 @@ export function gaussian(rand: () => number): () => number {
 
 export function erf(x: number): number {
   // Abramowitz & Stegun 7.1.26
+
+
   const sign = x < 0 ? -1 : 1;
   const ax = Math.abs(x);
   const t = 1 / (1 + 0.3275911 * ax);
@@ -220,7 +224,7 @@ export function PlotArea({ width = 560, height = 300, padding = 34, children, xL
 }
 
 export function fmt(v: number, d = 2): string {
-  if (!Number.isFinite(v)) return '—';
+  if (!Number.isFinite(v)) return ', ';
   if (Math.abs(v) >= 1e6) return v.toExponential(2);
   return v.toFixed(d);
 }

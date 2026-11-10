@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: 'Sign in first.' }, { status: 401 });
   if (!rateLimit(`drill:${user.id}`, 10, 0.2)) {
-    return NextResponse.json({ error: 'Too many sessions logged — slow down.' }, { status: 429 });
+    return NextResponse.json({ error: 'Too many sessions logged, slow down.' }, { status: 429 });
   }
   const parsed = schema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: 'Invalid session.' }, { status: 400 });
@@ -33,6 +33,8 @@ export async function POST(req: NextRequest) {
   });
 
   // Gamification: drills pay a session fee + a little per correct answer.
+
+
   let xpAwarded = 0;
   if (d.total >= 5) {
     const amount = Math.min(

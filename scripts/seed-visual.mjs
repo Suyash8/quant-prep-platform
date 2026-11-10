@@ -9,7 +9,7 @@ const iso = (ms) => new Date(ms).toISOString();
 const daysAgo = (d, h = 0) => new Date(now - d * 864e5 - h * 36e5);
 
 const user = await db.user.findUnique({ where: { email: EMAIL } });
-if (!user) { console.error('user not found — register it first'); process.exit(1); }
+if (!user) { console.error('user not found, register it first'); process.exit(1); }
 const uid = user.id;
 
 // wipe old seed data
@@ -109,12 +109,12 @@ const cards = [
   ['orient-quant-developer-role:1', 'lesson', 'Front office vs middle office?', 'Front office = revenue-generating (trading); middle office = risk & control; back office = settlement.', 2.3, 2, 1, 0, 5],
   ['orient-institution-landscape:2', 'lesson', 'Name three classic quant employer categories', 'Banks, hedge funds, prop-trading firms / market makers.', 2.6, 4, 0, 0, 8],
   ['arith-numbers-and-operations:0', 'lesson', 'Operator precedence in C++ arithmetic', '*/% before +-, left-to-right within a level.', 2.1, 1, 1, 2, 0],
-  ['arith-fractions-decimals:1', 'lesson', 'Converting 0.375 to a fraction', '3/8 — decimal places give the denominator (10^3).', 2.4, 2, 0, 0, 2],
+  ['arith-fractions-decimals:1', 'lesson', 'Converting 0.375 to a fraction', '3/8, decimal places give the denominator (10^3).', 2.4, 2, 0, 0, 2],
   ['arith-percentages:0', 'lesson', 'Percentage change vs percentage-point change', 'Relative change of a ratio vs absolute difference of percentages.', 2.0, 1, 0, 1, 0],
-  ['arith-powers-roots-logs:2', 'lesson', 'log rules: log(a*b) = ?', 'log(a) + log(b) — products become sums.', 2.5, 2, 0, 0, 4],
-  ['arith-estimation-mental-math:0', 'lesson', 'Estimation: 49*52 = ?', '~2500 — round to 50*50 then adjust.', 1.8, 0, 1, 3, 0],
-  ['quiz:arith-percentages:q2', 'quiz_miss', 'If a price rises 20% then falls 20%, net change?', '-4% — multiplicative, not additive.', 2.2, 1, 0, 0, 1],
-  ['quiz:orient-role-comparison:q1', 'quiz_miss', 'Which role is closest to software engineering?', 'Quant developer — systems, latency, tooling.', 2.3, 2, 0, 0, 6],
+  ['arith-powers-roots-logs:2', 'lesson', 'log rules: log(a*b) = ?', 'log(a) + log(b), products become sums.', 2.5, 2, 0, 0, 4],
+  ['arith-estimation-mental-math:0', 'lesson', 'Estimation: 49*52 = ?', '~2500, round to 50*50 then adjust.', 1.8, 0, 1, 3, 0],
+  ['quiz:arith-percentages:q2', 'quiz_miss', 'If a price rises 20% then falls 20%, net change?', '-4%, multiplicative, not additive.', 2.2, 1, 0, 0, 1],
+  ['quiz:orient-role-comparison:q1', 'quiz_miss', 'Which role is closest to software engineering?', 'Quant developer, systems, latency, tooling.', 2.3, 2, 0, 0, 6],
 ];
 for (const [key, src, front, back, ease, iv, reps, lapses, dueDays] of cards) {
   await db.cardState.create({ data: {
@@ -135,12 +135,12 @@ for (const [mode, lvl, c, t, avg, dur, d] of drills) {
 }
 
 // ---- projects
-await db.projectProgress.create({ data: { userId: uid, projectSlug: 'math-foundations-toolkit', status: 'in_progress', milestonesDone: 3, notes: 'CLI skeleton + fraction class done. Decimal precision tests next — watch the 1e-9 edge case.', updatedAt: daysAgo(2) } });
+await db.projectProgress.create({ data: { userId: uid, projectSlug: 'math-foundations-toolkit', status: 'in_progress', milestonesDone: 3, notes: 'CLI skeleton + fraction class done. Decimal precision tests next, watch the 1e-9 edge case.', updatedAt: daysAgo(2) } });
 await db.projectProgress.create({ data: { userId: uid, projectSlug: 'log-processor', status: 'completed', milestonesDone: 5, notes: 'Shipped. Regex parser ended up 4x faster after switching to a single pass.', updatedAt: daysAgo(11) } });
-await db.projectProgress.create({ data: { userId: uid, projectSlug: 'market-data-analysis', status: 'in_progress', milestonesDone: 1, notes: 'Just started — loading the CSV schema.', updatedAt: daysAgo(5) } });
+await db.projectProgress.create({ data: { userId: uid, projectSlug: 'market-data-analysis', status: 'in_progress', milestonesDone: 1, notes: 'Just started, loading the CSV schema.', updatedAt: daysAgo(5) } });
 
 // ---- notes + bookmarks
-await db.note.create({ data: { userId: uid, lessonId: 'arith-powers-roots-logs', body: 'Keep forgetting log(a/b) = log a - log b. Drill this. Also: ln is natural log (base e), lg is base 2 in some texts, base 10 in others — check context.', updatedAt: daysAgo(3) } });
+await db.note.create({ data: { userId: uid, lessonId: 'arith-powers-roots-logs', body: 'Keep forgetting log(a/b) = log a - log b. Drill this. Also: ln is natural log (base e), lg is base 2 in some texts, base 10 in others, check context.', updatedAt: daysAgo(3) } });
 await db.bookmark.create({ data: { userId: uid, targetType: 'lesson', targetId: 'arith-percentages', createdAt: daysAgo(6) } });
 await db.bookmark.create({ data: { userId: uid, targetType: 'problem', targetId: 'moving-average', createdAt: daysAgo(4) } });
 
@@ -183,7 +183,7 @@ await db.studyPlan.create({ data: {
     weeks: 4,
     totalHours: Math.round((totalMinutes / 60) * 10) / 10,
     note: 'Built from the prerequisite graph with one buffer day per fortnight.',
-    feasibility: 'Comfortable at 6 h/week — finish core Phase 1 in about a month.',
+    feasibility: 'Comfortable at 6 h/week, finish core Phase 1 in about a month.',
   }),
   createdAt: daysAgo(9), updatedAt: daysAgo(1),
 } });
@@ -209,7 +209,7 @@ for (let d = 20; d >= 0; d--) {
 const apps = [
   ['Jane Street', 'Quantitative Developer - Internship', 'interview', 'Final round scheduled: probability + systems. Review order book basics.', 6],
   ['Citadel Securities', 'Software Engineer, Trading Systems', 'applied', 'Applied via referral. OA should arrive within 2 weeks.', 12],
-  ['IMC Trading', 'Graduate Quant Developer', 'oa', 'OA done — mental math section felt strong.', 3],
+  ['IMC Trading', 'Graduate Quant Developer', 'oa', 'OA done, mental math section felt strong.', 3],
   ['Bloomberg', 'Financial Software Engineer', 'planned', 'Plan to apply after finishing the C++ modules.', 1],
 ];
 for (const [company, role, st, note, d] of apps) {

@@ -4,14 +4,16 @@
   "title": "Value Categories, auto and decltype",
   "estMinutes": 27,
   "difficulty": "advanced",
-  "prereqs": ["cpp-constexpr"],
+  "prereqs": [
+    "cpp-constexpr"
+  ],
   "objectives": [
     "Classify expressions as lvalue, prvalue or xvalue using the identity and movable-from tests",
     "Predict overload selection between const T& and T&& parameters, including what std::move does and does not do",
     "Apply the three decltype rules, including why decltype((x)) differs from decltype(x)",
     "Predict auto, auto& and auto&& deduction outcomes for references and const"
   ],
-  "motivation": "Every C++ expression has two independent properties: its type, and its **value category** - what kind of thing it denotes. Value categories decide which overload wins, whether a copy or a move happens, and how long a temporary lives. On a trading desk the difference is bytes per tick: a 512-byte Position passed by value versus passed by const reference is 512 bytes of memcpy per call. This lesson gives you the vocabulary - lvalue, prvalue, xvalue - and the two query tools, decltype and auto, that let you state and verify those decisions.",
+  "motivation": "Every C++ expression has two independent properties: its type, and its **value category**, what kind of thing it denotes. Value categories decide which overload wins, whether a copy or a move happens, and how long a temporary lives. On a trading desk the difference is bytes per tick: a 512-byte Position passed by value versus passed by const reference is 512 bytes of memcpy per call. This lesson gives you the vocabulary, lvalue, prvalue, xvalue, and the two query tools, decltype and auto, that let you state and verify those decisions.",
   "blocks": [
     {
       "type": "h2",
@@ -19,19 +21,51 @@
     },
     {
       "type": "p",
-      "md": "Since C++11 the taxonomy has three leaf categories. An **lvalue** has identity - an address - and is not blindly movable-from. A **prvalue** is a pure value: a literal or a temporary being born, with no address you could take. An **xvalue** has identity *and* is movable-from, produced by `std::move` or a function returning `T&&`. Two umbrella terms group them: lvalue plus xvalue are **glvalues** (anything with identity), xvalue plus prvalue are **rvalues** (anything movable-from). The two tests that sort any expression: *can you take its address?* and *may its resources be pillaged?*"
+      "md": "Since C++11 the taxonomy has three leaf categories. An **lvalue** has identity, an address, and is not blindly movable-from. A **prvalue** is a pure value: a literal or a temporary being born, with no address you could take. An **xvalue** has identity *and* is movable-from, produced by `std::move` or a function returning `T&&`. Two umbrella terms group them: lvalue plus xvalue are **glvalues** (anything with identity), xvalue plus prvalue are **rvalues** (anything movable-from). The two tests that sort any expression: *can you take its address?* and *may its resources be pillaged?*"
     },
     {
       "type": "table",
-      "headers": ["Expression", "Category", "Why"],
+      "headers": [
+        "Expression",
+        "Category",
+        "Why"
+      ],
       "rows": [
-        ["named variable x", "lvalue", "has an address, persists"],
-        ["42, x + y", "prvalue", "a value about to be materialised"],
-        ["std::move(x)", "xvalue", "identity plus movable-from"],
-        ["f() returning T by value", "prvalue", "temporary result"],
-        ["f() returning T&&", "xvalue", "reference to something movable"],
-        ["++x", "lvalue", "yields the variable itself"],
-        ["x++", "prvalue", "yields a copy of the old value"]
+        [
+          "named variable x",
+          "lvalue",
+          "has an address, persists"
+        ],
+        [
+          "42, x + y",
+          "prvalue",
+          "a value about to be materialised"
+        ],
+        [
+          "std::move(x)",
+          "xvalue",
+          "identity plus movable-from"
+        ],
+        [
+          "f() returning T by value",
+          "prvalue",
+          "temporary result"
+        ],
+        [
+          "f() returning T&&",
+          "xvalue",
+          "reference to something movable"
+        ],
+        [
+          "++x",
+          "lvalue",
+          "yields the variable itself"
+        ],
+        [
+          "x++",
+          "prvalue",
+          "yields a copy of the old value"
+        ]
       ]
     },
     {
@@ -40,16 +74,19 @@
     },
     {
       "type": "p",
-      "md": "Overload resolution reads the categories: `const T&` binds to everything (the universal binder), while `T&&` binds only to rvalues - which is precisely how a move constructor gets picked over the copy constructor. Prvalues initialise objects directly, and since **C++17** that is guaranteed: `Position p = makePosition();` constructs in place with no copy even in theory (*guaranteed copy elision*). One special lifetime rule: a temporary bound to a `const T&` has its lifetime extended to that of the reference - the one place where reference binding postpones destruction."
+      "md": "Overload resolution reads the categories: `const T&` binds to everything (the universal binder), while `T&&` binds only to rvalues, which is precisely how a move constructor gets picked over the copy constructor. Prvalues initialise objects directly, and since **C++17** that is guaranteed: `Position p = makePosition();` constructs in place with no copy even in theory (*guaranteed copy elision*). One special lifetime rule: a temporary bound to a `const T&` has its lifetime extended to that of the reference, the one place where reference binding postpones destruction."
     },
     {
       "type": "p",
-      "md": "Read `std::move(x)` precisely: it is a cast to an xvalue that **moves nothing**. It only marks `x` as movable-from so an overload taking `T&&` wins; the actual resource transfer happens inside that overload. Afterwards the source is *valid but unspecified* - you may assign to it or destroy it, but reading its contents (expecting an empty vector, say) is not guaranteed."
+      "md": "Read `std::move(x)` precisely: it is a cast to an xvalue that **moves nothing**. It only marks `x` as movable-from so an overload taking `T&&` wins; the actual resource transfer happens inside that overload. Afterwards the source is *valid but unspecified*, you may assign to it or destroy it, but reading its contents (expecting an empty vector, say) is not guaranteed."
     },
     {
       "type": "interactive",
       "component": "MemoryLayout",
-      "params": { "totalBytes": 512, "bytesPerRow": 64 },
+      "params": {
+        "totalBytes": 512,
+        "bytesPerRow": 64
+      },
       "caption": "One 512-byte Position: passing it by value shuffles all 512 bytes per call; passing it by reference moves 8. The value category of your parameter decides which."
     },
     {
@@ -78,11 +115,11 @@
       "type": "code",
       "lang": "cpp",
       "code": "// C++17\n#include <iostream>\n\nint& liveRef(int& r) { return r; }\n\nint main() {\n    int px = 3;\n    auto a = liveRef(px);    // auto strips the reference: a is a copy\n    a = 10;                  // px untouched\n    auto& b = liveRef(px);   // auto& keeps it: b aliases px\n    b = 20;\n    std::cout << px << \" \" << a << \"\\n\";   // 20 10\n}",
-      "caption": "One word - the ampersand - decides copy versus alias."
+      "caption": "One word, the ampersand, decides copy versus alias."
     },
     {
       "type": "p",
-      "md": "Why a desk cares, in numbers: a 512-byte `Position` passed by value at 100k calls per second shuffles about 51 MB/s of pure memcpy - visible in the profile as cache misses, never as a line item. The fix is vocabulary: `const Position&` parameters, `T&&` overloads for the movable cases, and by-value returns left as prvalues so C++17 elision constructs in place. And watch the storage side: `auto q = quotes.at(sym);` **copies** the map element (at returns a reference; auto strips it), while `auto& q = ...` aliases it."
+      "md": "Why a desk cares, in numbers: a 512-byte `Position` passed by value at 100k calls per second shuffles about 51 MB/s of pure memcpy, visible in the profile as cache misses, never as a line item. The fix is vocabulary: `const Position&` parameters, `T&&` overloads for the movable cases, and by-value returns left as prvalues so C++17 elision constructs in place. And watch the storage side: `auto q = quotes.at(sym);` **copies** the map element (at returns a reference; auto strips it), while `auto& q = ...` aliases it."
     },
     {
       "type": "callout",
@@ -97,20 +134,20 @@
       "The two tests: can you take its address (identity)? May its resources be pillaged (movable-from)?",
       "decltype of a plain id-expression gives the declared type; of an lvalue expression gives T&."
     ],
-    "solution": "(a) `x`: **lvalue** - named, addressable; `decltype(x)` is `int`.\n\n(b) `x + 1`: **prvalue** - a fresh value with no address; decltype is `int`.\n\n(c) `x++`: **prvalue** - it returns a copy of the *old* value; decltype is `int`.\n\n(d) `++x`: **lvalue** - it returns the variable itself after incrementing; decltype is `int&`.\n\n(e) `std::move(x)`: **xvalue** - identity plus movable-from; decltype is `int&&`.\n\nThe assignment chain: `auto a = x;` copies (auto strips nothing here - x is already an int), so `a = 100` touches only a. `auto& b = x;` binds a reference, so `b = 50` writes x. **Final x = 50.**"
+    "solution": "(a) `x`: **lvalue**, named, addressable; `decltype(x)` is `int`.\n\n(b) `x + 1`: **prvalue**, a fresh value with no address; decltype is `int`.\n\n(c) `x++`: **prvalue**, it returns a copy of the *old* value; decltype is `int`.\n\n(d) `++x`: **lvalue**, it returns the variable itself after incrementing; decltype is `int&`.\n\n(e) `std::move(x)`: **xvalue**, identity plus movable-from; decltype is `int&&`.\n\nThe assignment chain: `auto a = x;` copies (auto strips nothing here, x is already an int), so `a = 100` touches only a. `auto& b = x;` binds a reference, so `b = 50` writes x. **Final x = 50.**"
   },
   "independentExercise": {
     "prompt": "Given `struct Position { std::vector<double> fills; std::string sym; };` and `Position a{ {10.5, 11.0}, \"AAPL\" };`: (a) classify `a`, `Position{{10.5, 11.0}, \"AAPL\"}` and `std::move(a)`; (b) after `Position b = std::move(a);`, what exactly is guaranteed about `a`, and how many elements may you assume `a.fills` has? (c) Write the consumption loop over `b.fills` that copies no elements, labelling the C++ standard it needs.",
     "hints": [
-      "The standard guarantees moved-from objects are *valid but unspecified* - safe to assign or destroy, nothing more.",
+      "The standard guarantees moved-from objects are *valid but unspecified*, safe to assign or destroy, nothing more.",
       "auto&& in a range-for binds whatever the iterator yields without copying."
     ],
-    "solution": "(a) `a` is an **lvalue**; the temporary `Position{{10.5, 11.0}, \"AAPL\"}` is a **prvalue** (and, C++17, it initialises its destination directly with guaranteed elision); `std::move(a)` is an **xvalue** - a cast, nothing moved yet.\n\n(b) The standard guarantees `a` is in a **valid but unspecified** state: it may be assigned to or destroyed safely. You may assume **nothing** about `a.fills`' size - implementations usually leave it empty, but that is not contractual.\n\n(c)\n\n```cpp\n// C++17\nfor (auto&& f : b.fills) {\n    // process f - no copies: auto&& binds the element itself\n}\n```\n\n`auto&&` is the universal reference: whatever the range yields (here `double&`), it binds without copying."
+    "solution": "(a) `a` is an **lvalue**; the temporary `Position{{10.5, 11.0}, \"AAPL\"}` is a **prvalue** (and, C++17, it initialises its destination directly with guaranteed elision); `std::move(a)` is an **xvalue**, a cast, nothing moved yet.\n\n(b) The standard guarantees `a` is in a **valid but unspecified** state: it may be assigned to or destroyed safely. You may assume **nothing** about `a.fills`' size, implementations usually leave it empty, but that is not contractual.\n\n(c)\n\n```cpp\n// C++17\nfor (auto&& f : b.fills) {\n    // process f - no copies: auto&& binds the element itself\n}\n```\n\n`auto&&` is the universal reference: whatever the range yields (here `double&`), it binds without copying."
   },
   "commonMistakes": [
     "Writing decltype((x)) when decltype(x) was meant: the parentheses turn the id-expression into an lvalue expression, silently changing int into int&.",
     "Believing std::move moves: it only casts to an xvalue; and reading a moved-from object's contents beyond assignment or destruction is unspecified.",
-    "Returning a reference to a local variable: it dangles - return by value and let C++17 guaranteed copy elision construct in place.",
+    "Returning a reference to a local variable: it dangles, return by value and let C++17 guaranteed copy elision construct in place.",
     "Writing auto q = quotes.at(sym); and expecting a reference: by-value auto strips the reference and copies the element; write auto& (or auto&&).",
     "Confusing x++ (prvalue, yields the old value) with ++x (lvalue, yields the variable itself)."
   ],
@@ -118,10 +155,10 @@
   "quantFinanceApplication": "A tick handler taking const Position& instead of Position by value saves hundreds of bytes of copying per message; auto& versus auto on a book lookup decides whether the strategy reads live state or a stale copy.",
   "summary": [
     "Every expression has a value category: lvalue (identity), prvalue (pure value), xvalue (identity plus movable-from); glvalue = lvalue or xvalue, rvalue = xvalue or prvalue.",
-    "std::move is a cast to xvalue - it moves nothing; moved-from objects are valid but unspecified.",
+    "std::move is a cast to xvalue, it moves nothing; moved-from objects are valid but unspecified.",
     "const T& binds everything; T&& binds rvalues, which is how move semantics get selected.",
     "decltype rules: id-expression gives the declared type, parenthesised gives T&, otherwise the category decides T, T& or T&&.",
-    "auto strips references and top-level const; auto& keeps them; auto&& is the universal reference - and C++14 adds auto return types and decltype(auto)."
+    "auto strips references and top-level const; auto& keeps them; auto&& is the universal reference, and C++14 adds auto return types and decltype(auto)."
   ],
   "quiz": [
     {
@@ -152,8 +189,11 @@
         "x++",
         "++x"
       ],
-      "answerIndices": [0, 3],
-      "explanation": "x names an object (addressable) - lvalue. ++x returns the variable itself after incrementing - lvalue. x + 1 is a fresh value - prvalue. x++ returns a copy of the old value - prvalue."
+      "answerIndices": [
+        0,
+        3
+      ],
+      "explanation": "x names an object (addressable), lvalue. ++x returns the variable itself after incrementing, lvalue. x + 1 is a fresh value, prvalue. x++ returns a copy of the old value, prvalue."
     },
     {
       "id": "q4",
@@ -161,7 +201,7 @@
       "prompt": "What does std::move(x) actually do?",
       "options": [
         "Copies x into a new temporary",
-        "Casts x to an xvalue so T&& overloads can win - it moves nothing itself",
+        "Casts x to an xvalue so T&& overloads can win, it moves nothing itself",
         "Deallocates x's resources immediately",
         "Guarantees x is empty afterwards"
       ],
@@ -179,14 +219,17 @@
         "Yes, but the string is silently copied"
       ],
       "answerIndex": 1,
-      "explanation": "Lifetime extension: a temporary bound to a const reference lives as long as the reference. The same rule does NOT apply to references obtained through function returns or member references - only direct binding of the temporary itself."
+      "explanation": "Lifetime extension: a temporary bound to a const reference lives as long as the reference. The same rule does NOT apply to references obtained through function returns or member references, only direct binding of the temporary itself."
     },
     {
       "id": "q6",
       "type": "short",
       "prompt": "What type does decltype((x)) yield when x is declared as `int x;`, and why?",
-      "modelAnswer": "int& - the parenthesised expression (x) is an lvalue expression of type int, and decltype of an lvalue expression yields T&.",
-      "keywords": ["int&", "lvalue"],
+      "modelAnswer": "int&, the parenthesised expression (x) is an lvalue expression of type int, and decltype of an lvalue expression yields T&.",
+      "keywords": [
+        "int&",
+        "lvalue"
+      ],
       "explanation": "decltype of a plain id-expression gives the declared type (int); adding parentheses makes it an lvalue expression, so decltype yields int&. The single most-cited decltype trap."
     }
   ],
@@ -213,10 +256,24 @@
     }
   ],
   "references": [
-    { "label": "cppreference — Value categories", "url": "https://en.cppreference.com/w/cpp/language/value_category" },
-    { "label": "cppreference — decltype", "url": "https://en.cppreference.com/w/cpp/language/decltype" },
-    { "label": "cppreference — auto and type deduction", "url": "https://en.cppreference.com/w/cpp/language/auto" },
-    { "label": "cppreference — Reference declaration", "url": "https://en.cppreference.com/w/cpp/language/reference" }
+    {
+      "label": "cppreference. Value categories",
+      "url": "https://en.cppreference.com/w/cpp/language/value_category"
+    },
+    {
+      "label": "cppreference, decltype",
+      "url": "https://en.cppreference.com/w/cpp/language/decltype"
+    },
+    {
+      "label": "cppreference, auto and type deduction",
+      "url": "https://en.cppreference.com/w/cpp/language/auto"
+    },
+    {
+      "label": "cppreference. Reference declaration",
+      "url": "https://en.cppreference.com/w/cpp/language/reference"
+    }
   ],
-  "skills": ["cpp-advanced"]
+  "skills": [
+    "cpp-advanced"
+  ]
 }

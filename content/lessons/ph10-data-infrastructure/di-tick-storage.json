@@ -4,9 +4,11 @@
   "title": "Tick-Data Storage and Time-Series Databases",
   "estMinutes": 26,
   "difficulty": "advanced",
-  "prereqs": ["db-timeseries-columnar"],
+  "prereqs": [
+    "db-timeseries-columnar"
+  ],
   "objectives": [
-    "Explain the three properties that make tick data special - extreme scale, append-only writes and time-ordered access - and why they break general-purpose row stores",
+    "Explain the three properties that make tick data special, extreme scale, append-only writes and time-ordered access, and why they break general-purpose row stores",
     "Compute raw and compressed storage requirements for a tick capture pipeline",
     "Describe columnar layout and per-field encodings (dictionary, delta, run-length) and why each fits a tick field",
     "Choose and justify a partitioning scheme for a given query pattern, and quantify query-pruning savings"
@@ -19,11 +21,11 @@
     },
     {
       "type": "p",
-      "md": "Three properties dominate every tick-storage design. First, **scale**: feeds are enormous and write-heavy. Suppose a combined feed for 40 symbols averages 5,000 messages per second over a 6.5-hour session ($6.5 \\times 3600 = 23{,}400$ seconds). That is $5{,}000 \\times 23{,}400 = 117{,}000{,}000$ messages per day. At an average of 200 bytes per message, one day is $117{,}000{,}000 \\times 200 = 23.4$ GB raw, and a 250-day year is $23.4 \\times 250 = 5{,}850$ GB, roughly 5.9 TB per symbol set per year - before any replication."
+      "md": "Three properties dominate every tick-storage design. First, **scale**: feeds are enormous and write-heavy. Suppose a combined feed for 40 symbols averages 5,000 messages per second over a 6.5-hour session ($6.5 \\times 3600 = 23{,}400$ seconds). That is $5{,}000 \\times 23{,}400 = 117{,}000{,}000$ messages per day. At an average of 200 bytes per message, one day is $117{,}000{,}000 \\times 200 = 23.4$ GB raw, and a 250-day year is $23.4 \\times 250 = 5{,}850$ GB, roughly 5.9 TB per symbol set per year, before any replication."
     },
     {
       "type": "p",
-      "md": "Second, tick data is **append-only**. Nobody updates yesterday's trade; corrections arrive as *new* messages flagged as corrections. The workload is insert and range-scan, almost never point-update, which is the opposite of an OLTP database's read-modify-write pattern. Third, it is **time-ordered**: within one symbol's stream, timestamps are monotonically non-decreasing, and nearly every useful query - \"all AAPL trades between 10:00 and 10:05\" - is a time-range scan."
+      "md": "Second, tick data is **append-only**. Nobody updates yesterday's trade; corrections arrive as *new* messages flagged as corrections. The workload is insert and range-scan, almost never point-update, which is the opposite of an OLTP database's read-modify-write pattern. Third, it is **time-ordered**: within one symbol's stream, timestamps are monotonically non-decreasing, and nearly every useful query, \"all AAPL trades between 10:00 and 10:05\", is a time-range scan."
     },
     {
       "type": "callout",
@@ -41,13 +43,43 @@
     },
     {
       "type": "table",
-      "headers": ["Field", "Pattern", "Encoding", "Typical footprint"],
+      "headers": [
+        "Field",
+        "Pattern",
+        "Encoding",
+        "Typical footprint"
+      ],
       "rows": [
-        ["symbol", "small set of values", "dictionary: 2-byte id", "~2 bytes per row"],
-        ["timestamp (µs)", "near-arithmetic progression", "delta-of-delta + run-length", "1-2 bytes per row"],
-        ["price", "2 decimals, quantised", "scaled integer, bit-packed", "2-4 bytes per row"],
-        ["size", "small positive ints", "variable-length int", "1-2 bytes per row"],
-        ["venue/flags", "few distinct values", "dictionary or bitmap", "under 1 byte per row"]
+        [
+          "symbol",
+          "small set of values",
+          "dictionary: 2-byte id",
+          "~2 bytes per row"
+        ],
+        [
+          "timestamp (µs)",
+          "near-arithmetic progression",
+          "delta-of-delta + run-length",
+          "1-2 bytes per row"
+        ],
+        [
+          "price",
+          "2 decimals, quantised",
+          "scaled integer, bit-packed",
+          "2-4 bytes per row"
+        ],
+        [
+          "size",
+          "small positive ints",
+          "variable-length int",
+          "1-2 bytes per row"
+        ],
+        [
+          "venue/flags",
+          "few distinct values",
+          "dictionary or bitmap",
+          "under 1 byte per row"
+        ]
       ]
     },
     {
@@ -79,7 +111,7 @@
     },
     {
       "type": "p",
-      "md": "Compression shrinks bytes; **partitioning** shrinks what you read. Partition by trading day and the query \"replay 14 June\" reads one day's files, not the year. Partition by symbol hash and per-symbol workloads (live book rebuilding) touch only that symbol's slice. Time partitioning also makes retention cheap: expiring old data is dropping a partition - a metadata operation - rather than deleting rows, which rewrites append-only storage."
+      "md": "Compression shrinks bytes; **partitioning** shrinks what you read. Partition by trading day and the query \"replay 14 June\" reads one day's files, not the year. Partition by symbol hash and per-symbol workloads (live book rebuilding) touch only that symbol's slice. Time partitioning also makes retention cheap: expiring old data is dropping a partition, a metadata operation, rather than deleting rows, which rewrites append-only storage."
     },
     {
       "type": "steps",
@@ -87,7 +119,7 @@
       "items": [
         "Annual compressed footprint: $5{,}850 / 6 = 975$ GB across 250 daily partitions, so one day $= 975 / 250 = 3.9$ GB.",
         "Without pruning, a one-day backtest scans 975 GB. At 1 GB/s sequential read that is 975 s, about 16 minutes.",
-        "With day-level pruning the scan is 3.9 GB, which is 3.9 s - a 250x reduction in I/O.",
+        "With day-level pruning the scan is 3.9 GB, which is 3.9 s, a 250x reduction in I/O.",
         "The algebra is general: pruning factor = number of partitions scanned before / scanned after. Reading 1 of 250 partitions gives 250x."
       ]
     },
@@ -103,7 +135,7 @@
     }
   ],
   "guidedExercise": {
-    "prompt": "A desk captures an aggregated feed of 25 symbols at an average 2,400 messages per second over a 6.5-hour session. Each message averages 160 bytes. (a) Compute the raw daily volume in GB. (b) The columnar store achieves 8:1 compression - compute the compressed daily volume. (c) Compute raw and compressed annual volumes (250 trading days), in GB.",
+    "prompt": "A desk captures an aggregated feed of 25 symbols at an average 2,400 messages per second over a 6.5-hour session. Each message averages 160 bytes. (a) Compute the raw daily volume in GB. (b) The columnar store achieves 8:1 compression, compute the compressed daily volume. (c) Compute raw and compressed annual volumes (250 trading days), in GB.",
     "hints": [
       "First convert the session to seconds: $6.5 \\times 3600$.",
       "Messages per day = rate $\\times$ seconds; bytes = messages $\\times$ bytes-per-message.",
@@ -123,16 +155,16 @@
     "Treating tick storage as a normal CRUD database: updates-in-place break replay and audit; corrections must be new appended events.",
     "Partitioning by symbol first for a research workload: backtests scan date ranges, so time partitioning prunes far more; pick partitions from the dominant query pattern.",
     "Forgetting the session boundary in day partitions: 6.5 hours of a US session plus pre/post markets spans dates and timezones; a naive midnight-to-midnight split splits sessions badly.",
-    "Comparing GB and GiB casually: 23.4 GB (decimal) is about 21.8 GiB (binary) - at feed scale, a 7% sizing error is hundreds of GB.",
+    "Comparing GB and GiB casually: 23.4 GB (decimal) is about 21.8 GiB (binary), at feed scale, a 7% sizing error is hundreds of GB.",
     "Assuming columnar is always better: retrieving one full record is slower in a columnar store; row or hybrid layouts suit point-lookup workloads."
   ],
-  "realWorldApplication": "Every serious market-data platform - kdb+, ClickHouse, TimescaleDB, Arctic/Parquet lakes - is an append-only, time-partitioned, column-compressed tick store, sized with exactly the arithmetic in this lesson.",
+  "realWorldApplication": "Every serious market-data platform, kdb+, ClickHouse, TimescaleDB, Arctic/Parquet lakes, is an append-only, time-partitioned, column-compressed tick store, sized with exactly the arithmetic in this lesson.",
   "quantFinanceApplication": "Backtesting and research replay are bounded by storage I/O: a pruned partition scan can turn a 16-minute query into a 4-second one, which changes how many research questions get asked per day. Capture gaps found by reconciliation are data-quality incidents with direct PnL consequences.",
   "summary": [
     "Tick data is append-only, time-ordered and enormous: 5,000 msg/s over 23,400 s is 117M messages/day, and sizing must be computed, not guessed.",
     "Columnar layouts plus per-field encodings (dictionary, delta-of-delta, run-length) compress market data 5-15x because each column is repetitive.",
     "Partitioning is the query-time win: scanning 1 of 250 daily partitions is a 250x I/O reduction, and retention becomes a cheap metadata drop.",
-    "A tick capture that misses even a second of data silently corrupts research and live decisions - storage design is a correctness problem."
+    "A tick capture that misses even a second of data silently corrupts research and live decisions, storage design is a correctness problem."
   ],
   "quiz": [
     {
@@ -176,7 +208,11 @@
         "Point updates in place are the dominant operation",
         "Random single-record lookups are the primary access pattern"
       ],
-      "answerIndices": [0, 1, 2],
+      "answerIndices": [
+        0,
+        1,
+        2
+      ],
       "explanation": "Tick stores are write-heavy append logs with time-range scans; updates-in-place and point lookups are OLTP patterns, not tick patterns. Corrections are appended as new flagged messages."
     },
     {
@@ -184,15 +220,20 @@
       "type": "short",
       "prompt": "In one sentence, why does partitioning by trading day make research queries dramatically faster even though total bytes stored are unchanged?",
       "modelAnswer": "The query planner prunes: it reads only the partitions inside the requested date range, so I/O drops in proportion to the partitions skipped, without touching the other data at all.",
-      "keywords": ["prune", "scan", "range", "read"],
-      "explanation": "Partition pruning reduces *bytes read*, not bytes stored - the scan cost scales with the fraction of partitions touched (5 of 250 = 50x less I/O)."
+      "keywords": [
+        "prune",
+        "scan",
+        "range",
+        "read"
+      ],
+      "explanation": "Partition pruning reduces *bytes read*, not bytes stored, the scan cost scales with the fraction of partitions touched (5 of 250 = 50x less I/O)."
     },
     {
       "id": "q6",
       "type": "mcq",
       "prompt": "You must expire tick data older than two years. What is the right mechanism on an append-only store partitioned by day?",
       "options": [
-        "Drop the old daily partitions - a cheap metadata operation",
+        "Drop the old daily partitions, a cheap metadata operation",
         "Run DELETE FROM ticks WHERE date < cutoff on each table",
         "Overwrite old rows with nulls to free space",
         "Re-encode the whole dataset with stronger compression"
@@ -225,17 +266,20 @@
   ],
   "references": [
     {
-      "label": "TimescaleDB - time-series database concepts",
+      "label": "TimescaleDB: time-series database concepts",
       "url": "https://docs.timescale.com/"
     },
     {
-      "label": "ClickHouse - column-oriented storage docs",
+      "label": "ClickHouse: column-oriented storage docs",
       "url": "https://clickhouse.com/docs/en/about-us/distinctive-features"
     },
     {
-      "label": "kx (kdb+) - database and time-series documentation",
+      "label": "kx (kdb+): database and time-series documentation",
       "url": "https://code.kx.com/q/"
     }
   ],
-  "skills": ["data-infrastructure", "distributed-systems"]
+  "skills": [
+    "data-infrastructure",
+    "distributed-systems"
+  ]
 }

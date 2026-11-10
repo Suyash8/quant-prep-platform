@@ -4,14 +4,16 @@
   "title": "constexpr, consteval and Compile-Time Programming",
   "estMinutes": 27,
   "difficulty": "advanced",
-  "prereqs": ["cpp-lambdas-optional-variant"],
+  "prereqs": [
+    "cpp-lambdas-optional-variant"
+  ],
   "objectives": [
     "Explain when a constexpr function is evaluated at compile time versus at runtime, and force compile-time evaluation with constant contexts",
     "Write constexpr functions with loops (C++14) that build compile-time tables such as discount ladders",
     "Distinguish consteval and constinit (both C++20) from constexpr and const",
     "Use static_assert as a compile-time regression test for computed constants"
   ],
-  "motivation": "A volatility surface, a binomial lattice, a discount ladder - quant code re-derives the same constants thousands of times at startup or, worse, inside loops. constexpr moves that work into compilation: the binary ships with the numbers already baked in, and the compiler checks them against the same formula on every build. This lesson covers constexpr (C++11, relaxed in C++14 and C++17) plus the C++20 additions consteval and constinit, each labelled with the standard it needs.",
+  "motivation": "A volatility surface, a binomial lattice, a discount ladder, quant code re-derives the same constants thousands of times at startup or, worse, inside loops. constexpr moves that work into compilation: the binary ships with the numbers already baked in, and the compiler checks them against the same formula on every build. This lesson covers constexpr (C++11, relaxed in C++14 and C++17) plus the C++20 additions consteval and constinit, each labelled with the standard it needs.",
   "blocks": [
     {
       "type": "h2",
@@ -19,11 +21,11 @@
     },
     {
       "type": "p",
-      "md": "A **constexpr variable** is initialised at compile time and usable where a constant is required: array bounds, template arguments (connecting back to lesson 1's non-type parameters). A **constexpr function** *may* be evaluated at compile time - when the call happens in a context that demands a constant expression and the arguments are constants - and otherwise runs as an ordinary inline function. That dual nature is the key subtlety: constexpr does not force compile-time evaluation, it merely permits it. The contexts that force it are `constexpr` variables, `static_assert`, array bounds and template arguments."
+      "md": "A **constexpr variable** is initialised at compile time and usable where a constant is required: array bounds, template arguments (connecting back to lesson 1's non-type parameters). A **constexpr function** *may* be evaluated at compile time, when the call happens in a context that demands a constant expression and the arguments are constants, and otherwise runs as an ordinary inline function. That dual nature is the key subtlety: constexpr does not force compile-time evaluation, it merely permits it. The contexts that force it are `constexpr` variables, `static_assert`, array bounds and template arguments."
     },
     {
       "type": "p",
-      "md": "The feature grew over standards, and the labels matter. C++11 allowed constexpr functions of a single return statement. **C++14** relaxed this to loops, local variables and mutation - which is what makes compile-time table building practical. **C++17** added constexpr lambdas (a captureless lambda used in a constant expression: `constexpr auto df1 = [](double r){ return 1.0/(1.0+r); }(0.05);` - 0.952381 with no helper function). **C++20** goes much further (virtual functions, try/catch, constexpr `std::vector` and `std::string`) - always note when you rely on it."
+      "md": "The feature grew over standards, and the labels matter. C++11 allowed constexpr functions of a single return statement. **C++14** relaxed this to loops, local variables and mutation, which is what makes compile-time table building practical. **C++17** added constexpr lambdas (a captureless lambda used in a constant expression: `constexpr auto df1 = [](double r){ return 1.0/(1.0+r); }(0.05);` - 0.952381 with no helper function). **C++20** goes much further (virtual functions, try/catch, constexpr `std::vector` and `std::string`), always note when you rely on it."
     },
     {
       "type": "code",
@@ -59,19 +61,25 @@
     },
     {
       "type": "p",
-      "md": "Compile-time checks double as regression tests. The `static_assert` above demands $0.783 < df_5 < 0.784$; change `rate`, break the loop, or fat-finger a digit and the build fails with the assertion named. Runtime consumers then just read the array - the table is a plain `std::array<double, 6>` in the binary's data, with no startup computation at all."
+      "md": "Compile-time checks double as regression tests. The `static_assert` above demands $0.783 < df_5 < 0.784$; change `rate`, break the loop, or fat-finger a digit and the build fails with the assertion named. Runtime consumers then just read the array, the table is a plain `std::array<double, 6>` in the binary's data, with no startup computation at all."
     },
     {
       "type": "interactive",
       "component": "ComplexityCompare",
       "params": {
         "variants": [
-          { "name": "recompute the discount ladder at every process startup", "complexity": "O(n) per boot" },
-          { "name": "constexpr ladder baked into the binary", "complexity": "O(1) at boot" }
+          {
+            "name": "recompute the discount ladder at every process startup",
+            "complexity": "O(n) per boot"
+          },
+          {
+            "name": "constexpr ladder baked into the binary",
+            "complexity": "O(1) at boot"
+          }
         ],
         "n": 252
       },
-      "caption": "252 trading periods recomputed by every boot of every process versus paid once at build time - and the compiler re-verifies the numbers on every rebuild."
+      "caption": "252 trading periods recomputed by every boot of every process versus paid once at build time, and the compiler re-verifies the numbers on every rebuild."
     },
     {
       "type": "h2",
@@ -79,7 +87,7 @@
     },
     {
       "type": "p",
-      "md": "**consteval** (C++20) declares an *immediate function*: every call must be a constant expression, so a runtime call is a compile error. Use it when the result must exist at compile time - table generation, compile-time validation of strategy parameters - and there must be no silent runtime fallback. **constinit** (C++20) guarantees a static-storage variable is initialised by *constant initialisation*, before any dynamic initialisation runs. That kills the static-initialisation-order fiasco - one global reading another global that is not ready yet - while leaving the variable mutable: constinit is about *when*, not *whether you may write later*."
+      "md": "**consteval** (C++20) declares an *immediate function*: every call must be a constant expression, so a runtime call is a compile error. Use it when the result must exist at compile time, table generation, compile-time validation of strategy parameters, and there must be no silent runtime fallback. **constinit** (C++20) guarantees a static-storage variable is initialised by *constant initialisation*, before any dynamic initialisation runs. That kills the static-initialisation-order fiasco, one global reading another global that is not ready yet, while leaving the variable mutable: constinit is about *when*, not *whether you may write later*."
     },
     {
       "type": "code",
@@ -95,49 +103,67 @@
     },
     {
       "type": "table",
-      "headers": ["Feature", "Minimum standard"],
+      "headers": [
+        "Feature",
+        "Minimum standard"
+      ],
       "rows": [
-        ["constexpr variables and functions", "C++11"],
-        ["loops, locals and mutation in constexpr functions", "C++14"],
-        ["constexpr lambdas, if constexpr", "C++17"],
-        ["constexpr mutation of std::array members (table building)", "C++17"],
-        ["consteval, constinit, std::is_constant_evaluated", "C++20"]
+        [
+          "constexpr variables and functions",
+          "C++11"
+        ],
+        [
+          "loops, locals and mutation in constexpr functions",
+          "C++14"
+        ],
+        [
+          "constexpr lambdas, if constexpr",
+          "C++17"
+        ],
+        [
+          "constexpr mutation of std::array members (table building)",
+          "C++17"
+        ],
+        [
+          "consteval, constinit, std::is_constant_evaluated",
+          "C++20"
+        ]
       ]
     },
     {
       "type": "callout",
       "variant": "pitfall",
       "title": "constexpr never promised compile time",
-      "md": "Calling a constexpr function with runtime arguments compiles fine and runs at runtime. To *force* compile-time evaluation, consume the result in a constant context - constexpr variable, static_assert, array bound, template argument - or branch explicitly with C++20's std::is_constant_evaluated()."
+      "md": "Calling a constexpr function with runtime arguments compiles fine and runs at runtime. To *force* compile-time evaluation, consume the result in a constant context, constexpr variable, static_assert, array bound, template argument, or branch explicitly with C++20's std::is_constant_evaluated()."
     }
   ],
   "guidedExercise": {
     "prompt": "Write a constexpr integer-power function `cpow(double base, int exp)` using exponentiation by squaring (allowed: C++14 loops and mutation). Then trace `cpow(1.05, 10)` step by step and verify with a static_assert that the result lies in (1.6288, 1.6290). What is $(1.05)^{10}$ and why is squaring cheaper than multiplying 10 times?",
     "hints": [
       "Keep the current square in a local `b` and multiply it into `result` only when the remaining exponent is odd.",
-      "Halve the exponent each round: 10 -> 5 -> 2 -> 1 - three squarings and three multiplications into the result."
+      "Halve the exponent each round: 10 -> 5 -> 2 -> 1, three squarings and three multiplications into the result."
     ],
-    "solution": "```cpp\n// C++17\nconstexpr double cpow(double base, int exp) {\n    double result = 1.0;\n    double b = base;\n    while (exp > 0) {\n        if (exp % 2 == 1) result *= b;\n        b *= b;            // square the base each round\n        exp /= 2;\n    }\n    return result;\n}\n\nstatic_assert(cpow(1.05, 10) > 1.6288 && cpow(1.05, 10) < 1.6290);\n```\n\nTrace of `cpow(1.05, 10)`: exponent 10 is even, so $b = 1.05^2 = 1.1025$, exp = 5; odd, so result $= 1.1025$ and $b = 1.21550625$, exp = 2; even, $b = 1.4774554438$, exp = 1; odd, result $= 1.1025 \\times 1.4774554438 = 1.6288946268$, exp = 0. So $(1.05)^{10} \\approx \\mathbf{1.628895}$.\n\nSquaring needs about $\\log_2 10 \\approx 4$ rounds instead of 9 multiplications - and here all of it happened inside the compiler, so the binary holds only the constant."
+    "solution": "```cpp\n// C++17\nconstexpr double cpow(double base, int exp) {\n    double result = 1.0;\n    double b = base;\n    while (exp > 0) {\n        if (exp % 2 == 1) result *= b;\n        b *= b;            // square the base each round\n        exp /= 2;\n    }\n    return result;\n}\n\nstatic_assert(cpow(1.05, 10) > 1.6288 && cpow(1.05, 10) < 1.6290);\n```\n\nTrace of `cpow(1.05, 10)`: exponent 10 is even, so $b = 1.05^2 = 1.1025$, exp = 5; odd, so result $= 1.1025$ and $b = 1.21550625$, exp = 2; even, $b = 1.4774554438$, exp = 1; odd, result $= 1.1025 \\times 1.4774554438 = 1.6288946268$, exp = 0. So $(1.05)^{10} \\approx \\mathbf{1.628895}$.\n\nSquaring needs about $\\log_2 10 \\approx 4$ rounds instead of 9 multiplications, and here all of it happened inside the compiler, so the binary holds only the constant."
   },
   "independentExercise": {
     "prompt": "Build a compile-time discount table for r = 4%: write `constexpr std::array<double, 6> ladder4()` that fills indices 0..5 with $1/(1.04)^n$ (C++17 array mutation), add a `static_assert` bounding `df[5]` within (0.8219, 0.8220), and state all five discount factors $df_1$ through $df_5$ to six decimals. Finally, state which single line of the function you would change to switch the curve to r = 5% and what becomes of the assert.",
     "hints": [
-      "Each df[n] is the previous one divided by 1.04 - one division per step, exactly like the lesson's 5% ladder.",
+      "Each df[n] is the previous one divided by 1.04, one division per step, exactly like the lesson's 5% ladder.",
       "Check df5 = 1/(1.04)^5 by squaring twice and multiplying once: 1.04^2 = 1.0816, 1.04^4 = 1.16985856, 1.04^5 = 1.2166529024."
     ],
-    "solution": "```cpp\n// C++17\nconstexpr std::array<double, 6> ladder4() {\n    std::array<double, 6> df{};\n    df[0] = 1.0;\n    for (int n = 1; n < 6; ++n) df[n] = df[n - 1] / 1.04;\n    return df;\n}\nstatic_assert(ladder4()[5] > 0.8219 && ladder4()[5] < 0.8220);\n```\n\nDiscount factors: $df_1 = 0.961538$, $df_2 = 0.924556$, $df_3 = 0.888996$, $df_4 = 0.854804$, $df_5 = \\mathbf{0.821927}$ (check: $1/1.2166529024 = 0.8219271$).\n\nChanging `1.04` to `1.05` recomputes the whole table at compile time, and the assert - still expecting 0.8219-0.8220 - now **fails the build**, because the true df5 is 0.783526. That failure is the point: the bound is a compiler-checked contract on the curve."
+    "solution": "```cpp\n// C++17\nconstexpr std::array<double, 6> ladder4() {\n    std::array<double, 6> df{};\n    df[0] = 1.0;\n    for (int n = 1; n < 6; ++n) df[n] = df[n - 1] / 1.04;\n    return df;\n}\nstatic_assert(ladder4()[5] > 0.8219 && ladder4()[5] < 0.8220);\n```\n\nDiscount factors: $df_1 = 0.961538$, $df_2 = 0.924556$, $df_3 = 0.888996$, $df_4 = 0.854804$, $df_5 = \\mathbf{0.821927}$ (check: $1/1.2166529024 = 0.8219271$).\n\nChanging `1.04` to `1.05` recomputes the whole table at compile time, and the assert, still expecting 0.8219-0.8220, now **fails the build**, because the true df5 is 0.783526. That failure is the point: the bound is a compiler-checked contract on the curve."
   },
   "commonMistakes": [
-    "Assuming constexpr forces compile-time evaluation - a call with runtime arguments is legal and executes at runtime.",
+    "Assuming constexpr forces compile-time evaluation, a call with runtime arguments is legal and executes at runtime.",
     "Using consteval or constinit while compiling with -std=c++17: both are C++20; on C++17, force evaluation with static_assert or constexpr variables instead.",
-    "Writing deep constexpr recursion and hitting the implementation's maximum constexpr evaluation depth - prefer loops (C++14) or exponentiation by squaring.",
+    "Writing deep constexpr recursion and hitting the implementation's maximum constexpr evaluation depth, prefer loops (C++14) or exponentiation by squaring.",
     "Trying the loop-fill std::array table pattern before C++17: non-const array element mutation only became constexpr in C++17.",
     "Confusing constinit with const: constinit guarantees *when* initialisation happens (constant, before dynamic init), not immutability."
   ],
-  "realWorldApplication": "Game engines and trading systems precompute lookup tables - trig tables, discount curves, strike grids - at compile time to shave startup latency and let the compiler re-verify the constants on every build.",
+  "realWorldApplication": "Game engines and trading systems precompute lookup tables, trig tables, discount curves, strike grids, at compile time to shave startup latency and let the compiler re-verify the constants on every build.",
   "quantFinanceApplication": "A binomial or lattice pricer can build its per-step discount factors and transition probabilities as a constexpr std::array: the binary ships with the curve already computed, and a static_assert catches any drift in the rate assumption.",
   "summary": [
-    "constexpr permits compile-time evaluation; constant contexts - constexpr variables, static_assert, array bounds, template arguments - force it.",
+    "constexpr permits compile-time evaluation; constant contexts, constexpr variables, static_assert, array bounds, template arguments, force it.",
     "C++14 relaxed constexpr to loops and locals; C++17 added constexpr lambdas and constexpr std::array mutation; consteval and constinit are C++20.",
     "Compile-time tables bake constants into the binary, moving recurring startup cost to build time.",
     "static_assert bounds on computed constants act as regression tests that fail the build, not the desk.",
@@ -151,7 +177,7 @@
       "language": "cpp",
       "code": "// C++14\n#include <iostream>\nconstexpr int fact(int n) { return n <= 1 ? 1 : n * fact(n - 1); }\nint main() {\n    constexpr int f5 = fact(5);\n    std::cout << f5 << \" \" << fact(6);\n}",
       "answer": "120 720",
-      "explanation": "f5 is a constexpr variable, so fact(5) must be evaluated at compile time: 120. fact(6) is called in a runtime context, so it may run at runtime - but the function computes the same way: 720."
+      "explanation": "f5 is a constexpr variable, so fact(5) must be evaluated at compile time: 120. fact(6) is called in a runtime context, so it may run at runtime, but the function computes the same way: 720."
     },
     {
       "id": "q2",
@@ -186,7 +212,7 @@
         "A linker error"
       ],
       "answerIndex": 1,
-      "explanation": "consteval declares an immediate function: every call must be a constant expression, so a runtime call is rejected at compile time - the no-fallback guarantee constexpr lacks."
+      "explanation": "consteval declares an immediate function: every call must be a constant expression, so a runtime call is rejected at compile time, the no-fallback guarantee constexpr lacks."
     },
     {
       "id": "q5",
@@ -202,7 +228,7 @@
       "prompt": "(C++20) What does constinit guarantee?",
       "options": [
         "The variable is immutable after initialisation",
-        "The variable is constant-initialised before any dynamic initialisation - avoiding the static-initialisation-order fiasco - and stays mutable",
+        "The variable is constant-initialised before any dynamic initialisation, avoiding the static-initialisation-order fiasco, and stays mutable",
         "The variable lives in read-only memory pages",
         "The variable is initialised lazily on first use"
       ],
@@ -214,17 +240,17 @@
     {
       "type": "definition",
       "front": "What does constexpr actually guarantee?",
-      "back": "It permits compile-time evaluation when the call is in a constant context with constant arguments; otherwise the function runs at runtime. It permits - it does not force."
+      "back": "It permits compile-time evaluation when the call is in a constant context with constant arguments; otherwise the function runs at runtime. It permits, it does not force."
     },
     {
       "type": "definition",
       "front": "consteval vs constinit? (both C++20)",
-      "back": "consteval: every call must be a constant expression - no runtime fallback. constinit: static-storage variable is constant-initialised before dynamic init (kills the SIOF fiasco) and stays mutable."
+      "back": "consteval: every call must be a constant expression, no runtime fallback. constinit: static-storage variable is constant-initialised before dynamic init (kills the SIOF fiasco) and stays mutable."
     },
     {
       "type": "code-output",
-      "front": "constexpr int fact(int n){ return n <= 1 ? 1 : n * fact(n-1); } - what are fact(5) and fact(6)?",
-      "back": "120 and 720 - and in a constant context the compiler computes them during compilation."
+      "front": "constexpr int fact(int n){ return n <= 1 ? 1 : n * fact(n-1); }: what are fact(5) and fact(6)?",
+      "back": "120 and 720, and in a constant context the compiler computes them during compilation."
     },
     {
       "type": "concept",
@@ -233,10 +259,24 @@
     }
   ],
   "references": [
-    { "label": "cppreference — constexpr", "url": "https://en.cppreference.com/w/cpp/language/constexpr" },
-    { "label": "cppreference — consteval (C++20)", "url": "https://en.cppreference.com/w/cpp/language/consteval" },
-    { "label": "cppreference — constinit (C++20)", "url": "https://en.cppreference.com/w/cpp/language/constinit" },
-    { "label": "cppreference — Constant expressions", "url": "https://en.cppreference.com/w/cpp/language/constant_expression" }
+    {
+      "label": "cppreference, constexpr",
+      "url": "https://en.cppreference.com/w/cpp/language/constexpr"
+    },
+    {
+      "label": "cppreference, consteval (C++20)",
+      "url": "https://en.cppreference.com/w/cpp/language/consteval"
+    },
+    {
+      "label": "cppreference, constinit (C++20)",
+      "url": "https://en.cppreference.com/w/cpp/language/constinit"
+    },
+    {
+      "label": "cppreference. Constant expressions",
+      "url": "https://en.cppreference.com/w/cpp/language/constant_expression"
+    }
   ],
-  "skills": ["cpp-advanced"]
+  "skills": [
+    "cpp-advanced"
+  ]
 }

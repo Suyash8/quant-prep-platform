@@ -13,7 +13,7 @@
     "Use delegating constructors, in-class default initializers and explicit to keep validation in one place",
     "Write const-correct accessors and compute derived values on demand instead of storing them"
   ],
-  "motivation": "A trading system cannot let every caller poke raw fields inside an Order: one misplaced sign in a quantity and the desk risk figures are quietly wrong. Classes exist to put a wall around state and give a single, tested set of functions custody of it. This lesson turns the structs you already know into classes with enforced invariants, constructors that make invalid objects impossible to create, and const-correct accessors - the vocabulary every later C++ lesson in this track uses.",
+  "motivation": "A trading system cannot let every caller poke raw fields inside an Order: one misplaced sign in a quantity and the desk risk figures are quietly wrong. Classes exist to put a wall around state and give a single, tested set of functions custody of it. This lesson turns the structs you already know into classes with enforced invariants, constructors that make invalid objects impossible to create, and const-correct accessors, the vocabulary every later C++ lesson in this track uses.",
   "blocks": [
     {
       "type": "h2",
@@ -21,7 +21,7 @@
     },
     {
       "type": "p",
-      "md": "Mechanically, a C++ `struct` and a `class` are nearly identical - the only default difference is access: struct members are public by default, class members private by default. What changes is the discipline. When data is private, the class can guarantee facts that are always true, called **invariants**: an Order always holds a positive quantity, a limit price is never negative. If any caller could write `o.qty_ = -5` directly, every function touching Order would have to re-check the field before trusting it. With encapsulation the checks live in exactly one place - the constructor and the mutators - and every other function can rely on them. That single-source-of-truth property is what keeps a position keeper consistent when many developers and strategies feed it."
+      "md": "Mechanically, a C++ `struct` and a `class` are nearly identical, the only default difference is access: struct members are public by default, class members private by default. What changes is the discipline. When data is private, the class can guarantee facts that are always true, called **invariants**: an Order always holds a positive quantity, a limit price is never negative. If any caller could write `o.qty_ = -5` directly, every function touching Order would have to re-check the field before trusting it. With encapsulation the checks live in exactly one place, the constructor and the mutators, and every other function can rely on them. That single-source-of-truth property is what keeps a position keeper consistent when many developers and strategies feed it."
     },
     {
       "type": "code",
@@ -31,7 +31,7 @@
     },
     {
       "type": "p",
-      "md": "Read the class from the outside in. `symbol()`, `qty()`, `limitPrice()` and `notional()` are marked `const`, promising not to modify the object - which is why they can be called through a `const Order&`, and why the compiler rejects accidental mutation. `notional()` is computed on demand rather than stored: storing a derived quantity invites stale data, because nothing forces every future mutation to keep the copy in sync."
+      "md": "Read the class from the outside in. `symbol()`, `qty()`, `limitPrice()` and `notional()` are marked `const`, promising not to modify the object, which is why they can be called through a `const Order&`, and why the compiler rejects accidental mutation. `notional()` is computed on demand rather than stored: storing a derived quantity invites stale data, because nothing forces every future mutation to keep the copy in sync."
     },
     {
       "type": "h2",
@@ -39,7 +39,7 @@
     },
     {
       "type": "p",
-      "md": "The constructor must bring every member into a valid state before the body runs. Assigning in the body is not initialization: by the time the body executes, every member has already been default-constructed, then assigned again - wasted work for a std::string, and flat-out impossible for `const` members or reference members, which **must** be initialized in the member initializer list. Write `: symbol_{symbol}, qty_{qty}` and leave the body for validation that needs statements."
+      "md": "The constructor must bring every member into a valid state before the body runs. Assigning in the body is not initialization: by the time the body executes, every member has already been default-constructed, then assigned again, wasted work for a std::string, and flat-out impossible for `const` members or reference members, which **must** be initialized in the member initializer list. Write `: symbol_{symbol}, qty_{qty}` and leave the body for validation that needs statements."
     },
     {
       "type": "callout",
@@ -82,7 +82,7 @@
     },
     {
       "type": "p",
-      "md": "One-argument constructors also participate in **implicit conversions**: without `explicit`, `printQty(7)` would silently build a Quantity out of a bare int. That is occasionally convenient and usually dangerous in financial code, where types encode units - lots versus shares versus dollars. Mark single-argument constructors `explicit` unless you genuinely want the conversion; explicit only restricts copy-initialization, so `Quantity{7}` keeps working."
+      "md": "One-argument constructors also participate in **implicit conversions**: without `explicit`, `printQty(7)` would silently build a Quantity out of a bare int. That is occasionally convenient and usually dangerous in financial code, where types encode units, lots versus shares versus dollars. Mark single-argument constructors `explicit` unless you genuinely want the conversion; explicit only restricts copy-initialization, so `Quantity{7}` keeps working."
     },
     {
       "type": "code",
@@ -94,19 +94,19 @@
       "type": "callout",
       "variant": "quant",
       "title": "Types are your units",
-      "md": "When Quantity, Price and Money are distinct classes, `price * quantity` is the only expression that compiles - adding a price to a quantity is a compile error, not a reconciliation headache. Encapsulation plus explicit constructors is the cheapest unit-checking framework available: the type system runs it on every build."
+      "md": "When Quantity, Price and Money are distinct classes, `price * quantity` is the only expression that compiles, adding a price to a quantity is a compile error, not a reconciliation headache. Encapsulation plus explicit constructors is the cheapest unit-checking framework available: the type system runs it on every build."
     }
   ],
   "guidedExercise": {
     "prompt": "Write a `PnLCalculator` class that accumulates realized PnL. Requirements: a private `double realized_` starting at 0.0 (use an in-class default initializer), `addTrade(int qty, double entryPx, double exitPx)` that adds `qty * (exitPx - entryPx)`, a `realized()` accessor marked `const`, and `reset()`. In `main`, record a buy of 100 at \\$42.10 sold at \\$42.75, then a buy of 50 at \\$41.50 sold at \\$41.20, and print the total.",
     "hints": [
-      "Realized PnL per round trip is qty x (exit - entry); the sign does the bookkeeping for you.",
+      "Realized PnL per round trip is qty x (exit, entry); the sign does the bookkeeping for you.",
       "Accessors that only read state should be const so they work through const references."
     ],
     "solution": "The two trades contribute $100 \\times (42.75 - 42.10) = +65.00$ and $50 \\times (41.20 - 41.50) = -15.00$, so the program prints `50`.\n\n```cpp\n#include <iostream>\n\nclass PnLCalculator {\npublic:\n    void addTrade(int qty, double entryPx, double exitPx) {\n        realized_ += qty * (exitPx - entryPx);\n    }\n    double realized() const { return realized_; }\n    void reset() { realized_ = 0.0; }\nprivate:\n    double realized_ = 0.0;   // in-class default: starts clean for every ctor\n};\n\nint main() {\n    PnLCalculator pnl;\n    pnl.addTrade(100, 42.10, 42.75);   // +65.00\n    pnl.addTrade(50, 41.50, 41.20);    // -15.00\n    std::cout << pnl.realized() << '\\n';   // 50\n}\n```"
   },
   "independentExercise": {
-    "prompt": "Write an `Instrument` class with private `std::string symbol_`, `double tickSize_` and `double price_`. The constructor takes a symbol and a tick size and throws `std::invalid_argument` for a non-positive tick size. Provide const accessors `symbol()` and `price()`, plus `setPrice(double)` that throws `std::invalid_argument` when the price is not a whole multiple of the tick size - use a tolerance of $10^{-9}$ ticks, because ticks like 0.01 are not exact in binary. Demonstrate with tick size 0.25 and price 5300.5 (accepted), with a comment showing 5300.52 being rejected.",
+    "prompt": "Write an `Instrument` class with private `std::string symbol_`, `double tickSize_` and `double price_`. The constructor takes a symbol and a tick size and throws `std::invalid_argument` for a non-positive tick size. Provide const accessors `symbol()` and `price()`, plus `setPrice(double)` that throws `std::invalid_argument` when the price is not a whole multiple of the tick size, use a tolerance of $10^{-9}$ ticks, because ticks like 0.01 are not exact in binary. Demonstrate with tick size 0.25 and price 5300.5 (accepted), with a comment showing 5300.52 being rejected.",
     "hints": [
       "`p / tickSize_` should land on an integer; compare with std::round and allow a tiny tolerance.",
       "A throw in the constructor means an Instrument that fails validation never exists at all."
@@ -114,7 +114,7 @@
     "solution": "`5300.5 / 0.25 = 21202` exactly, so it passes; `5300.52 / 0.25 = 21202.08` is 0.08 ticks from an integer and throws.\n\n```cpp\n#include <cmath>\n#include <iostream>\n#include <stdexcept>\n#include <string>\n#include <utility>\n\nclass Instrument {\npublic:\n    Instrument(std::string symbol, double tickSize)\n        : symbol_{std::move(symbol)}, tickSize_{tickSize}, price_{0.0} {\n        if (tickSize_ <= 0.0) throw std::invalid_argument(\"tick size must be positive\");\n    }\n    const std::string& symbol() const { return symbol_; }\n    double price() const { return price_; }\n    void setPrice(double p) {\n        double ticks = p / tickSize_;\n        if (std::abs(ticks - std::round(ticks)) > 1e-9)\n            throw std::invalid_argument(\"price off tick grid\");\n        price_ = p;\n    }\nprivate:\n    std::string symbol_;\n    double tickSize_;\n    double price_;\n};\n\nint main() {\n    Instrument i{\"NQZ5\", 0.25};\n    i.setPrice(5300.5);          // on-tick: accepted\n    // i.setPrice(5300.52);      // throws: 0.08 ticks off the grid\n    std::cout << i.symbol() << \" @ \" << i.price() << '\\n';   // NQZ5 @ 5300.5\n}\n```"
   },
   "commonMistakes": [
-    "Assigning members in the constructor body and calling it initialization - for const or reference members this does not even compile.",
+    "Assigning members in the constructor body and calling it initialization, for const or reference members this does not even compile.",
     "Writing the initializer list in a different order than the member declarations, then being surprised by the construction order.",
     "Leaving data members public \"for convenience\" and losing the single place invariants are enforced.",
     "Forgetting const on accessors, so they cannot be called through const references.",
@@ -200,7 +200,7 @@
         "invariant",
         "truth"
       ],
-      "explanation": "A stored derived value is a duplicate of state that can go stale after any mutation. Computing it from the private members guarantees consistency - the class keeps a single source of truth and the invariant holds by construction."
+      "explanation": "A stored derived value is a duplicate of state that can go stale after any mutation. Computing it from the private members guarantees consistency, the class keeps a single source of truth and the invariant holds by construction."
     }
   ],
   "flashcards": [
@@ -216,8 +216,8 @@
     },
     {
       "type": "code-output",
-      "front": "struct Leg prints its name in its ctor. class Order { Leg qty_; Leg px_; public: Order() : px_{\"px\"}, qty_{\"qty\"} {} }; - what does constructing an Order print?",
-      "back": "qty px - members initialize in declaration order, not list order."
+      "front": "struct Leg prints its name in its ctor. class Order { Leg qty_; Leg px_; public: Order() : px_{\"px\"}, qty_{\"qty\"} {} };: what does constructing an Order print?",
+      "back": "qty px, members initialize in declaration order, not list order."
     },
     {
       "type": "error-identification",
@@ -227,15 +227,15 @@
   ],
   "references": [
     {
-      "label": "cppreference — Classes",
+      "label": "cppreference. Classes",
       "url": "https://en.cppreference.com/w/cpp/language/classes"
     },
     {
-      "label": "cppreference — Constructors and member initializer lists",
+      "label": "cppreference. Constructors and member initializer lists",
       "url": "https://en.cppreference.com/w/cpp/language/constructor"
     },
     {
-      "label": "cppreference — explicit specifier",
+      "label": "cppreference, explicit specifier",
       "url": "https://en.cppreference.com/w/cpp/language/explicit"
     }
   ],

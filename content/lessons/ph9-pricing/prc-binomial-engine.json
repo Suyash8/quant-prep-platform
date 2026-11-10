@@ -4,14 +4,16 @@
   "title": "Building a Binomial Pricing Engine",
   "estMinutes": 30,
   "difficulty": "specialist",
-  "prereqs": ["opt-binomial"],
+  "prereqs": [
+    "opt-binomial"
+  ],
   "objectives": [
     "Implement a Cox-Ross-Rubinstein pricing engine in C++17 and in Python/numpy with a single backward sweep",
     "Derive the risk-neutral probability from the discounted-drift condition and verify it numerically",
     "Converge European values to the Black-Scholes price and interpret the oscillatory error pattern",
     "Add American early exercise and explain the size of the American put premium through the exercise boundary"
   ],
-  "motivation": "Every trading system needs a pricing function it can call a million times a day: small, dependency-free, and provably correct. The binomial tree is the classic first engine - it handles European and American exercise with the same machinery, and it must reproduce Black-Scholes to a known tolerance. Here we build it properly in two languages, then hold it accountable with a convergence table.",
+  "motivation": "Every trading system needs a pricing function it can call a million times a day: small, dependency-free, and provably correct. The binomial tree is the classic first engine, it handles European and American exercise with the same machinery, and it must reproduce Black-Scholes to a known tolerance. Here we build it properly in two languages, then hold it accountable with a convergence table.",
   "blocks": [
     {
       "type": "h2",
@@ -19,7 +21,7 @@
     },
     {
       "type": "p",
-      "md": "A pricing engine takes contract data ($S$, $K$, $r$, $\\sigma$, $T$), a numerical control ($N$ = number of steps), and returns a value. In the **Cox-Ross-Rubinstein (CRR)** lattice the spot multiplies by $u$ or $d = 1/u$ each step, with $\\Delta t = T/N$ and $u = e^{\\sigma\\sqrt{\\Delta t}}$. The up-probability is **not** the real-world probability - it is whatever makes the discounted tree drift at the risk-free rate:"
+      "md": "A pricing engine takes contract data ($S$, $K$, $r$, $\\sigma$, $T$), a numerical control ($N$ = number of steps), and returns a value. In the **Cox-Ross-Rubinstein (CRR)** lattice the spot multiplies by $u$ or $d = 1/u$ each step, with $\\Delta t = T/N$ and $u = e^{\\sigma\\sqrt{\\Delta t}}$. The up-probability is **not** the real-world probability, it is whatever makes the discounted tree drift at the risk-free rate:"
     },
     {
       "type": "math",
@@ -52,7 +54,7 @@
       "type": "code",
       "lang": "python",
       "code": "import numpy as np\n\ndef crr_price(S, K, r, sigma, T, n, is_call=True, american=False):\n    dt = T / n\n    u, d = np.exp(sigma * np.sqrt(dt)), np.exp(-sigma * np.sqrt(dt))\n    p = (np.exp(r * dt) - d) / (u - d)          # risk-neutral up-probability\n    disc = np.exp(-r * dt)\n    j = np.arange(n + 1)\n    ST = S * u ** (n - j) * d ** j              # terminal prices, j = down moves\n    V = np.maximum(ST - K, 0.0) if is_call else np.maximum(K - ST, 0.0)\n    for i in range(n - 1, -1, -1):\n        j = np.arange(i + 1)\n        V = disc * (p * V[:-1] + (1 - p) * V[1:])   # V[j] = up child, V[j+1] = down child\n        if american:\n            Sj = S * u ** (i - j) * d ** j\n            V = np.maximum(V, Sj - K if is_call else K - Sj)\n    return V[0]\n\nfor n in (10, 50, 100, 500):\n    print(f\"N={n:3d}  call={crr_price(100, 105, 0.05, 0.25, 1.0, n):.6f}  \"\n          f\"amerPut={crr_price(100, 105, 0.05, 0.25, 1.0, n, is_call=False, american=True):.6f}\")",
-      "caption": "Prints exactly the same values as the C++ engine - the algorithms agree to the last bit of the printed precision."
+      "caption": "Prints exactly the same values as the C++ engine, the algorithms agree to the last bit of the printed precision."
     },
     {
       "type": "interactive",
@@ -74,16 +76,41 @@
     },
     {
       "type": "p",
-      "md": "The closed-form Black-Scholes reference for this European call is $C = 10.0022$. Compare with the table: the tree converges, but **not monotonically** - the errors alternate in sign and decay erratically. Two forces cause this: the payoff kink at $K$ wanders between lattice nodes as $N$ changes, and the discrete risk-neutral walk approximates diffusion only up to sampling error. Standard cures: average neighbouring $N$ values, align the strike with a node, or switch to a smoother payoff near $K$."
+      "md": "The closed-form Black-Scholes reference for this European call is $C = 10.0022$. Compare with the table: the tree converges, but **not monotonically**, the errors alternate in sign and decay erratically. Two forces cause this: the payoff kink at $K$ wanders between lattice nodes as $N$ changes, and the discrete risk-neutral walk approximates diffusion only up to sampling error. Standard cures: average neighbouring $N$ values, align the strike with a node, or switch to a smoother payoff near $K$."
     },
     {
       "type": "table",
-      "headers": ["$N$", "European call", "error vs 10.0022", "American put"],
+      "headers": [
+        "$N$",
+        "European call",
+        "error vs 10.0022",
+        "American put"
+      ],
       "rows": [
-        ["10", "10.158394", "+0.156192", "10.806227"],
-        ["50", "10.033254", "+0.031052", "10.664539"],
-        ["100", "9.980084", "-0.022118", "10.631374"],
-        ["500", "10.002731", "+0.000529", "10.643114"]
+        [
+          "10",
+          "10.158394",
+          "+0.156192",
+          "10.806227"
+        ],
+        [
+          "50",
+          "10.033254",
+          "+0.031052",
+          "10.664539"
+        ],
+        [
+          "100",
+          "9.980084",
+          "-0.022118",
+          "10.631374"
+        ],
+        [
+          "500",
+          "10.002731",
+          "+0.000529",
+          "10.643114"
+        ]
       ]
     },
     {
@@ -92,13 +119,13 @@
     },
     {
       "type": "p",
-      "md": "The American put converges to roughly $10.64$, about **\\$0.76 above** the European value $9.8813$. That premium is real, not error: for these parameters the early-exercise boundary sits near $S \\approx 85$-$90$, close to the money - indeed at $S = 85$ the European put is worth $18.47$ while exercising yields $K - S = 20$, so immediate exercise already wins there. A path that dips into that region within the year forfeits interest on the strike if it must wait until maturity, and the market charges for that option. Early exercise for a **call** on a non-dividend-paying stock is never optimal (the call is always worth at least $S - Ke^{-r\\tau} > S - K$), so the American call equals the European one here."
+      "md": "The American put converges to roughly $10.64$, about **\\$0.76 above** the European value $9.8813$. That premium is real, not error: for these parameters the early-exercise boundary sits near $S \\approx 85$-$90$, close to the money - indeed at $S = 85$ the European put is worth $18.47$ while exercising yields $K. S = 20$, so immediate exercise already wins there. A path that dips into that region within the year forfeits interest on the strike if it must wait until maturity, and the market charges for that option. Early exercise for a **call** on a non-dividend-paying stock is never optimal (the call is always worth at least $S. Ke^{-r\\tau} > S. K$), so the American call equals the European one here."
     },
     {
       "type": "callout",
       "variant": "pitfall",
       "title": "American != always exercise",
-      "md": "The engine compares continuation with intrinsic at *every* node and keeps the larger - it exercises only when optimal. A frequent bug is forcing exercise whenever the option is in the money, which destroys the time value and underprices the option by the entire early-exercise premium."
+      "md": "The engine compares continuation with intrinsic at *every* node and keeps the larger, it exercises only when optimal. A frequent bug is forcing exercise whenever the option is in the money, which destroys the time value and underprices the option by the entire early-exercise premium."
     },
     {
       "type": "h2",
@@ -106,7 +133,7 @@
     },
     {
       "type": "p",
-      "md": "Treat the table above as a regression test: at $N=500$ the European call must sit within $6 \\times 10^{-4}$ of $10.0022$, and the American put must be **monotonically decreasing** from $N=10$ toward its limit near $10.64$ in this parameterisation. A refactor that breaks either signal has broken the engine - catch it in CI, not on the desk."
+      "md": "Treat the table above as a regression test: at $N=500$ the European call must sit within $6 \\times 10^{-4}$ of $10.0022$, and the American put must be **monotonically decreasing** from $N=10$ toward its limit near $10.64$ in this parameterisation. A refactor that breaks either signal has broken the engine, catch it in CI, not on the desk."
     }
   ],
   "guidedExercise": {
@@ -133,7 +160,7 @@
     "Forcing early exercise at every in-the-money node instead of taking $\\max(\\text{continuation}, \\text{intrinsic})$.",
     "Judging convergence from a single $N$: CRR errors oscillate in sign, so one lucky point can look perfect while $N \\pm 1$ is visibly wrong."
   ],
-  "realWorldApplication": "Binomial engines remain the standard production tool for American-style products (convertibles, employee options, some swaptions) precisely because early exercise falls out of a one-line max - and the same backward-sweep code shape powers PDE and LSMC engines.",
+  "realWorldApplication": "Binomial engines remain the standard production tool for American-style products (convertibles, employee options, some swaptions) precisely because early exercise falls out of a one-line max, and the same backward-sweep code shape powers PDE and LSMC engines.",
   "quantFinanceApplication": "The convergence table is a production artefact: desks pin an $N$ whose documented error versus a reference pricer is inside the bid-ask spread, and CI tests re-run the table after every model change.",
   "summary": [
     "CRR builds a lattice with $u = e^{\\sigma\\sqrt{\\Delta t}}$, $d = 1/u$ and risk-neutral $p = (e^{r\\Delta t} - d)/(u-d)$; pricing is a terminal payoff fill plus one $O(N)$ backward sweep.",
@@ -181,15 +208,25 @@
         "CRR converges exactly after $N = 100$ steps",
         "Averaging the $N=100$ and $N=101$ values is a common engineering fix for the oscillation"
       ],
-      "answerIndices": [0, 1, 3],
-      "explanation": "CRR European values converge in an oscillating pattern caused partly by strike/node alignment; averaging adjacent $N$ values (or aligning $K$ with a node) is standard practice. Convergence is asymptotic - it is never exact at finite $N$."
+      "answerIndices": [
+        0,
+        1,
+        3
+      ],
+      "explanation": "CRR European values converge in an oscillating pattern caused partly by strike/node alignment; averaging adjacent $N$ values (or aligning $K$ with a node) is standard practice. Convergence is asymptotic, it is never exact at finite $N$."
     },
     {
       "id": "q5",
       "type": "short",
       "prompt": "Why does the American put in this lesson command a premium of about \\$0.76 over the European put, while the American call premium is exactly zero?",
-      "modelAnswer": "Interest makes early exercise of the put attractive once the option is sufficiently in the money: the exercise boundary sits near S = 85-90, close to the current spot, so there is real probability of reaching it and capturing interest on the strike. A call on a non-dividend stock is never worth less alive than exercised (its value exceeds S - K), so early exercise never fires and the premium is zero.",
-      "keywords": ["boundary", "interest", "exercise", "dividend", "never"],
+      "modelAnswer": "Interest makes early exercise of the put attractive once the option is sufficiently in the money: the exercise boundary sits near S = 85-90, close to the current spot, so there is real probability of reaching it and capturing interest on the strike. A call on a non-dividend stock is never worth less alive than exercised (its value exceeds S. K), so early exercise never fires and the premium is zero.",
+      "keywords": [
+        "boundary",
+        "interest",
+        "exercise",
+        "dividend",
+        "never"
+      ],
       "explanation": "Put early exercise trades time value against interest on K; with the boundary near the money the premium is substantial. Calls without dividends always beat their intrinsic value when alive."
     },
     {
@@ -226,13 +263,16 @@
   ],
   "references": [
     {
-      "label": "Wikipedia - Binomial options pricing model (CRR)",
+      "label": "Wikipedia: Binomial options pricing model (CRR)",
       "url": "https://en.wikipedia.org/wiki/Binomial_options_pricing_model"
     },
     {
-      "label": "Levin - One-Factor Models (CRR calibration notes)",
+      "label": "Levin: One-Factor Models (CRR calibration notes)",
       "url": "https://pfazma.files.wordpress.com/2009/05/one-factor-models.pdf"
     }
   ],
-  "skills": ["pricing", "numerical-finance"]
+  "skills": [
+    "pricing",
+    "numerical-finance"
+  ]
 }

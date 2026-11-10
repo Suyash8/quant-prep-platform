@@ -11,7 +11,7 @@
     "Choose correct data types for financial columns, in particular NUMERIC for money instead of floating point",
     "Normalise a denormalised table by eliminating repeating groups into a child table with a foreign key"
   ],
-  "motivation": "A desk's end-of-day report must reconcile every fill against every order: which orders fully executed, which are still open, and at what cost. That report is a database query, and its correctness depends on a schema that makes wrong data hard to store. This lesson builds the vocabulary - relations, keys, constraints - and the basic SQL that every later data lesson on this platform assumes you can already read.",
+  "motivation": "A desk's end-of-day report must reconcile every fill against every order: which orders fully executed, which are still open, and at what cost. That report is a database query, and its correctness depends on a schema that makes wrong data hard to store. This lesson builds the vocabulary, relations, keys, constraints, and the basic SQL that every later data lesson on this platform assumes you can already read.",
   "blocks": [
     {
       "type": "h2",
@@ -19,7 +19,7 @@
     },
     {
       "type": "p",
-      "md": "The **relational model** stores data in *relations* - what SQL calls tables. Each table is a set of **tuples** (rows), each tuple has the same **attributes** (columns), and every attribute has a fixed type. Two properties distinguish a true relation from a spreadsheet: rows have no inherent order (a table is a *set*, so asking for 'the third row' is meaningless without ORDER BY), and no two rows are identical when a **primary key** is declared. These rules are not pedantry. A position-keeping system that relies on row order will corrupt itself the moment the storage engine rewrites a page, so real systems key everything explicitly."
+      "md": "The **relational model** stores data in *relations*, what SQL calls tables. Each table is a set of **tuples** (rows), each tuple has the same **attributes** (columns), and every attribute has a fixed type. Two properties distinguish a true relation from a spreadsheet: rows have no inherent order (a table is a *set*, so asking for 'the third row' is meaningless without ORDER BY), and no two rows are identical when a **primary key** is declared. These rules are not pedantry. A position-keeping system that relies on row order will corrupt itself the moment the storage engine rewrites a page, so real systems key everything explicitly."
     },
     {
       "type": "p",
@@ -51,7 +51,7 @@
       "type": "callout",
       "variant": "quant",
       "title": "Money is NUMERIC, never FLOAT",
-      "md": "`NUMERIC(12,4)` stores exact decimal digits - four of them after the point here. `FLOAT`/`DOUBLE` store binary approximations: \\$0.10 has no exact binary representation, so summing millions of floats drifts by cents that nobody can explain to risk control. Shares are `INTEGER`; timestamps are `TIMESTAMP WITH TIME ZONE` so a London fill and a New York fill are unambiguous."
+      "md": "`NUMERIC(12,4)` stores exact decimal digits, four of them after the point here. `FLOAT`/`DOUBLE` store binary approximations: \\$0.10 has no exact binary representation, so summing millions of floats drifts by cents that nobody can explain to risk control. Shares are `INTEGER`; timestamps are `TIMESTAMP WITH TIME ZONE` so a London fill and a New York fill are unambiguous."
     },
     {
       "type": "h2",
@@ -59,13 +59,13 @@
     },
     {
       "type": "p",
-      "md": "A query passes through a fixed logical pipeline: `FROM` picks the table, `WHERE` filters rows, `SELECT` projects columns, `ORDER BY` sorts, `LIMIT` trims. Two behaviours surprise newcomers. First, **NULL is not a value** - it means 'unknown or absent', and `commission = NULL` matches nothing; you must write `commission IS NULL`. Second, without `ORDER BY` the database may return rows in any order it likes, and that order can change between runs. Deterministic output needs deterministic sorting."
+      "md": "A query passes through a fixed logical pipeline: `FROM` picks the table, `WHERE` filters rows, `SELECT` projects columns, `ORDER BY` sorts, `LIMIT` trims. Two behaviours surprise newcomers. First, **NULL is not a value**, it means 'unknown or absent', and `commission = NULL` matches nothing; you must write `commission IS NULL`. Second, without `ORDER BY` the database may return rows in any order it likes, and that order can change between runs. Deterministic output needs deterministic sorting."
     },
     {
       "type": "code",
       "lang": "sql",
       "code": "-- Every MSFT sell fill above \\$190, most expensive first, top 10\nSELECT price, quantity, commission\nFROM   fills\nWHERE  symbol = 'MSFT'\n  AND  side = 'SELL'\n  AND  price >= 190\nORDER BY price DESC\nLIMIT  10;\n\n-- Fills that still lack a commission booking\nSELECT fill_id, price, quantity\nFROM   fills\nWHERE  commission IS NULL;",
-      "caption": "Filter, project, sort, trim - the four verbs of almost every ad-hoc desk query."
+      "caption": "Filter, project, sort, trim, the four verbs of almost every ad-hoc desk query."
     },
     {
       "type": "h2",
@@ -108,7 +108,7 @@
     },
     {
       "type": "p",
-      "md": "Notice what the schema deliberately *omits*: `fills` has no `symbol` or `side` column, because both are derivable through the foreign key to `orders`. Storing them again invites the classic corruption where a fill says SELL but its order says BUY. When a later lesson needs faster reads, we will reintroduce duplication *knowingly* - denormalisation is a measured trade-off, not an accident."
+      "md": "Notice what the schema deliberately *omits*: `fills` has no `symbol` or `side` column, because both are derivable through the foreign key to `orders`. Storing them again invites the classic corruption where a fill says SELL but its order says BUY. When a later lesson needs faster reads, we will reintroduce duplication *knowingly*, denormalisation is a measured trade-off, not an accident."
     },
     {
       "type": "callout",
@@ -132,14 +132,14 @@
       "Repeating groups are the classic first-normal-form violation.",
       "`UNION ALL` stacks several SELECTs; filter each with `IS NOT NULL`."
     ],
-    "solution": "(a) Repeating groups violate first normal form: an order with a 4th fill cannot be stored, and every query must COALESCE across three column families. The fix is a child table with a foreign key - exactly the `fills` table. (b)\n\n```sql\nINSERT INTO fills (order_id, price, quantity)\nSELECT order_id, fill1_price, fill1_qty FROM orders_wide WHERE fill1_qty IS NOT NULL\nUNION ALL\nSELECT order_id, fill2_price, fill2_qty FROM orders_wide WHERE fill2_qty IS NOT NULL\nUNION ALL\nSELECT order_id, fill3_price, fill3_qty FROM orders_wide WHERE fill3_qty IS NOT NULL;\n```\nEach branch contributes one fill per order, NULLs are filtered out, and `UNION ALL` (not `UNION`) keeps duplicates that are legitimately distinct fills."
+    "solution": "(a) Repeating groups violate first normal form: an order with a 4th fill cannot be stored, and every query must COALESCE across three column families. The fix is a child table with a foreign key, exactly the `fills` table. (b)\n\n```sql\nINSERT INTO fills (order_id, price, quantity)\nSELECT order_id, fill1_price, fill1_qty FROM orders_wide WHERE fill1_qty IS NOT NULL\nUNION ALL\nSELECT order_id, fill2_price, fill2_qty FROM orders_wide WHERE fill2_qty IS NOT NULL\nUNION ALL\nSELECT order_id, fill3_price, fill3_qty FROM orders_wide WHERE fill3_qty IS NOT NULL;\n```\nEach branch contributes one fill per order, NULLs are filtered out, and `UNION ALL` (not `UNION`) keeps duplicates that are legitimately distinct fills."
   },
   "commonMistakes": [
-    "Using FLOAT/DOUBLE for prices or cash balances - binary rounding makes totals unreconcilable.",
+    "Using FLOAT/DOUBLE for prices or cash balances, binary rounding makes totals unreconcilable.",
     "Writing `WHERE commission = NULL`; NULL comparisons are unknown, so the query silently returns nothing. Use `IS NULL`.",
     "Depending on the physical row order of a table ('the first order I inserted') instead of ORDER BY with a key.",
     "Denormalising symbol and side into fills 'for convenience' without a reason, then having to reconcile contradictory copies.",
-    "Forgetting a WHERE clause on UPDATE or DELETE - the change hits every row in the table."
+    "Forgetting a WHERE clause on UPDATE or DELETE, the change hits every row in the table."
   ],
   "realWorldApplication": "Every reconciliation, settlement and regulatory report a bank produces is ultimately a set of SQL queries over schemas shaped like the one in this lesson, and schema constraints are the first line of defence auditors check.",
   "quantFinanceApplication": "The orders/fills pair is the backbone of a position-keeping system: fills roll up into positions, positions into PnL. Keeping quantities positive, sides valid and money exact in NUMERIC columns is what lets a desk trust its own numbers.",
@@ -162,12 +162,12 @@
         "order_id is automatically indexed on every other column"
       ],
       "answerIndex": 0,
-      "explanation": "A primary key enforces uniqueness and NOT NULL - identity, not ordering or gaps. Auto-increment behaviour comes from the identity clause, not from PRIMARY KEY itself."
+      "explanation": "A primary key enforces uniqueness and NOT NULL, identity, not ordering or gaps. Auto-increment behaviour comes from the identity clause, not from PRIMARY KEY itself."
     },
     {
       "id": "q2",
       "type": "code-output",
-      "prompt": "Given these fills rows: (fill_id 1, side 'BUY', quantity 100), (fill_id 2, side 'BUY', quantity 300), (fill_id 3, side 'SELL', quantity 200), (fill_id 4, side 'BUY', quantity 150) - what does the query return?",
+      "prompt": "Given these fills rows: (fill_id 1, side 'BUY', quantity 100), (fill_id 2, side 'BUY', quantity 300), (fill_id 3, side 'SELL', quantity 200), (fill_id 4, side 'BUY', quantity 150), what does the query return?",
       "language": "sql",
       "code": "SELECT SUM(quantity) FROM fills WHERE side = 'BUY';",
       "answer": "550",
@@ -179,7 +179,7 @@
       "prompt": "A fill is 300 shares at \\$42.17. What is the gross notional in dollars (price times quantity)?",
       "answer": 12651,
       "unit": "USD",
-      "explanation": "300 x 42.17 = 12651.00 - a one-line SELECT price * quantity FROM fills would produce exactly this in NUMERIC arithmetic."
+      "explanation": "300 x 42.17 = 12651.00, a one-line SELECT price * quantity FROM fills would produce exactly this in NUMERIC arithmetic."
     },
     {
       "id": "q4",
@@ -217,7 +217,7 @@
         "Row order is fixed by the first index created"
       ],
       "answerIndex": 1,
-      "explanation": "A relation is a set - tables are unordered bags of rows, and storage engines may return them in any order. Deterministic output requires an explicit ORDER BY."
+      "explanation": "A relation is a set, tables are unordered bags of rows, and storage engines may return them in any order. Deterministic output requires an explicit ORDER BY."
     }
   ],
   "flashcards": [
@@ -229,7 +229,7 @@
     {
       "type": "definition",
       "front": "Foreign key",
-      "back": "A column constrained to reference an existing primary key in another table - e.g. fills.order_id -> orders.order_id - so orphan rows cannot exist."
+      "back": "A column constrained to reference an existing primary key in another table, e.g. fills.order_id -> orders.order_id, so orphan rows cannot exist."
     },
     {
       "type": "concept",
@@ -239,16 +239,16 @@
     {
       "type": "code-output",
       "front": "fills has rows with quantities (100, 300, 200, 150) and sides (BUY, BUY, SELL, BUY). What does SELECT COALESCE(SUM(quantity), 0) FROM fills WHERE side = 'SELL' return?",
-      "back": "200 - only the SELL row is summed; COALESCE would substitute 0 if no rows matched."
+      "back": "200, only the SELL row is summed; COALESCE would substitute 0 if no rows matched."
     }
   ],
   "references": [
     {
-      "label": "PostgreSQL Tutorial - Basic SELECT",
+      "label": "PostgreSQL Tutorial: Basic SELECT",
       "url": "https://www.postgresql.org/docs/current/tutorial-select.html"
     },
     {
-      "label": "SQLBolt - Interactive SQL lessons",
+      "label": "SQLBolt: Interactive SQL lessons",
       "url": "https://sqlbolt.com/"
     }
   ],

@@ -3,7 +3,7 @@ import { getCurrentUser } from '@/lib/auth';
 import { PublicHeader } from '@/components/app-shell';
 import { AuthForm } from '@/components/auth-form';
 
-export const metadata = { title: 'Create account — QuantFoundry' };
+export const metadata = { title: 'Create account. QuantFoundry' };
 
 export default async function RegisterPage() {
   const user = await getCurrentUser();

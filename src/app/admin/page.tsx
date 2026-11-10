@@ -7,7 +7,7 @@ import { runContentValidation } from '@/lib/admin-validate';
 import { getMap, getRegistry, listProblems, listAssessments, listProjects, listCompanies } from '@/lib/content';
 import { ShieldAlert, ShieldCheck } from 'lucide-react';
 
-export const metadata = { title: 'Admin — QuantFoundry' };
+export const metadata = { title: 'Admin. QuantFoundry' };
 
 export default async function AdminPage() {
   const user = await getCurrentUser();
@@ -25,7 +25,7 @@ export default async function AdminPage() {
               <h1 className="mt-4 text-xl font-black tracking-tight">Administrators only</h1>
               <p className="mt-2 text-sm font-semibold text-muted max-w-sm mx-auto">
                 This panel manages curriculum content and requires the admin role. The first registered account
-                becomes the admin — ask that account to grant access.
+                becomes the admin, ask that account to grant access.
               </p>
               <Link href="/dashboard" className="btn3d btn3d-sm mt-5">
                 Back to learning
@@ -66,7 +66,7 @@ export default async function AdminPage() {
           <div>
             <h1>Administration &amp; content</h1>
             <p className="page-sub">
-              Content lives as validated JSON under <code className="text-[0.85em] font-bold bg-surface-2 px-1.5 py-0.5 rounded-md">content/</code> —
+              Content lives as validated JSON under <code className="text-[0.85em] font-bold bg-surface-2 px-1.5 py-0.5 rounded-md">content/</code> , 
               curriculum expansion needs no frontend changes. Validate, preview and import here.
             </p>
           </div>

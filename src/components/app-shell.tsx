@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useTheme } from 'next-themes';
 import * as React from 'react';
 import {
-  Activity, BarChart3, BookOpenCheck, BrainCircuit, Briefcase, Code2,
+  Activity, BarChart3, BookOpenCheck, BrainCircuit, Briefcase, CloudOff, Code2,
   FlaskConical, GraduationCap, Home, Map as MapIcon, Moon, PersonStanding,
   Settings, Sigma, Sun, Timer, Undo2, Flame, Zap, ShieldCheck, FolderKanban,
 } from 'lucide-react';
@@ -31,7 +31,9 @@ const NAV = [
   ]},
 ];
 
-/* ---------------- gamification HUD state (module cache) ---------------- */
+/* ---------------- gamification HUD state (local-first, v3) ---------------- */
+
+import { getState, subscribe, xpSummary, hydrate, getQueueLength, scheduleFlush } from '@/lib/client/local-state';
 
 interface HudData {
   xp: number;
@@ -40,41 +42,70 @@ interface HudData {
   todayXp: number;
   dailyGoalXp: number;
 }
-let hudCache: HudData | null = null;
-let hudFetch: Promise<HudData | null> | null = null;
 
-async function fetchHud(): Promise<HudData | null> {
-  if (hudCache) return hudCache;
-  if (!hudFetch) {
-    hudFetch = fetch('/api/gamification')
-      .then(r => (r.ok ? r.json() : null))
-      .then(d => { if (d) hudCache = d; return d; })
-      .catch(() => null);
-  }
-  return hudFetch;
-}
-
-/** Signal that XP changed (award happened) so the HUD refetches. */
+/** Signal that XP changed (award happened) so the HUD refreshes. */
 export function refreshHud() {
-  hudCache = null;
-  hudFetch = null;
   window.dispatchEvent(new CustomEvent('qf:hud-refresh'));
 }
 
+function localHud(): HudData {
+  const s = xpSummary();
+  return {
+    xp: s.xp,
+    level: s.level,
+    streakCount: s.streakCount,
+    todayXp: s.todayXp,
+    dailyGoalXp: s.dailyGoalXp,
+  };
+}
+
 function useHud(enabled: boolean, refreshKey?: string) {
-  const [data, setData] = React.useState<HudData | null>(hudCache);
+  const [data, setData] = React.useState<HudData | null>(enabled ? localHud() : null);
   React.useEffect(() => {
     if (!enabled) return;
     let alive = true;
-    // a fresh route (or an explicit refresh signal) busts the module cache
-    hudCache = null;
-    hudFetch = null;
-    const load = () => fetchHud().then(d => { if (alive && d) setData(d); });
+    // pull the server snapshot once per session so the local mirror is seeded
+    void hydrate();
+    const load = () => { if (alive) setData(localHud()); };
     load();
+    const unsub = subscribe(load);
     window.addEventListener('qf:hud-refresh', load);
-    return () => { alive = false; window.removeEventListener('qf:hud-refresh', load); };
+    window.addEventListener('online', () => scheduleFlush(500));
+    return () => {
+      alive = false;
+      unsub();
+      window.removeEventListener('qf:hud-refresh', load);
+    };
   }, [enabled, refreshKey]);
   return data;
+}
+
+/* ---------------- offline indicator (v3) ---------------- */
+
+export function OfflinePill() {
+  const [online, setOnline] = React.useState(true);
+  const [pending, setPending] = React.useState(0);
+  React.useEffect(() => {
+    const sync = () => {
+      setOnline(navigator.onLine);
+      setPending(getQueueLength());
+    };
+    sync();
+    const t = setInterval(sync, 4000);
+    window.addEventListener('online', sync);
+    window.addEventListener('offline', sync);
+    return () => { clearInterval(t); window.removeEventListener('online', sync); window.removeEventListener('offline', sync); };
+  }, []);
+  if (online && pending === 0) return null;
+  return (
+    <span
+      className={cn('hud-pill', online ? 'text-warning' : 'text-danger')}
+      title={online ? `${pending} change${pending === 1 ? '' : 's'} waiting to sync` : 'Offline. Everything still works, changes sync later.'}
+    >
+      {online ? <Zap className="h-4 w-4" /> : <CloudOff className="h-4 w-4" />}
+      <span className="tnum">{online ? pending : 'offline'}</span>
+    </span>
+  );
 }
 
 /* ---------------------------------- shell ---------------------------------- */
@@ -119,11 +150,12 @@ export function AppShell({ user, children, isAdmin }: { user: { name: string; em
             ))}
           </nav>
 
-          {/* HUD: streak + XP */}
+          {/* HUD: streak + XP + offline */}
           <div className="ml-auto flex items-center gap-2">
+            <OfflinePill />
             {hud && (
               <>
-                <span className="hud-pill press anim-pop-in" title="Day streak — earn any XP daily to keep it alive">
+                <span className="hud-pill press anim-pop-in" title="Day streak, earn any XP daily to keep it alive">
                   <Flame className={cn('h-4 w-4 text-flame', hud.streakCount > 0 && 'anim-flame')} />
                   <span className="tnum">{hud.streakCount}</span>
                 </span>
@@ -163,7 +195,7 @@ export function AppShell({ user, children, isAdmin }: { user: { name: string; em
 
       <footer className="hidden lg:block border-t-2 border-border bg-surface mt-auto">
         <div className="max-w-6xl mx-auto px-4 lg:px-6 py-4 flex flex-wrap items-center justify-between gap-2 text-xs font-semibold text-faint">
-          <span>QuantFoundry — an honest preparation pathway for quantitative engineering.</span>
+          <span>QuantFoundry, an honest preparation pathway for quantitative engineering.</span>
           <span className="flex items-center gap-3">
             {isAdmin && <Link href="/admin" className="hover:text-muted flex items-center gap-1"><ShieldCheck className="h-3 w-3" />Admin</Link>}
             <Link href="/methodology" className="hover:text-muted">Methodology</Link>

@@ -1,3 +1,4 @@
+import * as React from 'react';
 import Link from 'next/link';
 import {
   Check, Star, Lock, BookOpen, Sigma, TrendingUp, Code2, Cpu,
@@ -5,11 +6,11 @@ import {
   Clock, Target,
 } from 'lucide-react';
 import type { CurriculumMap } from '@/lib/content';
-import { isUnlocked } from '@/lib/content';
+import { buildCurriculumGraph, isUnlockedInGraph } from '@/lib/curriculum-graph';
 import { cn } from '@/lib/utils';
 
 /**
- * The winding learning path — a Duolingo-style vertical trail of lesson
+ * The winding learning path, a Duolingo-style vertical trail of lesson
  * nodes grouped into modules and colour-coded phases.
  *
  * Module rendering states:
@@ -95,7 +96,7 @@ export function LearningPath({
   progress: ProgressMap;
   /** phase ids to render (defaults to all) */
   phases?: string[];
-  /** the recommended next lesson — gets the bouncy START bubble */
+  /** the recommended next lesson, gets the bouncy START bubble */
   currentLessonId?: string;
   /** show the sticky progress rail (lg+ only) */
   rail?: boolean;
@@ -106,16 +107,26 @@ export function LearningPath({
     [...progress.entries()].filter(([, p]) => ['passed', 'mastered'].includes(p.status)).map(([id]) => id),
   );
 
+  // graph for unlock checks, built from the map without any server dependency
+  const graph = React.useMemo(
+    () => buildCurriculumGraph(map, []),
+    [map],
+  );
+
   const visiblePhases = map.phases
     .filter(ph => !phases || phases.includes(ph.id))
     .sort((a, b) => a.order - b.order);
 
   // which module contains the current lesson? that one stays expanded.
+
+
   const focusModuleId = currentLessonId
     ? map.phases.flatMap(p => p.modules).find(m => m.lessons.some(l => l.id === currentLessonId))?.id
     : undefined;
 
   // a completely fresh visitor (no progress, no recommendation) sees full trails
+
+
   const fresh = passed.size === 0 && !currentLessonId;
 
   const focusPhaseId = focusModuleId
@@ -141,10 +152,12 @@ export function LearningPath({
           const phaseMin = phaseLessons.reduce((n, l) => n + l.estMinutes, 0);
           const isFocusPhase = phase.id === focusPhaseId;
           // untouched phases render as one compact preview card, not 6+ module teasers
+
+
           const distantPhase = !fresh && !isFocusPhase && phaseDone === 0;
           return (
             <section key={phase.id} id={`phase-${phase.id}`} aria-label={phase.title}>
-              {/* phase banner — chunky, 3D edge */}
+              {/* phase banner, chunky, 3D edge */}
               <div
                 className="rounded-[28px] p-5 sm:p-7 text-white relative overflow-hidden"
                 style={{
@@ -180,6 +193,7 @@ export function LearningPath({
               ) : (
                 <ModuleList
                   phase={phase}
+                  graph={graph}
                   color={color}
                   progress={progress}
                   passed={passed}
@@ -254,7 +268,7 @@ export function LearningPath({
                 <Clock className="h-3.5 w-3.5" /> Total effort
               </p>
               <p className="mt-2 text-lg font-black tnum">~{Math.round(totalMin / 60)} hours</p>
-              <p className="text-[11px] font-semibold text-muted mt-0.5">of fully authored lessons, labs and checks — at your pace.</p>
+              <p className="text-[11px] font-semibold text-muted mt-0.5">of fully authored lessons, labs and checks, at your pace.</p>
             </div>
           </div>
         </aside>
@@ -287,7 +301,7 @@ function PhasePreview({
             {phase.modules.length} modules · {lessons} lessons · ~{Math.round(phaseMin / 60)}h
           </p>
           <p className="mt-0.5 text-xs font-semibold text-muted">
-            Unlocks as you clear the phases before it — peek inside any time
+            Unlocks as you clear the phases before it, peek inside any time
           </p>
         </div>
         <ChevronDown className="h-4 w-4 text-faint shrink-0 transition-transform group-open:rotate-180" />
@@ -311,9 +325,10 @@ function PhasePreview({
 /** Modules of one phase, in learning order. Everything after the focus module
  *  collapses into a single combined teaser so long phases don't become walls. */
 function ModuleList({
-  phase, color, progress, passed, focusModuleId, currentLessonId, fresh, moduleIds,
+  phase, graph, color, progress, passed, focusModuleId, currentLessonId, fresh, moduleIds,
 }: {
   phase: CurriculumMap['phases'][number];
+  graph: ReturnType<typeof buildCurriculumGraph>;
   color: string;
   progress: ProgressMap;
   passed: Set<string>;
@@ -324,6 +339,8 @@ function ModuleList({
 }) {
   const focusIdx = focusModuleId ? phase.modules.findIndex(m => m.id === focusModuleId) : -1;
   // spotlight mode (dashboard): render only the requested modules
+
+
   const visible = moduleIds
     ? phase.modules.filter(m => moduleIds.includes(m.id))
     : focusIdx >= 0
@@ -346,6 +363,7 @@ function ModuleList({
           <ModuleTrail
             key={mod.id}
             mod={mod}
+            graph={graph}
             phaseColor={color}
             progress={progress}
             passed={passed}
@@ -369,7 +387,7 @@ function ModuleList({
             </span>
             <div className="min-w-0 flex-1">
               <p className="text-sm font-black tracking-tight">{rest.length} more modules in this phase</p>
-              <p className="mt-0.5 text-xs font-semibold text-muted tnum">{restLessons} lessons · ~{Math.round(restMin / 60)}h — they unlock in order as you progress</p>
+              <p className="mt-0.5 text-xs font-semibold text-muted tnum">{restLessons} lessons · ~{Math.round(restMin / 60)}h, they unlock in order as you progress</p>
             </div>
             <ChevronDown className="h-4 w-4 text-faint shrink-0 transition-transform group-open:rotate-180" />
           </summary>
@@ -391,9 +409,10 @@ function ModuleList({
 }
 
 function ModuleTrail({
-  mod, phaseColor, progress, passed, complete, isFocus, distant, currentLessonId, modDone, modPct,
+  mod, graph, phaseColor, progress, passed, complete, isFocus, distant, currentLessonId, modDone, modPct,
 }: {
   mod: CurriculumMap['phases'][number]['modules'][number];
+  graph: ReturnType<typeof buildCurriculumGraph>;
   phaseColor: string;
   progress: ProgressMap;
   passed: Set<string>;
@@ -416,6 +435,8 @@ function ModuleTrail({
   const modMinutes = mod.lessons.reduce((n, l) => n + l.estMinutes, 0);
 
   // collapsed compact row for finished modules (unless it's the focus module)
+
+
   if (complete && !isFocus) {
     return (
       <details id={`module-${mod.id}`} className="qf-card-flat overflow-hidden group">
@@ -431,7 +452,7 @@ function ModuleTrail({
         </summary>
         <div className="px-4 pb-5 pt-1 border-t-2 border-border">
           <div className="relative flex flex-col items-center pt-6">
-            <Trail mod={mod} progress={progress} passed={passed} phaseColor={phaseColor} currentLessonId={currentLessonId} />
+            <Trail mod={mod} graph={graph} progress={progress} passed={passed} phaseColor={phaseColor} currentLessonId={currentLessonId} />
           </div>
         </div>
       </details>
@@ -439,6 +460,8 @@ function ModuleTrail({
   }
 
   // distant, untouched module → compact teaser (expandable)
+
+
   if (distant) {
     return (
       <details id={`module-${mod.id}`} className="group">
@@ -458,7 +481,7 @@ function ModuleTrail({
           <ChevronDown className="h-4 w-4 text-faint shrink-0 transition-transform group-open:rotate-180" />
         </summary>
         <div className="relative flex flex-col items-center pt-6">
-          <Trail mod={mod} progress={progress} passed={passed} phaseColor={phaseColor} currentLessonId={currentLessonId} />
+          <Trail mod={mod} graph={graph} progress={progress} passed={passed} phaseColor={phaseColor} currentLessonId={currentLessonId} />
         </div>
       </details>
     );
@@ -475,19 +498,19 @@ function ModuleTrail({
         </div>
         <span className="chip tnum shrink-0">{modDone}/{mod.lessons.length}</span>
       </div>
-      {/* trail sits on a soft band so the winding path reads as intentional —
-          band width hugs the zigzag so there are no dead margins */}
+      {/* trail sits on a soft band so the winding path reads as intentional, band width hugs the zigzag so there are no dead margins */}
       <div className="relative flex flex-col items-center rounded-[44px] bg-surface-2/45 dark:bg-surface-2/25 border-2 border-dashed border-border/70 px-4 sm:px-6 py-8 max-w-[300px] sm:max-w-[500px] mx-auto w-full">
-        <Trail mod={mod} progress={progress} passed={passed} phaseColor={phaseColor} currentLessonId={currentLessonId} />
+        <Trail mod={mod} graph={graph} progress={progress} passed={passed} phaseColor={phaseColor} currentLessonId={currentLessonId} />
       </div>
     </div>
   );
 }
 
 function Trail({
-  mod, progress, passed, phaseColor, currentLessonId,
+  mod, graph, progress, passed, phaseColor, currentLessonId,
 }: {
   mod: CurriculumMap['phases'][number]['modules'][number];
+  graph: ReturnType<typeof buildCurriculumGraph>;
   progress: ProgressMap;
   passed: Set<string>;
   phaseColor: string;
@@ -497,7 +520,7 @@ function Trail({
     <>
       {mod.lessons.map((lesson, i) => {
         const st = progress.get(lesson.id)?.status ?? 'not_started';
-        const unlocked = isUnlocked(lesson.id, passed);
+        const unlocked = isUnlockedInGraph(graph, lesson.id, passed);
         const isCurrent = lesson.id === currentLessonId;
         const last = i === mod.lessons.length - 1;
         return (
@@ -592,7 +615,7 @@ function PathNode({
   );
 
   if (!unlocked) {
-    return <span aria-label={`${title} (locked)`} title={`${title} — locked until prerequisites are passed`}>{body}</span>;
+    return <span aria-label={`${title} (locked)`} title={`${title}, locked until prerequisites are passed`}>{body}</span>;
   }
   return (
     <Link href={`/learn/${lessonId}`} aria-label={`${title} (${status.replace('_', ' ')})`} className="group">

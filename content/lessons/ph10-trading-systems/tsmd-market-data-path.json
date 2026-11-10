@@ -4,14 +4,16 @@
   "title": "Market-Data Ingestion and Feed Handlers",
   "estMinutes": 27,
   "difficulty": "advanced",
-  "prereqs": ["qalg-orderbook-structures"],
+  "prereqs": [
+    "qalg-orderbook-structures"
+  ],
   "objectives": [
     "Describe the feed-handler pipeline from packet arrival to book update and name each stage's job",
     "Normalise raw venue messages: price scales, symbol maps and side conventions",
     "Use sequence numbers to detect gaps and choose between resend and snapshot recovery",
     "Size the data rate of a production feed from message rate and size"
   ],
-  "motivation": "Every trading decision is only as good as the book it sees. Between the exchange's NIC and your strategy sits the feed handler - the component that turns raw network bytes into clean, sequenced, gap-checked book updates. If it is slow, you quote on stale prices; if it is wrong, you quote on fiction. This lesson builds the first link of the trading stack.",
+  "motivation": "Every trading decision is only as good as the book it sees. Between the exchange's NIC and your strategy sits the feed handler, the component that turns raw network bytes into clean, sequenced, gap-checked book updates. If it is slow, you quote on stale prices; if it is wrong, you quote on fiction. This lesson builds the first link of the trading stack.",
   "blocks": [
     {
       "type": "h2",
@@ -37,10 +39,32 @@
       "type": "interactive",
       "component": "OrderBookVisual",
       "params": {
-        "bids": [[100.20, 300], [100.19, 500], [100.18, 200]],
-        "asks": [[100.23, 400], [100.24, 600]]
+        "bids": [
+          [
+            100.2,
+            300
+          ],
+          [
+            100.19,
+            500
+          ],
+          [
+            100.18,
+            200
+          ]
+        ],
+        "asks": [
+          [
+            100.23,
+            400
+          ],
+          [
+            100.24,
+            600
+          ]
+        ]
       },
-      "caption": "The feed handler's output: a book every strategy trusts. Each applied message moved exactly one level or one size - which is exactly why a gap corrupts it."
+      "caption": "The feed handler's output: a book every strategy trusts. Each applied message moved exactly one level or one size, which is exactly why a gap corrupts it."
     },
     {
       "type": "h2",
@@ -48,13 +72,13 @@
     },
     {
       "type": "p",
-      "md": "Venues differ in everything you would rather they didn't. Prices arrive as integers scaled by the tick size (one venue counts eighths of a dollar, another counts ten-thousandths); symbols carry per-venue suffixes; flag bits pack side and condition into one byte. **Normalisation** converts each dialect into one canonical internal model: scaled decimal prices, unified enums, mapped symbols. It is also where validation lives - reject prices outside sane bands, negative sizes, unknown symbols - because garbage that reaches the book poisons every downstream decision."
+      "md": "Venues differ in everything you would rather they didn't. Prices arrive as integers scaled by the tick size (one venue counts eighths of a dollar, another counts ten-thousandths); symbols carry per-venue suffixes; flag bits pack side and condition into one byte. **Normalisation** converts each dialect into one canonical internal model: scaled decimal prices, unified enums, mapped symbols. It is also where validation lives, reject prices outside sane bands, negative sizes, unknown symbols, because garbage that reaches the book poisons every downstream decision."
     },
     {
       "type": "code",
       "lang": "python",
       "code": "SCALE = 10_000  # venue encodes prices in 1/10,000ths of a dollar\n\ndef normalise(raw):\n    return {\n        \"symbol\": raw[\"sym\"].decode().replace(\" US\", \"\"),\n        \"price\": raw[\"px\"] / SCALE,   # 1,204,551 -> 120.4551\n        \"qty\": raw[\"qty\"],\n        \"side\": \"buy\" if raw[\"flags\"] & 0x01 else \"sell\",\n    }\n\nprint(normalise({\"sym\": b\"XYZ US\", \"px\": 1_204_551, \"qty\": 300, \"flags\": 1})[\"price\"])",
-      "caption": "Prints 120.4551. Scale conversion and symbol mapping happen once, at the boundary - never per consumer."
+      "caption": "Prints 120.4551. Scale conversion and symbol mapping happen once, at the boundary, never per consumer."
     },
     {
       "type": "h2",
@@ -62,7 +86,7 @@
     },
     {
       "type": "p",
-      "md": "Every stream message carries a monotonically increasing **sequence number**. The feed handler maintains expected $=$ last processed $+1$. When a message with sequence $s$ arrives: if $s =$ expected, apply it; if $s >$ expected, a **gap** has occurred; if $s <$ expected it is a duplicate or retransmit - dedupe it. You cannot skip a gap: delta messages are small mutations (\"add order 17\", \"execute 200 of order 17\") that reference prior state, and applying mutations out of order corrupts the book silently."
+      "md": "Every stream message carries a monotonically increasing **sequence number**. The feed handler maintains expected $=$ last processed $+1$. When a message with sequence $s$ arrives: if $s =$ expected, apply it; if $s >$ expected, a **gap** has occurred; if $s <$ expected it is a duplicate or retransmit, dedupe it. You cannot skip a gap: delta messages are small mutations (\"add order 17\", \"execute 200 of order 17\") that reference prior state, and applying mutations out of order corrupts the book silently."
     },
     {
       "type": "list",
@@ -75,13 +99,13 @@
     },
     {
       "type": "p",
-      "md": "One more pipeline concern: **back-pressure**. The reader loop must never block - if strategies fall behind, the handler queues or drops *downstream*, it does not stop reading the NIC, because a paused reader turns a 1-message gap into a 10,000-message gap. Dispatchers therefore hand strategies a bounded queue plus a **staleness guarantee**: every book update carries the sequence number it reflects, so a consumer that notices it is 500 messages behind can pull its quotes immediately instead of trading on a fossil. Staleness is not hidden - it is measured and advertised."
+      "md": "One more pipeline concern: **back-pressure**. The reader loop must never block, if strategies fall behind, the handler queues or drops *downstream*, it does not stop reading the NIC, because a paused reader turns a 1-message gap into a 10,000-message gap. Dispatchers therefore hand strategies a bounded queue plus a **staleness guarantee**: every book update carries the sequence number it reflects, so a consumer that notices it is 500 messages behind can pull its quotes immediately instead of trading on a fossil. Staleness is not hidden, it is measured and advertised."
     },
     {
       "type": "callout",
       "variant": "pitfall",
       "title": "The corruption is silent",
-      "md": "Applying message 5,008 while missing 5,006-5,007 raises no error: the \"execute\" references an order id your book never saw, or one it saw with a different size. The book *looks* fine and trades against reality. Gap detection exists because a corrupted book does not crash - it just quietly lies."
+      "md": "Applying message 5,008 while missing 5,006-5,007 raises no error: the \"execute\" references an order id your book never saw, or one it saw with a different size. The book *looks* fine and trades against reality. Gap detection exists because a corrupted book does not crash, it just quietly lies."
     },
     {
       "type": "steps",
@@ -89,9 +113,9 @@
       "items": [
         "Stream: ..., 4003, 4006, ... Expected was 4004, so sequences 4004 and 4005 are missing: $4006 - 4004 = 2$ messages.",
         "Request a resend of 4004-4005 on the recovery session.",
-        "Park 4006 and everything after it - do not apply out-of-order.",
+        "Park 4006 and everything after it, do not apply out-of-order.",
         "Resends arrive: apply 4004 (cancel order 88), then 4005 (add order 91), then the parked 4006 (execute order 91).",
-        "Book consistent again. Total stall: microseconds to a few milliseconds depending on venue RTT (approximate) - bounded because the gap was detected instantly."
+        "Book consistent again. Total stall: microseconds to a few milliseconds depending on venue RTT (approximate), bounded because the gap was detected instantly."
       ]
     }
   ],
@@ -109,21 +133,21 @@
       "bytes/s = messages/s x bytes per message.",
       "Mbit/s = MB/s x 8."
     ],
-    "solution": "(a) $240{,}000 \\times 100 = 24{,}000{,}000$ bytes/s $= 24$ MB/s. (b) $24 \\times 8 = 192$ Mbit/s. (c) Two feeds: $2 \\times 192 = 384$ Mbit/s, plus snapshots and recovery traffic - which is why market-data networks are sized with generous headroom."
+    "solution": "(a) $240{,}000 \\times 100 = 24{,}000{,}000$ bytes/s $= 24$ MB/s. (b) $24 \\times 8 = 192$ Mbit/s. (c) Two feeds: $2 \\times 192 = 384$ Mbit/s, plus snapshots and recovery traffic, which is why market-data networks are sized with generous headroom."
   },
   "commonMistakes": [
-    "Applying delta messages across a gap - the book corrupts silently instead of failing loudly.",
+    "Applying delta messages across a gap, the book corrupts silently instead of failing loudly.",
     "Parsing with allocations or string conversions in the hot path; decode should be allocation-free.",
     "Trusting a single feed: without A/B arbitration, one lost packet becomes a stall.",
-    "Treating a retransmitted sequence number as fresh data - dedupe on sequence, or fills count twice on paper."
+    "Treating a retransmitted sequence number as fresh data, dedupe on sequence, or fills count twice on paper."
   ],
   "realWorldApplication": "Venues publish ITCH-style binary specifications; firms build feed handlers that sustain millions of messages per second, and post-trade regulators rely on the same gap-free replay guarantees the handler enforces.",
-  "quantFinanceApplication": "Every model input - mid, spread, imbalance - is computed from the feed handler's book, so normalisation and gap handling bound how honest any downstream signal can be.",
+  "quantFinanceApplication": "Every model input, mid, spread, imbalance, is computed from the feed handler's book, so normalisation and gap handling bound how honest any downstream signal can be.",
   "summary": [
     "Feed-handler pipeline: receive -> decode -> normalise -> arbitrate (A/B) -> sequence-check -> apply -> dispatch.",
     "Sequence numbers enforce next = previous + 1; gaps trigger resend or snapshot recovery, never silent skipping.",
     "Normalisation converts venue dialects (price scales, symbols, flags) into one canonical, validated model.",
-    "A stale or corrupt book trades against informed flow - fail safe to flat until the book is whole."
+    "A stale or corrupt book trades against informed flow, fail safe to flat until the book is whole."
   ],
   "quiz": [
     {
@@ -164,15 +188,24 @@
         "Park messages after the gap until it is filled",
         "Apply the available messages now and reconcile later"
       ],
-      "answerIndices": [0, 1, 2],
+      "answerIndices": [
+        0,
+        1,
+        2
+      ],
       "explanation": "Resend for small gaps, snapshot-plus-deltas for large ones, and park everything newer meanwhile. Applying across a gap corrupts the book silently."
     },
     {
       "id": "q5",
       "type": "short",
       "prompt": "Why is quoting on a stale or gapped book dangerous for a market maker?",
-      "modelAnswer": "A stale book no longer reflects real supply and demand; informed flow will trade against the firm's old prices - adverse selection. The market maker gets picked off precisely when the market moves, so the safe policy is to stop quoting until the book is consistent.",
-      "keywords": ["adverse", "stale", "picked", "informed"],
+      "modelAnswer": "A stale book no longer reflects real supply and demand; informed flow will trade against the firm's old prices, adverse selection. The market maker gets picked off precisely when the market moves, so the safe policy is to stop quoting until the book is consistent.",
+      "keywords": [
+        "adverse",
+        "stale",
+        "picked",
+        "informed"
+      ],
       "explanation": "Staleness converts every quote into a free option for whoever knows more. Failing safe to flat is cheaper than being picked off."
     },
     {
@@ -194,7 +227,7 @@
     {
       "type": "formula",
       "front": "Sequence-number invariant",
-      "back": "next = previous + 1. Received s > expected => gap of s - expected messages; s < expected => duplicate/retransmit to dedupe."
+      "back": "next = previous + 1. Received s > expected => gap of s, expected messages; s < expected => duplicate/retransmit to dedupe."
     },
     {
       "type": "concept",
@@ -204,22 +237,25 @@
     {
       "type": "concept",
       "front": "Why never skip a gap?",
-      "back": "Deltas are mutations referencing prior state; applying them out of order corrupts the book silently - the worst failure mode, because it looks healthy."
+      "back": "Deltas are mutations referencing prior state; applying them out of order corrupts the book silently, the worst failure mode, because it looks healthy."
     }
   ],
   "references": [
     {
-      "label": "Wikipedia - Feed handler",
+      "label": "Wikipedia: Feed handler",
       "url": "https://en.wikipedia.org/wiki/Feed_handler"
     },
     {
-      "label": "Nasdaq Trader - market data feeds (ITCH-style specs)",
+      "label": "Nasdaq Trader: market data feeds (ITCH-style specs)",
       "url": "https://www.nasdaqtrader.com/trader.aspx"
     },
     {
-      "label": "FIX Trading Community - semantic message standards",
+      "label": "FIX Trading Community: semantic message standards",
       "url": "https://www.fixtrading.org/"
     }
   ],
-  "skills": ["trading-systems", "low-latency"]
+  "skills": [
+    "trading-systems",
+    "low-latency"
+  ]
 }

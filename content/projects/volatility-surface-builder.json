@@ -11,12 +11,12 @@
     "spy-numpy",
     "spy-pandas"
   ],
-  "context": "Every derivatives desk and every serious options-adjacent interview involves the volatility surface: implied vol as a function of strike and expiry. Building one end-to-end — from raw option quotes to a smooth, arbitrage-checked, interpolable surface — exercises numerical root-finding, market conventions, data pipelining and the honest handling of illiquid quotes. The result is a genuine portfolio piece: the same code a desk's infra team writes in miniature, with the corners cut visibly labelled.",
-  "problem": "Given a table of option quotes (strike, expiry, bid, ask, type) on a single underlying, build the implied-volatility surface: (1) invert Black-Scholes per quote with a bracketed, hybrid solver; (2) construct a parameterised fit in (log-moneyness, expiry) that is smooth by construction; (3) verify no static arbitrage — no negative call butterflies (convexity in strike) and no negative calendar spreads (forward variance non-negativity); (4) expose a clean API: `surface.vol(strike, expiry)` interpolated at arbitrary points, with documented error behaviour outside the quoted range. Handle quotes with zero or crossed markets honestly (skip, never invent).",
+  "context": "Every derivatives desk and every serious options-adjacent interview involves the volatility surface: implied vol as a function of strike and expiry. Building one end-to-end, from raw option quotes to a smooth, arbitrage-checked, interpolable surface, exercises numerical root-finding, market conventions, data pipelining and the honest handling of illiquid quotes. The result is a genuine portfolio piece: the same code a desk's infra team writes in miniature, with the corners cut visibly labelled.",
+  "problem": "Given a table of option quotes (strike, expiry, bid, ask, type) on a single underlying, build the implied-volatility surface: (1) invert Black-Scholes per quote with a bracketed, hybrid solver; (2) construct a parameterised fit in (log-moneyness, expiry) that is smooth by construction; (3) verify no static arbitrage, no negative call butterflies (convexity in strike) and no negative calendar spreads (forward variance non-negativity); (4) expose a clean API: `surface.vol(strike, expiry)` interpolated at arbitrary points, with documented error behaviour outside the quoted range. Handle quotes with zero or crossed markets honestly (skip, never invent).",
   "requirements": [
     "Implied-vol inversion: bisection to a bracket, then Newton with vega as derivative; documented convergence criteria and a hard iteration cap",
     "Mid-quote input with a minimum-spread filter; quotes wider than a configurable threshold are excluded and logged",
-    "Surface fit: your choice of SVI parameterisation per slice (recommended) or a quadratic-in-log-moneyness baseline — but the arbitrage checks must run on the fitted surface, not the raw points",
+    "Surface fit: your choice of SVI parameterisation per slice (recommended) or a quadratic-in-log-moneyness baseline, but the arbitrage checks must run on the fitted surface, not the raw points",
     "Static-arbitrage checks: butterfly (second derivative of call price in strike ≥ 0) and calendar (total variance non-decreasing in expiry at fixed forward moneyness); violations reported with locations, not silently patched",
     "Interpolation in expiry: linear in total variance (the standard convention) with the reasoning documented",
     "A CLI that takes a quotes CSV and an output path, and prints an arbitrage report plus summary statistics",
@@ -65,7 +65,7 @@
     },
     {
       "type": "p",
-      "md": "Decide the out-of-range policy early and document it — extrapolated vols from an SVI fit can be nonsense; clamping, erroring and extrapolating-with-a-warning are all defensible, silence is not."
+      "md": "Decide the out-of-range policy early and document it, extrapolated vols from an SVI fit can be nonsense; clamping, erroring and extrapolating-with-a-warning are all defensible, silence is not."
     },
     {
       "type": "callout",
@@ -77,24 +77,24 @@
   "starterFiles": [
     {
       "path": "README.md",
-      "content": "# Volatility Surface Builder\n\nBuilds an implied-vol surface from option quotes, checks static arbitrage,\nand exposes `Surface.vol(strike, expiry)`.\n\n## Milestones — see project spec\n1. Core pricing + inversion\n2. Quote ingestion\n3. Single-slice fit\n4. Arbitrage checks\n5. Surface assembly\n6. CLI + demo\n\n## Honest-decisions log\nKeep every judgement call here with a one-line reason."
+      "content": "# Volatility Surface Builder\n\nBuilds an implied-vol surface from option quotes, checks static arbitrage,\nand exposes `Surface.vol(strike, expiry)`.\n\n## Milestones, see project spec\n1. Core pricing + inversion\n2. Quote ingestion\n3. Single-slice fit\n4. Arbitrage checks\n5. Surface assembly\n6. CLI + demo\n\n## Honest-decisions log\nKeep every judgement call here with a one-line reason."
     },
     {
       "path": "volsurface/pricing.py",
-      "content": "\"\"\"Black-Scholes pricing, vega, and implied-vol inversion.\n\nMilestone 1: implement price(), vega(), and implied_vol().\nRequirements: hybrid bisection+Newton, 1e-8 convergence on round-trips,\nhard iteration cap with a clear failure return (None), never an exception\nfor ordinary market inputs.\n\"\"\"\nimport math\n\n\ndef price(S, K, r, sigma, T, is_call=True):\n    raise NotImplementedError\n\n\ndef vega(S, K, r, sigma, T):\n    raise NotImplementedError\n\n\ndef implied_vol(target_price, S, K, r, T, is_call=True):\n    \"\"\"Invert price() for sigma. Hybrid solver. Returns None on failure.\"\"\"\n    raise NotImplementedError\n"
+      "content": "\"\"\"Black-Scholes pricing, vega, and implied-vol inversion.\n\nMilestone 1: implement price(), vega(), and implied_vol().\nRequirements: hybrid bisection+Newton, 1e-8 convergence on round-trips,\nhard iteration cap with a clear failure return (None), never an exception\nfor ordinary market inputs.\n\"\"\"\nimport math\n\n\ndef price(S, K, r, sigma, T, is_call=True):\n raise NotImplementedError\n\n\ndef vega(S, K, r, sigma, T):\n raise NotImplementedError\n\n\ndef implied_vol(target_price, S, K, r, T, is_call=True):\n \"\"\"Invert price() for sigma. Hybrid solver. Returns None on failure.\"\"\"\n raise NotImplementedError\n"
     },
     {
       "path": "volsurface/ingest.py",
-      "content": "\"\"\"Quote ingestion and hygiene.\n\nMilestone 2: CSV -> clean mid vols. Exclusions are logged with reasons:\nzero bid, crossed market, spread wider than max_spread_frac of mid.\n\"\"\"\n\n\ndef load_quotes(path, max_spread_frac=0.25):\n    raise NotImplementedError\n"
+      "content": "\"\"\"Quote ingestion and hygiene.\n\nMilestone 2: CSV -> clean mid vols. Exclusions are logged with reasons:\nzero bid, crossed market, spread wider than max_spread_frac of mid.\n\"\"\"\n\n\ndef load_quotes(path, max_spread_frac=0.25):\n raise NotImplementedError\n"
     },
     {
       "path": "volsurface/fit.py",
-      "content": "\"\"\"Slice fitting and arbitrage checks.\n\nMilestone 3-4: fit one expiry slice (SVI recommended:\nsigma^2(k) = a + b*(rho*(k-m) + sqrt((k-m)^2 + s^2)))\nthen run butterfly + calendar checks on the fitted surface.\n\"\"\"\n\n\ndef fit_slice(strikes, vols, forwards):\n    raise NotImplementedError\n\n\ndef check_butterfly(surface, expiry):\n    raise NotImplementedError\n\n\ndef check_calendar(surface):\n    raise NotImplementedError\n"
+      "content": "\"\"\"Slice fitting and arbitrage checks.\n\nMilestone 3-4: fit one expiry slice (SVI recommended:\nsigma^2(k) = a + b*(rho*(k-m) + sqrt((k-m)^2 + s^2)))\nthen run butterfly + calendar checks on the fitted surface.\n\"\"\"\n\n\ndef fit_slice(strikes, vols, forwards):\n raise NotImplementedError\n\n\ndef check_butterfly(surface, expiry):\n raise NotImplementedError\n\n\ndef check_calendar(surface):\n raise NotImplementedError\n"
     }
   ],
   "evaluationCriteria": [
     {
-      "criterion": "Solver correctness and robustness (round-trip tests, failure handling)",
+      "criterion": "Solver correctness and reliability (round-trip tests, failure handling)",
       "weight": 20
     },
     {

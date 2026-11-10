@@ -4,14 +4,16 @@
   "title": "Dangling Pointers, Leaks and Undefined Behaviour",
   "estMinutes": 27,
   "difficulty": "core",
-  "prereqs": ["cpp-dynamic-allocation"],
+  "prereqs": [
+    "cpp-dynamic-allocation"
+  ],
   "objectives": [
     "Recognise and classify the four canonical heap bugs: dangling pointer, use-after-free, double delete and memory leak",
     "Explain why undefined behaviour may appear to work and why that makes it dangerous in production",
     "Identify leak paths created by early returns and exception propagation",
     "Apply defensive practices (null after delete, sanitizers, Valgrind, smart pointers) that catch these bugs before deployment"
   ],
-  "motivation": "A use-after-free reads memory the allocator may have handed to another subsystem - sometimes it prints exactly the value you expected, which is the worst possible outcome, because the bug ships. This lesson names the four canonical heap bugs, shows precisely how each arises from the allocation mechanics you just learned, and introduces the tools that find them before the 3 a.m. page. Every bug here is eliminated by the RAII and smart-pointer techniques this module builds towards.",
+  "motivation": "A use-after-free reads memory the allocator may have handed to another subsystem, sometimes it prints exactly the value you expected, which is the worst possible outcome, because the bug ships. This lesson names the four canonical heap bugs, shows precisely how each arises from the allocation mechanics you just learned, and introduces the tools that find them before the 3 a.m. page. Every bug here is eliminated by the RAII and smart-pointer techniques this module builds towards.",
   "blocks": [
     {
       "type": "h2",
@@ -19,7 +21,7 @@
     },
     {
       "type": "p",
-      "md": "C++ defines what your program does for *valid* code; for invalid operations - dereferencing a dangling pointer, reading freed memory, freeing the same block twice - the standard's answer is **undefined behaviour (UB)**: no requirements whatsoever. The compiler is allowed to assume UB never happens and optimise on that assumption, so UB can manifest as wrong values, as a crash *somewhere else entirely*, or as code that the optimiser simply deleted. The treacherous part is that UB often *appears to work*: freed memory frequently still holds the old bytes until the allocator reuses it, so a test build prints the right answer while production - under different load, different flags, a different allocator - corrupts data silently. Treat 'it works on my machine' as inadmissible evidence for anything on this list."
+      "md": "C++ defines what your program does for *valid* code; for invalid operations, dereferencing a dangling pointer, reading freed memory, freeing the same block twice, the standard's answer is **undefined behaviour (UB)**: no requirements whatsoever. The compiler is allowed to assume UB never happens and optimise on that assumption, so UB can manifest as wrong values, as a crash *somewhere else entirely*, or as code that the optimiser simply deleted. The treacherous part is that UB often *appears to work*: freed memory frequently still holds the old bytes until the allocator reuses it, so a test build prints the right answer while production, under different load, different flags, a different allocator, corrupts data silently. Treat 'it works on my machine' as inadmissible evidence for anything on this list."
     },
     {
       "type": "h2",
@@ -27,7 +29,7 @@
     },
     {
       "type": "p",
-      "md": "An automatic object's storage ends when its scope exits. A pointer to it therefore dangles the instant the function returns - the address is non-null and even points into the stack region, but the object is gone. Reading through it is UB."
+      "md": "An automatic object's storage ends when its scope exits. A pointer to it therefore dangles the instant the function returns, the address is non-null and even points into the stack region, but the object is gone. Reading through it is UB."
     },
     {
       "type": "code",
@@ -41,7 +43,7 @@
     },
     {
       "type": "p",
-      "md": "After delete, the block is owned by the allocator. It may be split, coalesced, or handed to the next allocation - which might be a *different* object whose constructor writes over the bytes you are about to read. That is why use-after-free is the classic source of 'impossible' values: you read a new tenant's data through an old pointer. In a trading system the new tenant might be another order's price field."
+      "md": "After delete, the block is owned by the allocator. It may be split, coalesced, or handed to the next allocation, which might be a *different* object whose constructor writes over the bytes you are about to read. That is why use-after-free is the classic source of 'impossible' values: you read a new tenant's data through an old pointer. In a trading system the new tenant might be another order's price field."
     },
     {
       "type": "code",
@@ -55,7 +57,7 @@
     },
     {
       "type": "p",
-      "md": "Two pointers to one object, two deletes: the second delete returns an already-freed block to the allocator again, corrupting its bookkeeping. Consequences range from nothing visible to heap corruption discovered minutes later in unrelated code - the worst debugging experience C++ offers. The root cause is always the same: *ownership was shared without an agreement about who releases*. Smart pointers (later this module) exist precisely to make ownership unambiguous."
+      "md": "Two pointers to one object, two deletes: the second delete returns an already-freed block to the allocator again, corrupting its bookkeeping. Consequences range from nothing visible to heap corruption discovered minutes later in unrelated code, the worst debugging experience C++ offers. The root cause is always the same: *ownership was shared without an agreement about who releases*. Smart pointers (later this module) exist precisely to make ownership unambiguous."
     },
     {
       "type": "code",
@@ -65,7 +67,7 @@
     },
     {
       "type": "h2",
-      "text": "Bug 4: leaks - death by a thousand error paths"
+      "text": "Bug 4: leaks, death by a thousand error paths"
     },
     {
       "type": "p",
@@ -85,27 +87,55 @@
       "type": "list",
       "ordered": false,
       "items": [
-        "**AddressSanitizer** (`g++ -fsanitize=address -g`): detects use-after-free, double free, and out-of-bounds at the exact instruction, with a stack trace - run it in CI on every build.",
+        "**AddressSanitizer** (`g++ -fsanitize=address -g`): detects use-after-free, double free, and out-of-bounds at the exact instruction, with a stack trace, run it in CI on every build.",
         "**Valgrind memcheck**: slower but thorough leak detection and invalid-access reporting without recompiling.",
         "**LeakSanitizer** (included with ASan): reports unreachable blocks with their allocation stacks.",
         "**Smart pointers and containers** (the rest of this module): make the bug class unrepresentable rather than detectable.",
-        "**Discipline**: null the pointer after delete; after any ownership transfer, say who owns it - out loud, in a comment, or better in the type."
+        "**Discipline**: null the pointer after delete; after any ownership transfer, say who owns it, out loud, in a comment, or better in the type."
       ]
     },
     {
       "type": "callout",
       "variant": "quant",
       "title": "Why desks run sanitizers nightly",
-      "md": "A gateway leaking one 64-byte audit record per rejected order at 50,000 rejections/hour leaks about 3 GB per shift; a use-after-free in a matching engine can re-price one order with another order's data. Both bug classes are found deterministically by ASan in minutes - which is why production C++ teams treat sanitizer-clean builds as a merge requirement."
+      "md": "A gateway leaking one 64-byte audit record per rejected order at 50,000 rejections/hour leaks about 3 GB per shift; a use-after-free in a matching engine can re-price one order with another order's data. Both bug classes are found deterministically by ASan in minutes, which is why production C++ teams treat sanitizer-clean builds as a merge requirement."
     },
     {
       "type": "interactive",
       "component": "MemoryLayout",
       "params": {
         "regions": [
-          { "name": "stack frame: main", "objects": [{ "label": "p (dangling pointer)", "size": 8 }, { "label": "q (fresh int*)", "size": 8 }] },
-          { "name": "heap: freed block", "objects": [{ "label": "FREED - allocator may reuse for q's allocation", "size": 16 }] },
-          { "name": "heap: live block", "objects": [{ "label": "live int(7)", "size": 4 }] }
+          {
+            "name": "stack frame: main",
+            "objects": [
+              {
+                "label": "p (dangling pointer)",
+                "size": 8
+              },
+              {
+                "label": "q (fresh int*)",
+                "size": 8
+              }
+            ]
+          },
+          {
+            "name": "heap: freed block",
+            "objects": [
+              {
+                "label": "FREED: allocator may reuse for q's allocation",
+                "size": 16
+              }
+            ]
+          },
+          {
+            "name": "heap: live block",
+            "objects": [
+              {
+                "label": "live int(7)",
+                "size": 4
+              }
+            ]
+          }
         ]
       },
       "caption": "After delete, the block is fair game: the allocator may hand the same bytes to the next allocation, which is exactly how use-after-free reads another object's data."
@@ -116,33 +146,33 @@
     "hints": [
       "For (a): ask what the allocator has done to the block by the time << runs.",
       "For (b): track both what was allocated and what b points to at the end of the scope.",
-      "For (c): the allocator receives the same block back twice - what does its bookkeeping look like afterwards?"
+      "For (c): the allocator receives the same block back twice, what does its bookkeeping look like afterwards?"
     ],
-    "solution": "(a) **Dangling read, UB**: the block was returned to the allocator before *a is read; the value printed is whatever the allocator left there - possibly 5, possibly another object's bytes. Fix: read before delete, or null the pointer and never read it. (b) **Leak**: the block allocated for 5 is never freed - rebinding b to nullptr orphans it. Fix: `delete b;` before (or instead of) nulling, or use `std::unique_ptr<int> b = std::make_unique<int>(5);`. (c) **Double free, UB**: the second delete hands an already-free block back to the allocator, corrupting its lists; symptoms range from silent corruption to a delayed crash. Fix: null the pointer after the first delete (then the second delete is a safe no-op) - or better, make ownership single and explicit with a smart pointer."
+    "solution": "(a) **Dangling read, UB**: the block was returned to the allocator before *a is read; the value printed is whatever the allocator left there, possibly 5, possibly another object's bytes. Fix: read before delete, or null the pointer and never read it. (b) **Leak**: the block allocated for 5 is never freed, rebinding b to nullptr orphans it. Fix: `delete b;` before (or instead of) nulling, or use `std::unique_ptr<int> b = std::make_unique<int>(5);`. (c) **Double free, UB**: the second delete hands an already-free block back to the allocator, corrupting its lists; symptoms range from silent corruption to a delayed crash. Fix: null the pointer after the first delete (then the second delete is a safe no-op), or better, make ownership single and explicit with a smart pointer."
   },
   "independentExercise": {
     "prompt": "Audit this gateway fragment. For each numbered line, name the bug, classify it (UB or leak), and give the fix.\n\n```cpp\n#include <iostream>\n\nstruct Order { long id; double qty; };\n\nOrder* make_order(long id) {\n    Order o{id, 0.0};\n    Order* p = &o;\n    return p;                        // line 7\n}\n\nint main() {\n    Order* a = make_order(1);        // line 11\n    Order* b = new Order[4];\n    delete b;                        // line 13\n    int* c = new int(10);\n    if (c == nullptr) return 1;      // line 16\n    delete c;\n    return 0;\n}\n```",
     "hints": [
       "One bug involves where o lives and how long it lives.",
       "One bug is a mismatch between the creation form and the release form.",
-      "One bug is a check that can never fire - recall the failure contract of plain new."
+      "One bug is a check that can never fire, recall the failure contract of plain new."
     ],
-    "solution": "**Line 7 / 11 - dangling pointer (UB)**: make_order returns the address of local `o`, whose storage ends at return. Using `a` (even reading a->id) is undefined behaviour; it may print plausible garbage. Fix: return an object by value, or return `std::unique_ptr<Order>` created with make_unique. **Line 13 - mismatched release (UB)**: b came from new[] but is released with plain delete; the element count is ignored and the heap may corrupt (dramatic for non-trivial element types). Fix: `delete[] b;`. **Line 16 - dead check, hides a real failure mode**: plain new does not return null on failure, it throws std::bad_alloc - the check never fires, and an actual allocation failure would propagate as an exception instead of the polite `return 1`. Fix: catch std::bad_alloc, or use `new (std::nothrow)` if the null contract is genuinely wanted. Net: this fragment compiles cleanly and 'works' - three distinct bugs, none of which the compiler is required to diagnose."
+    "solution": "**Line 7 / 11, dangling pointer (UB)**: make_order returns the address of local `o`, whose storage ends at return. Using `a` (even reading a->id) is undefined behaviour; it may print plausible garbage. Fix: return an object by value, or return `std::unique_ptr<Order>` created with make_unique. **Line 13, mismatched release (UB)**: b came from new[] but is released with plain delete; the element count is ignored and the heap may corrupt (dramatic for non-trivial element types). Fix: `delete[] b;`. **Line 16, dead check, hides a real failure mode**: plain new does not return null on failure, it throws std::bad_alloc, the check never fires, and an actual allocation failure would propagate as an exception instead of the polite `return 1`. Fix: catch std::bad_alloc, or use `new (std::nothrow)` if the null contract is genuinely wanted. Net: this fragment compiles cleanly and 'works', three distinct bugs, none of which the compiler is required to diagnose."
   },
   "commonMistakes": [
     "Trusting a program because the dangling read printed the 'right' value once: UB is free to work in debug builds and corrupt data in release builds.",
-    "Checking p == nullptr after a plain new - allocation failure throws std::bad_alloc; the check is unreachable code.",
+    "Checking p == nullptr after a plain new, allocation failure throws std::bad_alloc; the check is unreachable code.",
     "Deleting through an alias after deleting through the original: two pointers, one object, second delete corrupts the heap.",
     "Treating leaks as a style issue: a per-event leak in a gateway is an outage on a schedule.",
     "Nulling the pointer but keeping the array form wrong: delete and delete[] are not interchangeable even after the pointer is copied elsewhere."
   ],
-  "realWorldApplication": "Long-running C++ services - matching engines, risk calculators, gateways - are audited with AddressSanitizer and Valgrind because these four bug classes account for a large share of production incidents in C++ codebases.",
+  "realWorldApplication": "Long-running C++ services, matching engines, risk calculators, gateways, are audited with AddressSanitizer and Valgrind because these four bug classes account for a large share of production incidents in C++ codebases.",
   "quantFinanceApplication": "A use-after-free in a book builder can price a child order with a stale parent order's data; a leak per rejected order converts a fee schedule into a memory outage. Desks therefore gate merges on sanitizer-clean runs.",
   "summary": [
     "Undefined behaviour means no guarantees: it may print plausible values in testing and corrupt data in production, so testing cannot certify UB away.",
     "The four canonical heap bugs are: dangling pointer (object died, pointer lives), use-after-free (allocator reused the block), double delete (block returned twice) and leak (block unreachable, never freed).",
     "Returning the address of a local always produces a dangling pointer; the fix is to return by value or by smart pointer.",
-    "Leaks concentrate on error paths: every early return and every exception that skips delete drops the resource - which is exactly the problem RAII solves.",
+    "Leaks concentrate on error paths: every early return and every exception that skips delete drops the resource, which is exactly the problem RAII solves.",
     "Detection is deterministic: AddressSanitizer, LeakSanitizer and Valgrind pinpoint all four bug classes; smart pointers prevent them by construction."
   ],
   "quiz": [
@@ -166,7 +196,7 @@
         "It works as long as the caller reads the value before calling any other function"
       ],
       "answerIndex": 1,
-      "explanation": "Automatic storage ends at scope exit; nothing is promoted. The returned address is not null - it simply points at dead storage, and reading it is UB with no 'safe window' guarantee."
+      "explanation": "Automatic storage ends at scope exit; nothing is promoted. The returned address is not null, it simply points at dead storage, and reading it is UB with no 'safe window' guarantee."
     },
     {
       "id": "q3",
@@ -178,7 +208,11 @@
         "Writing through a pointer to a local that has gone out of scope",
         "Executing `delete nullptr_ptr;` where nullptr_ptr is null"
       ],
-      "answerIndices": [0, 1, 2],
+      "answerIndices": [
+        0,
+        1,
+        2
+      ],
       "explanation": "Reads of freed memory, double frees and writes to dead automatics are all UB. Deleting a null pointer is defined: it is a no-op."
     },
     {
@@ -199,14 +233,21 @@
         "UB is only possible in release builds"
       ],
       "answerIndex": 1,
-      "explanation": "delete returns the block to the allocator; until it is reused (or scribbled on by debug tooling) the bytes are unchanged. The program therefore 'works' until allocation patterns shift - which is exactly why UB ships to production."
+      "explanation": "delete returns the block to the allocator; until it is reused (or scribbled on by debug tooling) the bytes are unchanged. The program therefore 'works' until allocation patterns shift, which is exactly why UB ships to production."
     },
     {
       "id": "q6",
       "type": "short",
       "prompt": "Name two tools or techniques a C++ team uses to detect heap bugs (dangling accesses, double frees, leaks) at scale, and say what each catches.",
       "modelAnswer": "AddressSanitizer (compile with -fsanitize=address) catches use-after-free, double free and out-of-bounds at the faulting instruction; Valgrind memcheck catches invalid accesses and leaks on the unmodified binary; LeakSanitizer reports unreachable allocations with allocation stacks.",
-      "keywords": ["asan", "addresssanitizer", "valgrind", "sanitizer", "leaksanitizer", "memcheck"],
+      "keywords": [
+        "asan",
+        "addresssanitizer",
+        "valgrind",
+        "sanitizer",
+        "leaksanitizer",
+        "memcheck"
+      ],
       "explanation": "ASan instruments the binary to detect invalid accesses exactly where they happen; Valgrind emulates the program to catch them without recompilation; both report leaks. Long-term prevention comes from RAII and smart pointers."
     }
   ],
@@ -229,7 +270,7 @@
     {
       "type": "definition",
       "front": "What do AddressSanitizer and Valgrind each catch?",
-      "back": "ASan (compile-time instrumentation): use-after-free, double free, out-of-bounds - at the exact instruction. Valgrind memcheck: invalid accesses and leaks on the unmodified binary."
+      "back": "ASan (compile-time instrumentation): use-after-free, double free, out-of-bounds, at the exact instruction. Valgrind memcheck: invalid accesses and leaks on the unmodified binary."
     },
     {
       "type": "error-identification",
@@ -238,9 +279,20 @@
     }
   ],
   "references": [
-    { "label": "cppreference — Undefined behaviour", "url": "https://en.cppreference.com/w/cpp/language/ub" },
-    { "label": "AddressSanitizer wiki", "url": "https://github.com/google/sanitizers/wiki/AddressSanitizer" },
-    { "label": "Valgrind — Memcheck", "url": "https://valgrind.org/docs/manual/mc-manual.html" }
+    {
+      "label": "cppreference. Undefined behaviour",
+      "url": "https://en.cppreference.com/w/cpp/language/ub"
+    },
+    {
+      "label": "AddressSanitizer wiki",
+      "url": "https://github.com/google/sanitizers/wiki/AddressSanitizer"
+    },
+    {
+      "label": "Valgrind. Memcheck",
+      "url": "https://valgrind.org/docs/manual/mc-manual.html"
+    }
   ],
-  "skills": ["cpp-memory"]
+  "skills": [
+    "cpp-memory"
+  ]
 }

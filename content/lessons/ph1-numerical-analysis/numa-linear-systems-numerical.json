@@ -4,65 +4,141 @@
   "title": "Solving Linear Systems Numerically",
   "estMinutes": 28,
   "difficulty": "advanced",
-  "prereqs": ["numa-interpolation-differentiation"],
+  "prereqs": [
+    "numa-interpolation-differentiation"
+  ],
   "objectives": [
     "Solve small linear systems by Gaussian elimination with back substitution, tracking exact arithmetic",
     "Explain why pivoting is necessary and reproduce the classic small-pivot failure in low-precision arithmetic",
     "Interpret condition numbers of covariance matrices and connect them to unstable portfolio weights",
     "Choose between direct methods (LU) and iterative methods by size, structure and required accuracy"
   ],
-  "motivation": "Markowitz portfolio optimization is, at its core, one linear solve: $\\Sigma w = \\lambda \\mu + \\gamma \\mathbf{1}$. But a covariance matrix estimated from a few hundred daily returns is often near-singular, and a naive solve returns weights like +400% long / -300% short that blow up overnight. Numerical linear algebra is where portfolio mathematics either works or silently breaks - and the same machinery prices, hedges and calibrates everything else on the desk.",
+  "motivation": "Markowitz portfolio optimization is, at its core, one linear solve: $\\Sigma w = \\lambda \\mu + \\gamma \\mathbf{1}$. But a covariance matrix estimated from a few hundred daily returns is often near-singular, and a naive solve returns weights like +400% long / -300% short that blow up overnight. Numerical linear algebra is where portfolio mathematics either works or silently breaks, and the same machinery prices, hedges and calibrates everything else on the desk.",
   "blocks": [
-    { "type": "h2", "text": "From equations to triangles" },
-    { "type": "p", "md": "Gaussian elimination attacks $Ax = b$ by subtracting multiples of each row from the rows below it, wiping out one column at a time until the system is **upper triangular**; back substitution then peels off the unknowns from the bottom up. For an $n \\times n$ system the whole factorization costs about $\\tfrac{2}{3}n^3$ floating-point operations - fine for $n$ in the thousands, decisive for $n$ in the millions (which is why iterative methods exist)." },
-    { "type": "steps", "title": "Worked: solve 2x + y = 5, x + 3y = 10", "items": [
-      "Pivot on the first row; multiplier $m = 1/2$. New row 2: $(1 - 2 \\times 0.5,\\; 10 - 5 \\times 0.5) = (0,\\; 7.5)$.",
-      "Back substitution: $2.5y = 7.5$ gives $y = 3$.",
-      "Then $2x = 5 - 3 = 5$ gives $x = 1$.",
-      "Check both originals: $2(1) + 3 = 5$ and $1 + 3(3) = 10$ - exact.",
-      "Factorized form: $L = \\begin{pmatrix} 1 & 0 \\\\ 0.5 & 1\\end{pmatrix}$, $U = \\begin{pmatrix} 2 & 1 \\\\ 0 & 2.5 \\end{pmatrix}$; forward-solve $Ly = b$ gives $y = (5, 7.5)$, back-solve $Ux = y$ gives $(1, 3)$."
-    ] },
-    { "type": "p", "md": "The LU decomposition is not bookkeeping - it is a business decision. Factor once ($O(n^3)$), then every new right-hand side (a new scenario, a new pricing vector) costs only $O(n^2)$ in two triangular solves. Pricing engines that solve the same system for thousands of market states factor once and reuse." },
-    { "type": "h2", "text": "Pivoting: small divisors destroy accuracy" },
-    { "type": "steps", "title": "Worked failure: 3-significant-digit arithmetic, deliberately", "items": [
-      "System: $0.001x + y = 1$; $x + y = 2$. True solution: $(1, 1)$ - check $0.001 + 1 = 1.001$, which rounds to $1.00$ in 3 digits.",
-      "**Without pivoting**: multiplier $m = 1/0.001 = 1000$. Row 2 becomes $(1 - 1000 \\times 0.001,\\; 2 - 1000 \\times 1) = (0,\\; -998)$.",
-      "Back substitution: $y = -998/-998 = 1$; then $x = (1 - 1 \\times 1)/0.001 = 0/0.001 = \\mathbf{0}$.",
-      "Answer $(0, 1)$: $x$ is wrong by 100%. The tiny pivot forced a huge multiplier $1000$, which multiplied rounding noise into the coefficients until $1 - 1000 \\times 0.001$ vanished.",
-      "**With partial pivoting** (swap rows so the pivot is the largest available, here 1): multiplier $0.001$; row 2 becomes $(0,\\; 0.999,\\; 0.998)$; $y = 0.998/0.999 = 0.999$; $x = (2 - 0.999)/1 = 1.001 \\to 1.00$. Answer $(1.00, 0.999)$ - accurate.",
-      "Moral: always divide by the largest pivot you can. This is why every serious library does partial pivoting by default (PA = LU)."
-    ] },
-    { "type": "p", "md": "In full double precision the toy example above happens to survive without pivoting - the numbers are exactly representable - but real-world data is not, and the failure mode is identical: small pivots amplify whatever rounding noise exists. Pivoting is cheap insurance that you should never switch off." },
-    { "type": "h2", "text": "Conditioning: when the problem itself is the enemy" },
-    { "type": "p", "md": "Lesson 2 introduced the condition number; here it earns its salary. For a symmetric positive-definite matrix (a covariance matrix), $\\kappa = \\lambda_{\\max}/\\lambda_{\\min}$, and the relative error of the solution is bounded by roughly $\\kappa$ times the relative error in the data. A correlation matrix with two 99.9%-correlated assets has eigenvalues $1 + \\rho = 1.999$ and $1 - \\rho = 0.001$, so $\\kappa \\approx 1999$: three of your sixteen digits are gone before the algorithm even starts." },
-    { "type": "code", "lang": "python", "code": "import numpy as np\nC = np.array([[1.0, 0.999],\n              [0.999, 1.0]])\nprint(np.linalg.cond(C))          # ~1999\nb = np.array([0.02, 0.01])\nw = np.linalg.solve(C, b)\nprint(w)                          # [ 5.00750375 -4.99249625]", "caption": "A harmless-looking right-hand side produces a 500% long / 500% short 'portfolio' - the ill-conditioning talking." },
-    { "type": "steps", "title": "Verify the solve by hand", "items": [
-      "$C^{-1} = \\frac{1}{1 - \\rho^2}\\begin{pmatrix} 1 & -\\rho \\\\ -\\rho & 1 \\end{pmatrix}$ with $1 - \\rho^2 = 1 - 0.998001 = 0.001999$.",
-      "$w_1 = (0.02 - 0.999 \\times 0.01)/0.001999 = 0.01001/0.001999 \\approx 5.0075$.",
-      "$w_2 = (0.01 - 0.999 \\times 0.02)/0.001999 = -0.00998/0.001999 \\approx -4.9925$.",
-      "Check: $5.0075 + 0.999 \\times (-4.9925) \\approx 5.0075 - 4.9875 = 0.02$ - the solve is right; the matrix made the answer extreme."
-    ] },
-    { "type": "callout", "variant": "quant", "title": "Portfolio hygiene", "md": "Before trusting any optimizer output on a covariance matrix: check $\\kappa(\\Sigma)$; look at $\\lambda_{\\min}$, not just at the weights. Remedies, in rising order of effort: drop redundant assets, add ridge regularization $\\Sigma + \\varepsilon I$ (lifts $\\lambda_{\\min}$ toward $\\varepsilon$, cutting $\\kappa$ by orders of magnitude), use a factor model, or apply Ledoit-Wolf shrinkage. A huge long-short book from an innocent target vector is almost always an ill-conditioning symptom, not a market view." },
-    { "type": "h2", "text": "Direct or iterative?" },
-    { "type": "p", "md": "Dense systems up to a few thousand unknowns: LU with pivoting, full stop. Beyond that - discretized PDEs, large graphs, factor models with millions of instruments - matrices are **sparse** (mostly zeros) and iterative methods dominate: Jacobi and Gauss-Seidel for simplicity, **conjugate gradient** for symmetric positive-definite systems (exactly the covariance case), with **preconditioning** to reshape the spectrum and accelerate convergence. Iterative methods trade a guaranteed $\\tfrac23 n^3$ for a tunable number of cheap passes, and they let you stop at the accuracy you actually need." },
-    { "type": "p", "md": "One production habit closes this module: **always check the residual**. After computing $x$, compute $\\lVert Ax - b \\rVert$ and compare it to $\\lVert b \\rVert$. A large relative residual means the solve failed - wrong conditioning, wrong algorithm, or a bug. A small residual with extreme $x$ means the problem is ill-conditioned. Either way, the check costs microseconds and has caught more silent portfolio blow-ups than any other single line of code." },
-    { "type": "interactive", "component": "MatrixTransform", "params": { "matrix": [[2, 1], [1, 3]] }, "caption": "The worked system as a linear map: elimination factors it into L and U so back substitution can unwind the answer." }
+    {
+      "type": "h2",
+      "text": "From equations to triangles"
+    },
+    {
+      "type": "p",
+      "md": "Gaussian elimination attacks $Ax = b$ by subtracting multiples of each row from the rows below it, wiping out one column at a time until the system is **upper triangular**; back substitution then peels off the unknowns from the bottom up. For an $n \\times n$ system the whole factorization costs about $\\tfrac{2}{3}n^3$ floating-point operations, fine for $n$ in the thousands, decisive for $n$ in the millions (which is why iterative methods exist)."
+    },
+    {
+      "type": "steps",
+      "title": "Worked: solve 2x + y = 5, x + 3y = 10",
+      "items": [
+        "Pivot on the first row; multiplier $m = 1/2$. New row 2: $(1 - 2 \\times 0.5,\\; 10 - 5 \\times 0.5) = (0,\\; 7.5)$.",
+        "Back substitution: $2.5y = 7.5$ gives $y = 3$.",
+        "Then $2x = 5 - 3 = 5$ gives $x = 1$.",
+        "Check both originals: $2(1) + 3 = 5$ and $1 + 3(3) = 10$ - exact.",
+        "Factorized form: $L = \\begin{pmatrix} 1 & 0 \\\\ 0.5 & 1\\end{pmatrix}$, $U = \\begin{pmatrix} 2 & 1 \\\\ 0 & 2.5 \\end{pmatrix}$; forward-solve $Ly = b$ gives $y = (5, 7.5)$, back-solve $Ux = y$ gives $(1, 3)$."
+      ]
+    },
+    {
+      "type": "p",
+      "md": "The LU decomposition is not bookkeeping, it is a business decision. Factor once ($O(n^3)$), then every new right-hand side (a new scenario, a new pricing vector) costs only $O(n^2)$ in two triangular solves. Pricing engines that solve the same system for thousands of market states factor once and reuse."
+    },
+    {
+      "type": "h2",
+      "text": "Pivoting: small divisors destroy accuracy"
+    },
+    {
+      "type": "steps",
+      "title": "Worked failure: 3-significant-digit arithmetic, deliberately",
+      "items": [
+        "System: $0.001x + y = 1$; $x + y = 2$. True solution: $(1, 1)$ - check $0.001 + 1 = 1.001$, which rounds to $1.00$ in 3 digits.",
+        "**Without pivoting**: multiplier $m = 1/0.001 = 1000$. Row 2 becomes $(1 - 1000 \\times 0.001,\\; 2 - 1000 \\times 1) = (0,\\; -998)$.",
+        "Back substitution: $y = -998/-998 = 1$; then $x = (1 - 1 \\times 1)/0.001 = 0/0.001 = \\mathbf{0}$.",
+        "Answer $(0, 1)$: $x$ is wrong by 100%. The tiny pivot forced a huge multiplier $1000$, which multiplied rounding noise into the coefficients until $1 - 1000 \\times 0.001$ vanished.",
+        "**With partial pivoting** (swap rows so the pivot is the largest available, here 1): multiplier $0.001$; row 2 becomes $(0,\\; 0.999,\\; 0.998)$; $y = 0.998/0.999 = 0.999$; $x = (2 - 0.999)/1 = 1.001 \\to 1.00$. Answer $(1.00, 0.999)$ - accurate.",
+        "Moral: always divide by the largest pivot you can. This is why every serious library does partial pivoting by default (PA = LU)."
+      ]
+    },
+    {
+      "type": "p",
+      "md": "In full double precision the toy example above happens to survive without pivoting, the numbers are exactly representable, but real-world data is not, and the failure mode is identical: small pivots amplify whatever rounding noise exists. Pivoting is cheap insurance that you should never switch off."
+    },
+    {
+      "type": "h2",
+      "text": "Conditioning: when the problem itself is the enemy"
+    },
+    {
+      "type": "p",
+      "md": "Lesson 2 introduced the condition number; here it earns its salary. For a symmetric positive-definite matrix (a covariance matrix), $\\kappa = \\lambda_{\\max}/\\lambda_{\\min}$, and the relative error of the solution is bounded by roughly $\\kappa$ times the relative error in the data. A correlation matrix with two 99.9%-correlated assets has eigenvalues $1 + \\rho = 1.999$ and $1 - \\rho = 0.001$, so $\\kappa \\approx 1999$: three of your sixteen digits are gone before the algorithm even starts."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import numpy as np\nC = np.array([[1.0, 0.999],\n              [0.999, 1.0]])\nprint(np.linalg.cond(C))          # ~1999\nb = np.array([0.02, 0.01])\nw = np.linalg.solve(C, b)\nprint(w)                          # [ 5.00750375 -4.99249625]",
+      "caption": "A harmless-looking right-hand side produces a 500% long / 500% short 'portfolio', the ill-conditioning talking."
+    },
+    {
+      "type": "steps",
+      "title": "Verify the solve by hand",
+      "items": [
+        "$C^{-1} = \\frac{1}{1 - \\rho^2}\\begin{pmatrix} 1 & -\\rho \\\\ -\\rho & 1 \\end{pmatrix}$ with $1 - \\rho^2 = 1 - 0.998001 = 0.001999$.",
+        "$w_1 = (0.02 - 0.999 \\times 0.01)/0.001999 = 0.01001/0.001999 \\approx 5.0075$.",
+        "$w_2 = (0.01 - 0.999 \\times 0.02)/0.001999 = -0.00998/0.001999 \\approx -4.9925$.",
+        "Check: $5.0075 + 0.999 \\times (-4.9925) \\approx 5.0075 - 4.9875 = 0.02$ - the solve is right; the matrix made the answer extreme."
+      ]
+    },
+    {
+      "type": "callout",
+      "variant": "quant",
+      "title": "Portfolio hygiene",
+      "md": "Before trusting any optimizer output on a covariance matrix: check $\\kappa(\\Sigma)$; look at $\\lambda_{\\min}$, not just at the weights. Remedies, in rising order of effort: drop redundant assets, add ridge regularization $\\Sigma + \\varepsilon I$ (lifts $\\lambda_{\\min}$ toward $\\varepsilon$, cutting $\\kappa$ by orders of magnitude), use a factor model, or apply Ledoit-Wolf shrinkage. A huge long-short book from an innocent target vector is almost always an ill-conditioning symptom, not a market view."
+    },
+    {
+      "type": "h2",
+      "text": "Direct or iterative?"
+    },
+    {
+      "type": "p",
+      "md": "Dense systems up to a few thousand unknowns: LU with pivoting, full stop. Beyond that, discretized PDEs, large graphs, factor models with millions of instruments, matrices are **sparse** (mostly zeros) and iterative methods dominate: Jacobi and Gauss-Seidel for simplicity, **conjugate gradient** for symmetric positive-definite systems (exactly the covariance case), with **preconditioning** to reshape the spectrum and accelerate convergence. Iterative methods trade a guaranteed $\\tfrac23 n^3$ for a tunable number of cheap passes, and they let you stop at the accuracy you actually need."
+    },
+    {
+      "type": "p",
+      "md": "One production habit closes this module: **always check the residual**. After computing $x$, compute $\\lVert Ax - b \\rVert$ and compare it to $\\lVert b \\rVert$. A large relative residual means the solve failed, wrong conditioning, wrong algorithm, or a bug. A small residual with extreme $x$ means the problem is ill-conditioned. Either way, the check costs microseconds and has caught more silent portfolio blow-ups than any other single line of code."
+    },
+    {
+      "type": "interactive",
+      "component": "MatrixTransform",
+      "params": {
+        "matrix": [
+          [
+            2,
+            1
+          ],
+          [
+            1,
+            3
+          ]
+        ]
+      },
+      "caption": "The worked system as a linear map: elimination factors it into L and U so back substitution can unwind the answer."
+    }
   ],
   "guidedExercise": {
     "prompt": "Solve by Gaussian elimination: $x + 2y = 8$, $3x + 4y = 18$. Show the multiplier, the eliminated row, and verify your answer in both original equations.",
-    "hints": ["Eliminate $x$ from row 2 using row 1: multiplier $m = 3$.", "After elimination, solve the remaining 1x1 system first (back substitution starts at the bottom)."],
+    "hints": [
+      "Eliminate $x$ from row 2 using row 1: multiplier $m = 3$.",
+      "After elimination, solve the remaining 1x1 system first (back substitution starts at the bottom)."
+    ],
     "solution": "Multiplier $m = 3$: row 2 $- 3 \\times$ row 1 $= (0,\\; 4 - 6,\\; 18 - 24) = (0, -2, -6)$. So $-2y = -6$, $y = 3$. Then $x = 8 - 2(3) = 2$. Check: $2 + 6 = 8$ and $6 + 12 = 18$ - exact."
   },
   "independentExercise": {
     "prompt": "Consider $A = \\begin{pmatrix} 0.01 & 0 \\\\ 0 & 100 \\end{pmatrix}$ with $b = (1, 200)$. (a) Solve exactly. (b) Compute $\\kappa(A)$ using the 2-norm, given that for a diagonal matrix the singular values are the absolute diagonal entries. (c) If $b_1$ carries a relative error of $10^{-6}$, what relative error can the solution carry?",
-    "hints": ["Diagonal systems solve by division.", "$\\kappa = \\sigma_{max}/\\sigma_{min} = 100/0.01$."],
-    "solution": "(a) $x_1 = 1/0.01 = 100$, $x_2 = 200/100 = 2$. (b) $\\kappa = 100/0.01 = 10^4$. (c) The bound gives relative solution error up to $\\kappa \\times 10^{-6} = 10^{-2}$, i.e. 1% - the tiny $\\lambda_{min} = 0.01$ direction amplifies the noise, even though the solve itself is a clean division. Diagonal or not, conditioning is about the spread of the spectrum."
+    "hints": [
+      "Diagonal systems solve by division.",
+      "$\\kappa = \\sigma_{max}/\\sigma_{min} = 100/0.01$."
+    ],
+    "solution": "(a) $x_1 = 1/0.01 = 100$, $x_2 = 200/100 = 2$. (b) $\\kappa = 100/0.01 = 10^4$. (c) The bound gives relative solution error up to $\\kappa \\times 10^{-6} = 10^{-2}$, i.e. 1%, the tiny $\\lambda_{min} = 0.01$ direction amplifies the noise, even though the solve itself is a clean division. Diagonal or not, conditioning is about the spread of the spectrum."
   },
   "commonMistakes": [
-    "Disabling partial pivoting 'for speed' - small pivots amplify rounding noise catastrophically.",
+    "Disabling partial pivoting 'for speed', small pivots amplify rounding noise catastrophically.",
     "Factoring from scratch for every right-hand side instead of reusing an LU decomposition.",
     "Ignoring $\\kappa(\\Sigma)$ of a covariance matrix and shipping optimizer weights that are pure noise amplification.",
-    "Confusing a small residual (solve consistent) with a small forward error (solve accurate) - only conditioning connects them.",
+    "Confusing a small residual (solve consistent) with a small forward error (solve accurate), only conditioning connects them.",
     "Assuming big systems always need iterative methods: for dense matrices below ~10^4 unknowns, LU is faster and more reliable."
   ],
   "realWorldApplication": "Every circuit simulator, structural analysis package and machine-learning solver reduces to these choices; LAPACK (getrf/getrs) implements exactly the LU-with-pivoting pipeline described here, and SciPy/NumPy call it.",
@@ -109,9 +185,9 @@
       "type": "mcq",
       "prompt": "In the 3-significant-digit example ($0.001x + y = 1$, $x + y = 2$), unpivoted elimination returned $x = 0$ instead of 1. What is the fix and the reason?",
       "options": [
-        "More decimal digits - the algorithm was fine",
-        "Partial pivoting - it prevents the huge multiplier a tiny pivot forces",
-        "Iterative refinement - the matrix is singular",
+        "More decimal digits, the algorithm was fine",
+        "Partial pivoting, it prevents the huge multiplier a tiny pivot forces",
+        "Iterative refinement, the matrix is singular",
         "Transpose the matrix"
       ],
       "answerIndex": 1,
@@ -127,27 +203,61 @@
         "Scaling all weights up by a constant",
         "Dropping highly redundant assets"
       ],
-      "answerIndices": [0, 1, 3],
+      "answerIndices": [
+        0,
+        1,
+        3
+      ],
       "explanation": "All three raise $\\lambda_{min}$ or remove its cause, cutting $\\kappa$. Rescaling weights changes the problem, not its conditioning."
     },
     {
       "id": "q6",
       "type": "short",
       "prompt": "After solving $Ax = b$ numerically, what single quantity should you compute as a sanity check, and what does a large value indicate?",
-      "modelAnswer": "The residual norm ||Ax - b|| relative to ||b||; a large relative residual means the solve failed or the system is too ill-conditioned to trust.",
-      "keywords": ["residual", "Ax", "b", "norm"],
-      "explanation": "Residual checking is the cheapest, most reliable guard against silently wrong solves - a production habit, not an academic nicety."
+      "modelAnswer": "The residual norm ||Ax, b|| relative to ||b||; a large relative residual means the solve failed or the system is too ill-conditioned to trust.",
+      "keywords": [
+        "residual",
+        "Ax",
+        "b",
+        "norm"
+      ],
+      "explanation": "Residual checking is the cheapest, most reliable guard against silently wrong solves, a production habit, not an academic nicety."
     }
   ],
   "flashcards": [
-    { "type": "formula", "front": "Cost of LU factorization vs triangular solves", "back": "Factorization $\\approx \\tfrac{2}{3}n^3$ flops once; each subsequent solve $O(n^2)$ via forward + back substitution." },
-    { "type": "concept", "front": "Why partial pivoting?", "back": "Divide by the largest pivot in the column: tiny pivots force huge multipliers that amplify rounding noise - the 3-digit example turns $(1,1)$ into $(0,1)$." },
-    { "type": "definition", "front": "Condition number (SPD case)", "back": "$\\kappa = \\lambda_{\\max}/\\lambda_{\\min}$; relative solution error $\\lesssim \\kappa \\times$ relative data error; $\\kappa \\approx 10^k$ costs ~$k$ digits." },
-    { "type": "concept", "front": "Production hygiene for linear solves", "back": "Check $\\kappa$ before solving, check $\\lVert Ax - b \\rVert / \\lVert b \\rVert$ after; regularize near-singular covariance matrices with ridge or shrinkage." }
+    {
+      "type": "formula",
+      "front": "Cost of LU factorization vs triangular solves",
+      "back": "Factorization $\\approx \\tfrac{2}{3}n^3$ flops once; each subsequent solve $O(n^2)$ via forward + back substitution."
+    },
+    {
+      "type": "concept",
+      "front": "Why partial pivoting?",
+      "back": "Divide by the largest pivot in the column: tiny pivots force huge multipliers that amplify rounding noise, the 3-digit example turns $(1,1)$ into $(0,1)$."
+    },
+    {
+      "type": "definition",
+      "front": "Condition number (SPD case)",
+      "back": "$\\kappa = \\lambda_{\\max}/\\lambda_{\\min}$; relative solution error $\\lesssim \\kappa \\times$ relative data error; $\\kappa \\approx 10^k$ costs ~$k$ digits."
+    },
+    {
+      "type": "concept",
+      "front": "Production hygiene for linear solves",
+      "back": "Check $\\kappa$ before solving, check $\\lVert Ax - b \\rVert / \\lVert b \\rVert$ after; regularize near-singular covariance matrices with ridge or shrinkage."
+    }
   ],
   "references": [
-    { "label": "Wikipedia - Gaussian elimination", "url": "https://en.wikipedia.org/wiki/Gaussian_elimination" },
-    { "label": "Wikipedia - Condition number", "url": "https://en.wikipedia.org/wiki/Condition_number" }
+    {
+      "label": "Wikipedia: Gaussian elimination",
+      "url": "https://en.wikipedia.org/wiki/Gaussian_elimination"
+    },
+    {
+      "label": "Wikipedia: Condition number",
+      "url": "https://en.wikipedia.org/wiki/Condition_number"
+    }
   ],
-  "skills": ["numerical-analysis", "linear-algebra"]
+  "skills": [
+    "numerical-analysis",
+    "linear-algebra"
+  ]
 }

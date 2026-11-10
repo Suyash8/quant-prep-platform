@@ -13,13 +13,13 @@
     "stat-descriptive-sampling",
     "fin-time-value"
   ],
-  "context": "The quant research team at QuantFoundry's asset-management arm reviews a dozen candidate portfolios a month. Each review asks the same questions: what did it return, at what risk, against what benchmark, and how bad can it get? Today those numbers are assembled by hand in spreadsheets — slow, error-prone and impossible to audit.\n\nYour job is to replace the spreadsheet with a small, testable engine: CSVs in, an auditable report out. The engine must implement the metrics the team actually uses — annualised return and volatility, Sharpe and Sortino, covariance and correlation structure, beta/alpha against a benchmark, maximum drawdown with dates, and historical VaR — with every convention written down, because the fastest way to lose a quant argument is to have used the wrong annualisation.",
+  "context": "The quant research team at QuantFoundry's asset-management arm reviews a dozen candidate portfolios a month. Each review asks the same questions: what did it return, at what risk, against what benchmark, and how bad can it get? Today those numbers are assembled by hand in spreadsheets, slow, error-prone and impossible to audit.\n\nYour job is to replace the spreadsheet with a small, testable engine: CSVs in, an auditable report out. The engine must implement the metrics the team actually uses, annualised return and volatility, Sharpe and Sortino, covariance and correlation structure, beta/alpha against a benchmark, maximum drawdown with dates, and historical VaR, with every convention written down, because the fastest way to lose a quant argument is to have used the wrong annualisation.",
   "problem": "Build a portfolio analytics engine (Python, standard library + optional pandas) that takes a prices CSV (date + one column per asset), an optional benchmark prices CSV, and a portfolio config (weights per asset, risk-free rate, annualisation convention), and produces a markdown report plus machine-readable CSVs containing: annualised mean return and volatility per asset and for the portfolio, the sample covariance and correlation matrices, Sharpe and Sortino ratios, beta and CAPM alpha versus the benchmark, maximum drawdown with peak/trough dates, and historical VaR at 95% and 99% from the empirical distribution of daily portfolio returns.\n\nEvery metric must be computed from first principles (no library one-liners for the graded metrics), unit-tested against hand-computed fixtures, and the report must state each convention (252-day year, ddof, log vs simple returns).",
   "requirements": [
     "Input handling: strict CSV schema validation, date parsing and alignment across assets/benchmark (inner join on dates with a documented, reported drop policy), weights validated to sum to 1 within 1e-6.",
     "Metrics implemented from scratch: portfolio return series from weights and asset returns; annualised mean (x 252) and vol (x sqrt(252)); sample covariance matrix (ddof=1) and derived correlation; Sharpe (excess over per-period rf); Sortino with downside deviation; beta = cov(portfolio, benchmark)/var(benchmark) and CAPM alpha.",
     "Drawdown analytics: max drawdown as a fraction with peak and trough dates; the drawdown series exported as CSV.",
-    "Historical VaR at 95%/99% as the empirical quantile of daily returns with a stated quantile method (order-statistic interpolation); reported per-day, with the sample size stated — annualising VaR is allowed only with an explicit caveat.",
+    "Historical VaR at 95%/99% as the empirical quantile of daily returns with a stated quantile method (order-statistic interpolation); reported per-day, with the sample size stated, annualising VaR is allowed only with an explicit caveat.",
     "Report generation: deterministic markdown + CSVs; every number traceable to a function; no hidden rounding beyond formatting.",
     "Tests: two-asset fixture with hand-computed covariance/correlation/beta; a monotone-up equity curve has max drawdown exactly 0; VaR of a known small sample matches the stated quantile method.",
     "CLI entry point `python -m portfolio report --prices prices.csv --benchmark bm.csv --config portfolio.json --out report/` that runs end-to-end on a clean checkout."
@@ -54,7 +54,7 @@
   "designGuidance": [
     {
       "type": "h2",
-      "text": "Metric definitions — write them down once"
+      "text": "Metric definitions, write them down once"
     },
     {
       "type": "math",
@@ -75,7 +75,7 @@
       "type": "callout",
       "variant": "quant",
       "title": "Historical vs parametric VaR",
-      "md": "Historical VaR reads the tail off the actual sample — no distributional assumption, but blind beyond the worst observed day. Parametric VaR (mean minus z*sigma under normality) extrapolates but under-tails for fat-tailed daily returns. Stating which you used — and its sample size — is part of the deliverable."
+      "md": "Historical VaR reads the tail off the actual sample, no distributional assumption, but blind beyond the worst observed day. Parametric VaR (mean minus z*sigma under normality) extrapolates but under-tails for fat-tailed daily returns. Stating which you used, and its sample size, is part of the deliverable."
     },
     {
       "type": "callout",
@@ -103,12 +103,12 @@
         ],
         [
           "Sharpe",
-          "(mu - rf)/sigma with per-period rf",
+          "(mu, rf)/sigma with per-period rf",
           "x sqrt(252), or annualise both"
         ],
         [
           "max drawdown",
-          "min over t of equity_t / peak_t - 1",
+          "min over t of equity_t / peak_t, 1",
           "none (already scale-free)"
         ],
         [
@@ -122,11 +122,11 @@
   "starterFiles": [
     {
       "path": "portfolio/metrics.py",
-      "content": "\"\"\"Portfolio metric primitives. Stdlib only; keep functions pure.\"\"\"\n\nfrom math import log, sqrt\n\n\ndef log_returns(prices):\n    \"\"\"r_t = ln(P_t / P_{t-1}); requires strictly positive prices.\"\"\"\n    if len(prices) < 2:\n        raise ValueError(\"need at least 2 prices\")\n    if any(pr <= 0 for pr in prices):\n        raise ValueError(\"log returns require strictly positive prices\")\n    return [log(b / a) for a, b in zip(prices, prices[1:])]\n\n\ndef max_drawdown(equity):\n    \"\"\"Largest peak-to-trough decline as a negative fraction.\n\n    Returns 0.0 for a monotone non-decreasing equity curve.\n    \"\"\"\n    if not equity:\n        raise ValueError(\"equity curve is empty\")\n    peak = equity[0]\n    mdd = 0.0\n    for value in equity:\n        if value > peak:\n            peak = value\n        if peak > 0:\n            mdd = min(mdd, value / peak - 1.0)\n    return mdd\n\n\ndef sharpe_ratio(returns, risk_free_annual=0.0, periods_per_year=252):\n    \"\"\"Per-period Sharpe annualised by sqrt(periods_per_year).\"\"\"\n    n = len(returns)\n    if n < 2:\n        raise ValueError(\"need at least 2 return observations\")\n    mean = sum(returns) / n\n    var = sum((r - mean) ** 2 for r in returns) / (n - 1)   # sample variance\n    sd = sqrt(var)\n    if sd == 0.0:\n        return 0.0\n    excess = mean - risk_free_annual / periods_per_year\n    return excess / sd * sqrt(periods_per_year)\n"
+      "content": "\"\"\"Portfolio metric primitives. Stdlib only; keep functions pure.\"\"\"\n\nfrom math import log, sqrt\n\n\ndef log_returns(prices):\n \"\"\"r_t = ln(P_t / P_{t-1}); requires strictly positive prices.\"\"\"\n if len(prices) < 2:\n raise ValueError(\"need at least 2 prices\")\n if any(pr <= 0 for pr in prices):\n raise ValueError(\"log returns require strictly positive prices\")\n return [log(b / a) for a, b in zip(prices, prices[1:])]\n\n\ndef max_drawdown(equity):\n \"\"\"Largest peak-to-trough decline as a negative fraction.\n\n Returns 0.0 for a monotone non-decreasing equity curve.\n \"\"\"\n if not equity:\n raise ValueError(\"equity curve is empty\")\n peak = equity[0]\n mdd = 0.0\n for value in equity:\n if value > peak:\n peak = value\n if peak > 0:\n mdd = min(mdd, value / peak, 1.0)\n return mdd\n\n\ndef sharpe_ratio(returns, risk_free_annual=0.0, periods_per_year=252):\n \"\"\"Per-period Sharpe annualised by sqrt(periods_per_year).\"\"\"\n n = len(returns)\n if n < 2:\n raise ValueError(\"need at least 2 return observations\")\n mean = sum(returns) / n\n var = sum((r, mean) ** 2 for r in returns) / (n, 1) # sample variance\n sd = sqrt(var)\n if sd == 0.0:\n return 0.0\n excess = mean, risk_free_annual / periods_per_year\n return excess / sd * sqrt(periods_per_year)\n"
     },
     {
       "path": "tests/test_metrics.py",
-      "content": "\"\"\"Hand-computed fixture tests for the portfolio metrics module.\"\"\"\n\nimport math\nimport os\nimport sys\n\nROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))\nsys.path.insert(0, ROOT)\n\nfrom portfolio.metrics import log_returns, max_drawdown, sharpe_ratio  # noqa: E402\n\n\ndef test_log_returns_telescoping():\n    prices = [100.0, 101.0, 99.0, 102.0]\n    rs = log_returns(prices)\n    # sum of log returns equals ln(last/first) up to float error\n    assert math.isclose(sum(rs), math.log(102.0 / 100.0), rel_tol=1e-12)\n\n\ndef test_max_drawdown_known_series():\n    equity = [100.0, 101.0, 99.0, 102.0]\n    # trough 99 vs running peak 101\n    assert math.isclose(max_drawdown(equity), 99.0 / 101.0 - 1.0, abs_tol=1e-12)\n\n\ndef test_monotone_curve_has_zero_drawdown():\n    assert max_drawdown([1.0, 1.1, 1.2, 1.3]) == 0.0\n\n\ndef test_sharpe_two_observations():\n    sr = sharpe_ratio([0.01, 0.02])\n    mean, var = 0.015, 5e-5  # sample variance with ddof=1\n    expected = (mean / math.sqrt(var)) * math.sqrt(252)\n    assert math.isclose(sr, expected, rel_tol=1e-12)\n\n\ndef main() -> int:\n    failed = 0\n    for test in (\n        test_log_returns_telescoping,\n        test_max_drawdown_known_series,\n        test_monotone_curve_has_zero_drawdown,\n        test_sharpe_two_observations,\n    ):\n        try:\n            test()\n            print(f\"PASS {test.__name__}\")\n        except AssertionError as exc:\n            failed += 1\n            print(f\"FAIL {test.__name__}: {exc}\")\n    return 1 if failed else 0\n\n\nif __name__ == \"__main__\":\n    sys.exit(main())\n"
+      "content": "\"\"\"Hand-computed fixture tests for the portfolio metrics module.\"\"\"\n\nimport math\nimport os\nimport sys\n\nROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))\nsys.path.insert(0, ROOT)\n\nfrom portfolio.metrics import log_returns, max_drawdown, sharpe_ratio # noqa: E402\n\n\ndef test_log_returns_telescoping():\n prices = [100.0, 101.0, 99.0, 102.0]\n rs = log_returns(prices)\n # sum of log returns equals ln(last/first) up to float error\n assert math.isclose(sum(rs), math.log(102.0 / 100.0), rel_tol=1e-12)\n\n\ndef test_max_drawdown_known_series():\n equity = [100.0, 101.0, 99.0, 102.0]\n # trough 99 vs running peak 101\n assert math.isclose(max_drawdown(equity), 99.0 / 101.0, 1.0, abs_tol=1e-12)\n\n\ndef test_monotone_curve_has_zero_drawdown():\n assert max_drawdown([1.0, 1.1, 1.2, 1.3]) == 0.0\n\n\ndef test_sharpe_two_observations():\n sr = sharpe_ratio([0.01, 0.02])\n mean, var = 0.015, 5e-5 # sample variance with ddof=1\n expected = (mean / math.sqrt(var)) * math.sqrt(252)\n assert math.isclose(sr, expected, rel_tol=1e-12)\n\n\ndef main() -> int:\n failed = 0\n for test in (\n test_log_returns_telescoping,\n test_max_drawdown_known_series,\n test_monotone_curve_has_zero_drawdown,\n test_sharpe_two_observations,\n ):\n try:\n test()\n print(f\"PASS {test.__name__}\")\n except AssertionError as exc:\n failed += 1\n print(f\"FAIL {test.__name__}: {exc}\")\n return 1 if failed else 0\n\n\nif __name__ == \"__main__\":\n sys.exit(main())\n"
     }
   ],
   "evaluationCriteria": [

@@ -13,7 +13,7 @@
     "Derive the explicit scheme's stability limit $\\Delta t \\le 1/(\\sigma^2 j_{max}^2 + r)$ and exhibit the oscillatory failure when it is violated",
     "Demonstrate second-order spatial convergence against the closed-form Black-Scholes value on verified grids"
   ],
-  "motivation": "When a model goes beyond Black-Scholes - local volatility, stochastic rates, American exercise in multi-factor settings - closed forms disappear and the PDE engine takes over. PDE pricing is the workhorse of exotics desks: it prices the whole surface of strikes at once, handles early exercise natively, and its accuracy can be proven, not hoped for. The price of that power is numerical discipline: the wrong scheme blows up, and you will see exactly how in this lesson.",
+  "motivation": "When a model goes beyond Black-Scholes, local volatility, stochastic rates, American exercise in multi-factor settings, closed forms disappear and the PDE engine takes over. PDE pricing is the workhorse of exotics desks: it prices the whole surface of strikes at once, handles early exercise natively, and its accuracy can be proven, not hoped for. The price of that power is numerical discipline: the wrong scheme blows up, and you will see exactly how in this lesson.",
   "blocks": [
     {
       "type": "h2",
@@ -30,7 +30,7 @@
     },
     {
       "type": "p",
-      "md": "Grid the price axis: $S_j = j\\,\\Delta S$ for $j = 0, \\dots, J$, with $\\Delta S = 20$ and $S_{max} = 200$ for a $K = 100$ put, and step $\\tau$ by $\\Delta t$. PDEs are only as good as their boundary data. At $S = 0$ the put is certain to be exercised, so its value is the discounted strike: $V(0, \\tau) = K e^{-r\\tau}$ (at $\\tau = 0.5$: $100 \\, e^{-0.025} = 97.5310$). At $S_{max}$ a put is worthless: $V(S_{max}, \\tau) = 0$. Both are **Dirichlet** conditions. Getting these wrong - for instance using $S_{max} - K$ on a put, which belongs to a **call** - poisons every interior value."
+      "md": "Grid the price axis: $S_j = j\\,\\Delta S$ for $j = 0, \\dots, J$, with $\\Delta S = 20$ and $S_{max} = 200$ for a $K = 100$ put, and step $\\tau$ by $\\Delta t$. PDEs are only as good as their boundary data. At $S = 0$ the put is certain to be exercised, so its value is the discounted strike: $V(0, \\tau) = K e^{-r\\tau}$ (at $\\tau = 0.5$: $100 \\, e^{-0.025} = 97.5310$). At $S_{max}$ a put is worthless: $V(S_{max}, \\tau) = 0$. Both are **Dirichlet** conditions. Getting these wrong, for instance using $S_{max} - K$ on a put, which belongs to a **call**, poisons every interior value."
     },
     {
       "type": "h2",
@@ -53,7 +53,7 @@
       "type": "code",
       "lang": "python",
       "code": "import numpy as np\n\ndef thomas(lo, di, up, rhs):\n    \"\"\"Solve a tridiagonal system (Thomas algorithm), O(n) work.\"\"\"\n    n = len(rhs)\n    c = np.zeros(n); d = np.zeros(n); x = np.zeros(n)\n    c[0], d[0] = up[0] / di[0], rhs[0] / di[0]\n    for i in range(1, n):\n        w = di[i] - lo[i] * c[i - 1]\n        c[i] = up[i] / w if i < n - 1 else 0.0\n        d[i] = (rhs[i] - lo[i] * d[i - 1]) / w\n    x[n - 1] = d[n - 1]\n    for i in range(n - 2, -1, -1):\n        x[i] = d[i] - c[i] * x[i + 1]\n    return x\n\ndef fd_put(scheme, dS, dt, Smax=200.0, r=0.05, sigma=0.25, K=100.0, T=1.0):\n    J, n = int(round(Smax / dS)), int(round(T / dt))\n    S = np.arange(J + 1) * dS\n    V = np.maximum(K - S, 0.0).astype(float)          # payoff at maturity\n    for step in range(n):                             # march backward from expiry\n        tau = (step + 1) * dt                         # remaining time after the step\n        j = np.arange(1, J)\n        a = 0.5 * dt * (sigma**2 * j * j - r * j)     # lower diagonal weight\n        c = 0.5 * dt * (sigma**2 * j * j + r * j)     # upper diagonal weight\n        b = -dt * (sigma**2 * j * j + r)              # centre weight of L\n        Vn = np.zeros(J + 1)\n        Vn[0], Vn[J] = K * np.exp(-r * tau), 0.0      # Dirichlet boundaries\n        if scheme == \"explicit\":\n            Vn[j] = a * V[j - 1] + (1 + b) * V[j] + c * V[j + 1]\n        else:\n            theta = 1.0 if scheme == \"implicit\" else 0.5\n            lo, up_, di = -theta * a, -theta * c, 1.0 - theta * b\n            rhs = V[j] + (1 - theta) * (a * V[j - 1] + b * V[j] + c * V[j + 1])\n            rhs[0] += theta * a[0] * Vn[0]            # known boundary enters RHS\n            rhs[-1] += theta * c[-1] * Vn[J]\n            Vn[j] = thomas(lo, di, up_, rhs)\n        V = Vn\n    return V[int(round(K / dS))]\n\nputBS = 7.458941                                     # closed-form reference\nfor scheme in (\"explicit\", \"implicit\", \"cn\"):\n    v = fd_put(scheme, 20.0, 0.025)\n    print(f\"{scheme:9s} dS=20 dt=0.025    V(S=100)={v:.4f}  err {v - putBS:+.4f}\")\nfor dS in (20.0, 10.0, 5.0, 2.0):\n    dt = dS * dS * 0.025 / 400.0                     # shrink dt like dS^2 (stability-safe)\n    v = fd_put(\"explicit\", dS, dt)\n    print(f\"explicit  dS={dS:3g} dt={dt:<9g} V(S=100)={v:.4f}  err {v - putBS:+.4f}\")",
-      "caption": "Verified output: coarse grid - explicit 6.5818 (err -0.8772), implicit 6.4973 (-0.9616), CN 6.5396 (-0.9193); explicit refinement - dS=10: 7.2670 (-0.1920), dS=5: 7.4120 (-0.0469), dS=2: 7.4515 (-0.0075)."
+      "caption": "Verified output: coarse grid, explicit 6.5818 (err -0.8772), implicit 6.4973 (-0.9616), CN 6.5396 (-0.9193); explicit refinement, dS=10: 7.2670 (-0.1920), dS=5: 7.4120 (-0.0469), dS=2: 7.4515 (-0.0075)."
     },
     {
       "type": "h2",
@@ -86,7 +86,7 @@
     },
     {
       "type": "p",
-      "md": "The surprise: on this coarse grid all three schemes miss by roughly the same $0.9$. The error here is **spatial** - 11 nodes cannot represent the curvature of the put around the strike - and no amount of time-scheme cleverness fixes spatial error. The schemes differ only where time error matters, which is why the refinement study is run with explicit scheme and $\\Delta t$ shrunk proportionally to $\\Delta S^2$:"
+      "md": "The surprise: on this coarse grid all three schemes miss by roughly the same $0.9$. The error here is **spatial**, 11 nodes cannot represent the curvature of the put around the strike, and no amount of time-scheme cleverness fixes spatial error. The schemes differ only where time error matters, which is why the refinement study is run with explicit scheme and $\\Delta t$ shrunk proportionally to $\\Delta S^2$:"
     },
     {
       "type": "table",
@@ -130,7 +130,7 @@
     },
     {
       "type": "p",
-      "md": "The last column is constant to within sampling of the kink: error $\\propto \\Delta S^2$, the promised **second-order spatial convergence** (successive errors shrink by $4.6\\times$, $4.1\\times$, $6.3\\times$). At the finest grid the three schemes agree to a hair - implicit $7.4082$, CN $7.4101$, explicit $7.4120$ at $\\Delta S = 5$ - because with tiny $\\Delta t$ the time discretisation is no longer the bottleneck."
+      "md": "The last column is constant to within sampling of the kink: error $\\propto \\Delta S^2$, the promised **second-order spatial convergence** (successive errors shrink by $4.6\\times$, $4.1\\times$, $6.3\\times$). At the finest grid the three schemes agree to a hair, implicit $7.4082$, CN $7.4101$, explicit $7.4120$ at $\\Delta S = 5$ - because with tiny $\\Delta t$ the time discretisation is no longer the bottleneck."
     },
     {
       "type": "interactive",
@@ -143,7 +143,7 @@
         "maturity": 1,
         "type": "put"
       },
-      "caption": "The closed-form benchmark the PDE engine must reproduce: 7.4589 at the money - any grid you build gets validated against this."
+      "caption": "The closed-form benchmark the PDE engine must reproduce: 7.4589 at the money, any grid you build gets validated against this."
     },
     {
       "type": "h2",
@@ -160,7 +160,7 @@
     },
     {
       "type": "p",
-      "md": "Run it anyway with $\\Delta t = 0.25$ ($6\\times$ the limit, $\\,1 + b_{20} = -5.2625$) and after only 4 steps the profile zigzags into nonsense: values $15.922$ at $S=80$, $18.459$ at $S=90$, then $\\mathbf{-5.397}$ at $S=100$, $22.111$ at $S=110$, $-12.342$ at $S=120$. A put value below zero is not a numerical inaccuracy - it is proof the scheme left the space of probability measures. Implicit and Crank-Nicolson are **unconditionally stable** (their matrices invert smoothly for any $\\Delta t$), which is why production engines use them; CN can still ring around the payoff kink, cured by a couple of implicit Rannacher starter steps."
+      "md": "Run it anyway with $\\Delta t = 0.25$ ($6\\times$ the limit, $\\,1 + b_{20} = -5.2625$) and after only 4 steps the profile zigzags into nonsense: values $15.922$ at $S=80$, $18.459$ at $S=90$, then $\\mathbf{-5.397}$ at $S=100$, $22.111$ at $S=110$, $-12.342$ at $S=120$. A put value below zero is not a numerical inaccuracy, it is proof the scheme left the space of probability measures. Implicit and Crank-Nicolson are **unconditionally stable** (their matrices invert smoothly for any $\\Delta t$), which is why production engines use them; CN can still ring around the payoff kink, cured by a couple of implicit Rannacher starter steps."
     },
     {
       "type": "code",
@@ -172,7 +172,7 @@
       "type": "callout",
       "variant": "pitfall",
       "title": "Stable is not accurate",
-      "md": "Unconditional stability means the implicit schemes cannot blow up - it says nothing about accuracy. A CN run with $\\Delta t = 0.1$ and $\\Delta S = 20$ is stable and still wrong by nearly a dollar because of spatial error. Budget convergence effort where the error lives: refine $\\Delta S$ first on a kinked payoff, then $\\Delta t$."
+      "md": "Unconditional stability means the implicit schemes cannot blow up, it says nothing about accuracy. A CN run with $\\Delta t = 0.1$ and $\\Delta S = 20$ is stable and still wrong by nearly a dollar because of spatial error. Budget convergence effort where the error lives: refine $\\Delta S$ first on a kinked payoff, then $\\Delta t$."
     }
   ],
   "guidedExercise": {
@@ -182,7 +182,7 @@
       "$a_j = \\tfrac12 \\Delta t (\\sigma^2 j^2 - rj)$; $c_j = \\tfrac12 \\Delta t (\\sigma^2 j^2 + rj)$.",
       "The sum identity $a_j + (1+b_j) + c_j = 1 - r\\Delta t$ is independent of $j$ - a free correctness check."
     ],
-    "solution": "At $j = 5$: $\\sigma^2 j^2 = 1.5625$, $rj = 0.25$. $a_5 = 0.5 \\times 0.025 \\times (1.5625 - 0.25) = 0.0164$, $1 + b_5 = 1 - 0.025 \\times (1.5625 + 0.05) = 1 - 0.0403 = 0.9597$, $c_5 = 0.5 \\times 0.025 \\times 1.8125 = 0.0227$. Sum $= 0.9988 = 1 - r\\Delta t = 1 - 0.00125$ exactly. At $j = 10$: $\\sigma^2 j^2 = 6.25$, so $a_{10} = 0.5 \\times 0.025 \\times 6.0 = 0.0750$, $1 + b_{10} = 1 - 0.025 \\times 6.30 = 0.8425$, $c_{10} = 0.5 \\times 0.025 \\times 6.5 = 0.0813$; sum again $0.9988$. All weights stay positive - the grid passes the stability test for $\\Delta t = 0.025$."
+    "solution": "At $j = 5$: $\\sigma^2 j^2 = 1.5625$, $rj = 0.25$. $a_5 = 0.5 \\times 0.025 \\times (1.5625 - 0.25) = 0.0164$, $1 + b_5 = 1 - 0.025 \\times (1.5625 + 0.05) = 1 - 0.0403 = 0.9597$, $c_5 = 0.5 \\times 0.025 \\times 1.8125 = 0.0227$. Sum $= 0.9988 = 1 - r\\Delta t = 1 - 0.00125$ exactly. At $j = 10$: $\\sigma^2 j^2 = 6.25$, so $a_{10} = 0.5 \\times 0.025 \\times 6.0 = 0.0750$, $1 + b_{10} = 1 - 0.025 \\times 6.30 = 0.8425$, $c_{10} = 0.5 \\times 0.025 \\times 6.5 = 0.0813$; sum again $0.9988$. All weights stay positive, the grid passes the stability test for $\\Delta t = 0.025$."
   },
   "independentExercise": {
     "prompt": "You want to price the same put on a finer grid with $\\Delta S = 5$ (so $j_{max} = 40$, $S_{max} = 200$) using the **explicit** scheme. (a) Compute the largest stable $\\Delta t$ from $\\Delta t \\le 1/(\\sigma^2 j_{max}^2 + r)$. (b) The lesson's refined run used $\\Delta t = 0.0015625$ - how many times inside the stability limit is that? (c) Given that halving $\\Delta S$ from 10 to 5 reduced the error from $-0.1920$ to $-0.0469$, predict the error at $\\Delta S = 2.5$ and compare with second-order scaling.",
@@ -198,9 +198,9 @@
     "Swapping boundary conditions between puts and calls: $Ke^{-r\\tau}$ at $S=0$ belongs to a put; $S_{max} - Ke^{-r\\tau}$ at $S_{max}$ belongs to a call.",
     "Running the explicit scheme with $\\Delta t$ above $1/(\\sigma^2 j_{max}^2 + r)$ - the output looks numeric but oscillates and can go negative.",
     "Forgetting to add the known boundary value $\\theta a_0 V_0$ into the right-hand side of the implicit/CN tridiagonal system.",
-    "Refining $\\Delta t$ on a coarse $S$-grid and concluding the PDE 'converged' - spatial error was the bottleneck all along."
+    "Refining $\\Delta t$ on a coarse $S$-grid and concluding the PDE 'converged', spatial error was the bottleneck all along."
   ],
-  "realWorldApplication": "Production exotics engines (local-vol surfaces, American bond options, autocallables under stochastic rates) are Crank-Nicolson solvers with Rannacher smoothing and ADI extensions for multiple factors - the same tridiagonal core, hardened and parallelised.",
+  "realWorldApplication": "Production exotics engines (local-vol surfaces, American bond options, autocallables under stochastic rates) are Crank-Nicolson solvers with Rannacher smoothing and ADI extensions for multiple factors, the same tridiagonal core, hardened and parallelised.",
   "quantFinanceApplication": "The convergence table and stability audit shown here are exactly the artefacts a model-validation team demands before a PDE pricer goes live: verified boundary conditions, measured second-order convergence, and a demonstrated failure mode under stability violation.",
   "summary": [
     "Black-Scholes reversed to $\\tau = T - t$ becomes a forward diffusion; Dirichlet boundaries for a put are $Ke^{-r\\tau}$ at $S=0$ and $0$ at $S_{max}$.",
@@ -241,7 +241,7 @@
         "Implicit schemes are always more accurate than explicit ones"
       ],
       "answerIndex": 1,
-      "explanation": "With 11 price nodes, discretisation of the $V_{SS}$ term - not the time stepping - drives the error; all schemes inherit it. The scheme choice matters once $\\Delta t$ error is comparable to $\\Delta S^2$ error."
+      "explanation": "With 11 price nodes, discretisation of the $V_{SS}$ term, not the time stepping, drives the error; all schemes inherit it. The scheme choice matters once $\\Delta t$ error is comparable to $\\Delta S^2$ error."
     },
     {
       "id": "q4",
@@ -299,11 +299,11 @@
   ],
   "references": [
     {
-      "label": "Wikipedia - Finite difference methods for option pricing",
+      "label": "Wikipedia: Finite difference methods for option pricing",
       "url": "https://en.wikipedia.org/wiki/Finite_difference_methods_for_option_pricing"
     },
     {
-      "label": "Wikipedia - Crank-Nicolson method",
+      "label": "Wikipedia: Crank-Nicolson method",
       "url": "https://en.wikipedia.org/wiki/Crank%E2%80%93Nicolson_method"
     }
   ],
