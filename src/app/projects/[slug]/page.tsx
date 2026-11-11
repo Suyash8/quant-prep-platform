@@ -116,7 +116,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
 
         {/* context + problem statement, side by side on desktop */}
         <section className="mt-8 grid gap-4 lg:grid-cols-2">
-          <div className="qf-card p-5 anim-slide-up relative overflow-hidden">
+          <div className="qf-card p-5 anim-slide-up relative overflow-hidden min-w-0">
             <div className="absolute -right-8 -top-8 h-28 w-28 rounded-full bg-accent-soft" aria-hidden />
             <div className="relative">
               <div className="section-head">
@@ -126,7 +126,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
               <div className="prose-qf text-sm"><BlockRenderer block={{ type: 'p', md: project.context }} /></div>
             </div>
           </div>
-          <div className="qf-card p-5 anim-slide-up relative overflow-hidden">
+          <div className="qf-card p-5 anim-slide-up relative overflow-hidden min-w-0">
             <div className="absolute -right-8 -top-8 h-28 w-28 rounded-full bg-info-soft" aria-hidden />
             <div className="relative">
               <div className="section-head">

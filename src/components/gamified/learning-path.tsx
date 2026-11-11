@@ -178,10 +178,10 @@ export function LearningPath({
                     <p className="text-sm text-white/90 font-bold max-w-xl mt-1">{phase.summary}</p>
                   </div>
                   <div className="flex flex-col items-stretch gap-1.5 min-w-[130px] shrink-0">
-                    <div className="h-4 rounded-full bg-black/20 border border-white/25 overflow-hidden">
-                      <div className="h-full rounded-full bg-white/95 transition-all duration-700" style={{ width: `${phasePct}%` }} />
+                    <div className="h-4 rounded-full bg-black/25 border border-white/25 overflow-hidden">
+                      <div className="h-full rounded-full bg-white/95 transition-all duration-700" style={{ width: `${Math.max(phasePct, 2)}%` }} />
                     </div>
-                    <span className="text-xs font-black tnum text-white/95 flex items-center justify-between">
+                    <span className="text-xs font-black tnum text-white flex items-center justify-between">
                       <span>{phaseDone}/{phaseLessons.length} lessons</span><span>{phasePct}%</span>
                     </span>
                   </div>
@@ -300,8 +300,8 @@ function PhasePreview({
           <p className="text-sm font-black tracking-tight">
             {phase.modules.length} modules · {lessons} lessons · ~{Math.round(phaseMin / 60)}h
           </p>
-          <p className="mt-0.5 text-xs font-semibold text-muted">
-            Unlocks as you clear the phases before it, peek inside any time
+          <p className="mt-0.5 text-xs font-semibold text-muted truncate">
+            Starts with {phase.modules[0]?.title}, peek inside any time
           </p>
         </div>
         <ChevronDown className="h-4 w-4 text-faint shrink-0 transition-transform group-open:rotate-180" />

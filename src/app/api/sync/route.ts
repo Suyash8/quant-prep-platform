@@ -15,13 +15,14 @@ import type { SyncEvent } from '@/lib/client/local-state';
  */
 
 async function buildSnapshot(userId: string) {
-  const [user, lessonRows, cardRows, problemRows, assessRows, drillRows] = await Promise.all([
+  const [user, lessonRows, cardRows, problemRows, assessRows, drillRows, sessionRows] = await Promise.all([
     db.user.findUnique({ where: { id: userId }, select: { xp: true, streakCount: true, longestStreak: true, lastStudyDate: true, dailyGoalXp: true } }),
     db.lessonProgress.findMany({ where: { userId } }),
     db.cardState.findMany({ where: { userId } }),
     db.problemAttempt.findMany({ where: { userId } }),
     db.assessmentAttempt.findMany({ where: { userId } }),
     db.drillSession.findMany({ where: { userId }, select: { correct: true, total: true } }),
+    db.learningSession.findMany({ where: { userId }, select: { day: true, seconds: true } }),
   ]);
 
   const lessons: Record<string, { kcBestPct: number; kcAttempts: number; exerciseDone: boolean; retrievalDone: boolean; status: string }> = {};
@@ -47,12 +48,21 @@ async function buildSnapshot(userId: string) {
     assessments[a.assessmentId] = { bestPct: Math.max(assessments[a.assessmentId]?.bestPct ?? 0, a.scorePct) };
   }
 
+  // v3.1: study minutes per day (last 30 days) so a fresh browser charts real history
+  const cutoffDay = new Date(Date.now() - 30 * 86400_000).toISOString().slice(0, 10);
+  const minutesByDay: Record<string, number> = {};
+  for (const row of sessionRows) {
+    if (row.day < cutoffDay) continue;
+    minutesByDay[row.day] = (minutesByDay[row.day] ?? 0) + Math.round(row.seconds / 60);
+  }
+
   return {
     xp: user?.xp ?? 0,
     streakCount: user?.streakCount ?? 0,
     longestStreak: user?.longestStreak ?? 0,
     lastStudyDate: user?.lastStudyDate ? user.lastStudyDate.toISOString().slice(0, 10) : null,
     dailyGoalXp: user?.dailyGoalXp ?? 60,
+    minutesByDay,
     lessons,
     cards,
     problems,

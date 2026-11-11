@@ -34,7 +34,7 @@ export default async function MethodologyPage() {
   ];
 
   const body = (
-    <div className="max-w-4xl mx-auto px-4 lg:px-6 py-8">
+    <div className="max-w-5xl mx-auto px-4 lg:px-6 py-8">
       <header className="page-hero">
         <span className="icon-tile icon-tile-violet"><GraduationCap className="h-7 w-7" /></span>
         <div>

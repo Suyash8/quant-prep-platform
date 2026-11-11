@@ -348,12 +348,12 @@ export function VectorVisual({ params }: { params: Record<string, unknown> }) {
         <line x1={P} y1={toY(0)} x2={W - P} y2={toY(0)} stroke={MUTED} />
         <line x1={toX(0)} y1={P} x2={toX(0)} y2={H - P} stroke={MUTED} />
         {vectors.map((v, i) => (
-          <Arrow key={i} x1={toX(0)} y1={toY(0)} x2={toX(v[0])} y2={toY(v[1])} color={['var(--accent)', '#9a6d0b'][i % 2]} label={`v${i + 1}`} />
+          <Arrow key={i} x1={toX(0)} y1={toY(0)} x2={toX(v[0])} y2={toY(v[1])} color={['var(--accent)', 'var(--warning-strong)'][i % 2]} label={`v${i + 1}`} />
         ))}
         {showSum && <Arrow x1={toX(0)} y1={toY(0)} x2={toX(sum[0])} y2={toY(sum[1])} color="var(--success)" label="sum" dashed />}
       </svg>
       <label className="mt-2 flex items-center gap-2 text-xs text-muted justify-center">
-        <input type="checkbox" checked={showSum} onChange={e => setShowSum(e.target.checked)} /> show sum vector
+        <input type="checkbox" className="qf-check" checked={showSum} onChange={e => setShowSum(e.target.checked)} /> show sum vector
       </label>
     </LabFrame>
   );
@@ -398,7 +398,7 @@ export function MatrixTransform({ params }: { params: Record<string, unknown> })
         <polygon points={unit.map(u => { const t = apply(u); return `${toX(t[0])},${toY(t[1])}`; }).join(' ')} fill={ACCENT} opacity={0.2} stroke={ACCENT} strokeWidth={1.5} />
         {basis.map((b, i) => {
           const t = apply(b);
-          return <Arrow key={i} x1={toX(0)} y1={toY(0)} x2={toX(t[0])} y2={toY(t[1])} color={['var(--accent)', '#9a6d0b'][i]} />;
+          return <Arrow key={i} x1={toX(0)} y1={toY(0)} x2={toX(t[0])} y2={toY(t[1])} color={['var(--accent)', 'var(--warning-strong)'][i]} />;
         })}
       </svg>
     </LabFrame>

@@ -100,9 +100,9 @@ export function PracticeFilters({ problems }: { problems: Row[] }) {
     <div className="mt-6">
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative w-full sm:w-72">
-          <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-faint" />
-          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search problems or tags…"
-            className="qf-input py-2.5 pl-10 text-sm" aria-label="Search problems" />
+          <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-faint" aria-hidden="true" />
+          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search problems or tags"
+            className="qf-input py-2.5 text-sm" style={{ paddingLeft: '2.5rem' }} aria-label="Search problems" />
         </div>
         <select value={difficulty} onChange={e => setDifficulty(e.target.value)} className="qf-select-sm w-auto" aria-label="Difficulty">
           <option value="all">All difficulties</option>
@@ -170,7 +170,7 @@ function ProblemRow({ p, delay }: { p: Row; delay: string }) {
   const solved = p.status === 'solved';
   const attempted = p.status === 'attempted';
   return (
-    <Link href={`/practice/${p.slug}`} className={`row-card group anim-slide-up ${solved ? '!bg-accent-soft/30' : ''}`} style={{ animationDelay: delay }}>
+    <Link href={`/practice/${p.slug}`} className={`row-card group anim-slide-up ${solved ? 'bg-accent-soft/30' : ''}`} style={{ animationDelay: delay }}>
       {solved ? (
         <span className="icon-tile icon-tile-accent"><CheckCircle2 strokeWidth={2.5} /></span>
       ) : (
@@ -189,13 +189,13 @@ function ProblemRow({ p, delay }: { p: Row; delay: string }) {
           <span className="chip"><Clock className="h-3 w-3" /> ~{p.estMinutes}m</span>
         </span>
       </span>
-      <span className="chip chip-gold shrink-0 hidden sm:inline-flex"><Zap className="h-3 w-3" /> 30 XP</span>
+      <span className={solved ? 'hidden' : 'chip chip-gold shrink-0 hidden sm:inline-flex'}><Zap className="h-3 w-3" aria-hidden="true" /> +30 XP</span>
       {solved ? (
         <span className="chip chip-success shrink-0">solved</span>
       ) : attempted ? (
         <span className="chip chip-warning shrink-0">in progress</span>
       ) : (
-        <span className="btn3d btn3d-ghost btn3d-sm !text-xs shrink-0 hidden md:inline-flex">Solve</span>
+        <span className="btn3d btn3d-ghost btn3d-sm shrink-0 hidden md:inline-flex">Solve</span>
       )}
       <ChevronRight className="h-5 w-5 shrink-0 text-faint transition-transform group-hover:translate-x-0.5 group-hover:text-accent" />
     </Link>

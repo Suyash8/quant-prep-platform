@@ -85,6 +85,8 @@ interface ServerSnapshot {
   problems?: Record<string, { status?: string }>;
   assessments?: Record<string, { bestPct?: number }>;
   drills?: { sessions?: number; totalCorrect?: number; totalAnswered?: number };
+  /** v3.1: server-recorded study minutes per day (YYYY-MM-DD), merged on hydrate */
+  minutesByDay?: Record<string, number>;
 }
 
 /* ---------------- state storage ---------------- */
@@ -246,6 +248,11 @@ function applySnapshot(snap: ServerSnapshot) {
   s.longestStreak = Math.max(s.longestStreak, snap.longestStreak ?? 0);
   if ((snap.lastStudyDate ?? '') > (s.lastStudyDate ?? '')) s.lastStudyDate = snap.lastStudyDate ?? null;
   if (snap.dailyGoalXp) s.dailyGoalXp = snap.dailyGoalXp;
+  // v3.1: study minutes are recorded server-side too, merge per day (max wins,
+  // so a day studied on another device is never undercounted)
+  for (const [day, mins] of Object.entries(snap.minutesByDay ?? {})) {
+    s.minutesByDay[day] = Math.max(s.minutesByDay[day] ?? 0, mins ?? 0);
+  }
 
   for (const [id, r] of Object.entries(snap.lessons ?? {})) {
     const cur = s.lessons[id];

@@ -14,11 +14,11 @@ export interface DueCard {
 const GRADE_BTN = 'w-full py-2.5 rounded-xl text-xs font-black hover:brightness-105 active:translate-y-[3px] active:shadow-none transition-all';
 
 const GRADES = [
-  { g: 0, label: 'Blackout', desc: 'No recall at all', cls: `bg-danger text-white shadow-[0_3px_0_0_#c93a3f] ${GRADE_BTN}` },
+  { g: 0, label: 'Blackout', desc: 'No recall at all', cls: `bg-danger text-white shadow-[0_3px_0_0_var(--danger-strong)] ${GRADE_BTN}` },
   { g: 2, label: 'Hard miss', desc: 'Wrong, but familiar', cls: `bg-warning text-white shadow-[0_3px_0_0_var(--warning-strong)] ${GRADE_BTN}` },
-  { g: 3, label: 'Recalled, hard', desc: 'Correct with effort', cls: `bg-info text-white shadow-[0_3px_0_0_#1580b8] ${GRADE_BTN}` },
+  { g: 3, label: 'Recalled, hard', desc: 'Correct with effort', cls: `bg-info text-white shadow-[0_3px_0_0_var(--info-strong)] ${GRADE_BTN}` },
   { g: 4, label: 'Recalled', desc: 'Correct with some hesitation', cls: `bg-accent text-white shadow-[0_3px_0_0_var(--accent-deep)] ${GRADE_BTN}` },
-  { g: 5, label: 'Instant', desc: 'Perfect, immediate recall', cls: `bg-gold text-[#4a3800] shadow-[0_3px_0_0_#d9ab00] ${GRADE_BTN}` },
+  { g: 5, label: 'Instant', desc: 'Perfect, immediate recall', cls: `bg-gold shadow-[0_3px_0_0_var(--warning-strong)] ${GRADE_BTN}` },
 ];
 
 export function RevisionSession({ cards }: { cards: DueCard[] }) {

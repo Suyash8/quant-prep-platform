@@ -6,6 +6,7 @@ import { PublicHeader, AppShell } from '@/components/app-shell';
 import { Lock, Circle, CircleDot, CheckCircle2, Award, Map as MapIcon, List } from 'lucide-react';
 import { CurriculumSearch } from '@/components/curriculum-search';
 import { LearningPath, resolvePhaseColor } from '@/components/gamified/learning-path';
+import { PageHero, ClosingCta, StatTile } from '@/components/ui/page-kit';
 
 export const metadata = { title: 'Curriculum. QuantFoundry' };
 
@@ -41,44 +42,60 @@ export default async function CurriculumPage({ searchParams }: { searchParams: P
 
   const body = (
     <div className="max-w-5xl mx-auto px-4 lg:px-6 py-8">
-      <header className="mb-6">
-        <h1 className="text-2xl font-black tracking-tight">The path</h1>
-        <p className="mt-2 text-muted text-sm max-w-3xl leading-relaxed font-semibold">
-          {reg.lessons.length} published lessons across {map.phases.length} phases, roughly {Math.round(totalEst / 60)} hours of core lesson time,
-          sequenced by a prerequisite graph. Every lesson is fully authored: intuition, formal treatment, interactive labs, exercises and a server-scored knowledge check.
-        </p>
-        {user && (
-          <p className="mt-3 text-sm font-bold">
-            <span className="tnum text-accent-deep dark:text-accent">{done.size}</span>
-            <span className="text-muted"> passed of </span>
-            <span className="tnum">{published.size}</span>
-            <span className="text-muted"> published · </span>
-            <Link href="/dashboard" className="text-info hover:underline">home</Link>
-          </p>
-        )}
-      </header>
+      <PageHero
+        icon={MapIcon}
+        tone="accent"
+        title="Your path"
+        sub={<>{reg.lessons.length} published lessons across {map.phases.length} phases, roughly {Math.round(totalEst / 60)} hours of core lesson time, sequenced by a prerequisite graph.</>}
+      />
+
+      {user && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+          <StatTile icon={CheckCircle2} tone="accent" value={done.size} label="Lessons passed" sub={`of ${published.size} published`} />
+          <StatTile icon={MapIcon} tone="info" value={map.phases.length} label="Phases" sub={`${map.phases.reduce((n, p) => n + p.modules.length, 0)} modules total`} />
+          <StatTile icon={List} tone="gold" value={`${Math.round(totalEst / 60)}h`} label="Core lesson time" sub="rough estimate at your pace" />
+        </div>
+      )}
 
       {/* view toggle */}
-      <div className="flex items-center gap-2 mb-6">
+      <div className="qf-segmented mb-6" role="group" aria-label="Curriculum view">
         <Link
           href="/curriculum"
-          className={`btn3d btn3d-sm ${pathView ? '' : 'btn3d-ghost'}`}
           aria-current={pathView ? 'page' : undefined}
+          aria-pressed={pathView}
+          className="inline-flex items-center gap-1.5"
         >
-          <MapIcon className="h-4 w-4" /> Path
+          <MapIcon className="h-4 w-4" aria-hidden="true" /> Path
         </Link>
         <Link
           href="/curriculum?view=list"
-          className={`btn3d btn3d-sm ${!pathView ? '' : 'btn3d-ghost'}`}
           aria-current={!pathView ? 'page' : undefined}
+          aria-pressed={!pathView}
+          className="inline-flex items-center gap-1.5"
         >
-          <List className="h-4 w-4" /> List
+          <List className="h-4 w-4" aria-hidden="true" /> List
         </Link>
       </div>
 
       {pathView ? (
-        <div className="px-2 sm:px-6">
-          <LearningPath map={map} progress={new Map(progressRows.map(r => [r.lessonId, { status: r.status }]))} currentLessonId={currentLessonId} />
+        <div>
+          {/* compact progress + phase jump strip, horizontal so no rail dead zone */}
+          <div className="qf-card-flat p-4 flex flex-wrap items-center gap-3 mb-6">
+            <span className="icon-tile-sm icon-tile-accent"><CheckCircle2 className="h-4 w-4" aria-hidden="true" /></span>
+            <span className="text-sm font-black">{done.size} / {published.size} passed</span>
+            <span className="prog-track flex-1 min-w-32 h-3"><span className="prog-fill" style={{ width: `${published.size ? Math.round((done.size / published.size) * 100) : 0}%` }} /></span>
+            <span className="chip tnum">{Math.round(totalEst / 60)}h core</span>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {map.phases.map(ph => (
+                <a key={ph.id} href={`#phase-${ph.id}`} className="chip hover:border-accent" title={ph.title}>
+                  P{ph.order}
+                </a>
+              ))}
+            </div>
+          </div>
+          <div className="px-2 sm:px-6">
+            <LearningPath map={map} progress={new Map(progressRows.map(r => [r.lessonId, { status: r.status }]))} currentLessonId={currentLessonId} rail={false} />
+          </div>
         </div>
       ) : (
         <>
@@ -176,6 +193,20 @@ export default async function CurriculumPage({ searchParams }: { searchParams: P
           </div>
         </>
       )}
+
+      <div className="mt-12">
+        <ClosingCta
+          icon={MapIcon}
+          tone="accent"
+          title={`${published.size - done.size} lessons are still ahead.`}
+          line={currentLessonId ? 'Your next one is unlocked and waiting. It takes about 20 minutes.' : 'Sign in and the path lights up with your progress.'}
+          cta={currentLessonId
+            ? <Link href={`/learn/${currentLessonId}`} className="btn3d">Jump to your next lesson</Link>
+            : <Link href="/register" className="btn3d">Start free</Link>}
+          ghost={<Link href="/dashboard" className="btn3d btn3d-ghost">Back to my dashboard</Link>}
+          pose="cheer"
+        />
+      </div>
     </div>
   );
 

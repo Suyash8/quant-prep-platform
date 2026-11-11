@@ -178,7 +178,8 @@ export function Slider({ label, value, min, max, step = 0.01, onChange, format }
       <input
         type="range" min={min} max={max} step={step} value={value}
         onChange={e => onChange(parseFloat(e.target.value))}
-        className="flex-1 accent-[var(--accent)]"
+        className="qf-range flex-1"
+        style={{ ['--fill' as string]: `${((value - min) / (max - min)) * 100}%` }}
         aria-label={label}
       />
       <span className="tnum w-14 text-right font-medium">{format ? format(value) : value.toFixed(2)}</span>

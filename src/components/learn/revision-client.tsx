@@ -15,6 +15,8 @@ import type { LucideIcon } from 'lucide-react';
 import { getLessonPack } from '@/lib/client/packs';
 import { getState, subscribe, hydrate, recordReviews, deleteCard } from '@/lib/client/local-state';
 import { RevisionSession, type DueCard } from '@/components/revision-session';
+import { Mascot } from '@/components/brand/mascot';
+import { ClosingCta } from '@/components/ui/page-kit';
 
 const TYPE_META: Record<string, { Icon: LucideIcon; tile: string; fill: string }> = {
   concept: { Icon: BookOpen, tile: 'icon-tile-accent', fill: '' },
@@ -66,6 +68,7 @@ async function resolveCards(keys: string[]): Promise<DueCard[]> {
 export function RevisionClient() {
   const [ready, setReady] = React.useState(false);
   const [dueCards, setDueCards] = React.useState<DueCard[]>([]);
+  const [upcomingTitles, setUpcomingTitles] = React.useState<Record<string, string>>({});
   const [, setTick] = React.useState(0);
 
   React.useEffect(() => {
@@ -85,6 +88,35 @@ export function RevisionClient() {
     const unsub = subscribe(() => { setTick(t => t + 1); refresh(); });
     return () => { alive = false; unsub(); };
   }, []);
+
+  // resolve human titles for the next-up list (falls back to a prettified slug)
+  React.useEffect(() => {
+    let alive = true;
+    void (async () => {
+      const s = getState();
+      const now = Date.now();
+      const keys = Object.entries(s.cards)
+        .filter(([, c]) => new Date(c.dueAt).getTime() > now)
+        .sort((a, b) => new Date(a[1].dueAt).getTime() - new Date(b[1].dueAt).getTime())
+        .slice(0, 8)
+        .map(([k]) => k);
+      const titles: Record<string, string> = {};
+      await Promise.all([...new Set(keys.map(k => k.slice(0, k.lastIndexOf(':'))))].map(async lessonId => {
+        try {
+          const lesson = await getLessonPack(lessonId);
+          titles[lessonId] = lesson.title;
+        } catch { /* keep slug fallback */ }
+      }));
+      if (alive && Object.keys(titles).length) setUpcomingTitles(titles);
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  const prettyKey = (key: string): string => {
+    const lessonId = key.slice(0, key.lastIndexOf(':'));
+    if (upcomingTitles[lessonId]) return upcomingTitles[lessonId];
+    return cap(lessonId.replace(/-/g, ' '));
+  };
 
   const s = getState();
   const allCards = Object.entries(s.cards);
@@ -158,7 +190,7 @@ export function RevisionClient() {
         </div>
       ) : (
         <div className="qf-empty anim-pop-in">
-          <span className="empty-emoji text-6xl">🎉</span>
+          <Mascot pose="sleep" size={88} />
           <p className="mt-2 text-lg font-black">Nothing due, you&apos;re all caught up!</p>
           {allCards.length === 0 && (
             <>
@@ -190,7 +222,7 @@ export function RevisionClient() {
         </div>
         <div className="stat-tile anim-pop-in flex flex-col" style={popDelay(3)}>
           <span className="icon-tile-sm icon-tile-accent"><CircleCheck /></span>
-          <div className="stat-value font-black mt-3">{retentionPct === null ? '–' : retentionPct + '%'}</div>
+          <div className="stat-value font-black mt-3">{retentionPct === null ? <span className="chip">Not enough reviews</span> : retentionPct + '%'}</div>
           <div className="stat-label mt-1">Retention</div>
         </div>
       </div>
@@ -253,7 +285,7 @@ export function RevisionClient() {
             <ul className="space-y-2">
               {upcoming.map(([key, c], i) => (
                 <li key={key} className="row-card anim-slide-up" style={slideDelay(i + 2)}>
-                  <p className="flex-1 min-w-0 text-sm font-semibold leading-snug line-clamp-2">{key.split(':').slice(0, -1).join(':').replace(/-/g, ' ')}</p>
+                  <p className="flex-1 min-w-0 text-sm font-semibold leading-snug line-clamp-2">{prettyKey(key)}</p>
                   <span className="chip shrink-0">
                     <Clock className="h-3.5 w-3.5" />
                     {formatDue(c.dueAt)}
@@ -265,6 +297,47 @@ export function RevisionClient() {
           )}
         </section>
       </div>
+
+      {/* how spaced repetition works */}
+      <section className="mt-8 qf-card-flat p-5 anim-slide-up">
+        <div className="section-head">
+          <span className="icon-tile-sm icon-tile-info"><Repeat /></span>
+          <h2>How spaced repetition works</h2>
+        </div>
+        <p className="text-sm font-semibold text-muted max-w-2xl">
+          Every card you grade honestly moves on the SM-2 schedule: easy cards come back later, shaky ones come back tomorrow.
+        </p>
+        <div className="mt-4 flex items-center gap-3 overflow-x-auto thin-scroll pb-1" aria-hidden="true">
+          {[
+            { label: 'Today', tone: 'bg-danger' },
+            { label: 'Tomorrow', tone: 'bg-warning' },
+            { label: 'In 6 days', tone: 'bg-info' },
+            { label: 'In 16 days', tone: 'bg-accent' },
+            { label: 'In 43 days', tone: 'bg-violet' },
+            { label: 'Later, x ease', tone: 'bg-accent-deep' },
+          ].map((step, i) => (
+            <React.Fragment key={step.label}>
+              <div className="qf-card-flat bg-surface px-4 py-3 text-center shrink-0">
+                <span className={`mx-auto block h-3.5 w-3.5 rounded-full ${step.tone}`} />
+                <span className="mt-1.5 block text-xs font-black whitespace-nowrap">{step.label}</span>
+              </div>
+              {i < 5 && <span className="h-1 w-6 rounded-full bg-surface-3 shrink-0" />}
+            </React.Fragment>
+          ))}
+        </div>
+      </section>
+
+      <section className="mt-8">
+        <ClosingCta
+          icon={Repeat}
+          tone="violet"
+          title={dueCount > 0 ? `${dueCount} cards want 5 minutes.` : 'Your memory is fully booked for today.'}
+          line={dueCount > 0 ? 'A short honest pass now saves a long painful relearn next month.' : 'The scheduler will tell you when the next batch is ready. Go earn some new cards instead.'}
+          cta={dueCount > 0 ? <Link href="#review" className="btn3d">Start review now</Link> : <Link href="/learn" className="btn3d">Learn something new</Link>}
+          ghost={<Link href="/analytics" className="btn3d btn3d-ghost">See review analytics</Link>}
+          pose={dueCount > 0 ? 'wave' : 'sleep'}
+        />
+      </section>
 
       <p className="mt-6 text-xs text-faint flex items-center gap-1.5 font-semibold">
         <Lightbulb className="h-3.5 w-3.5" />

@@ -2,12 +2,19 @@
 # v3 smoke test: start standalone server, exercise key routes, kill server.
 # Everything runs in one invocation because the sandbox recycles background
 # processes between commands.
+# v3.1: portable, resolves ROOT relative to this script and only uses the
+# author-machine fence/pgdist paths when they actually exist.
 set -u
-export LD_PRELOAD=/home/z/my-project/scripts/qf-fence.so
-export LD_LIBRARY_PATH="/home/z/my-project/pgdist/pg/lib"
-export DATABASE_URL="postgresql://qf:qf@localhost:5433/quantfoundry?schema=public"
-export SESSION_SECRET="test-secret-for-smoke-run"
-cd /home/z/my-project/.next/standalone
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+if [ -f /home/z/my-project/scripts/qf-fence.so ]; then
+  export LD_PRELOAD=/home/z/my-project/scripts/qf-fence.so
+fi
+if [ -d /home/z/my-project/pgdist/pg/lib ]; then
+  export LD_LIBRARY_PATH="/home/z/my-project/pgdist/pg/lib"
+fi
+export DATABASE_URL="${DATABASE_URL:-postgresql://qf:qf@localhost:5433/quantfoundry?schema=public}"
+export SESSION_SECRET="${SESSION_SECRET:-test-secret-for-smoke-run}"
+cd "$ROOT/.next/standalone"
 
 PORT=3004
 setsid nohup env PORT=$PORT node server.js > /tmp/smoke-server.log 2>&1 < /dev/null &

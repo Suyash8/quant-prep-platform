@@ -4,7 +4,7 @@ import * as React from 'react';
 import Link from 'next/link';
 import {
   CalendarClock, CalendarDays, Clock, Coffee, Gauge, Info, RefreshCw, Route,
-  SlidersHorizontal, Sparkles, Sun, BookOpen, Zap,
+  SlidersHorizontal, Sparkles, Sun, BookOpen, Zap, LifeBuoy, Download, Printer,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -89,9 +89,9 @@ export function Planner({ initialPlan }: { initialPlan: Plan | null }) {
   ] : [];
 
   return (
-    <div className="grid lg:grid-cols-[320px_1fr] gap-6">
+    <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-6">
       {/* constraints form */}
-      <div className="qf-card p-6 h-fit anim-slide-up">
+      <div className="qf-card p-6 h-fit anim-slide-up min-w-0">
         <div className="section-head">
           <span className="icon-tile icon-tile-sm icon-tile-info"><SlidersHorizontal /></span>
           <h2>Your constraints</h2>
@@ -157,7 +157,7 @@ export function Planner({ initialPlan }: { initialPlan: Plan | null }) {
       </div>
 
       {/* plan output */}
-      <div>
+      <div className="min-w-0">
         {plan ? (
           <div className="space-y-4">
             <div className="flex items-center gap-3 flex-wrap">
@@ -190,7 +190,7 @@ export function Planner({ initialPlan }: { initialPlan: Plan | null }) {
               </div>
             </div>
 
-            <div className="space-y-4 max-h-[640px] overflow-y-auto thin-scroll pr-1">
+            <div className="space-y-4">
               {[...byWeek.entries()].map(([week, tasks]) => {
                 const weekMinutes = tasks.reduce((n, t) => n + t.minutes, 0);
                 return (
@@ -239,6 +239,33 @@ export function Planner({ initialPlan }: { initialPlan: Plan | null }) {
                   </div>
                 );
               })}
+            </div>
+
+            {/* if you fall behind + export */}
+            <div className="grid sm:grid-cols-2 gap-4 mt-2">
+              <div className="qf-card-flat p-5">
+                <div className="section-head">
+                  <span className="icon-tile-sm icon-tile-warning"><LifeBuoy /></span>
+                  <h2>If you fall behind</h2>
+                </div>
+                <ul className="space-y-2 text-sm font-semibold text-muted">
+                  <li className="flex gap-2"><span className="chip chip-warning shrink-0">1</span> Miss a day, do not double the next one. The plan rebalances when you regenerate.</li>
+                  <li className="flex gap-2"><span className="chip chip-warning shrink-0">2</span> Short on time, do the revision queue first. Keeping old material alive is cheaper than relearning.</li>
+                  <li className="flex gap-2"><span className="chip chip-warning shrink-0">3</span> Two weeks behind, drop to a lighter pace. Consistency beats intensity.</li>
+                </ul>
+              </div>
+              <div className="qf-card-flat p-5">
+                <div className="section-head">
+                  <span className="icon-tile-sm icon-tile-info"><Download /></span>
+                  <h2>Plan export</h2>
+                </div>
+                <p className="text-sm font-semibold text-muted leading-relaxed">
+                  This plan lives in your browser and syncs to your account. Print this page for a paper copy, or reopen the planner any time to regenerate it after life happens.
+                </p>
+                <button type="button" onClick={() => window.print()} className="btn3d btn3d-ghost btn3d-sm mt-4">
+                  <Printer className="h-3.5 w-3.5" aria-hidden="true" /> Print this plan
+                </button>
+              </div>
             </div>
           </div>
         ) : (

@@ -103,7 +103,7 @@ Rules: every question needs an `explanation`. `code-output` answers are compared
 
 I/O contract: program reads `input` on stdin, prints expected output on stdout.
 Compare: split lines, trim trailing whitespace on each line, ignore trailing blank lines.
-All test inputs are static strings. 8–15 tests per problem including edge cases.
+All test inputs are static strings. 8 to 15 tests per problem including edge cases.
 
 ## Assessment files (`content/assessments/`)
 

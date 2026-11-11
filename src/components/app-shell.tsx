@@ -125,6 +125,12 @@ export function AppShell({ user, children, isAdmin }: { user: { name: string; em
 
   return (
     <div className="min-h-screen flex flex-col">
+      <a
+        href="#content"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 btn3d btn3d-sm"
+      >
+        Skip to content
+      </a>
       {/* Top bar */}
       <header className="sticky top-0 z-40 border-b-2 border-border bg-surface/95 backdrop-blur supports-[backdrop-filter]:bg-surface/90">
         <div className="max-w-6xl mx-auto flex h-16 items-center gap-3 px-4 lg:px-6">
@@ -150,11 +156,12 @@ export function AppShell({ user, children, isAdmin }: { user: { name: string; em
             ))}
           </nav>
 
-          {/* HUD: streak + XP + offline */}
-          <div className="ml-auto flex items-center gap-2">
+          {/* HUD: streak + XP + offline. The pills live in a wrapper so the
+              sm/md hidden utilities actually win over .hud-pill's own display. */}
+          <div className="ml-auto flex items-center gap-1.5 sm:gap-2 min-w-0">
             <OfflinePill />
             {hud && (
-              <>
+              <span className="hidden sm:flex items-center gap-1.5">
                 <span className="hud-pill press anim-pop-in" title="Day streak, earn any XP daily to keep it alive">
                   <Flame className={cn('h-4 w-4 text-flame', hud.streakCount > 0 && 'anim-flame')} />
                   <span className="tnum">{hud.streakCount}</span>
@@ -163,24 +170,26 @@ export function AppShell({ user, children, isAdmin }: { user: { name: string; em
                   <Zap className="h-4 w-4 text-warning" />
                   <span className="tnum">{hud.xp.toLocaleString()}</span>
                 </span>
-                <span className="hidden md:inline-flex items-center gap-1.5 hud-pill" title="Today's goal">
-                  <span className="relative h-2.5 w-14 gauge-track">
-                    <span
-                      className={cn('absolute inset-y-0 left-0 gauge-fill', hud.todayXp >= hud.dailyGoalXp ? 'bg-accent xp-stripes' : 'bg-info')}
-                      style={{ width: `${Math.min(100, (hud.todayXp / Math.max(hud.dailyGoalXp, 1)) * 100)}%` }}
-                    />
+                <span className="hidden md:inline-flex items-center gap-1.5">
+                  <span className="hud-pill" title="Today's goal">
+                    <span className="relative h-2.5 w-14 gauge-track">
+                      <span
+                        className={cn('absolute inset-y-0 left-0 gauge-fill', hud.todayXp >= hud.dailyGoalXp ? 'bg-accent xp-stripes' : 'bg-info')}
+                        style={{ width: `${Math.min(100, (hud.todayXp / Math.max(hud.dailyGoalXp, 1)) * 100)}%` }}
+                      />
+                    </span>
+                    <span className="tnum text-[11px] text-muted">{Math.min(hud.todayXp, hud.dailyGoalXp)}/{hud.dailyGoalXp}</span>
                   </span>
-                  <span className="tnum text-[11px] text-muted">{Math.min(hud.todayXp, hud.dailyGoalXp)}/{hud.dailyGoalXp}</span>
                 </span>
-              </>
+              </span>
             )}
             <button
               onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
               className="press h-10 w-10 inline-flex items-center justify-center rounded-xl border-2 border-border hover:bg-surface-2"
               aria-label="Toggle theme"
             >
-              <Sun className="h-4.5 w-4.5 dark:hidden" />
-              <Moon className="h-4.5 w-4.5 hidden dark:block" />
+              <Sun className="h-4.5 w-4.5 dark:hidden" aria-hidden="true" />
+              <Moon className="h-4.5 w-4.5 hidden dark:block" aria-hidden="true" />
             </button>
             <Link href="/settings" className="press flex items-center gap-2 px-1.5 py-1 rounded-xl hover:bg-surface-2" title="Profile & settings">
               <span className="h-9 w-9 rounded-2xl bg-accent text-white text-sm font-black flex items-center justify-center shadow-[0_3px_0_0_var(--accent-deep)]">
@@ -191,16 +200,52 @@ export function AppShell({ user, children, isAdmin }: { user: { name: string; em
         </div>
       </header>
 
-      <main className="flex-1 w-full pb-24 lg:pb-0">{children}</main>
+      <main id="content" className="flex-1 w-full pb-24 lg:pb-0">{children}</main>
 
-      <footer className="hidden lg:block border-t-2 border-border bg-surface mt-auto">
-        <div className="max-w-6xl mx-auto px-4 lg:px-6 py-4 flex flex-wrap items-center justify-between gap-2 text-xs font-semibold text-faint">
-          <span>QuantFoundry, an honest preparation pathway for quantitative engineering.</span>
-          <span className="flex items-center gap-3">
-            {isAdmin && <Link href="/admin" className="hover:text-muted flex items-center gap-1"><ShieldCheck className="h-3 w-3" />Admin</Link>}
-            <Link href="/methodology" className="hover:text-muted">Methodology</Link>
-            <Link href="/about" className="hover:text-muted">About</Link>
-          </span>
+      {/* Rich desktop footer: brand block + three link groups */}
+      <footer className="hidden lg:block bg-surface mt-auto border-t-2 border-border">
+        <div className="max-w-6xl mx-auto px-4 lg:px-6 qf-footer">
+          <div>
+            <Link href="/dashboard" className="press text-foreground mb-2">
+              <span className="flex items-center gap-2.5 font-black tracking-tight text-lg">
+                <span className="h-9 w-9 rounded-2xl bg-accent shadow-[0_3px_0_0_var(--accent-deep)] flex items-center justify-center">
+                  <Sigma className="h-5 w-5 text-white" aria-hidden />
+                </span>
+                QuantFoundry
+              </span>
+            </Link>
+            <p className="text-sm font-semibold text-muted max-w-xs mb-3">
+              An honest preparation pathway for quantitative engineering. Study daily, get scored, keep the streak.
+            </p>
+            <div className="flex items-center gap-2">
+              <span className="chip chip-accent"><CloudOff className="h-3 w-3" aria-hidden /> Works offline</span>
+              <span className="chip">v3.1</span>
+            </div>
+          </div>
+          <nav aria-label="Learn links">
+            <h3>Learn</h3>
+            <Link href="/dashboard">Home</Link>
+            <Link href="/curriculum">Your path</Link>
+            <Link href="/lab">Labs</Link>
+            <Link href="/revision">Revision</Link>
+            <Link href="/drills">Mental drills</Link>
+          </nav>
+          <nav aria-label="Practice links">
+            <h3>Practice</h3>
+            <Link href="/practice">Code problems</Link>
+            <Link href="/assessments">Assessments</Link>
+            <Link href="/projects">Projects</Link>
+            <Link href="/diagnostic">Diagnostic</Link>
+          </nav>
+          <nav aria-label="Product links">
+            <h3>Product</h3>
+            <Link href="/analytics">Analytics</Link>
+            <Link href="/planner">Study planner</Link>
+            <Link href="/methodology">Methodology</Link>
+            <Link href="/about">About</Link>
+            <Link href="/settings">Settings</Link>
+            {isAdmin && <Link href="/admin"><span className="flex items-center gap-1"><ShieldCheck className="h-3 w-3" aria-hidden />Admin</span></Link>}
+          </nav>
         </div>
       </footer>
 
@@ -220,7 +265,7 @@ export function AppShell({ user, children, isAdmin }: { user: { name: string; em
               >
                 {active && <span className="absolute top-0 h-1 w-8 rounded-full bg-accent" />}
                 <tab.icon className={cn('h-6 w-6', active && 'anim-bob')} />
-                <span className="text-[10px] font-extrabold">{tab.label}</span>
+                <span className="text-xs font-extrabold">{tab.label}</span>
               </Link>
             );
           })}

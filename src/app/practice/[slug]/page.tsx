@@ -2,15 +2,16 @@ import { notFound, redirect } from 'next/navigation';
 import Link from 'next/link';
 import { getCurrentUser } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { getProblem } from '@/lib/content';
+import { getProblem, listProblems } from '@/lib/content';
 import { AppShell } from '@/components/app-shell';
 import { BlockRenderer } from '@/components/lesson-blocks';
 import { CodeWorkspace } from '@/components/code-workspace';
 import { ProblemExamples } from '@/components/problem-examples';
 import { QMath } from '@/components/quiz';
+import { ClosingCta } from '@/components/ui/page-kit';
 import {
-  ArrowLeft, CheckCircle2, Clock, FileText, GraduationCap, Info,
-  Lightbulb, ListChecks, SlidersHorizontal,
+  ArrowLeft, CheckCircle2, Clock, FileText, GraduationCap, Info, Code2,
+  Lightbulb, ListChecks, SlidersHorizontal, Zap, ChevronRight,
 } from 'lucide-react';
 
 export default async function ProblemPage({ params }: { params: Promise<{ slug: string }> }) {
@@ -44,27 +45,37 @@ export default async function ProblemPage({ params }: { params: Promise<{ slug: 
 
   const difficultyChip = problem.difficulty === 'easy' ? 'chip chip-success' : problem.difficulty === 'medium' ? 'chip chip-warning' : 'chip chip-danger';
 
+  // real related problems, same category, not this one
+  const related = listProblems().filter(p => p.category === problem.category && p.slug !== slug).slice(0, 3);
+
   return (
     <AppShell user={{ name: user.name, email: user.email, role: user.role }} isAdmin={user.role === 'admin'}>
       <div className="max-w-6xl mx-auto">
         <div className="p-4 sm:p-5 lg:p-6 space-y-5">
+            {/* header row: back, title, chips */}
+            <header className="page-hero">
+              <span className="icon-tile icon-tile-info"><Code2 strokeWidth={2.5} aria-hidden="true" /></span>
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-faint mb-0.5">
+                  <Link href="/practice" className="hover:text-muted inline-flex items-center gap-1"><ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" /> All problems</Link>
+                  <span aria-hidden="true">·</span>
+                  <span className="capitalize">{problem.category.replace(/-/g, ' ')}</span>
+                </div>
+                <h1>{problem.title}</h1>
+              </div>
+              <div className="hidden sm:flex items-center gap-2 ml-auto shrink-0">
+                <span className={difficultyChip}>{problem.difficulty}</span>
+                <span className="chip"><Clock className="h-3 w-3" aria-hidden="true" /> ~{problem.estMinutes}m</span>
+                <span className="chip chip-gold"><Zap className="h-3 w-3" aria-hidden="true" /> +30 XP</span>
+                {solved && <span className="chip chip-success"><CheckCircle2 className="h-3 w-3" aria-hidden="true" /> solved</span>}
+              </div>
+            </header>
             {/* Statement panel */}
             <section className="qf-card p-5 sm:p-6">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className={difficultyChip}>{problem.difficulty}</span>
-                <span className="chip">{problem.category.replace(/-/g, ' ')}</span>
-                <span className="chip"><Clock className="h-3 w-3" /> ~{problem.estMinutes}m</span>
-                {solved && (
-                  <span className="chip chip-success">
-                    <CheckCircle2 className="h-3 w-3" /> solved
-                  </span>
-                )}
-              </div>
-              <h1 className="mt-3 text-2xl font-black tracking-tight">{problem.title}</h1>
-
-              <div className="section-head mt-5">
-                <span className="icon-tile-sm icon-tile-info"><FileText strokeWidth={2.5} /></span>
+              <div className="section-head">
+                <span className="icon-tile-sm icon-tile-info"><FileText strokeWidth={2.5} aria-hidden="true" /></span>
                 <h2>Statement</h2>
+                <span className="chip tnum ml-auto">{problem.tests.length} tests, {visibleTestCount} visible</span>
               </div>
               <article>
                 {problem.statement.map((b, i) => <BlockRenderer key={i} block={b} />)}
@@ -103,31 +114,32 @@ export default async function ProblemPage({ params }: { params: Promise<{ slug: 
               <ProblemExamples examples={problem.examples} />
             </section>
 
-            {/* Hints */}
-            <details className="qf-card-flat overflow-hidden">
-              <summary className="flex cursor-pointer select-none items-center gap-2.5 px-4 py-3">
-                <span className="icon-tile-sm icon-tile-gold"><Lightbulb strokeWidth={2.5} /></span>
-                <span className="text-sm font-extrabold">Hints</span>
-                <span className="chip tnum ml-auto">{problem.hints.length}</span>
-              </summary>
-              <ul className="space-y-2.5 px-4 pb-4 pt-1 text-sm">
-                {problem.hints.map((h, i) => (
-                  <li key={i} className="rounded-xl border-2 border-border bg-surface-2 p-3 text-muted"><QMath text={h} /></li>
-                ))}
-              </ul>
-            </details>
+            {/* hints + editorial, side by side so collapsed shells stay compact */}
+            <div className="grid sm:grid-cols-2 gap-4">
+              <details className="qf-card-flat overflow-hidden">
+                <summary className="flex cursor-pointer select-none items-center gap-2.5 px-4 py-3 hover:bg-surface-2/60 transition-colors">
+                  <span className="icon-tile-sm icon-tile-gold"><Lightbulb strokeWidth={2.5} aria-hidden="true" /></span>
+                  <span className="text-sm font-extrabold">Hints</span>
+                  <span className="chip tnum ml-auto">{problem.hints.length}</span>
+                </summary>
+                <ul className="space-y-2.5 px-4 pb-4 pt-1 text-sm">
+                  {problem.hints.map((h, i) => (
+                    <li key={i} className="qf-callout qf-callout-warn"><QMath text={h} /></li>
+                  ))}
+                </ul>
+              </details>
 
-            {/* Editorial */}
-            <details className="qf-card-flat overflow-hidden">
-              <summary className="flex cursor-pointer select-none items-center gap-2.5 px-4 py-3">
-                <span className="icon-tile-sm icon-tile-violet"><GraduationCap strokeWidth={2.5} /></span>
-                <span className="text-sm font-extrabold">Editorial</span>
-                <span className="ml-auto hidden text-xs font-semibold text-faint sm:inline">work the problem yourself first</span>
-              </summary>
-              <div className="px-4 pb-2">
-                {problem.editorial.map((b, i) => <BlockRenderer key={i} block={b} />)}
-              </div>
-            </details>
+              <details className="qf-card-flat overflow-hidden">
+                <summary className="flex cursor-pointer select-none items-center gap-2.5 px-4 py-3 hover:bg-surface-2/60 transition-colors">
+                  <span className="icon-tile-sm icon-tile-violet"><GraduationCap strokeWidth={2.5} aria-hidden="true" /></span>
+                  <span className="text-sm font-extrabold">Editorial</span>
+                  <span className="ml-auto hidden text-xs font-semibold text-faint sm:inline">try it yourself first</span>
+                </summary>
+                <div className="px-4 pb-2">
+                  {problem.editorial.map((b, i) => <BlockRenderer key={i} block={b} />)}
+                </div>
+              </details>
+            </div>
 
             {/* Submissions */}
             {attempts.length > 0 && (
@@ -148,11 +160,42 @@ export default async function ProblemPage({ params }: { params: Promise<{ slug: 
               </section>
             )}
 
-            <div className="pb-1">
-              <Link href="/practice" className="btn3d btn3d-ghost btn3d-sm">
-                <ArrowLeft className="h-4 w-4" /> All problems
-              </Link>
-            </div>
+            {/* related problems + stuck CTA */}
+            {related.length > 0 && (
+              <section>
+                <div className="section-head">
+                  <span className="icon-tile-sm icon-tile-info"><ListChecks strokeWidth={2.5} aria-hidden="true" /></span>
+                  <h2>Related problems</h2>
+                  <span className="chip tnum ml-auto">same category</span>
+                </div>
+                <div className="space-y-2.5">
+                  {related.map(r => (
+                    <Link key={r.slug} href={`/practice/${r.slug}`} className="row-card group">
+                      <span className="icon-tile-sm icon-tile-info"><Code2 className="h-4 w-4" aria-hidden="true" /></span>
+                      <span className="flex-1 min-w-0">
+                        <span className="block text-sm font-bold truncate group-hover:text-accent-deep dark:group-hover:text-accent">{r.title}</span>
+                        <span className="mt-0.5 flex items-center gap-1.5">
+                          <span className={`chip ${r.difficulty === 'easy' ? 'chip-success' : r.difficulty === 'medium' ? 'chip-warning' : 'chip-danger'}`}>{r.difficulty}</span>
+                          <span className="chip tnum"><Clock className="h-3 w-3" aria-hidden="true" /> ~{r.estMinutes}m</span>
+                        </span>
+                      </span>
+                      <ChevronRight className="h-5 w-5 shrink-0 text-faint group-hover:text-accent" aria-hidden="true" />
+                    </Link>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            <ClosingCta
+              icon={Lightbulb}
+              tone="warning"
+              title="Stuck? The lesson teaches this."
+              line="Every problem maps to lessons in the curriculum. Fifteen minutes of reading beats an hour of guessing."
+              cta={<Link href="/learn" className="btn3d">Find the matching lesson</Link>}
+              ghost={<Link href="/practice" className="btn3d btn3d-ghost">Back to all problems</Link>}
+              pose="think"
+              className="mb-2"
+            />
           </div>
 
         {/* workspace, full width below the statement, nothing clipped */}

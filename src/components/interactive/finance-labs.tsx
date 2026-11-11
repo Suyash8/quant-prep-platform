@@ -301,8 +301,8 @@ export function BinomialTreeLab({ params }: { params: Record<string, unknown> })
                   </>
                 )}
                 <circle cx={x} cy={y} r={17} fill={i === 0 ? ACCENT : 'var(--surface)'} stroke={ACCENT} />
-                <text x={x} y={y - 2} textAnchor="middle" fontSize="7.5" fill={i === 0 ? '#fff' : INK}>{fmt(node.s, 0)}</text>
-                <text x={x} y={y + 8} textAnchor="middle" fontSize="7" fill={i === 0 ? '#fff' : MUTED}>{fmt(node.v, 1)}</text>
+                <text x={x} y={y - 2} textAnchor="middle" fontSize="7.5" fill={i === 0 ? 'white' : INK}>{fmt(node.s, 0)}</text>
+                <text x={x} y={y + 8} textAnchor="middle" fontSize="7" fill={i === 0 ? 'white' : MUTED}>{fmt(node.v, 1)}</text>
               </g>
             );
           })

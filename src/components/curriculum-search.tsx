@@ -31,8 +31,9 @@ export function CurriculumSearch({ lessons }: { lessons: SearchRow[] }) {
           <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-faint" />
           <input
             value={q} onChange={e => setQ(e.target.value)}
-            placeholder="Search lessons, modules, phases… (e.g. eigenvalue, order book, virtual destructor)"
-            className="qf-input h-10 py-0 pl-9 pr-8 text-sm"
+            placeholder="Search lessons, modules, phases, e.g. eigenvalue, order book, virtual destructor"
+            className="qf-input h-10 text-sm"
+            style={{ paddingLeft: '2.25rem', paddingRight: '2.25rem' }}
             aria-label="Search curriculum"
           />
           {q && (

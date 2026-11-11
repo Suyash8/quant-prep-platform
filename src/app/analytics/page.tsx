@@ -12,21 +12,17 @@ import { AppShell } from '@/components/app-shell';
 
 export const metadata = { title: 'Analytics. QuantFoundry' };
 
-const WEEKDAY_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 const SKILL_ICONS: LucideIcon[] = [Sigma, Percent, Divide, Pi, Variable, InfinityIcon, Braces, Equal];
 const SKILL_TILES = ['icon-tile-accent', 'icon-tile-info', 'icon-tile-violet', 'icon-tile-warning', 'icon-tile-gold'];
 
 const popDelay = (i: number) => ({ animationDelay: i * 60 + 'ms' });
 const slideDelay = (i: number) => ({ animationDelay: i * 90 + 'ms' });
 
-function weekdayLetter(day: string): string {
-  const d = new Date(day + 'T00:00:00Z');
-  return WEEKDAY_LETTERS[d.getUTCDay()] ?? '';
-}
-
-export default async function AnalyticsPage() {
+export default async function AnalyticsPage({ searchParams }: { searchParams: Promise<{ period?: string }> }) {
   const user = await getCurrentUser();
   if (!user) redirect('/login?next=/analytics');
+  const sp = await searchParams;
+  const periodDays = sp.period === 'all' ? 90 : sp.period === '30' ? 30 : sp.period === '7' ? 7 : 14;
 
   const graph = getCurriculumGraph();
   const reg = getRegistry();
@@ -41,11 +37,11 @@ export default async function AnalyticsPage() {
     db.cardState.findMany({ where: { userId: user.id } }),
   ]);
 
-  // ---- study hours per day (last 14 days) ----
+  // ---- study hours per day (selected period) ----
 
 
   const days: { day: string; minutes: number }[] = [];
-  for (let i = 13; i >= 0; i--) {
+  for (let i = periodDays - 1; i >= 0; i--) {
     const d = new Date(Date.now() - i * 86400_000).toISOString().slice(0, 10);
     const mins = Math.round(sessions.filter(s => s.day === d).reduce((n, s) => n + s.seconds, 0) / 60);
     days.push({ day: d, minutes: mins });
@@ -54,7 +50,7 @@ export default async function AnalyticsPage() {
   const hasStudyData = days.some(d => d.minutes > 0);
   const bestMinutes = days.reduce((m, d) => Math.max(m, d.minutes), 0);
 
-  // day streak from the 14-day window (today, with yesterday grace)
+  // day streak from the visible window (today, with yesterday grace)
 
 
   const minsByDay = new Map(days.map(d => [d.day, d.minutes]));
@@ -133,10 +129,11 @@ export default async function AnalyticsPage() {
   if (bottlenecks.length === 0) bottlenecks.push('No bottlenecks detected from your data so far, keep the streak going.');
 
   const totalMinutes = Math.round(sessions.reduce((n, s) => n + s.seconds, 0) / 60);
+  const passedCount = progressRows.filter(p => ['passed', 'mastered'].includes(p.status)).length;
   const studyTimeValue = Math.floor(totalMinutes / 60) + 'h ' + (totalMinutes % 60) + 'm';
   const lessonsValue =
-    progressRows.filter(p => p.status === 'passed').length + ' / ' + progressRows.filter(p => p.status === 'mastered').length;
-  const drillPctValue = drillStats.total ? Math.round((drillStats.correct / drillStats.total) * 100) + '%' : ', ';
+    progressRows.filter(p => p.status === 'passed').length + ' · ' + progressRows.filter(p => p.status === 'mastered').length;
+  const drillPctValue = drillStats.total ? Math.round((drillStats.correct / drillStats.total) * 100) + '%' : 'n/a';
   const drillMsChip = drillStats.n ? Math.round(drillStats.ms / drillStats.n) + 'ms avg' : null;
 
   const tiles: { icon: LucideIcon; tile: string; value: string; label: string; valueCls?: string; chip?: string | null; chipCls?: string }[] = [
@@ -144,8 +141,8 @@ export default async function AnalyticsPage() {
     { icon: BookOpenCheck, tile: 'icon-tile-info', value: lessonsValue, label: 'Lessons passed / mastered', chip: 'across all phases', chipCls: 'chip' },
     { icon: Code2, tile: 'icon-tile-violet', value: String(uniqueSolved), label: 'Problems solved', chip: accepted + '/' + submissions + ' accepted', chipCls: 'chip chip-info tnum' },
     { icon: Zap, tile: 'icon-tile-warning', value: drillPctValue, label: 'Drill accuracy', chip: drillMsChip ?? 'no drills yet', chipCls: 'chip chip-warning tnum' },
-    { icon: Flame, tile: 'icon-tile-gold', value: String(streakDays), label: 'Day streak (14d)', valueCls: 'text-gold', chip: 'keep it alive', chipCls: 'chip chip-gold' },
-    { icon: Trophy, tile: 'icon-tile-gold', value: bestMinutes + 'm', label: 'Best day (14d)', valueCls: 'text-gold', chip: 'beat it today', chipCls: 'chip chip-gold' },
+    { icon: Flame, tile: 'icon-tile-gold', value: String(streakDays), label: 'Day streak', valueCls: 'text-gold', chip: 'keep it alive', chipCls: 'chip chip-gold' },
+    { icon: Trophy, tile: 'icon-tile-gold', value: bestMinutes + 'm', label: 'Best day', valueCls: 'text-gold', chip: 'beat it today', chipCls: 'chip chip-gold' },
   ];
 
   return (
@@ -157,7 +154,7 @@ export default async function AnalyticsPage() {
           </span>
           <div>
             <h1>Analytics</h1>
-            <p className="page-sub">Your learning data at a glance</p>
+            <p className="page-sub">{totalMinutes} minutes studied, {passedCount} lessons passed, every number computed from your real activity</p>
           </div>
           <span className="chip chip-info ml-auto hidden sm:inline-flex">no vanity metrics</span>
         </header>
@@ -172,7 +169,7 @@ export default async function AnalyticsPage() {
                 <span className={'icon-tile-sm ' + t.tile}>
                   <Icon />
                 </span>
-                <div className={valueCls + ' mt-3 !text-xl whitespace-nowrap'}>{t.value}</div>
+                <div className={valueCls + ' mt-3 text-xl whitespace-nowrap'}>{t.value}</div>
                 <div className="stat-label mt-1">{t.label}</div>
                 {t.chip ? <span className={(t.chipCls ?? 'chip') + ' mt-2 self-start whitespace-nowrap'}>{t.chip}</span> : null}
               </div>
@@ -180,33 +177,38 @@ export default async function AnalyticsPage() {
           })}
         </div>
 
-        {/* study time bar chart */}
+        {/* study time bar chart with period selector */}
         <section className="mt-8 qf-card p-5 anim-slide-up" style={slideDelay(0)}>
           <div className="section-head">
             <span className="icon-tile-sm icon-tile-info">
               <History />
             </span>
-            <h2>Study time, last 14 days</h2>
-            <span className="chip chip-accent tnum ml-auto">total {totalMinutes}m</span>
+            <h2>Study time per day</h2>
+            <div className="ml-auto qf-segmented" role="group" aria-label="Period">
+              <Link href="/analytics?period=7" aria-pressed={periodDays === 7} className="inline-flex items-center gap-1">7d</Link>
+              <Link href="/analytics" aria-pressed={periodDays === 14} className="inline-flex items-center gap-1">14d</Link>
+              <Link href="/analytics?period=30" aria-pressed={periodDays === 30} className="inline-flex items-center gap-1">30d</Link>
+              <Link href="/analytics?period=all" aria-pressed={periodDays === 90} className="inline-flex items-center gap-1">All</Link>
+            </div>
           </div>
+          <span className="chip chip-accent tnum">total {totalMinutes}m</span>
           {hasStudyData ? (
-            <div className="flex items-end gap-1.5 h-44">
+            <div className="mt-3 flex items-end gap-1.5 h-44 border-b-2 border-border pb-2">
               {days.map(d => {
                 const pct = (d.minutes / maxMinutes) * 100;
                 const barCls =
                   d.minutes > 0
-                    ? 'w-full rounded-t-lg rounded-b-md bg-accent hover:brightness-110 hover:scale-x-110 transition-all'
-                    : '';
+                    ? 'w-full rounded-t-lg bg-accent hover:brightness-110 transition-all'
+                    : 'h-2.5 w-2.5 rounded-full border-2 border-border-strong bg-surface-3';
                 const barTitle = d.day + ': ' + d.minutes + ' min';
                 return (
-                  <div key={d.day} className="flex-1 h-full flex flex-col items-center gap-1 min-w-0" title={barTitle}>
-                    {d.minutes > 0 && <span className="text-[9px] font-black tnum leading-none text-muted">{d.minutes}m</span>}
+                  <div key={d.day} className="flex-1 h-full flex flex-col justify-end items-center gap-1 min-w-0" title={barTitle}>
+                    <span className="text-xs font-black tnum leading-none text-muted">{d.minutes > 0 ? d.minutes + 'm' : ''}</span>
                     <div className="w-full flex-1 flex items-end justify-center">
                       {d.minutes > 0
                         ? <div className={barCls} style={{ height: Math.max(6, pct) + '%' }} />
-                        : <div className="h-2.5 w-2.5 rounded-full border-2 border-border-strong bg-surface-3 mb-0.5" aria-label="rest day" />}
+                        : <div className={barCls} aria-label="rest day" />}
                     </div>
-                    <span className="text-[10px] font-bold text-faint leading-none">{weekdayLetter(d.day)}</span>
                   </div>
                 );
               })}
@@ -221,6 +223,11 @@ export default async function AnalyticsPage() {
               </Link>
             </div>
           )}
+          <p className="mt-3 text-sm font-semibold text-muted">
+            {hasStudyData
+              ? `A ${bestMinutes} minute day is your best in this window. Bars with no height were rest days.`
+              : 'One 6-minute lesson puts the first bar on this chart.'}
+          </p>
         </section>
 
         {/* skills */}
@@ -278,15 +285,14 @@ export default async function AnalyticsPage() {
                       </span>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-bold capitalize truncate">{name}</p>
-                        {v.passed > 0 ? (
-                          <div className="mt-1 h-2 rounded-full bg-surface-3 overflow-hidden">
-                            <div className="h-full rounded-full bg-warning" style={{ width: `${pct}%` }} />
+                        <div className="mt-1 flex items-center gap-2">
+                          <div className="prog-track h-2 flex-1">
+                            <div className="prog-fill prog-fill-gold" style={{ width: `${Math.max(pct, 3)}%` }} />
                           </div>
-                        ) : (
-                          <p className="mt-1 text-[11px] font-black uppercase tracking-wider text-faint">not started yet</p>
-                        )}
+                          {v.passed === 0 && <span className="chip shrink-0">not started</span>}
+                        </div>
                       </div>
-                      <span className="text-xs font-black text-faint tnum shrink-0">{v.passed}/{v.total}</span>
+                      <span className="chip tnum shrink-0">{v.passed}/{v.total}</span>
                     </li>
                   );
                 })}

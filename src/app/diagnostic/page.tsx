@@ -6,7 +6,7 @@ import { AppShell } from '@/components/app-shell';
 import { AssessmentPlayer, type PlayerAssessment } from '@/components/assessment-player';
 import { sanitizedForClient } from '@/lib/grading';
 import {
-  Activity, ArrowRight, Clock, Compass, Gauge, ListChecks, Route, ShieldCheck, Zap,
+  Activity, Clock, Compass, Gauge, ListChecks, Route, ShieldCheck, Zap,
 } from 'lucide-react';
 
 export const metadata = { title: 'Diagnostic. QuantFoundry' };
@@ -79,40 +79,56 @@ export default async function DiagnosticPage() {
           </div>
         </header>
 
-        {/* orientation hero */}
+        {/* orientation hero: text left, the 7 areas right */}
         <section className="qf-card p-6 sm:p-8 relative overflow-hidden anim-pop-in">
           <div
             aria-hidden
             className="pointer-events-none absolute inset-y-0 right-0 w-44 bg-dots opacity-70 hidden sm:block [mask-image:linear-gradient(to_left,black,transparent)]"
           />
-          <div className="relative">
-            <span className="chip chip-accent"><Route className="h-3 w-3" /> PHASE 0 · ORIENTATION</span>
-            <h2 className="mt-3 text-2xl font-extrabold tracking-tight">Find your true starting point</h2>
-            <p className="mt-2.5 text-sm text-muted leading-relaxed max-w-xl">
-              Seven mini-sections, arithmetic, algebra, logic, programming, CS fundamentals, probability and finance, escalate from quick warm-ups to genuinely challenging problems.
-            </p>
-            <p className="mt-2 text-sm text-muted leading-relaxed max-w-xl">
-              No studying needed first: the score exists to place you at the right phase and calibrate difficulty, not to grade you.
-            </p>
-            <div className="mt-5 flex flex-wrap items-center gap-2.5">
-              <span className={`${META_CHIP} bg-warning-soft text-warning-strong dark:text-warning`}>
-                <Clock className="h-4 w-4" /> ~{assessment.timeLimitMinutes} min
-              </span>
-              <span className={`${META_CHIP} bg-info-soft text-info-strong dark:text-info`}>
-                <ListChecks className="h-4 w-4" /> {questionCount} questions
-              </span>
-              <span className={`${META_CHIP} bg-success-soft text-accent-deep dark:text-success`}>
-                <Zap className="h-4 w-4" /> XP on completion
-              </span>
+          <div className="relative grid lg:grid-cols-[1.1fr_0.9fr] gap-6 items-center">
+            <div>
+              <span className="chip chip-accent"><Route className="h-3 w-3" aria-hidden="true" /> PHASE 0 · ORIENTATION</span>
+              <h2 className="mt-3 text-2xl font-extrabold tracking-tight">Find your true starting point</h2>
+              <p className="mt-2.5 text-sm text-muted leading-relaxed max-w-xl">
+                Seven mini-sections, arithmetic, algebra, logic, programming, CS fundamentals, probability and finance, escalate from quick warm-ups to genuinely challenging problems.
+              </p>
+              <p className="mt-2 text-sm text-muted leading-relaxed max-w-xl">
+                No studying needed first: the score exists to place you at the right phase and calibrate difficulty, not to grade you.
+              </p>
+              <div className="mt-5 flex flex-wrap items-center gap-2.5">
+                <span className={`${META_CHIP} bg-warning-soft text-warning-strong dark:text-warning`}>
+                  <Clock className="h-4 w-4" aria-hidden="true" /> ~{assessment.timeLimitMinutes} min
+                </span>
+                <span className={`${META_CHIP} bg-info-soft text-info-strong dark:text-info`}>
+                  <ListChecks className="h-4 w-4" aria-hidden="true" /> {questionCount} questions
+                </span>
+                <span className={`${META_CHIP} bg-success-soft text-accent-deep dark:text-success`}>
+                  <Zap className="h-4 w-4" aria-hidden="true" /> XP on completion
+                </span>
+              </div>
+              <div className="mt-6 flex flex-wrap items-center gap-3">
+                <Link href="/dashboard" className="btn3d btn3d-ghost">Maybe later, go home</Link>
+              </div>
             </div>
-            <div className="mt-6 flex flex-wrap items-center gap-3">
-              <a href="#diagnostic-player" className="btn3d btn3d-lg press">
-                Start diagnostic <ArrowRight className="h-5 w-5" />
-              </a>
-              <Link href="/dashboard" className="btn3d btn3d-ghost">Maybe later</Link>
+            {/* the seven areas */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-2 gap-2">
+              {assessment.sections.map((s, i) => (
+                <div key={s.title} className="qf-card-flat p-3 flex items-center gap-2.5 anim-slide-up" style={{ animationDelay: `${i * 60}ms` }}>
+                  <span className={`icon-tile-sm icon-tile-${['accent', 'info', 'violet', 'warning', 'gold', 'danger', 'accent'][i % 7]}`}>
+                    <Compass className="h-4 w-4" aria-hidden="true" />
+                  </span>
+                  <span className="text-xs font-black leading-tight">{s.title}</span>
+                  <span className="chip tnum ml-auto shrink-0">{s.questions.length}</span>
+                </div>
+              ))}
             </div>
           </div>
         </section>
+
+        {/* the player itself, directly under the hero, the single green start */}
+        <div id="diagnostic-player" className="mt-6 scroll-mt-24">
+          <AssessmentPlayer assessment={player} compactIntro />
+        </div>
 
         {/* what happens after */}
         <section className="mt-8">
@@ -141,11 +157,6 @@ export default async function DiagnosticPage() {
             No stakes, results only tune your path
             <span className="text-muted font-semibold"> · nothing is shared, and you can retake it any time.</span>
           </p>
-        </div>
-
-        {/* the player itself, compact strip, the hero above already sells it */}
-        <div id="diagnostic-player" className="mt-8 scroll-mt-24">
-          <AssessmentPlayer assessment={player} compactIntro />
         </div>
       </div>
     </AppShell>

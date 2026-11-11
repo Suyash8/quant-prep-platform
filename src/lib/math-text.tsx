@@ -2,7 +2,7 @@ import 'server-only';
 import katex from 'katex';
 import type { ReactNode } from 'react';
 
-/** Render a KaTeX string to HTML (server-side, throwOnError false for robustness). */
+/** Render a KaTeX string to HTML (server-side, tolerates bad input with throwOnError false). */
 export function renderMath(tex: string, display = false): string {
   return katex.renderToString(tex, {
     displayMode: display,

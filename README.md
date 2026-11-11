@@ -106,5 +106,13 @@ See `VERCEL_DEPLOY.md`. Content packs are generated during `npm run build`, so h
 ```bash
 npx tsc --noEmit                # types
 node scripts/validate-content.mjs --registry   # content
+node --test scripts/unit-tests.mjs             # 25 unit tests
 bash scripts/smoke-v3.sh        # server + sync + packs + pages (starts its own server on :3004)
+node scripts/offline-check.mjs  # offline render + local grading + re-sync (needs the server on :3002)
+node scripts/contrast-audit.mjs # WCAG contrast for every text/background token pair
+node scripts/scan-native-controls.mjs  # no native-looking form controls (0 hits)
 ```
+
+Visual audit (v3.1): `node scripts/shot.mjs /tmp/audit http://localhost:3002` captures the 25 audited
+routes at 1280x900 (append `390 844` for the mobile overflow gate), writing per-page `overflowX`.
+See `AUDIT.md` for the current score table and `CHANGELOG-v3.1.md` for everything that changed.

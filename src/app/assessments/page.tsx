@@ -4,9 +4,10 @@ import { getCurrentUser } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { listAssessments } from '@/lib/content';
 import { AppShell } from '@/components/app-shell';
+import { ClosingCta } from '@/components/ui/page-kit';
 import {
   BookOpenCheck, CheckCircle2, ClipboardList, Clock, Cpu, Dices, History, Landmark,
-  ListChecks, MessagesSquare, RotateCcw, Server, Sigma, Sparkles, Trophy, Coins,
+  ListChecks, MessagesSquare, RotateCcw, Server, Sigma, Sparkles, Trophy, Coins, Target,
 } from 'lucide-react';
 
 export const metadata = { title: 'Assessment Centre. QuantFoundry' };
@@ -142,17 +143,23 @@ export default async function AssessmentsPage() {
                     <span className="chip"><Clock className="h-3 w-3" /> {minutesLabel}</span>
                     <span className="chip chip-info">{meta.label}</span>
                   </div>
-                  <p className="mt-2.5 text-sm font-medium text-muted line-clamp-2">{meta.desc}</p>
+                  <p className="mt-2.5 text-sm font-medium text-muted line-clamp-2">{a.description.replace(/\$\$?[^$]*\$\$?/g, '').slice(0, 110)}</p>
                   <div className="flex-1" />
-                  <div className="mt-3.5">
-                    <div className="flex items-center justify-between text-[11px] font-black uppercase tracking-wider mb-1.5">
-                      <span className="text-faint">{attempted ? (passed ? 'Best score' : 'Best so far') : 'Progress'}</span>
-                      <span className={'tnum ' + (!attempted ? 'text-faint' : passed ? 'text-accent-deep dark:text-accent' : 'text-warning-strong dark:text-warning')}>{attempted ? bestPct + '%' : '0%'}</span>
+                  {attempted ? (
+                    <div className="mt-3.5">
+                      <div className="flex items-center justify-between text-[11px] font-black uppercase tracking-wider mb-1.5">
+                        <span className="text-faint">{passed ? 'Best score' : 'Best so far'}</span>
+                        <span className={'tnum ' + (passed ? 'text-accent-deep dark:text-accent' : 'text-warning-strong dark:text-warning')}>{bestPct}%</span>
+                      </div>
+                      <div className="prog-track h-2.5">
+                        <div className={passed ? 'prog-fill' : 'prog-fill prog-fill-gold'} style={{ width: bestPct + '%' }} />
+                      </div>
                     </div>
-                    <div className="prog-track h-2.5">
-                      <div className={passed ? 'prog-fill' : 'prog-fill prog-fill-gold'} style={{ width: bestPct + '%' }} />
+                  ) : (
+                    <div className="mt-3.5 flex items-center gap-1.5 text-xs font-bold text-faint">
+                      <Target className="h-3.5 w-3.5" aria-hidden="true" /> First attempt sets your baseline
                     </div>
-                  </div>
+                  )}
                   <div className="mt-4 flex items-center justify-between gap-3">
                     <span className={statusChipCls}>{!attempted ? 'not started' : passed ? 'passed' : 'in progress'}</span>
                     <Link href={`/assessments/${a.id}`} className="btn3d btn3d-sm ml-auto">
@@ -207,6 +214,18 @@ export default async function AssessmentsPage() {
               </ul>
             )}
           </div>
+        </section>
+
+        <section className="mt-10">
+          <ClosingCta
+            icon={ClipboardList}
+            tone="info"
+            title={`${assessments.length - completedCount} untried assessments remain.`}
+            line="Each one is 20 minutes or less and lands its result straight into your mastery profile."
+            cta={<Link href="/assessments/apt-quantitative" className="btn3d">Take the aptitude test</Link>}
+            ghost={<Link href="/revision" className="btn3d btn3d-ghost">Study for it first</Link>}
+            pose="think"
+          />
         </section>
       </div>
     </AppShell>

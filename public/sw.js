@@ -14,7 +14,7 @@
  *  - QF3_CLEAR_PACKS             : drop pack + page caches
  */
 
-const VERSION = 'qf3-v1';
+const VERSION = 'qf3-v2';
 const STATIC_CACHE = `${VERSION}-static`;
 const PACK_CACHE = `${VERSION}-packs`;
 const PAGE_CACHE = `${VERSION}-pages`;
