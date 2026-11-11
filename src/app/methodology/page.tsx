@@ -19,7 +19,18 @@ export default async function MethodologyPage() {
     { icon: ClipboardCheck, tile: 'icon-tile-gold', title: 'No fake anything', desc: 'No employment promises, no “learn C++ in 21 days”, no metrics invented to look impressive. If a module isn’t finished, the platform says so. Every number you see was measured.' },
   ];
 
-  const assessmentTypes = ['Multiple-choice', 'Multiple-select', 'Numeric problems', 'Short-answer reasoning', 'Code-output prediction', 'Full judged programming problems', 'Timed assessments', 'Screening simulations', 'Cumulative retrieval checks'];
+  const assessmentTypes: { t: string; chip: string }[] = [
+    // one tone per category: knowledge & reasoning = info, code = success, performance = warning
+    { t: 'Multiple-choice', chip: 'chip chip-info' },
+    { t: 'Multiple-select', chip: 'chip chip-info' },
+    { t: 'Numeric problems', chip: 'chip chip-info' },
+    { t: 'Short-answer reasoning', chip: 'chip chip-info' },
+    { t: 'Code-output prediction', chip: 'chip chip-success' },
+    { t: 'Full judged programming problems', chip: 'chip chip-success' },
+    { t: 'Timed assessments', chip: 'chip chip-warning' },
+    { t: 'Screening simulations', chip: 'chip chip-warning' },
+    { t: 'Cumulative retrieval checks', chip: 'chip chip-info' },
+  ];
 
   const lessonParts = ['Title & estimated time', 'Prerequisites (enforced)', 'Learning objectives', 'A real motivating problem', 'Intuitive explanation', 'Formal explanation', 'Visual/interactive demonstration', 'Step-by-step derivation', 'Worked examples with verified numbers', 'Guided exercise', 'Independent exercise', 'Coding implementation where applicable', 'Common mistakes', 'Real-world application', 'Quantitative finance application', 'Knowledge check (server-scored)', 'Summary', 'Flashcards created', 'Further practice links', 'References'];
 
@@ -34,7 +45,7 @@ export default async function MethodologyPage() {
   ];
 
   const body = (
-    <div className="max-w-5xl mx-auto px-4 lg:px-6 py-8">
+    <div className="max-w-4xl mx-auto px-4 lg:px-6 py-8">
       <header className="page-hero">
         <span className="icon-tile icon-tile-violet"><GraduationCap className="h-7 w-7" /></span>
         <div>
@@ -49,31 +60,32 @@ export default async function MethodologyPage() {
         actual engineering work.
       </p>
 
-      {/* evidence band */}
+      {/* evidence band — canonical horizontal stat tiles, two hues + neutral */}
       <div className="mt-6 grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
           { icon: BookCheck, tile: 'icon-tile-accent', value: String(reg.lessons.length), label: 'Authored lessons' },
           { icon: Layers, tile: 'icon-tile-info', value: String(map.phases.reduce((n, p) => n + p.modules.length, 0)), label: 'Modules' },
-          { icon: ListChecks, tile: 'icon-tile-violet', value: '20', label: 'Parts per lesson' },
-          { icon: ClipboardCheck, tile: 'icon-tile-gold', value: '9', label: 'Assessment types' },
+          { icon: ListChecks, tile: 'icon-tile-neutral', value: '20', label: 'Parts per lesson' },
+          { icon: ClipboardCheck, tile: 'icon-tile-neutral', value: '9', label: 'Assessment types' },
         ].map((s, i) => (
-          <div key={s.label} className="stat-tile anim-pop-in" style={{ animationDelay: `${i * 60}ms` }}>
+          <div key={s.label} className="stat-tile anim-pop-in min-w-0" style={{ animationDelay: `${i * 60}ms` }}>
             <span className={`icon-tile icon-tile-sm ${s.tile}`}><s.icon className="h-5 w-5" /></span>
-            <div className="stat-value mt-1 tnum">{s.value}</div>
-            <div className="stat-label mt-1">{s.label}</div>
+            <div className="stat-body min-w-0">
+              <div className="stat-value tnum">{s.value}</div>
+              <div className="stat-label">{s.label}</div>
+            </div>
           </div>
         ))}
       </div>
 
       <div className="mt-7">
-        {/* feature principle, the headline idea gets hero treatment */}
-        {(() => {
-          const hero = principles[0];
-          const HeroIcon = hero.icon;
-          return (
-            <div className="qf-card p-6 flex gap-4 anim-slide-up relative overflow-hidden">
-              <div className="absolute -right-10 -top-12 h-36 w-36 rounded-full bg-accent-soft" aria-hidden />
-              <div className="relative flex gap-4">
+        {/* card 01 is the feature row, the rest sit in a 2-col rhythm grid */}
+        <div className="grid sm:grid-cols-2 gap-4">
+          {(() => {
+            const hero = principles[0];
+            const HeroIcon = hero.icon;
+            return (
+              <div className="qf-card p-6 flex gap-4 anim-slide-up sm:col-span-2 min-w-0">
                 <span className={`icon-tile ${hero.tile} h-14 w-14 shrink-0`}>
                   <HeroIcon className="h-7 w-7" strokeWidth={2.5} />
                 </span>
@@ -85,13 +97,10 @@ export default async function MethodologyPage() {
                   <p className="mt-1.5 text-sm text-muted leading-relaxed font-semibold">{hero.desc}</p>
                 </div>
               </div>
-            </div>
-          );
-        })()}
-        {/* remaining four in a 2×2 rhythm grid */}
-        <div className="mt-4 grid sm:grid-cols-2 gap-4">
+            );
+          })()}
           {principles.slice(1).map((p, i) => (
-            <div key={p.title} className="qf-card-flat p-5 flex gap-4 hover:border-[var(--border-strong)] transition-colors anim-slide-up">
+            <div key={p.title} className="qf-card-flat p-5 flex gap-4 hover:border-[var(--border-strong)] transition-colors anim-slide-up min-w-0">
               <span className={`icon-tile ${p.tile} h-12 w-12 shrink-0`}>
                 <p.icon className="h-6 w-6" strokeWidth={2.5} />
               </span>
@@ -115,28 +124,31 @@ export default async function MethodologyPage() {
             <p className="text-xs font-bold text-muted">Every lesson follows the same 20-part structure so you always know where you are</p>
           </div>
         </div>
-        <div className="mt-4 grid sm:grid-cols-2 gap-3">
+        {/* the 20 parts are ONE numbered sequence: phase legend + a single flowing list,
+            so both former columns fill evenly with no dead area under short phases */}
+        <div className="mt-4 flex flex-wrap gap-2">
           {partPhases.map(ph => {
             const PhIcon = ph.icon;
             return (
-              <div key={ph.title} className="rounded-2xl border-2 border-border bg-surface p-3.5">
-                <div className="flex items-center gap-2 mb-2.5">
-                  <span className={`icon-tile icon-tile-sm ${ph.tile} !h-7 !w-7`}><PhIcon className="h-4 w-4" /></span>
-                  <h3 className="text-xs font-black uppercase tracking-[0.1em]">{ph.title}</h3>
-                  <span className="text-[10px] font-black text-faint tnum ml-auto">{ph.to - ph.from} parts</span>
-                </div>
-                <ol className="space-y-1.5">
-                  {lessonParts.slice(ph.from, ph.to).map((t, j) => (
-                    <li key={t} className="flex items-center gap-2.5 rounded-xl bg-surface-2/50 border border-border/60 px-2.5 py-1.5 text-[13px] font-bold">
-                      <span className={`h-5 w-5 shrink-0 rounded-lg ${ph.numCls} text-white text-[10px] font-black tnum flex items-center justify-center`}>{ph.from + j + 1}</span>
-                      <span className="min-w-0 truncate">{t}</span>
-                    </li>
-                  ))}
-                </ol>
-              </div>
+              <span key={ph.title} className="chip !py-1">
+                <span className={`icon-tile icon-tile-sm !h-5 !w-5 !rounded-md ${ph.tile}`}><PhIcon className="!h-3 !w-3" /></span>
+                {ph.title}
+                <span className="text-muted tnum">{ph.from + 1}–{ph.to}</span>
+              </span>
             );
           })}
         </div>
+        <ol className="mt-3 grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
+          {lessonParts.map((t, i) => {
+            const ph = partPhases.find(p => i >= p.from && i < p.to) ?? partPhases[0];
+            return (
+              <li key={t} className="flex items-center gap-2.5 rounded-xl bg-surface-2/50 border border-border/60 px-2.5 py-1.5 text-[13px] font-bold min-w-0">
+                <span className={`h-5 w-5 shrink-0 rounded-lg ${ph.numCls} text-white text-[10px] font-black tnum flex items-center justify-center`}>{i + 1}</span>
+                <span className="min-w-0 truncate">{t}</span>
+              </li>
+            );
+          })}
+        </ol>
       </section>
 
       <section className="mt-10">
@@ -148,10 +160,9 @@ export default async function MethodologyPage() {
           </div>
         </div>
         <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-          {assessmentTypes.map((t, i) => {
-            const chipCls = ['chip chip-info', 'chip chip-accent', 'chip chip-warning', 'chip chip-gold', 'chip'][i % 5];
-            return <span key={t} className={`${chipCls} justify-center`}>{t}</span>;
-          })}
+          {assessmentTypes.map(a => (
+            <span key={a.t} className={`${a.chip} justify-center`}>{a.t}</span>
+          ))}
         </div>
         <p className="mt-4 text-sm text-muted font-semibold qf-card-flat p-4 !bg-surface-2/50">
           The bar is deliberately strict: you can’t guess your way through, and time-on-page counts for nothing.

@@ -20,13 +20,6 @@
       "text": "APIs: contracts that are hard to misuse"
     },
     {
-      "type": "interactive",
-      "component": "ComplexityCompare",
-      "params": {},
-      "caption": "Pattern choice is a complexity trade: swap the strategies and watch the cost curves split.",
-      "after": "h2"
-    },
-    {
       "type": "p",
       "md": "An API is a promise, and its quality shows under change and misuse. Design rules that pay for themselves: **make invalid states unrepresentable**, a `Side` enum beats a string that might say 'buy', 'BUY' or 'B'; **state units and types in the signature** (`int quantity`, `double price`) instead of in a comment; **make the happy path obvious and the error path explicit**, return a result or throw a specific exception, never a magic `-1`; **keep the surface small**, every public function is a promise you must keep through refactors; and **name for the domain** - `apply_fill` says more than `process`. Versioning belongs to the same discipline: a public API added to is easy, changed is expensive, so get the first version minimal and right."
     },
@@ -99,6 +92,40 @@
       "lang": "cpp",
       "code": "#include <memory>\n\nclass FeeModel {                                  // Strategy interface\npublic:\n    virtual ~FeeModel() = default;\n    virtual double fee(double notional, int shares) const = 0;\n};\n\nclass PerShareFee : public FeeModel {\npublic:\n    explicit PerShareFee(double cents_per_share) : cps_(cents_per_share / 100.0) {}\n    double fee(double, int shares) const override { return shares * cps_; }\nprivate:\n    double cps_;                                  // dollars per share\n};\n\nclass BpsFee : public FeeModel {\npublic:\n    explicit BpsFee(double bps) : bps_(bps) {}\n    double fee(double notional, int) const override { return notional * bps_ / 10000.0; }\nprivate:\n    double bps_;\n};\n\nclass OrderCostCalculator {                       // context depends on the abstraction\npublic:\n    explicit OrderCostCalculator(std::unique_ptr<FeeModel> model)\n        : model_(std::move(model)) {}\n\n    double total(double price, int shares) const {\n        const double notional = price * shares;\n        return notional + model_->fee(notional, shares);\n    }\nprivate:\n    std::unique_ptr<FeeModel> model_;\n};",
       "caption": "Adding a rebate model tomorrow = one new FeeModel subclass; zero edits to OrderCostCalculator or its callers. Check: PerShareFee(2) on 300 shares at 42.17 -> notional 12,651.00 + fee 6.00."
+    },
+    {
+      "type": "interactive",
+      "component": "TerminalSteps",
+      "params": {
+        "steps": [
+          {
+            "cmd": "g++ -std=c++20 dispatch.cpp && ./a.out",
+            "out": [
+              "cash: 1000.00",
+              "stock: AAPL x 100",
+              "order routed by handler, not by if-else"
+            ],
+            "note": "Strategy replaces a branch tower with one virtual call"
+          },
+          {
+            "cmd": "grep -n \"if (type\" legacy_router.cpp",
+            "out": [
+              "42: if (type == \"cash\") ...",
+              "51: else if (type == \"stock\") ..."
+            ],
+            "note": "the shape the pattern removes: every new type edits the router"
+          },
+          {
+            "cmd": "grep -rn \"register(\" dispatch.cpp",
+            "out": [
+              "router.register(\"cash\", cashHandler);",
+              "router.register(\"stock\", stockHandler);"
+            ],
+            "note": "open for extension, closed for modification: new types add a line, not a branch"
+          }
+        ]
+      },
+      "caption": "Patterns are recurring resolutions of a tension. Here: adding behaviour without editing every caller. Watch dispatch replace the if-else tower."
     },
     {
       "type": "p",

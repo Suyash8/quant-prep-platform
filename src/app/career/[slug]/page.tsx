@@ -2,11 +2,11 @@ import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { getCurrentUser } from '@/lib/auth';
-import { getCompany, getMap, listAssessments, listCompanies } from '@/lib/content';
+import { getCompany, getMap, listAssessments } from '@/lib/content';
 import { AppShell, PublicHeader } from '@/components/app-shell';
 import {
   ArrowRight, BookOpen, Briefcase, Check, ChevronRight, ClipboardCheck, ClipboardList,
-  ExternalLink, HelpCircle, Info, Layers, Route, ScrollText, ShieldCheck,
+  ExternalLink, Info, Layers, Route, ScrollText,
 } from 'lucide-react';
 
 // fixed track colour coding, consistent on every career page
@@ -41,8 +41,29 @@ const CATEGORY_DESC: Record<string, string> = {
   'market-data': 'Data pipelines, terminals and platform reliability engineering.',
 };
 
-const AVATAR_TILES = ['icon-tile-accent', 'icon-tile-info', 'icon-tile-warning', 'icon-tile-danger', 'icon-tile-violet', 'icon-tile-gold'];
+const AVATAR_TRACK_FALLBACK = 'icon-tile-neutral';
 const SLIDE_DELAYS = ['0ms', '60ms', '120ms', '180ms', '240ms', '300ms'];
+
+// competency areas grouped into labelled clusters by deterministic keyword buckets
+// (no category field exists in the data; buckets are derived from the skill slug)
+const CLUSTER_RULES: [string, RegExp][] = [
+  ['Languages & tools', /cpp|python|stl|sql|linux|dsa|algorithm|software-engineering/],
+  ['Math & stats', /probab|stat|stoch|measure|math|algebra|numerical|time-series|aptitude|logical/],
+  ['Systems', /thread|network|cache|databas|concurren|latency|distributed|infrastructure|architecture|systems-design/],
+];
+const CLUSTER_ORDER = ['Languages & tools', 'Math & stats', 'Systems', 'Domain'];
+function clusterOf(area: string): string {
+  for (const [name, re] of CLUSTER_RULES) if (re.test(area)) return name;
+  return 'Domain';
+}
+
+// display-only expansion of jargon area slugs (data stays untouched)
+const AREA_LABEL: Record<string, string> = { cpp: 'C++', dsa: 'DSA' };
+function areaLabel(a: string): string {
+  const hit = AREA_LABEL[a];
+  if (hit) return hit;
+  return a.replace(/-/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase());
+}
 
 const SKILL_RE = /(C\+\+|Python|Java|SQL|Linux|Go|Rust|probability|statistics|mental math|machine learning|linear algebra|stochastic calculus|stochastic modelling|distributed systems|multi-threading|latency|concurrency|networking|databases|streaming|market data|microstructure|calibration|curve construction|time series|finance|economics|numerical libraries|testing|performance tuning|co-location|skills assessment|probability & statistics)/gi;
 
@@ -75,9 +96,8 @@ export default async function CompanyPage({ params }: { params: Promise<{ slug: 
     .filter(Boolean) as typeof allModules;
   const prepAssessments = assessments.filter(a => company.prepAssessments.includes(a.id));
 
-  const roster = listCompanies();
-  const rosterIdx = Math.max(0, roster.findIndex(c => c.slug === company.slug));
-  const avatarTile = AVATAR_TILES[rosterIdx % AVATAR_TILES.length];
+  const primaryTrack = company.roles[0]?.track;
+  const avatarTile = TRACK_TILE[primaryTrack ?? ''] ?? AVATAR_TRACK_FALLBACK;
   const trackSet = [...new Set(company.roles.map(r => r.track))];
 
   const body = (
@@ -93,16 +113,14 @@ export default async function CompanyPage({ params }: { params: Promise<{ slug: 
             <span className="font-black text-2xl">{company.name.charAt(0)}</span>
           </span>
           <div className="flex-1 min-w-0">
-            <h1 className="text-2xl font-extrabold tracking-tight">{company.name}</h1>
+            <h1 className="text-2xl sm:text-3xl font-black tracking-tight">{company.name}</h1>
             <p className="mt-0.5 text-sm text-muted font-semibold">
               {CATEGORY_DESC[company.category] ?? CATEGORY_LABEL[company.category] ?? 'Quantitative hiring preparation profile.'}
             </p>
-            <div className="mt-3 flex flex-wrap gap-1.5">
+            <div className="mt-3 flex flex-wrap gap-1.5 items-center">
               <span className="chip">{CATEGORY_LABEL[company.category] ?? company.category}</span>
-              <span className="chip"><Briefcase className="h-3 w-3" /> {company.roles.length} mapped roles</span>
-              {trackSet.map(t => (
-                <span key={t} className={`chip ${TRACK_CHIP[t] ?? 'chip-accent'}`}>Track {t}</span>
-              ))}
+              <span className="chip tnum"><Briefcase className="h-3 w-3" /> {company.roles.length} mapped roles</span>
+              {trackSet.length > 0 && <span className="chip">Tracks: {trackSet.join(' · ')}</span>}
             </div>
           </div>
         </div>
@@ -110,7 +128,7 @@ export default async function CompanyPage({ params }: { params: Promise<{ slug: 
 
       {/* posting note */}
       <div className="mt-4 qf-card-flat p-4 flex items-start gap-3 anim-slide-up">
-        <span className="icon-tile icon-tile-sm icon-tile-info"><Info /></span>
+        <span className="icon-tile icon-tile-sm icon-tile-neutral"><Info /></span>
         <p className="text-sm text-muted italic leading-relaxed">
           Full posting not imported, mapping inferred from track data.
         </p>
@@ -130,7 +148,7 @@ export default async function CompanyPage({ params }: { params: Promise<{ slug: 
               className="row-card anim-slide-up items-start"
               style={{ animationDelay: SLIDE_DELAYS[i % SLIDE_DELAYS.length] }}
             >
-              <span className={`icon-tile icon-tile-sm ${TRACK_TILE[r.track] ?? 'icon-tile-accent'}`}><Briefcase /></span>
+              <span className="icon-tile icon-tile-sm icon-tile-neutral"><Briefcase /></span>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <h3 className="font-bold">{r.title}</h3>
@@ -144,7 +162,6 @@ export default async function CompanyPage({ params }: { params: Promise<{ slug: 
                   ))}
                 </div>
               </div>
-              <ChevronRight className="h-5 w-5 text-faint shrink-0 mt-1" />
             </div>
           ))}
         </div>
@@ -164,30 +181,25 @@ export default async function CompanyPage({ params }: { params: Promise<{ slug: 
               className="qf-card-flat p-4 anim-slide-up hover:-translate-y-0.5 hover:shadow-md transition-all"
               style={{ animationDelay: SLIDE_DELAYS[i % SLIDE_DELAYS.length] }}
             >
-              <div className="flex items-start gap-3.5">
-                <span className={`icon-tile icon-tile-sm shrink-0 ${e.confidence === 'sourced' ? 'icon-tile-accent' : 'icon-tile-warning'}`}>
-                  {e.confidence === 'sourced' ? <ShieldCheck /> : <HelpCircle />}
+              <div className="flex items-center gap-2 flex-wrap text-xs">
+                <span className={`chip ${e.confidence === 'sourced' ? 'chip-success' : 'chip-warning'}`}>
+                  {e.confidence === 'sourced' ? 'Sourced' : 'Inferred'}
                 </span>
-                <div className="flex-1 min-w-0">
-                  <blockquote className="border-l-4 border-accent/50 pl-3.5 text-sm leading-relaxed font-semibold">
-                    {highlightSkills(e.claim)}
-                  </blockquote>
-                  <div className="mt-2.5 flex items-center gap-2 flex-wrap text-xs">
-                    <span className={`chip ${e.confidence === 'sourced' ? 'chip-success' : 'chip-warning'}`}>
-                      {e.confidence === 'sourced' ? 'Sourced' : 'Inferred'}
-                    </span>
-                    <span className="text-faint font-semibold">retrieved {e.retrievedAt}</span>
-                    <a
-                      href={e.sourceUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-info-strong hover:underline inline-flex items-center gap-0.5 font-bold"
-                    >
-                      {new URL(e.sourceUrl).hostname} <ExternalLink className="h-3 w-3" />
-                    </a>
-                  </div>
-                </div>
+                <a
+                  href={e.sourceUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="chip hover:border-info transition-colors"
+                >
+                  {new URL(e.sourceUrl).hostname} <ExternalLink className="h-3 w-3" />
+                </a>
+                <span className="text-faint font-semibold ml-auto tnum">retrieved {e.retrievedAt}</span>
               </div>
+              <blockquote
+                className={`mt-2.5 border-l-4 pl-3.5 text-sm leading-relaxed font-semibold text-foreground ${e.confidence === 'sourced' ? 'border-accent/60' : 'border-warning/60'}`}
+              >
+                {highlightSkills(e.claim)}
+              </blockquote>
             </li>
           ))}
         </ul>
@@ -200,16 +212,28 @@ export default async function CompanyPage({ params }: { params: Promise<{ slug: 
           <h2>Competency areas</h2>
           <span className="chip ml-auto tnum">{company.competencyAreas.length} areas</span>
         </div>
-        <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-          {company.competencyAreas.map(a => (
-            <li key={a} className="flex items-center gap-2.5 rounded-xl bg-surface-2/60 border border-border/60 px-3 py-2.5">
-              <span className="h-6 w-6 shrink-0 rounded-lg bg-violet-soft text-violet flex items-center justify-center">
-                <Check className="h-3.5 w-3.5" strokeWidth={3} />
-              </span>
-              <span className="text-sm font-bold capitalize leading-tight">{a.replace(/-/g, ' ')}</span>
-            </li>
-          ))}
-        </ul>
+        <div className="space-y-4">
+          {CLUSTER_ORDER
+            .map(name => [name, company.competencyAreas.filter(a => clusterOf(a) === name)] as [string, string[]])
+            .filter(([, areas]) => areas.length > 0)
+            .map(([name, areas]) => (
+              <div key={name}>
+                <div className="flex items-center gap-2 mb-2">
+                  <h3 className="text-xs font-black uppercase tracking-[0.12em] text-muted">{name}</h3>
+                  <span className="text-[11px] font-black text-faint tnum">{areas.length}</span>
+                  <span className="flex-1 h-0.5 rounded-full bg-border" />
+                </div>
+                <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                  {areas.map(a => (
+                    <li key={a} className="flex items-center gap-2.5 rounded-xl bg-surface-2/60 border border-border/60 px-3 py-2">
+                      <Check className="h-3.5 w-3.5 shrink-0 text-accent" strokeWidth={3} />
+                      <span className="text-sm font-bold leading-tight">{areaLabel(a)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+        </div>
       </section>
 
       {/* prep assessments */}
@@ -219,11 +243,11 @@ export default async function CompanyPage({ params }: { params: Promise<{ slug: 
           <h2>Preparation assessments</h2>
         </div>
         {prepAssessments.length > 0 ? (
-          <div className="grid sm:grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {prepAssessments.map(a => (
               <Link key={a.id} href={`/assessments/${a.id}`} className="row-card">
                 <span className="icon-tile icon-tile-sm icon-tile-accent"><ClipboardList /></span>
-                <span className="flex-1 min-w-0 font-semibold text-sm leading-tight">{a.title}</span>
+                <span className="flex-1 min-w-0 font-semibold text-sm leading-tight truncate">{a.title}</span>
                 <span className="chip tnum shrink-0">{a.questionCount}q · {a.timeLimitMinutes}m</span>
                 <ChevronRight className="h-4 w-4 text-faint shrink-0" />
               </Link>
@@ -244,7 +268,7 @@ export default async function CompanyPage({ params }: { params: Promise<{ slug: 
             <h2>Relevant curriculum modules</h2>
             <span className="chip ml-auto tnum">{prepModules.length} modules</span>
           </div>
-          <div className="grid md:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {prepModules.map((m, i) => (
               <Link
                 key={m.id}

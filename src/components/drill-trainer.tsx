@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Play, Square, Zap } from 'lucide-react';
+import { Flame, Play, Square, Timer, Zap } from 'lucide-react';
 import { toast } from 'sonner';
 import { recordDrillSession } from '@/lib/client/local-state';
 
@@ -186,12 +186,12 @@ export function DrillTrainer({ history }: { history: { mode: string; level: numb
           {running ? (
             <>
               <span className="tnum text-2xl font-black">{String(Math.floor(left / 60)).padStart(2, '0')}:{String(left % 60).padStart(2, '0')}</span>
-              <span className="text-sm text-muted tnum font-bold">{correct}/{total}</span>
+              <span className="text-sm text-muted tnum font-bold">{correct}/{total} answered</span>
               {accuracy !== null && (
-                <span className={accuracy >= 80 ? 'chip chip-success tnum' : 'chip chip-warning tnum'}>{accuracy}%</span>
+                <span className={accuracy >= 80 ? 'chip chip-success tnum' : 'chip chip-warning tnum'}>{accuracy}% accuracy</span>
               )}
-              {avgMs !== null && <span className="chip tnum">{avgMs}ms avg</span>}
-              {streak >= 3 && <span className="chip chip-accent tnum">streak ×{streak}</span>}
+              {avgMs !== null && <span className="hud-pill tnum"><Timer className="h-3.5 w-3.5 text-info" />{avgMs}ms avg</span>}
+              {streak >= 3 && <span className="hud-pill tnum"><Flame className="h-3.5 w-3.5 text-flame" />streak ×{streak}</span>}
               <button onClick={finish} className="btn3d btn3d-ghost btn3d-sm ml-auto">
                 <Square className="h-4 w-4" /> End session
               </button>
@@ -241,7 +241,7 @@ export function DrillTrainer({ history }: { history: { mode: string; level: numb
                   ref={inputRef}
                   value={input}
                   onChange={e => setInput(e.target.value)}
-                  className="h-12 w-44 px-4 rounded-2xl border-2 border-border bg-background text-lg tnum text-center font-semibold focus:border-info focus:outline-none"
+                  className="qf-input !h-12 w-44 !rounded-2xl text-lg tnum text-center font-semibold"
                   placeholder="answer"
                   aria-label="Your answer"
                   autoComplete="off"

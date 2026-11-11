@@ -21,12 +21,6 @@
       "text": "Measure first: the performance workflow"
     },
     {
-      "type": "interactive",
-      "component": "PercentileExplorer",
-      "params": {},
-      "caption": "Means lie, tails do not: profile the p99, not the average."
-    },
-    {
       "type": "p",
       "md": "Production performance work follows a fixed loop: **(1)** reproduce the slowness at production-like scale, **(2)** profile to find the few percent of code eating most of the time, **(3)** fix only that spot, **(4)** re-measure with the *same* benchmark. Skip step 2 and you optimise whatever you understand best, typically the wrong thing. A useful prior: in most real programs, a small fraction of the code accounts for the large majority of runtime; the profiler's job is to name it."
     },
@@ -98,6 +92,41 @@
       "lang": "text",
       "code": "loop  version : 1 call, 0.120 s tottime  (pure Python)\nnumpy version : 6 calls, 0.010 s tottime  (arange + sqrt + sum)\n\nwall clock: loop 0.091 s  vs  numpy 0.008 s   ->  ~11x faster",
       "caption": "Actual cProfile output and wall-clock times from a 1-million-element run"
+    },
+    {
+      "type": "interactive",
+      "component": "TerminalSteps",
+      "params": {
+        "steps": [
+          {
+            "cmd": "python -m cProfile -s cumtime stats.py | head -8",
+            "out": [
+              "ncalls  cumtime  filename:lineno(function)",
+              "1      3.812   stats.py:18(price_path)",
+              "1000   2.904   stats.py:41(step)",
+              "1000   0.812   {built-in method math.exp}"
+            ],
+            "note": "cumtime is a waterfall: the frame that owns the time"
+          },
+          {
+            "cmd": "python -m cProfile -s tottime stats.py | head -6",
+            "out": [
+              "1000   0.812   {math.exp}",
+              "1000   0.401   {math.log}"
+            ],
+            "note": "tottime is self-time: math.exp is nobody else’s fault"
+          },
+          {
+            "cmd": "python -X importtime -c \"import pandas\" 2>&1 | tail -2",
+            "out": [
+              "import time: self [us] | cumulative | imported package",
+              "cumulative: 312.4 | pandas"
+            ],
+            "note": "measure imports too: a slow cold start is a real production bug"
+          }
+        ]
+      },
+      "caption": "Profilers do not find bugs, they rank suspects: cumtime finds the owner of the time, tottime finds the leaf that burns it."
     },
     {
       "type": "p",

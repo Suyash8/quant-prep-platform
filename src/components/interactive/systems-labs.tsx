@@ -14,18 +14,18 @@ export function TerminalSteps({ params }: { params: Record<string, unknown> }) {
   }
   return (
     <LabFrame title="Try it in a safe, simulated terminal" caption={step.note ?? 'Step through the commands, the output shown is what you would see.'}>
-      <div className="font-mono text-xs sm:text-[13px] border rounded-lg bg-[var(--editor-bg)] text-[var(--editor-text)] overflow-hidden">
+      <div className="font-mono text-xs sm:text-[13px] border rounded-lg bg-[#0d1117] text-[#c9d1d9] overflow-hidden">
         <div className="flex items-center gap-1.5 px-3 py-2 border-b border-white/10">
-          <span className="h-2.5 w-2.5 rounded-full bg-[var(--danger)]" />
-          <span className="h-2.5 w-2.5 rounded-full bg-[var(--warning)]" />
-          <span className="h-2.5 w-2.5 rounded-full bg-[var(--accent)]" />
+          <span className="h-2.5 w-2.5 rounded-full bg-[#ff5f57]" />
+          <span className="h-2.5 w-2.5 rounded-full bg-[#febc2e]" />
+          <span className="h-2.5 w-2.5 rounded-full bg-[#28c840]" />
           <span className="ml-2 text-[10px] text-white/40">bash, simulation</span>
         </div>
         <div className="p-3 min-h-[110px] space-y-1">
           {steps0.slice(0, i + 1).map((s, k) => (
             <div key={k}>
-              <div><span className="text-[var(--editor-accent)]">$</span> <span className="text-[var(--info)]">{s.cmd}</span></div>
-              {k === i && ran || k < i ? s.out.map((l, j) => <div key={j} className="text-[var(--editor-text)] whitespace-pre">{l}</div>) : null}
+              <div><span className="text-[#7ee787]">$</span> <span className="text-[#79c0ff]">{s.cmd}</span></div>
+              {k === i && ran || k < i ? s.out.map((l, j) => <div key={j} className="text-[#c9d1d9] whitespace-pre">{l}</div>) : null}
             </div>
           ))}
           {i < steps0.length - 1 && !ran && <div className="text-white/30">… press Run to see the output</div>}
@@ -185,9 +185,9 @@ export function PacketJourney({ params }: { params: Record<string, unknown> }) {
         <div className="flex-1" />
         <label className="flex items-center gap-2 text-xs text-muted">
           loss per hop: <span className="tnum font-medium">{lossRate}%</span>
-          <input type="range" min={0} max={60} value={lossRate} onChange={e => setLossRate(parseInt(e.target.value))} className="qf-range w-36" style={{ ['--fill' as string]: `${(lossRate / 60) * 100}%` }} aria-label="Loss per hop" />
+          <input type="range" min={0} max={60} value={lossRate} onChange={e => setLossRate(parseInt(e.target.value))} className="qf-range w-28" />
         </label>
-        <button onClick={simulate} className="btn3d btn3d-sm">Send 10 packets</button>
+        <button onClick={simulate} className="px-3 py-1.5 rounded-md bg-accent text-accent-foreground text-xs font-medium">Send 10 packets</button>
       </div>
       <div className="grid grid-cols-9 gap-1.5">
         {Array.from({ length: 9 }).map((_, i) => {
@@ -296,7 +296,7 @@ export function LatencyBudget({ params }: { params: Record<string, unknown> }) {
       { name: 'syscall crossing', ns: 1500 },
     ]);
   const total = parts.reduce((n, p) => n + p.ns, 0);
-  const colors = ['var(--info)', 'var(--violet)', 'var(--warning)', 'var(--accent)', 'var(--danger)', 'var(--info-strong)'];
+  const colors = ['#3b82f6', '#8b5cf6', '#f59e0b', '#10b981', '#ef4444', '#06b6d4'];
   return (
     <LabFrame title="Where does the time go?" caption="A latency budget forces honesty: if the parts sum to more than your target, no amount of tuning one layer will save you.">
       <div className="flex h-10 rounded-lg overflow-hidden border">
@@ -366,7 +366,7 @@ export function PercentileExplorer({ params }: { params: Record<string, unknown>
           <div key={b.label} className="flex items-center gap-3">
             <span className="text-xs text-muted w-14 text-right">{b.label}</span>
             <div className="flex-1 h-6 bg-surface-2 rounded border overflow-hidden">
-              <div className="h-full rounded" style={{ width: `${(b.v / max) * 100}%`, background: b.v > base * 1.5 ? 'var(--danger)' : 'var(--accent)' }} />
+              <div className="h-full rounded" style={{ width: `${(b.v / max) * 100}%`, background: b.v > base * 1.5 ? '#ef4444' : 'var(--accent)' }} />
             </div>
             <span className="text-xs tnum w-20 font-medium">{b.v.toFixed(1)} µs</span>
           </div>
@@ -469,8 +469,8 @@ export function CovarianceLab({ params }: { params: Record<string, unknown> }) {
           <line x1={cx} y1={PAD} x2={cx} y2={H - PAD} stroke="var(--border)" strokeWidth="1" />
           {pts.map((p, i) => <circle key={i} cx={cx + p.x * scale / 2.5} cy={cy - p.y * scale / 2.5} r="2.5" fill={ACCENT} opacity="0.55" />)}
           {/* principal axes */}
-          <line x1={cx - Math.cos(theta) * 90} y1={cy + Math.sin(theta) * 90} x2={cx + Math.cos(theta) * 90} y2={cy - Math.sin(theta) * 90} stroke="var(--danger)" strokeWidth="1.5" strokeDasharray="4 3" />
-          <line x1={cx - Math.cos(theta + Math.PI / 2) * 55} y1={cy + Math.sin(theta + Math.PI / 2) * 55} x2={cx + Math.cos(theta + Math.PI / 2) * 55} y2={cy - Math.sin(theta + Math.PI / 2) * 55} stroke="var(--info)" strokeWidth="1.5" strokeDasharray="4 3" />
+          <line x1={cx - Math.cos(theta) * 90} y1={cy + Math.sin(theta) * 90} x2={cx + Math.cos(theta) * 90} y2={cy - Math.sin(theta) * 90} stroke="#ef4444" strokeWidth="1.5" strokeDasharray="4 3" />
+          <line x1={cx - Math.cos(theta + Math.PI / 2) * 55} y1={cy + Math.sin(theta + Math.PI / 2) * 55} x2={cx + Math.cos(theta + Math.PI / 2) * 55} y2={cy - Math.sin(theta + Math.PI / 2) * 55} stroke="#3b82f6" strokeWidth="1.5" strokeDasharray="4 3" />
         </svg>
         <div>
           <div className="space-y-2">
@@ -557,7 +557,7 @@ export function FloatErrorLab({ params }: { params: Record<string, unknown> }) {
               <tr key={r.k} className="border-t">
                 <td className="py-1.5 font-mono">{r.k}</td>
                 <td className="py-1.5 text-right tnum font-medium">{r.v.toPrecision(10)}</td>
-                <td className={`py-1.5 text-right tnum ${rel > 1e-4 ? 'text-danger font-semibold' : rel > 1e-8 ? 'text-warning-strong dark:text-warning' : ''}`}>
+                <td className={`py-1.5 text-right tnum ${rel > 1e-4 ? 'text-danger font-semibold' : rel > 1e-8 ? 'text-amber-500' : ''}`}>
                   {rel === 0 ? 'exact' : rel < 1e-6 ? rel.toExponential(1) : rel.toExponential(2)}
                 </td>
               </tr>

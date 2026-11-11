@@ -20,31 +20,6 @@
       "text": "GDB: the live debugger"
     },
     {
-      "type": "interactive",
-      "component": "TerminalSteps",
-      "params": {
-        "steps": [
-          {
-            "cmd": "gdb ./app -ex \"run\" -ex \"bt\"",
-            "out": [
-              "Program received signal SIGSEGV",
-              "#0 0x4011a6 in OrderBook::top() at orderbook.cpp:88",
-              "#1 0x401204 in main at main.cpp:31"
-            ]
-          },
-          {
-            "cmd": "valgrind --leak-check=full ./app 2>&1 | tail -3",
-            "out": [
-              "HEAP SUMMARY:",
-              "  definitely lost: 512 bytes in 1 blocks",
-              "LEAK SUMMARY: 0 bytes definitely lost in 0 reaches"
-            ]
-          }
-        ]
-      },
-      "caption": "A stack trace and a leak report: the two artifacts production debugging lives on."
-    },
-    {
       "type": "p",
       "md": "GDB stops a running program at points you choose and lets you interrogate *everything*: locals, memory, registers, stack. The core workflow: set a **breakpoint** (`break file:line`, or `break func`, or conditional `break gateway.cpp:88 if qty > 1000`), `run` until it hits, then inspect (`print expr`, `info locals`) and step (`next` over calls, `step` into them). **Watchpoints** (`watch totalPnl`) break whenever a value changes, invaluable for 'who corrupted this variable'. For a *running* process instead of a fresh start: `gdb -p <pid>` attaches in place."
     },
@@ -102,6 +77,46 @@
       "lang": "cpp",
       "code": "#include <cstdio>\n\nstruct Fill { int sym; double px; int qty; };\n\n// Discipline: level-checked, allocation-free logging on the hot path.\nvoid onFill(const Fill& f, bool debugEnabled) {\n    if (debugEnabled)\n        std::printf(\"fill sym=%d px=%.2f qty=%d\\n\", f.sym, f.px, f.qty);\n    // ... hot-path work continues, untouched by the disabled branch\n}\n\nint main() { onFill({42, 101.25, 10}, true); }\n// Prints: fill sym=42 px=101.25 qty=10\n// The anti-pattern: \"fill sym=\" + std::to_string(...) - heap-allocated\n// string built on EVERY call just to be discarded by the level filter.",
       "caption": "Check the level first; build the message only if it will be emitted."
+    },
+    {
+      "type": "interactive",
+      "component": "TerminalSteps",
+      "params": {
+        "steps": [
+          {
+            "cmd": "gdb -q ./crash",
+            "out": [
+              "Reading symbols from ./crash..."
+            ]
+          },
+          {
+            "cmd": "run",
+            "out": [
+              "Program received signal SIGSEGV",
+              "0x00007f2a in fill_book(std::vector<Level>&, size_t) at book.cpp:41"
+            ],
+            "note": "the frame, the file, the line: a crash is an address plus a call chain"
+          },
+          {
+            "cmd": "bt",
+            "out": [
+              "#0 fill_book ... at book.cpp:41",
+              "#1 on_message ... at feed.cpp:88",
+              "#2 main ... at main.cpp:12"
+            ],
+            "note": "bt is the causal history; the bug lives in a frame, is triggered by another"
+          },
+          {
+            "cmd": "asan ./crash",
+            "out": [
+              "ERROR: heap-buffer-overflow on address 0x602",
+              "READ of size 8 at 0x602... allocated by book.cpp:33"
+            ],
+            "note": "sanitisers make the undefined defined: the first bad access is caught, not the 300th good one after it"
+          }
+        ]
+      },
+      "caption": "Debugging is history reconstruction: SIGSEGV gives you the scene, bt the suspects, and the sanitiser the first moment the contract broke."
     },
     {
       "type": "p",

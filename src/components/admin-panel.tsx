@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { toast } from 'sonner';
 import {
-  RefreshCw, Upload, FileJson, CheckCircle2, XCircle, AlertTriangle, ChevronDown, ChevronUp,
+  RefreshCw, Upload, FileJson, CheckCircle2, XCircle, AlertTriangle, ChevronDown,
   BookOpen, Puzzle, ClipboardCheck, FolderKanban, Building2, Clock, Layers,
 } from 'lucide-react';
 import type { ValidationReport } from '@/lib/admin-validate';
@@ -45,14 +45,16 @@ export function AdminPanel({ report, stats }: { report: ValidationReport; stats:
     revalidate();
   }
 
+  /* two primary tiles carry the accent, the long tail stays neutral so the
+     strip reads as hierarchy instead of seven equal shouts */
   const tiles = [
-    { icon: BookOpen, label: 'Published lessons', value: stats.lessons, cls: 'icon-tile-accent' },
-    { icon: Layers, label: 'Phases', value: stats.phases, cls: 'icon-tile-info' },
-    { icon: Layers, label: 'Modules', value: stats.modules, cls: 'icon-tile-info' },
-    { icon: Puzzle, label: 'Judged problems', value: stats.problems, cls: 'icon-tile-warning' },
-    { icon: ClipboardCheck, label: 'Assessments', value: stats.assessments, cls: 'icon-tile-violet' },
-    { icon: FolderKanban, label: 'Portfolio projects', value: stats.projects, cls: 'icon-tile-gold' },
-    { icon: Building2, label: 'Company profiles', value: stats.companies, cls: 'icon-tile-blue' },
+    { icon: BookOpen, label: 'Published lessons', value: stats.lessons, sub: `across ${stats.modules} modules`, cls: 'icon-tile-accent' },
+    { icon: Puzzle, label: 'Judged problems', value: stats.problems, cls: 'icon-tile-accent' },
+    { icon: Layers, label: 'Phases', value: stats.phases, cls: 'icon-tile-neutral' },
+    { icon: Layers, label: 'Modules', value: stats.modules, cls: 'icon-tile-neutral' },
+    { icon: ClipboardCheck, label: 'Assessments', value: stats.assessments, cls: 'icon-tile-neutral' },
+    { icon: FolderKanban, label: 'Portfolio projects', value: stats.projects, cls: 'icon-tile-neutral' },
+    { icon: Building2, label: 'Company profiles', value: stats.companies, cls: 'icon-tile-neutral' },
   ];
 
   return (
@@ -62,8 +64,11 @@ export function AdminPanel({ report, stats }: { report: ValidationReport; stats:
         {tiles.map((t, i) => (
           <div key={t.label} className="stat-tile anim-slide-up" style={{ animationDelay: `${i * 40}ms` }}>
             <span className={`icon-tile icon-tile-sm ${t.cls}`}><t.icon className="h-5 w-5" /></span>
-            <div className="stat-value mt-1 tnum">{t.value}</div>
-            <div className="stat-label mt-1">{t.label}</div>
+            <span className="stat-body">
+              <span className="stat-value tnum">{t.value}</span>
+              <span className="stat-label">{t.label}</span>
+              {t.sub ? <span className="stat-sub">{t.sub}</span> : null}
+            </span>
           </div>
         ))}
       </div>
@@ -98,21 +103,17 @@ export function AdminPanel({ report, stats }: { report: ValidationReport; stats:
             </button>
           </div>
 
-          <div className="mt-4 grid grid-cols-3 gap-2.5">
-            <div className="rounded-xl bg-surface-2/70 border border-border px-3 py-2.5 text-center">
-              <div className="text-lg font-black tnum text-accent-deep dark:text-accent">{stats.lessons}</div>
-              <div className="text-[10px] font-black uppercase tracking-wider text-faint">Lessons</div>
-            </div>
-            <div className="rounded-xl bg-surface-2/70 border border-border px-3 py-2.5 text-center">
-              <div className="text-lg font-black tnum text-info-strong dark:text-info">{stats.problems}</div>
-              <div className="text-[10px] font-black uppercase tracking-wider text-faint">Problems</div>
-            </div>
-            <div className="rounded-xl bg-surface-2/70 border border-border px-3 py-2.5 text-center">
-              <div className="text-lg font-black tnum text-warning-strong dark:text-warning">{stats.assessments}</div>
-              <div className="text-[10px] font-black uppercase tracking-wider text-faint">Assessments</div>
-            </div>
+          {/* validator status (not a repeat of the hero counts above) */}
+          <div className="mt-4 qf-card-flat px-4 py-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+            <span className={`chip tnum ${rep.errors.length === 0 ? 'chip-success' : 'chip-danger'}`}>
+              {rep.errors.length === 0 ? <CheckCircle2 className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
+              {rep.errors.length} errors
+            </span>
+            <span className="chip chip-warning tnum"><AlertTriangle className="h-3 w-3" /> {rep.warnings.length} warnings</span>
+            <span className="ml-auto text-xs font-semibold text-faint tnum">
+              Validator ran {new Date(rep.ranAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+            </span>
           </div>
-          <p className="mt-2.5 text-[11px] font-semibold text-faint">Validator ran {new Date(rep.ranAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} ,  {rep.errors.length} errors, {rep.warnings.length} warnings</p>
 
           {rep.errors.length > 0 && (
             <div className="mt-3 rounded-2xl border-2 border-danger/30 p-3.5 bg-danger-soft/40 max-h-52 overflow-y-auto thin-scroll">
@@ -121,12 +122,11 @@ export function AdminPanel({ report, stats }: { report: ValidationReport; stats:
             </div>
           )}
           {rep.warnings.length > 0 && (
-            <details className="mt-3 group rounded-2xl border-2 border-warning bg-warning-soft/60 px-4 py-3">
-              <summary className="text-sm font-black text-warning-strong dark:text-warning cursor-pointer flex items-center gap-2 select-none list-none">
+            <details className="mt-3 group rounded-2xl border-2 border-warning bg-warning-soft px-4 py-2.5">
+              <summary className="text-sm font-black text-warning-strong dark:text-warning cursor-pointer flex items-center gap-2.5 select-none list-none [&::-webkit-details-marker]:hidden">
                 <span className="icon-tile icon-tile-sm icon-tile-warning !h-7 !w-7"><AlertTriangle className="!h-4 !w-4" /></span>
-                {rep.warnings.length} warnings, click to {''}
-                <span className="group-open:hidden">expand <ChevronDown className="h-4 w-4 inline" /></span>
-                <span className="hidden group-open:inline">collapse <ChevronUp className="h-4 w-4 inline" /></span>
+                <span className="tnum">{rep.warnings.length} warnings</span>
+                <ChevronDown className="ml-auto h-4 w-4 shrink-0 transition-transform group-open:rotate-180" />
               </summary>
               <ul className="mt-2.5 text-xs space-y-1 font-mono max-h-40 overflow-y-auto thin-scroll rounded-xl bg-surface/70 border border-warning/25 p-3">
                 {rep.warnings.map((w, i) => <li key={i}>{w}</li>)}
@@ -136,9 +136,9 @@ export function AdminPanel({ report, stats }: { report: ValidationReport; stats:
         </div>
       </section>
 
-      <div className="grid gap-5 lg:grid-cols-2">
+      <div className="grid gap-5 lg:grid-cols-2 items-stretch">
         {/* import */}
-        <section className="qf-card p-5">
+        <section className="qf-card p-5 flex flex-col">
           <div className="flex items-center gap-3">
             <span className="icon-tile icon-tile-warning"><Upload className="h-6 w-6" /></span>
             <div>
@@ -147,7 +147,7 @@ export function AdminPanel({ report, stats }: { report: ValidationReport; stats:
             </div>
           </div>
           <label
-            className={`mt-4 flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed px-4 py-8 cursor-pointer transition-colors select-none ${
+            className={`mt-4 flex flex-1 flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed px-4 py-6 cursor-pointer transition-colors select-none ${
               dragOver ? 'border-accent bg-accent-soft' : 'border-border-strong bg-surface-2/40 hover:bg-surface-2 hover:border-accent/60'
             }`}
             onDragOver={e => { e.preventDefault(); setDragOver(true); }}
@@ -158,20 +158,21 @@ export function AdminPanel({ report, stats }: { report: ValidationReport; stats:
               if (f) importJson(f);
             }}
           >
-            <Upload className={`h-8 w-8 ${dragOver ? 'text-accent' : 'text-faint'}`} />
+            <Upload className={`h-7 w-7 ${dragOver ? 'text-accent' : 'text-faint'}`} />
             <span className="text-sm font-extrabold">Drag a .json file here</span>
+            <span className="btn3d btn3d-ghost btn3d-sm" aria-hidden>Browse files</span>
             <span className="text-xs font-semibold text-muted text-center max-w-xs">
               Lesson, problem, assessment, project or company, validated before it lands in <code className="text-[0.9em] font-bold">content/</code>. Schema: content/README.md
             </span>
-            <input type="file" accept=".json" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) importJson(f); }} />
+            <input type="file" accept=".json" className="sr-only" onChange={e => { const f = e.target.files?.[0]; if (f) importJson(f); }} />
           </label>
           {importResult && (
             <p className="mt-3 text-xs font-bold font-mono rounded-xl bg-surface-2/70 border border-border px-3 py-2 break-all">{importResult}</p>
           )}
         </section>
 
-        {/* how content works */}
-        <section className="qf-card p-5">
+        {/* how content works: one container, divided rows, no nested cards */}
+        <section className="qf-card p-5 flex flex-col">
           <div className="flex items-center gap-3">
             <span className="icon-tile icon-tile-info"><FileJson className="h-6 w-6" /></span>
             <div>
@@ -179,15 +180,15 @@ export function AdminPanel({ report, stats }: { report: ValidationReport; stats:
               <p className="text-xs font-semibold text-muted">File-based authoring, validated on import</p>
             </div>
           </div>
-          <ul className="mt-4 grid gap-2">
+          <ul className="mt-4 flex-1 divide-y divide-border rounded-2xl border-2 border-border bg-surface-2/40">
             {[
-              { icon: Layers, cls: 'icon-tile-info', k: 'Curriculum structure', v: '11 phases · 65 modules, edit via PR, validated on save' },
-              { icon: BookOpen, cls: 'icon-tile-accent', k: 'Rich blocks', v: '10 lesson block types · 5 question types; interactive components registered in code' },
-              { icon: FileJson, cls: 'icon-tile-warning', k: 'Stable ids', v: 'JSON files are immutable once published; changes ship as new versions' },
-              { icon: CheckCircle2, cls: 'icon-tile-violet', k: 'Docs', v: 'Schema documentation lives in content/README.md' },
+              { icon: Layers, k: 'Curriculum structure', v: '11 phases · 65 modules, edit via PR, validated on save' },
+              { icon: BookOpen, k: 'Rich blocks', v: '10 lesson block types · 5 question types; interactive components registered in code' },
+              { icon: FileJson, k: 'Stable ids', v: 'JSON files are immutable once published; changes ship as new versions' },
+              { icon: CheckCircle2, k: 'Docs', v: 'Schema documentation lives in content/README.md' },
             ].map(item => (
-              <li key={item.k} className="row-card">
-                <span className={`icon-tile icon-tile-sm ${item.cls}`}><item.icon className="h-4 w-4" /></span>
+              <li key={item.k} className="flex items-center gap-3 px-4 py-3">
+                <span className="icon-tile icon-tile-sm icon-tile-neutral"><item.icon className="h-4 w-4" /></span>
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-extrabold">{item.k}</div>
                   <div className="text-xs font-semibold text-muted mt-0.5">{item.v}</div>

@@ -20,39 +20,6 @@
       "text": "The pipeline: preprocessor, compiler, linker"
     },
     {
-      "type": "interactive",
-      "component": "TerminalSteps",
-      "params": {
-        "steps": [
-          {
-            "cmd": "g++ -E main.cpp -o main.i",
-            "out": [
-              "preprocess: 12,041 lines after header expansion"
-            ]
-          },
-          {
-            "cmd": "g++ -S main.i -o main.s",
-            "out": [
-              "compile: main.s, x86-64 assembly generated"
-            ]
-          },
-          {
-            "cmd": "g++ -c main.s -o main.o",
-            "out": [
-              "assemble: main.o, ELF relocatable object"
-            ]
-          },
-          {
-            "cmd": "g++ main.o -o app",
-            "out": [
-              "link: app, executable with runtime dependencies"
-            ]
-          }
-        ]
-      },
-      "caption": "The four stops every C++ file makes on the way to a binary. Run them one at a time."
-    },
-    {
       "type": "p",
       "md": "A C++ build is a factory line with three very different stations. The **preprocessor** runs first and is a pure text machine: it handles every line beginning with `#` - pasting the full contents of each `#include`'d file in place, expanding `#define` macros, and deleting the branches of `#if`/`#ifdef` that evaluate false. Its output is a **translation unit**: one source file with all includes resolved. The **compiler** then translates each translation unit into machine code, producing an **object file** (`.o`) that contains the file's functions plus a symbol table listing which symbols it defines and which it still needs from elsewhere. Finally the **linker** merges all object files and libraries, resolving every pending reference to a real definition, and emits the executable. Because resolution happens last, a symbol that is declared but never defined fails at *link* time, which is exactly why *undefined reference* errors appear only at the end of the build, no matter how early the mistake was made."
     },
@@ -94,6 +61,46 @@
       "lang": "cpp",
       "code": "// Shown as one file so it compiles standalone; in a real build the three\n// sections live in prices.h, prices.cpp and main.cpp respectively.\n\n// --- prices.h : the interface -------------------------------------------\n#ifndef PRICES_H\n#define PRICES_H\n\ndouble grossPnl(double entryPrice, double exitPrice, int shares);  // declaration\n\n#endif\n\n// --- prices.cpp : the implementation ------------------------------------\ndouble grossPnl(double entryPrice, double exitPrice, int shares) {  // definition\n    return (exitPrice - entryPrice) * shares;\n}\n\n// --- main.cpp : the user -------------------------------------------------\n#include <iostream>\n\nint main() {\n    std::cout << \"PnL: \" << grossPnl(42.17, 43.05, 250) << '\\n';\n    return 0;\n}",
       "caption": "Declare in the header, define once in a source, include the interface where needed. Output: PnL: 220"
+    },
+    {
+      "type": "interactive",
+      "component": "TerminalSteps",
+      "params": {
+        "steps": [
+          {
+            "cmd": "g++ -E conv.cpp | wc -l",
+            "out": [
+              "1284"
+            ],
+            "note": "preprocess: headers unrolled into one translation unit"
+          },
+          {
+            "cmd": "g++ -S -O2 conv.cpp && head -6 conv.s",
+            "out": [
+              ".globl  _Z6conv12d",
+              "movapd  %xmm0, %xmm1",
+              "addsd  .LC0(%rip), %xmm0"
+            ],
+            "note": "compile: C++ becomes named, optimised assembly"
+          },
+          {
+            "cmd": "g++ -c conv.cpp && ls -l conv.o",
+            "out": [
+              "-rw-r--r-- 1 quant 2.4K conv.o"
+            ],
+            "note": "assemble: machine code in a relocatable object, symbols still unresolved"
+          },
+          {
+            "cmd": "g++ conv.o -o conv && ldd conv",
+            "out": [
+              "linux-vdso.so.1",
+              "libstdc++.so.6 => /usr/lib/.../libstdc++.so.6"
+            ],
+            "note": "link: unresolved names bound to other objects and libraries"
+          }
+        ]
+      },
+      "caption": "One file becomes four artefacts. Each stage has its own debugger: -E for macros, -S for the optimiser’s choices, -c for symbols, ldd for what you promised to provide."
     },
     {
       "type": "h2",

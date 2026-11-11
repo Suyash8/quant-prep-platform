@@ -124,47 +124,40 @@ export function Quiz({ endpoint, payload, questions, fullQuestions, onResult, on
   return (
     <div className={compact ? 'space-y-5' : 'space-y-6'}>
       {questions.map((q, idx) => (
-        <div key={q.id} className="qf-card-flat p-4 sm:p-5" data-testid={`question-${q.id}`}>
-          <p className="font-bold text-sm leading-relaxed mb-1">
-            <span className="chip mr-2 -ml-1">Q{idx + 1}</span>
+        <div key={q.id} className="border rounded-xl p-4 bg-surface" data-testid={`question-${q.id}`}>
+          <p className="font-medium text-sm leading-relaxed">
             <QMath text={q.prompt} />
           </p>
           {q.code && (
             <div className="code-block mt-2"><code>{q.code}</code></div>
           )}
-          <div className="mt-3 grid gap-2">
+          <div className="mt-3 space-y-1.5">
             {q.type === 'mcq' && q.options?.map((opt, i) => {
-              const chosen = answers[q.id] === String(i);
-              const correctOpt = shown ? shown.perQuestion[q.id]?.correct && chosen : false;
-              const wrongOpt = shown ? chosen && !shown.perQuestion[q.id]?.correct : false;
+              const picked = answers[q.id] === String(i);
+              const state = shown
+                ? (shown.perQuestion[q.id]?.correct && picked ? ' qf-correct' : picked ? ' qf-wrong' : picked ? ' qf-selected' : '')
+                : picked ? ' qf-selected' : '';
               return (
-                <label key={i} className={`qf-answer-tile ${chosen ? 'qf-selected' : ''} ${correctOpt ? 'qf-correct' : ''} ${wrongOpt ? 'qf-wrong' : ''}`}>
-                  <input
-                    type="radio"
-                    name={q.id}
-                    checked={chosen}
-                    onChange={() => setAnswer(q.id, String(i))}
-                    className="sr-only"
-                  />
-                  <span className="qf-letter" aria-hidden="true">{String.fromCharCode(65 + i)}</span>
-                  <span className="flex-1 min-w-0"><QMath text={opt} /></span>
-                  {shown && chosen && (correctOpt
-                    ? <CheckCircle2 className="h-5 w-5 text-success" />
-                    : <XCircle className="h-5 w-5 text-danger" />)}
+                <label key={i} className={`qf-answer-tile${state}`}>
+                  <input type="radio" name={q.id} checked={picked} onChange={() => setAnswer(q.id, String(i))} className="sr-only" />
+                  <span className="qf-answer-badge tnum">{String.fromCharCode(65 + i)}</span>
+                  <span className="min-w-0 flex-1"><QMath text={opt} /></span>
+                  {shown && picked && (shown.perQuestion[q.id]?.correct
+                    ? <CheckCircle2 className="h-4 w-4 flex-none text-success" />
+                    : <XCircle className="h-4 w-4 flex-none text-danger" />)}
                 </label>
               );
             })}
             {q.type === 'ms' && q.options?.map((opt, i) => {
               const sel = (answers[q.id] as string[]) ?? [];
-              const on = sel.includes(String(i));
+              const picked = sel.includes(String(i));
               return (
-                <label key={i} className={`qf-answer-tile ${on ? 'qf-selected' : ''}`}>
-                  <input type="checkbox" checked={on}
-                    onChange={() => setAnswer(q.id, on ? sel.filter(x => x !== String(i)) : [...sel, String(i)])}
+                <label key={i} className={`qf-answer-tile${picked ? ' qf-selected' : ''}`}>
+                  <input type="checkbox" checked={picked}
+                    onChange={() => setAnswer(q.id, picked ? sel.filter(x => x !== String(i)) : [...sel, String(i)])}
                     className="sr-only" />
-                  <span className="qf-letter" aria-hidden="true">{String.fromCharCode(65 + i)}</span>
-                  <span className="flex-1 min-w-0"><QMath text={opt} /></span>
-                  {on && <CheckCircle2 className="h-5 w-5 text-accent-deep" aria-hidden="true" />}
+                  <span className="qf-answer-badge tnum">{String.fromCharCode(65 + i)}</span>
+                  <span className="min-w-0 flex-1"><QMath text={opt} /></span>
                 </label>
               );
             })}
@@ -176,13 +169,13 @@ export function Quiz({ endpoint, payload, questions, fullQuestions, onResult, on
                       type="text" inputMode="decimal"
                       value={(answers[q.id] as string) ?? ''}
                       onChange={e => setAnswer(q.id, e.target.value)}
-                      className="qf-input tnum max-w-56 font-mono text-base"
+                      className="qf-input tnum w-48"
                       placeholder="Numeric answer"
                       aria-label={`Answer for question ${idx + 1}`}
                     />
                     {shown && (shown.perQuestion[q.id]?.correct
-                      ? <CheckCircle2 className="h-5 w-5 text-success" />
-                      : <XCircle className="h-5 w-5 text-danger" />)}
+                      ? <CheckCircle2 className="h-4 w-4 text-success" />
+                      : <XCircle className="h-4 w-4 text-danger" />)}
                   </div>
                 )}
                 {q.type === 'code-output' && (
@@ -191,14 +184,13 @@ export function Quiz({ endpoint, payload, questions, fullQuestions, onResult, on
                       rows={2}
                       value={(answers[q.id] as string) ?? ''}
                       onChange={e => setAnswer(q.id, e.target.value)}
-                      className="qf-textarea flex-1 font-mono"
-                      style={{ minHeight: '2.8rem' }}
-                      placeholder="Exact output, one line per output line"
+                      className="qf-textarea !min-h-0 flex-1 font-mono"
+                      placeholder="Exact output (one line per output line)"
                       aria-label={`Answer for question ${idx + 1}`}
                     />
                     {shown && (shown.perQuestion[q.id]?.correct
-                      ? <CheckCircle2 className="h-5 w-5 text-success mt-2" />
-                      : <XCircle className="h-5 w-5 text-danger mt-2" />)}
+                      ? <CheckCircle2 className="h-4 w-4 text-success mt-2" />
+                      : <XCircle className="h-4 w-4 text-danger mt-2" />)}
                   </div>
                 )}
                 {q.type === 'short' && (
@@ -206,8 +198,8 @@ export function Quiz({ endpoint, payload, questions, fullQuestions, onResult, on
                     rows={3}
                     value={(answers[q.id] as string) ?? ''}
                     onChange={e => setAnswer(q.id, e.target.value)}
-                    className="qf-textarea"
-                    placeholder="Answer in your own words"
+                    className="qf-textarea w-full"
+                    placeholder="Answer in your own words…"
                     aria-label={`Answer for question ${idx + 1}`}
                   />
                 )}
@@ -215,35 +207,35 @@ export function Quiz({ endpoint, payload, questions, fullQuestions, onResult, on
             )}
           </div>
           {shown && (
-            <div className={`qf-callout mt-3 ${shown.perQuestion[q.id]?.correct ? 'qf-callout-tip' : 'qf-callout-warn'}`}>
-              <span className="font-black">{shown.perQuestion[q.id]?.correct ? 'Correct. ' : 'Not quite. '}</span>
-              <span><QMath text={shown.perQuestion[q.id]?.explanation ?? ''} /></span>
+            <div className={`mt-3 rounded-lg px-3 py-2.5 text-sm ${shown.perQuestion[q.id]?.correct ? 'bg-success-soft' : 'bg-warning-soft'}`}>
+              <span className="font-semibold">{shown.perQuestion[q.id]?.correct ? 'Correct. ' : 'Not quite. '}</span>
+              <QMath text={shown.perQuestion[q.id]?.explanation ?? ''} />
             </div>
           )}
         </div>
       ))}
 
       {(endpoint || localMode) && (
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-3">
           <button
             onClick={submit} disabled={busy || !allAnswered}
-            className="btn3d"
+            className="px-5 py-2.5 rounded-lg bg-accent text-accent-foreground font-medium text-sm hover:bg-accent-strong disabled:opacity-50"
           >
-            {busy ? 'Scoring…' : shown ? 'Submit again' : 'Check answers'}
+            {busy ? 'Scoring…' : shown ? 'Submit again' : 'Submit answers'}
           </button>
           {shown && (
-            <button onClick={reset} className="btn3d btn3d-ghost btn3d-sm">
-              <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" /> Clear answers
+            <button onClick={reset} className="px-4 py-2.5 rounded-lg border text-sm hover:bg-surface-2 inline-flex items-center gap-1.5">
+              <RotateCcw className="h-3.5 w-3.5" /> Clear
             </button>
           )}
           {shown && (
-            <span className={`chip ${shown.pct >= 80 ? 'chip-success' : 'chip-warning'} tnum`}>
+            <span className={`text-sm font-semibold ${shown.pct >= 80 ? 'text-success' : 'text-warning'}`}>
               {shown.pct}% ({shown.correct}/{shown.total}){shown.status ? ` · ${shown.status.replace('_', ' ')}` : ''}
             </span>
           )}
         </div>
       )}
-      {(endpoint || localMode) && !allAnswered && !shown && <p className="text-xs text-faint">Answer every question to submit. Wrong answers cost a retry, so think it through.</p>}
+      {(endpoint || localMode) && !allAnswered && !shown && <p className="text-xs text-faint">Answer every question to submit, no guessing through, wrong answers cost a retry.</p>}
       
     </div>
   );

@@ -20,6 +20,10 @@ export interface RegistryLite {
 
 export interface ProblemLite {
   slug: string; title: string; difficulty: string; category: string; tags: string[]; estMinutes: number;
+  /** v3.2: varies by difficulty (30/50/80) so rewards read as real data */
+  xp: number;
+  /** v3.2: one-line pitch from the statement, fills the empty list middle */
+  summary: string;
 }
 
 export interface AssessmentLite {

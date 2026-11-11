@@ -20,12 +20,6 @@
       "text": "Why branches hurt: the misprediction penalty"
     },
     {
-      "type": "interactive",
-      "component": "ComplexityCompare",
-      "params": {},
-      "caption": "Branchless trades a branch for arithmetic: watch the growth curves and guess which wins."
-    },
-    {
       "type": "p",
       "md": "Modern CPUs are pipelines: instructions are fetched, decoded and executed many stages ahead, and **branch prediction** guesses which way each branch goes so the pipeline stays full. A correct guess is nearly free; a **misprediction** means discarding all speculative work, typically a **15-20 cycle** flush. Random-looking branches (data-dependent decisions, like *clip this notional?*) defeat the predictor, and the branch becomes the bottleneck, not the arithmetic. The fix is **branchless** code: turn the decision into data, a mask, and let arithmetic select the result. CPUs provide `cmov` (conditional move) for exactly this, and compilers emit it for `std::min`/`std::max` and ternaries on modern targets."
     },
@@ -58,6 +52,31 @@
       "lang": "cpp",
       "code": "#include <numeric>\n#include <vector>\n\n// Compile with: g++ -O3 -march=native -ftree-vectorize\n// (verify with -fopt-info-vec: 'loop vectorized using 16 byte vectors')\ndouble dot(const std::vector<double>& a, const std::vector<double>& b) {\n    return std::inner_product(a.begin(), a.end(), b.begin(), 0.0);\n}\n// At -O3 -march=native the compiler maps this loop to vfmadd/vaddpd\n// instructions: 4 doubles per AVX2 instruction, 8 with AVX-512.\n// Contiguous input (SoA) is what makes this possible.",
       "caption": "Auto-vectorisation: no intrinsics needed when the loop is clean and contiguous."
+    },
+    {
+      "type": "interactive",
+      "component": "LatencyBudget",
+      "params": {
+        "parts": [
+          {
+            "name": "branchy scalar",
+            "ns": 96
+          },
+          {
+            "name": "branchless scalar (cmov)",
+            "ns": 34
+          },
+          {
+            "name": "AVX2, 4 doubles per op",
+            "ns": 11
+          },
+          {
+            "name": "AVX-512, 8 per op",
+            "ns": 7
+          }
+        ]
+      },
+      "caption": "Branches poison pipelines and SIMD wants straight lines: multiply by a mask instead of choosing, and let lanes process the question you were going to ask with if."
     },
     {
       "type": "steps",

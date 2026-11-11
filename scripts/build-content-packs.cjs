@@ -69,13 +69,21 @@ function main() {
   // ---- problems (statement/editorial/hints/solutions; no test data) ----
   const probDir = path.join(contentDir, 'problems');
   const problemsIndex = [];
+  // XP varies by difficulty so the reward system reads as real data, not filler
+  const XP_BY_DIFFICULTY = { easy: 30, medium: 50, hard: 80 };
   for (const f of fs.readdirSync(probDir).sort()) {
     if (!f.endsWith('.json')) continue;
     const p = readJson(path.join(probDir, f));
     const { tests, ...rest } = p;
+    // one-line pitch from the first statement paragraph, inline maths stripped
+    const firstPara = (p.statement || []).find(b => b.type === 'p' && b.md);
+    const summary = firstPara
+      ? firstPara.md.replace(/\$[^$]*\$/g, '').replace(/[#*`>]/g, '').replace(/\s+/g, ' ').trim().slice(0, 110).replace(/\s+\S*$/, '') + '…'
+      : '';
     problemsIndex.push({
       slug: p.slug, title: p.title, difficulty: p.difficulty,
       category: p.category, tags: p.tags, estMinutes: p.estMinutes,
+      xp: XP_BY_DIFFICULTY[p.difficulty] ?? 30, summary,
     });
     writeJson(`problems/${p.slug}.json`, rest);
   }

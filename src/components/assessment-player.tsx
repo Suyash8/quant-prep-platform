@@ -35,7 +35,12 @@ const RING_RADIUS = 62;
 const RING_C = 2 * Math.PI * RING_RADIUS;
 const RESULT_DELAYS = ['0ms', '70ms', '140ms', '210ms'];
 
-export function AssessmentPlayer({ assessment, compactIntro = false }: { assessment: PlayerAssessment; compactIntro?: boolean }) {
+export function AssessmentPlayer({ assessment, compactIntro = false, subduedIntro = false }: {
+  assessment: PlayerAssessment;
+  compactIntro?: boolean;
+  /** pages whose hero already sells the assessment demote this bar to a ghost recap */
+  subduedIntro?: boolean;
+}) {
   const [started, setStarted] = React.useState(false);
   const [index, setIndex] = React.useState(0);
   const [answers, setAnswers] = React.useState<Record<string, string | string[]>>({});
@@ -148,14 +153,24 @@ export function AssessmentPlayer({ assessment, compactIntro = false }: { assessm
           <div className="flex-1 min-w-0">
             <h2 className="font-black tracking-tight">{assessment.title}</h2>
             <div className="mt-1.5 flex flex-wrap gap-2">
-              <span className="chip tnum"><ListChecks className="h-3 w-3" /> {total} questions · {assessment.sections.length} sections</span>
-              <span className="chip tnum"><Clock className="h-3 w-3" /> {assessment.timeLimitMinutes > 0 ? assessment.timeLimitMinutes + ' min' : 'untimed'}</span>
-              <span className="chip chip-success"><Check className="h-3 w-3" /> server-scored</span>
+              {subduedIntro ? (
+                <>
+                  <span className="chip tnum">{assessment.sections.length} sections</span>
+                  <span className="chip tnum"><Clock className="h-3 w-3" /> {assessment.timeLimitMinutes > 0 ? assessment.timeLimitMinutes + ' min' : 'untimed'}</span>
+                  <span className="chip"><Check className="h-3 w-3" /> server-scored</span>
+                </>
+              ) : (
+                <>
+                  <span className="chip tnum"><ListChecks className="h-3 w-3" /> {total} questions · {assessment.sections.length} sections</span>
+                  <span className="chip tnum"><Clock className="h-3 w-3" /> {assessment.timeLimitMinutes > 0 ? assessment.timeLimitMinutes + ' min' : 'untimed'}</span>
+                  <span className="chip chip-success"><Check className="h-3 w-3" /> server-scored</span>
+                </>
+              )}
             </div>
           </div>
           <button
             onClick={() => { setStarted(true); startedAt.current = Date.now(); }}
-            className="btn3d btn3d-lg shrink-0"
+            className={subduedIntro ? 'btn3d btn3d-ghost btn3d-lg shrink-0' : 'btn3d btn3d-lg shrink-0'}
           >
             Start <ChevronRight className="h-5 w-5" />
           </button>

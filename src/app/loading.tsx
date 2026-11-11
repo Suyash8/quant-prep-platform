@@ -1,25 +1,25 @@
+/** Route-level loading: shell-shaped skeleton blocks, never a spinner page. */
 export default function Loading() {
-  // Skeleton shaped like the standard feature page: hero, stat row, rows.
   return (
-    <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8 space-y-8" aria-busy="true" aria-label="Loading page">
+    <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8 space-y-8" aria-busy="true">
       <div className="page-hero">
-        <div className="skeleton w-14 h-14" />
+        <span className="icon-tile skeleton" style={{ width: '3.4rem', height: '3.4rem' }} />
         <div className="space-y-2">
-          <div className="skeleton h-6 w-64" />
-          <div className="skeleton h-4 w-44" />
+          <span className="skeleton block h-7 w-64" />
+          <span className="skeleton block h-4 w-96 max-w-full" />
         </div>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {[0, 1, 2, 3].map((i) => (
-          <div key={i} className="stat-tile">
-            <div className="skeleton h-8 w-20 mb-2" />
-            <div className="skeleton h-3.5 w-24" />
-          </div>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {[0, 1, 2, 3].map(i => (
+          <span key={i} className="stat-tile">
+            <span className="skeleton block h-6 w-16 mb-2" style={{ marginRight: '3rem' }} />
+            <span className="skeleton block h-4 w-20" />
+          </span>
         ))}
       </div>
-      <div className="space-y-4">
-        {[0, 1, 2, 3, 4].map((i) => (
-          <div key={i} className="skeleton h-16 w-full" />
+      <div className="space-y-3">
+        {[0, 1, 2].map(i => (
+          <span key={i} className="skeleton block h-16 w-full" style={{ borderRadius: 16 }} />
         ))}
       </div>
     </div>

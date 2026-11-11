@@ -20,12 +20,6 @@
       "text": "promise and future: a one-shot channel"
     },
     {
-      "type": "interactive",
-      "component": "LatencyBudget",
-      "params": {},
-      "caption": "One thread waiting is not one thread working: budget the wait out of your latency."
-    },
-    {
       "type": "p",
       "md": "A `std::promise<T>` is the write end of a single-use channel; `future<T>` (from `get_future()`) is the read end. The producer calls `set_value()` (or `set_exception()`); the consumer calls `get()`, which **blocks until the value or exception arrives**, then returns the value, or rethrows the exception, in the consumer's thread. `get()` **consumes** the future: call it twice and you get `std::future_error`. This channel is *one-shot*; for repeated communication use the queues of the previous lesson."
     },
@@ -107,6 +101,31 @@
       "lang": "cpp",
       "code": "#include <future>\n#include <vector>\n#include <numeric>\n#include <cstdio>\n\n// Price three books concurrently, sum the results.\n// The pool is implicit (std::async with the launch policy), the join is the .get()s.\ndouble total_pnl(std::vector<double> book_a,\n                 std::vector<double> book_b,\n                 std::vector<double> book_c) {\n    auto sum = [](std::vector<double> v) {\n        return std::accumulate(v.begin(), v.end(), 0.0);\n    };\n    auto fa = std::async(std::launch::async, sum, std::move(book_a));\n    auto fb = std::async(std::launch::async, sum, std::move(book_b));\n    double c = sum(book_c);                      // do one on this thread\n    return fa.get() + fb.get() + c;              // .get() joins + rethrows\n}\n\nint main() {\n    printf(\"%.2f\\n\", total_pnl({1,2,3}, {4,5}, {-2}));   // 13.00\n}",
       "caption": "Three independent sums, two helper threads, one join, exceptions travel through .get()."
+    },
+    {
+      "type": "interactive",
+      "component": "LatencyBudget",
+      "params": {
+        "parts": [
+          {
+            "name": "await quote feed",
+            "ns": 8200000
+          },
+          {
+            "name": "await vol surface",
+            "ns": 6400000
+          },
+          {
+            "name": "compute (both inputs resident)",
+            "ns": 900
+          },
+          {
+            "name": "same work, sequential awaits",
+            "ns": 15100000
+          }
+        ]
+      },
+      "caption": "A future splits \"when I need it\" from \"when I fetch it\". The waits overlap; the compute is the tiny part that actually needed the CPU."
     },
     {
       "type": "p",

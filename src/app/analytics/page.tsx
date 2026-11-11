@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import {
-  BarChart3, BookOpenCheck, CircleCheck, Code2, Divide, Equal, Flame, History, Infinity as InfinityIcon,
+  BarChart3, BookOpenCheck, CircleCheck, CircleDashed, Code2, Divide, Equal, Flame, History, Infinity as InfinityIcon,
   Pi, Percent, Repeat, Sigma, Target, Timer, TriangleAlert, Trophy, Variable, Zap, Braces,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -12,17 +12,20 @@ import { AppShell } from '@/components/app-shell';
 
 export const metadata = { title: 'Analytics. QuantFoundry' };
 
+const WEEKDAY_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 const SKILL_ICONS: LucideIcon[] = [Sigma, Percent, Divide, Pi, Variable, InfinityIcon, Braces, Equal];
-const SKILL_TILES = ['icon-tile-accent', 'icon-tile-info', 'icon-tile-violet', 'icon-tile-warning', 'icon-tile-gold'];
 
 const popDelay = (i: number) => ({ animationDelay: i * 60 + 'ms' });
 const slideDelay = (i: number) => ({ animationDelay: i * 90 + 'ms' });
 
-export default async function AnalyticsPage({ searchParams }: { searchParams: Promise<{ period?: string }> }) {
+function weekdayLetter(day: string): string {
+  const d = new Date(day + 'T00:00:00Z');
+  return WEEKDAY_LETTERS[d.getUTCDay()] ?? '';
+}
+
+export default async function AnalyticsPage() {
   const user = await getCurrentUser();
   if (!user) redirect('/login?next=/analytics');
-  const sp = await searchParams;
-  const periodDays = sp.period === 'all' ? 90 : sp.period === '30' ? 30 : sp.period === '7' ? 7 : 14;
 
   const graph = getCurriculumGraph();
   const reg = getRegistry();
@@ -37,11 +40,11 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
     db.cardState.findMany({ where: { userId: user.id } }),
   ]);
 
-  // ---- study hours per day (selected period) ----
+  // ---- study hours per day (last 14 days) ----
 
 
   const days: { day: string; minutes: number }[] = [];
-  for (let i = periodDays - 1; i >= 0; i--) {
+  for (let i = 13; i >= 0; i--) {
     const d = new Date(Date.now() - i * 86400_000).toISOString().slice(0, 10);
     const mins = Math.round(sessions.filter(s => s.day === d).reduce((n, s) => n + s.seconds, 0) / 60);
     days.push({ day: d, minutes: mins });
@@ -50,7 +53,7 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
   const hasStudyData = days.some(d => d.minutes > 0);
   const bestMinutes = days.reduce((m, d) => Math.max(m, d.minutes), 0);
 
-  // day streak from the visible window (today, with yesterday grace)
+  // day streak from the 14-day window (today, with yesterday grace)
 
 
   const minsByDay = new Map(days.map(d => [d.day, d.minutes]));
@@ -129,20 +132,21 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
   if (bottlenecks.length === 0) bottlenecks.push('No bottlenecks detected from your data so far, keep the streak going.');
 
   const totalMinutes = Math.round(sessions.reduce((n, s) => n + s.seconds, 0) / 60);
-  const passedCount = progressRows.filter(p => ['passed', 'mastered'].includes(p.status)).length;
   const studyTimeValue = Math.floor(totalMinutes / 60) + 'h ' + (totalMinutes % 60) + 'm';
   const lessonsValue =
-    progressRows.filter(p => p.status === 'passed').length + ' · ' + progressRows.filter(p => p.status === 'mastered').length;
-  const drillPctValue = drillStats.total ? Math.round((drillStats.correct / drillStats.total) * 100) + '%' : 'n/a';
+    progressRows.filter(p => p.status === 'passed').length + ' / ' + progressRows.filter(p => p.status === 'mastered').length;
+  const drillPctValue = drillStats.total ? Math.round((drillStats.correct / drillStats.total) * 100) + '%' : '—';
   const drillMsChip = drillStats.n ? Math.round(drillStats.ms / drillStats.n) + 'ms avg' : null;
 
-  const tiles: { icon: LucideIcon; tile: string; value: string; label: string; valueCls?: string; chip?: string | null; chipCls?: string }[] = [
-    { icon: Timer, tile: 'icon-tile-accent', value: studyTimeValue, label: 'Study time (all)', chip: totalMinutes + ' minutes', chipCls: 'chip tnum' },
-    { icon: BookOpenCheck, tile: 'icon-tile-info', value: lessonsValue, label: 'Lessons passed / mastered', chip: 'across all phases', chipCls: 'chip' },
-    { icon: Code2, tile: 'icon-tile-violet', value: String(uniqueSolved), label: 'Problems solved', chip: accepted + '/' + submissions + ' accepted', chipCls: 'chip chip-info tnum' },
-    { icon: Zap, tile: 'icon-tile-warning', value: drillPctValue, label: 'Drill accuracy', chip: drillMsChip ?? 'no drills yet', chipCls: 'chip chip-warning tnum' },
-    { icon: Flame, tile: 'icon-tile-gold', value: String(streakDays), label: 'Day streak', valueCls: 'text-gold', chip: 'keep it alive', chipCls: 'chip chip-gold' },
-    { icon: Trophy, tile: 'icon-tile-gold', value: bestMinutes + 'm', label: 'Best day', valueCls: 'text-gold', chip: 'beat it today', chipCls: 'chip chip-gold' },
+  // canonical horizontal tiles: one hero hue (accent), one secondary (info), neutrals for the rest;
+  // every tile gets the identical value/label/sub pattern, semantic color stays out of the labels
+  const tiles: { icon: LucideIcon; tile: string; value: string; label: string; sub: string }[] = [
+    { icon: Timer, tile: totalMinutes > 0 ? 'icon-tile-accent' : 'icon-tile-neutral', value: studyTimeValue, label: 'Study time (all)', sub: totalMinutes + ' minutes' },
+    { icon: Flame, tile: streakDays > 0 ? 'icon-tile-info' : 'icon-tile-neutral', value: String(streakDays), label: 'Day streak (14d)', sub: 'keep it alive' },
+    { icon: BookOpenCheck, tile: 'icon-tile-neutral', value: lessonsValue, label: 'Lessons passed / mastered', sub: 'across all phases' },
+    { icon: Code2, tile: 'icon-tile-neutral', value: String(uniqueSolved), label: 'Problems solved', sub: accepted + '/' + submissions + ' accepted' },
+    { icon: Zap, tile: 'icon-tile-neutral', value: drillPctValue, label: 'Drill accuracy', sub: drillMsChip ?? 'no drills yet' },
+    { icon: Trophy, tile: 'icon-tile-neutral', value: bestMinutes + 'm', label: 'Best day (14d)', sub: 'beat it today' },
   ];
 
   return (
@@ -154,64 +158,70 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
           </span>
           <div>
             <h1>Analytics</h1>
-            <p className="page-sub">{totalMinutes} minutes studied, {passedCount} lessons passed, every number computed from your real activity</p>
+            <p className="page-sub">Your learning data at a glance</p>
           </div>
           <span className="chip chip-info ml-auto hidden sm:inline-flex">no vanity metrics</span>
         </header>
 
         {/* stat row */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 items-stretch">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
           {tiles.map((t, i) => {
             const Icon = t.icon;
-            const valueCls = 'stat-value font-black' + (t.valueCls ? ' ' + t.valueCls : '');
             return (
-              <div key={t.label} className="stat-tile anim-pop-in flex flex-col" style={popDelay(i)}>
-                <span className={'icon-tile-sm ' + t.tile}>
+              <div key={t.label} className="stat-tile anim-pop-in min-w-0" style={popDelay(i)}>
+                <span className={'icon-tile icon-tile-sm ' + t.tile}>
                   <Icon />
                 </span>
-                <div className={valueCls + ' mt-3 text-xl whitespace-nowrap'}>{t.value}</div>
-                <div className="stat-label mt-1">{t.label}</div>
-                {t.chip ? <span className={(t.chipCls ?? 'chip') + ' mt-2 self-start whitespace-nowrap'}>{t.chip}</span> : null}
+                <div className="stat-body min-w-0">
+                  <div className="stat-value !text-xl tnum whitespace-nowrap">{t.value}</div>
+                  <div className="stat-label">{t.label}</div>
+                  <div className="stat-sub truncate">{t.sub}</div>
+                </div>
               </div>
             );
           })}
         </div>
 
-        {/* study time bar chart with period selector */}
+        {/* study time bar chart */}
         <section className="mt-8 qf-card p-5 anim-slide-up" style={slideDelay(0)}>
           <div className="section-head">
-            <span className="icon-tile-sm icon-tile-info">
+            <span className="icon-tile icon-tile-sm icon-tile-info">
               <History />
             </span>
-            <h2>Study time per day</h2>
-            <div className="ml-auto qf-segmented" role="group" aria-label="Period">
-              <Link href="/analytics?period=7" aria-pressed={periodDays === 7} className="inline-flex items-center gap-1">7d</Link>
-              <Link href="/analytics" aria-pressed={periodDays === 14} className="inline-flex items-center gap-1">14d</Link>
-              <Link href="/analytics?period=30" aria-pressed={periodDays === 30} className="inline-flex items-center gap-1">30d</Link>
-              <Link href="/analytics?period=all" aria-pressed={periodDays === 90} className="inline-flex items-center gap-1">All</Link>
-            </div>
+            <h2>Study time, last 14 days</h2>
+            <span className="chip chip-accent tnum ml-auto">total {totalMinutes}m</span>
           </div>
-          <span className="chip chip-accent tnum">total {totalMinutes}m</span>
           {hasStudyData ? (
-            <div className="mt-3 flex items-end gap-1.5 h-44 border-b-2 border-border pb-2">
-              {days.map(d => {
-                const pct = (d.minutes / maxMinutes) * 100;
-                const barCls =
-                  d.minutes > 0
-                    ? 'w-full rounded-t-lg bg-accent hover:brightness-110 transition-all'
-                    : 'h-2.5 w-2.5 rounded-full border-2 border-border-strong bg-surface-3';
-                const barTitle = d.day + ': ' + d.minutes + ' min';
-                return (
-                  <div key={d.day} className="flex-1 h-full flex flex-col justify-end items-center gap-1 min-w-0" title={barTitle}>
-                    <span className="text-xs font-black tnum leading-none text-muted">{d.minutes > 0 ? d.minutes + 'm' : ''}</span>
-                    <div className="w-full flex-1 flex items-end justify-center">
-                      {d.minutes > 0
-                        ? <div className={barCls} style={{ height: Math.max(6, pct) + '%' }} />
-                        : <div className={barCls} aria-label="rest day" />}
+            <div>
+              {/* every column gets the same fixed label slot, bars sit on a shared baseline,
+                  zero days render as a short stub instead of a floating dot */}
+              <div
+                className="h-44 flex items-stretch gap-1.5"
+                role="img"
+                aria-label="Study minutes per day over the last 14 days"
+              >
+                {days.map(d => {
+                  const pct = (d.minutes / maxMinutes) * 100;
+                  return (
+                    <div key={d.day} className="flex-1 min-w-0 flex flex-col" title={d.day + ': ' + d.minutes + ' min'}>
+                      <span className="h-4 flex items-end justify-center text-[9px] font-black tnum leading-none text-muted">
+                        {d.minutes > 0 ? d.minutes + 'm' : ''}
+                      </span>
+                      <div className="flex-1 w-full flex items-end justify-center">
+                        {d.minutes > 0
+                          ? <div className="w-full rounded-t-lg bg-accent hover:brightness-110 hover:scale-x-110 transition-all" style={{ height: Math.max(6, pct) + '%' }} />
+                          : <div className="w-full h-1.5 rounded-full bg-surface-3" aria-label="rest day" />}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
+              <div className="border-t-2 border-border" aria-hidden />
+              <div className="mt-1.5 flex gap-1.5">
+                {days.map(d => (
+                  <span key={d.day} className="flex-1 min-w-0 text-center text-[10px] font-bold text-muted leading-none">{weekdayLetter(d.day)}</span>
+                ))}
+              </div>
             </div>
           ) : (
             <div className="qf-empty">
@@ -223,18 +233,13 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
               </Link>
             </div>
           )}
-          <p className="mt-3 text-sm font-semibold text-muted">
-            {hasStudyData
-              ? `A ${bestMinutes} minute day is your best in this window. Bars with no height were rest days.`
-              : 'One 6-minute lesson puts the first bar on this chart.'}
-          </p>
         </section>
 
         {/* skills */}
         <div className="mt-6 grid md:grid-cols-2 gap-6 items-start">
           <section className="qf-card p-5 anim-slide-up" style={slideDelay(1)}>
             <div className="section-head">
-              <span className="icon-tile-sm icon-tile-accent">
+              <span className="icon-tile icon-tile-sm icon-tile-accent">
                 <Sigma />
               </span>
               <h2>Strongest skills</h2>
@@ -261,43 +266,68 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
 
           <section className="qf-card p-5 anim-slide-up" style={slideDelay(2)}>
             <div className="section-head">
-              <span className="icon-tile-sm icon-tile-warning">
+              <span className="icon-tile icon-tile-sm icon-tile-warning">
                 <TriangleAlert />
               </span>
               <h2>Weakest skills</h2>
-              <span className="chip chip-danger ml-auto">bottlenecks</span>
+              <span className="chip ml-auto">bottlenecks</span>
             </div>
             {weakest.length === 0 ? (
               <div className="qf-empty">
-                <span className="empty-emoji">💪</span>
+                <span className="icon-tile icon-tile-accent mb-1"><CircleCheck className="h-7 w-7" /></span>
                 <p className="text-sm font-black">No weak spots detected</p>
                 <p className="mt-1 text-xs text-faint font-semibold">Master every lesson you start and this panel stays quiet.</p>
               </div>
-            ) : (
-              <ul className="space-y-1">
-                {weakest.map(([s, v], i) => {
-                  const name = s.replace(/-/g, ' ');
-                  const pct = v.total ? Math.round((v.passed / v.total) * 100) : 0;
-                  return (
-                    <li key={s} className="flex items-center gap-3 rounded-xl px-2 py-2.5 anim-slide-up hover:bg-surface-2/60 transition-colors" style={slideDelay(i)}>
-                      <span className="h-8 w-8 shrink-0 rounded-xl bg-warning-soft flex items-center justify-center">
-                        <TriangleAlert className="h-4 w-4 text-warning-strong dark:text-warning" />
-                      </span>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-bold capitalize truncate">{name}</p>
-                        <div className="mt-1 flex items-center gap-2">
-                          <div className="prog-track h-2 flex-1">
-                            <div className="prog-fill prog-fill-gold" style={{ width: `${Math.max(pct, 3)}%` }} />
-                          </div>
-                          {v.passed === 0 && <span className="chip shrink-0">not started</span>}
-                        </div>
+            ) : (() => {
+              // group by status: rows with real progress stay individual, dormant ones collapse into one summary
+              const started = weakest.filter(([, v]) => v.passed > 0);
+              const dormant = weakest.filter(([, v]) => v.passed === 0);
+              return (
+                <div>
+                  {started.length > 0 && (
+                    <ul className="space-y-3">
+                      {started.map(([s, v], i) => {
+                        const name = s.replace(/-/g, ' ');
+                        const pct = v.total ? Math.round((v.passed / v.total) * 100) : 0;
+                        return (
+                          <li key={s} className="flex items-center gap-3 anim-slide-up" style={slideDelay(i)}>
+                            <span className="icon-tile icon-tile-sm icon-tile-warning shrink-0">
+                              <TriangleAlert className="h-4 w-4" />
+                            </span>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between gap-2 mb-1.5">
+                                <span className="text-sm font-bold capitalize truncate">{name}</span>
+                                <span className="chip tnum shrink-0">{v.passed}/{v.total}</span>
+                              </div>
+                              <div className="prog-track h-2.5">
+                                <div className={pct >= 70 ? 'prog-fill' : 'prog-fill-info'} style={{ width: `${pct}%` }} />
+                              </div>
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                  {dormant.length > 0 && (
+                    <div className={(started.length > 0 ? 'mt-3 ' : '') + 'rounded-xl bg-surface-2/50 border border-border/60 px-3.5 py-3'}>
+                      <div className="flex items-center gap-3">
+                        <span className="icon-tile icon-tile-sm icon-tile-neutral shrink-0">
+                          <CircleDashed className="h-4 w-4" />
+                        </span>
+                        <p className="flex-1 min-w-0 text-sm font-semibold text-muted leading-relaxed">
+                          <span className="font-black text-foreground tnum">{dormant.length}</span> skill{dormant.length === 1 ? '' : 's'} not started yet — begin any lesson to seed them.
+                        </p>
                       </div>
-                      <span className="chip tnum shrink-0">{v.passed}/{v.total}</span>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
+                      <div className="mt-2.5 flex flex-wrap gap-1.5">
+                        {dormant.map(([s]) => (
+                          <span key={s} className="chip capitalize">{s.replace(/-/g, ' ')}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </section>
         </div>
 
@@ -305,7 +335,7 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
         <div className="mt-6 grid md:grid-cols-2 gap-6 items-stretch">
           <section className="qf-card p-5 anim-slide-up" style={slideDelay(3)}>
             <div className="section-head">
-              <span className="icon-tile-sm icon-tile-violet">
+              <span className="icon-tile icon-tile-sm icon-tile-violet">
                 <Repeat />
               </span>
               <h2>Revision consistency</h2>
@@ -331,12 +361,26 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
 
           <section className="qf-card p-5 anim-slide-up flex flex-col" style={slideDelay(4)}>
             <div className="section-head">
-              <span className="icon-tile-sm icon-tile-info">
+              <span className="icon-tile icon-tile-sm icon-tile-info">
                 <Target />
               </span>
               <h2>Bottleneck analysis</h2>
             </div>
-            <ul className="space-y-2.5 flex-1">
+            {/* the signals that feed the analysis, from data already computed above */}
+            <dl className="grid grid-cols-2 gap-2">
+              {[
+                { k: 'Needs revision', v: String(needsRev.length) },
+                { k: 'Lapsed cards', v: String(lapsed) },
+                { k: 'Unverified passes', v: String(stalePassed.length) },
+                { k: 'Drill accuracy', v: drillStats.total ? Math.round((drillStats.correct / drillStats.total) * 100) + '%' : '—' },
+              ].map(r => (
+                <div key={r.k} className="rounded-xl bg-surface-2/50 border border-border/60 px-3 py-2 flex items-baseline justify-between gap-2">
+                  <dt className="text-xs font-bold text-muted">{r.k}</dt>
+                  <dd className="text-sm font-black tnum">{r.v}</dd>
+                </div>
+              ))}
+            </dl>
+            <ul className="mt-3 space-y-2.5 flex-1">
               {bottlenecks.map((b, i) => {
                 const isClean = b.startsWith('No bottlenecks');
                 return (
@@ -378,23 +422,38 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
 
 function SkillBar({ skill, passed, total, idx }: { skill: string; passed: number; total: number; idx: number }) {
   const pct = Math.round((passed / total) * 100);
-  const chipCls = pct < 40 ? 'chip chip-danger tnum' : pct < 70 ? 'chip chip-warning tnum' : 'chip chip-success tnum';
-  const fillCls = pct < 40 ? 'prog-fill-danger' : pct < 70 ? 'prog-fill-gold' : '';
+  // one rule for every bar: strong = accent fill, partial = info fill; labels stay neutral ghost chips
+  const fillCls = pct >= 70 ? 'prog-fill' : 'prog-fill-info';
   const Icon = SKILL_ICONS[idx % SKILL_ICONS.length];
-  const tile = SKILL_TILES[idx % SKILL_TILES.length];
   const label = skill.replace(/-/g, ' ');
+  if (passed === 0) {
+    // zero progress: neutral tile, honest text, no dead 0% bar
+    return (
+      <li className="flex items-center gap-3">
+        <span className="icon-tile icon-tile-sm icon-tile-neutral">
+          <Icon />
+        </span>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center justify-between gap-2">
+            <span className="capitalize font-semibold text-sm truncate">{label}</span>
+            <span className="chip tnum">not started</span>
+          </div>
+        </div>
+      </li>
+    );
+  }
   return (
     <li className="flex items-center gap-3">
-      <span className={'icon-tile-sm ' + tile}>
+      <span className="icon-tile icon-tile-sm icon-tile-accent">
         <Icon />
       </span>
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between gap-2 mb-1.5">
           <span className="capitalize font-semibold text-sm truncate">{label}</span>
-          <span className={chipCls}>{pct}%</span>
+          <span className="chip tnum">{pct}%</span>
         </div>
         <div className="prog-track h-2.5">
-          <div className={'prog-fill ' + fillCls} style={{ width: Math.max(pct, 2) + '%' }} />
+          <div className={fillCls} style={{ width: `${pct}%` }} />
         </div>
       </div>
     </li>

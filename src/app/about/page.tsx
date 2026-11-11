@@ -22,10 +22,10 @@ export default async function AboutPage() {
   const stats = [
     { icon: BookOpen, label: 'Authored lessons', value: String(reg.lessons.length), cls: 'icon-tile-accent' },
     { icon: Layers, label: 'Phases / modules', value: `${map.phases.length} / ${map.phases.reduce((n, p) => n + p.modules.length, 0)}`, cls: 'icon-tile-info' },
-    { icon: Clock, label: 'Hours of core content', value: `~${estHours} h`, cls: 'icon-tile-warning' },
-    { icon: Puzzle, label: 'Judged problems', value: String(problems.length), cls: 'icon-tile-violet' },
-    { icon: FolderKanban, label: 'Portfolio projects', value: String(projects.length), cls: 'icon-tile-gold' },
-    { icon: Building2, label: 'Employer profiles', value: String(companies.length), cls: 'icon-tile-blue' },
+    { icon: Clock, label: 'Hours of core content', value: `~${estHours} h`, cls: 'icon-tile-neutral' },
+    { icon: Puzzle, label: 'Judged problems', value: String(problems.length), cls: 'icon-tile-neutral' },
+    { icon: FolderKanban, label: 'Portfolio projects', value: String(projects.length), cls: 'icon-tile-info' },
+    { icon: Building2, label: 'Employer profiles', value: String(companies.length), cls: 'icon-tile-neutral' },
   ];
 
   const pillars = [
@@ -38,21 +38,21 @@ export default async function AboutPage() {
       text: 'Memory layout, allocation, undefined behaviour, the standard library, the working knowledge quant teams actually test for.',
     },
     {
-      icon: FlaskConical, cls: 'icon-tile-violet', title: 'Statistics you can apply',
+      icon: FlaskConical, cls: 'icon-tile-info', title: 'Statistics you can apply',
       text: 'Not recited, applied. Estimators, hypothesis tests and stochastic models that end up running in code you wrote yourself.',
     },
     {
-      icon: Briefcase, cls: 'icon-tile-gold', title: 'Finance you can put in code',
+      icon: Briefcase, cls: 'icon-tile-accent', title: 'Finance you can put in code',
       text: 'Pricing, hedging, market microstructure, each concept ships with a runnable model, not a slide about a model.',
     },
   ];
 
   const engineering = [
-    { icon: Server, cls: 'icon-tile-danger', title: 'Sandboxed execution', text: 'Untrusted code runs in a dedicated runner with CPU, memory and output limits, never inside the web server.' },
+    { icon: Server, cls: 'icon-tile-accent', title: 'Sandboxed execution', text: 'Untrusted code runs in a dedicated runner with CPU, memory and output limits, never inside the web server.' },
     { icon: Lock, cls: 'icon-tile-info', title: 'Server-side scoring', text: 'Correct answers never ship to the browser before submission. Every quiz, every assessment.' },
-    { icon: FileJson, cls: 'icon-tile-warning', title: 'Validated content', text: 'Curriculum lives as schema-checked JSON in content/, gated by scripts/validate-content.mjs.' },
-    { icon: Repeat, cls: 'icon-tile-violet', title: 'Real spaced repetition', text: 'SM-2 scheduling drives the revision queue; mastery requires knowledge checks, exercises and later retrieval.' },
-    { icon: Database, cls: 'icon-tile-accent', title: 'Production-grade stack', text: 'Next.js 16 App Router + TypeScript, Prisma ORM on PostgreSQL.' },
+    { icon: FileJson, cls: 'icon-tile-info', title: 'Validated content', text: 'Curriculum lives as schema-checked JSON in content/, gated by scripts/validate-content.mjs.' },
+    { icon: Repeat, cls: 'icon-tile-info', title: 'Real spaced repetition', text: 'SM-2 scheduling drives the revision queue; mastery requires knowledge checks, exercises and later retrieval.' },
+    { icon: Database, cls: 'icon-tile-info', title: 'Production-grade stack', text: 'Next.js 16 App Router + TypeScript, Prisma ORM on PostgreSQL.' },
   ];
 
   const body = (
@@ -66,12 +66,14 @@ export default async function AboutPage() {
       </header>
 
       {/* stat tiles */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         {stats.map((s, i) => (
-          <div key={s.label} className="stat-tile anim-slide-up" style={{ animationDelay: `${i * 45}ms` }}>
+          <div key={s.label} className="stat-tile min-w-0 anim-slide-up" style={{ animationDelay: `${i * 45}ms` }}>
             <span className={`icon-tile icon-tile-sm ${s.cls}`}><s.icon className="h-5 w-5" /></span>
-            <div className="stat-value mt-1 tnum">{s.value}</div>
-            <div className="stat-label mt-1">{s.label}</div>
+            <div className="stat-body min-w-0">
+              <div className="stat-value tnum">{s.value}</div>
+              <div className="stat-label">{s.label}</div>
+            </div>
           </div>
         ))}
       </div>
@@ -88,7 +90,7 @@ export default async function AboutPage() {
         </p>
         <div className="mt-3.5 grid gap-4 sm:grid-cols-2">
           {pillars.map((p, i) => (
-            <div key={p.title} className="qf-card p-5 anim-slide-up hover:-translate-y-0.5 hover:shadow-lg transition-all" style={{ animationDelay: `${i * 50}ms` }}>
+            <div key={p.title} className="qf-card p-5 min-w-0 anim-slide-up hover:-translate-y-0.5 hover:shadow-lg transition-all" style={{ animationDelay: `${i * 50}ms` }}>
               <div className="flex items-center gap-3">
                 <span className={`icon-tile icon-tile-sm ${p.cls}`}><p.icon className="h-5 w-5" /></span>
                 <h3 className="font-black tracking-tight">{p.title}</h3>
@@ -100,8 +102,8 @@ export default async function AboutPage() {
       </section>
 
       {/* promises / not promises */}
-      <section className="mt-8 grid gap-4 md:grid-cols-2">
-        <div className="qf-card p-5">
+      <section className="mt-8 grid gap-4 md:grid-cols-2 items-stretch">
+        <div className="qf-card p-5 flex flex-col min-w-0">
           <div className="flex items-center gap-3">
             <span className="icon-tile icon-tile-sm icon-tile-accent"><CheckCircle2 className="h-5 w-5" /></span>
             <h2 className="font-black tracking-tight">What it promises</h2>
@@ -119,8 +121,11 @@ export default async function AboutPage() {
               </li>
             ))}
           </ul>
+          <p className="mt-auto pt-4 text-xs font-bold text-faint bg-surface-2/70 rounded-xl px-3.5 py-2.5 leading-relaxed">
+            Every claim above is checkable inside the product — nothing asks you to trust a brochure.
+          </p>
         </div>
-        <div className="qf-card p-5">
+        <div className="qf-card p-5 flex flex-col min-w-0">
           <div className="flex items-center gap-3">
             <span className="icon-tile icon-tile-sm icon-tile-danger"><XCircle className="h-5 w-5" /></span>
             <h2 className="font-black tracking-tight">What it doesn&apos;t</h2>
@@ -138,7 +143,7 @@ export default async function AboutPage() {
               </li>
             ))}
           </ul>
-          <p className="mt-4 text-xs font-bold text-faint bg-surface-2/70 rounded-xl px-3.5 py-2.5 leading-relaxed">
+          <p className="mt-auto pt-4 text-xs font-bold text-faint bg-surface-2/70 rounded-xl px-3.5 py-2.5 leading-relaxed">
             Pass the checks, do the exercises, build the projects, the rest follows from the work.
           </p>
         </div>
@@ -152,7 +157,7 @@ export default async function AboutPage() {
         </div>
         <div className="mt-3.5 grid gap-3 sm:grid-cols-2">
           {engineering.map((e, i) => (
-            <div key={e.title} className="qf-card-flat p-4 anim-slide-up" style={{ animationDelay: `${i * 40}ms` }}>
+            <div key={e.title} className={`qf-card-flat p-4 min-w-0 anim-slide-up ${i === 4 ? 'sm:col-span-2' : ''}`} style={{ animationDelay: `${i * 40}ms` }}>
               <div className="flex items-center gap-2.5">
                 <span className={`icon-tile icon-tile-sm ${e.cls}`}><e.icon className="h-4 w-4" /></span>
                 <div className="font-black text-sm tracking-tight">{e.title}</div>
@@ -169,12 +174,11 @@ export default async function AboutPage() {
           <Sparkles className="h-4 w-4 text-gold" />
           <h2 className="text-xs font-black uppercase tracking-[0.12em] text-faint">Attribution &amp; originality</h2>
         </div>
-        <p className="mt-2 text-sm text-muted leading-relaxed font-semibold">
-          All teaching content is original exposition written for this platform. Conventions and formulas follow standard
-          public references (cppreference, IEEE 754, OpenStax, Python/NumPy/SciPy documentation, PostgreSQL documentation).
-          Company research cites official career pages with retrieval dates and marks inferences as such. Mathematical
-          visualisations are computed live in your browser from the actual formulas, nothing is a canned image.
-        </p>
+        <div className="mt-2 max-w-3xl space-y-2 text-sm font-semibold leading-relaxed text-muted">
+          <p>All teaching content is original exposition written for this platform.</p>
+          <p>Conventions and formulas follow standard public references (cppreference, IEEE 754, OpenStax, Python/NumPy/SciPy documentation, PostgreSQL documentation). Company research cites official career pages with retrieval dates and marks inferences as such.</p>
+          <p>Mathematical visualisations are computed live in your browser from the actual formulas, nothing is a canned image.</p>
+        </div>
       </section>
 
       {/* closing CTA */}

@@ -189,12 +189,12 @@ export interface Assessment {
   sections: { title: string; questions: QuizQuestion[] }[];
 }
 
-export function listAssessments(): { id: string; title: string; kind: string; timeLimitMinutes: number; questionCount: number; description: string }[] {
+export function listAssessments(): { id: string; title: string; kind: string; timeLimitMinutes: number; questionCount: number }[] {
   const dir = path.join(CONTENT_DIR, 'assessments');
   if (!fs.existsSync(dir)) return [];
   return fs.readdirSync(dir).filter(f => f.endsWith('.json')).map(f => {
     const A = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')) as Assessment;
-    return { id: A.id, title: A.title, kind: A.kind, timeLimitMinutes: A.timeLimitMinutes, questionCount: A.sections.reduce((n, s) => n + s.questions.length, 0), description: A.description };
+    return { id: A.id, title: A.title, kind: A.kind, timeLimitMinutes: A.timeLimitMinutes, questionCount: A.sections.reduce((n, s) => n + s.questions.length, 0) };
   });
 }
 

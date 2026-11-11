@@ -2,8 +2,8 @@ import * as React from 'react';
 import Link from 'next/link';
 import {
   Check, Star, Lock, BookOpen, Sigma, TrendingUp, Code2, Cpu,
-  BrainCircuit, Briefcase, Compass, Percent, Database, Layers, Play, ChevronDown,
-  Clock, Target,
+  BrainCircuit, Compass, Percent, Database, Layers, Play, ChevronDown,
+  Clock, Target, Binary, Puzzle, Coins, ArrowRight, 
 } from 'lucide-react';
 import type { CurriculumMap } from '@/lib/content';
 import { buildCurriculumGraph, isUnlockedInGraph } from '@/lib/curriculum-graph';
@@ -24,35 +24,79 @@ import { cn } from '@/lib/utils';
 
 type ProgressMap = Map<string, { status: string }>;
 
-const PHASE_ICONS: { match: RegExp; icon: React.ComponentType<{ className?: string }> }[] = [
-  { match: /orient/, icon: Compass },
-  { match: /math/, icon: Sigma },
-  { match: /prob/, icon: Percent },
-  { match: /python/, icon: Code2 },
-  { match: /cpp/, icon: Cpu },
-  { match: /systems|network|data/, icon: Database },
-  { match: /finance|market|trading|risk/, icon: TrendingUp },
-  { match: /career|capstone/, icon: Briefcase },
-  { match: /algo|cs/, icon: BrainCircuit },
+/* One distinct glyph per semantic phase key, so the trail reads as a map,
+ * not eleven copies of the same layers icon (v3.2: keyed by phase.color,
+ * the ids are ph0..ph10 and match nothing). */
+const PHASE_ICON_BY_KEY: Record<string, React.ComponentType<{ className?: string; style?: React.CSSProperties }>> = {
+  orientation: Compass,
+  math: Sigma,
+  cs: Binary,
+  python: Code2,
+  cpp: Cpu,
+  dsa: BrainCircuit,
+  aptitude: Puzzle,
+  finance: TrendingUp,
+  stats: Percent,
+  pricing: Coins,
+  systems: Database,
+};
+
+const PHASE_ICON_BY_TITLE: { match: RegExp; icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }> }[] = [
+  { match: /orient|diagnostic/i, icon: Compass },
+  { match: /math/i, icon: Sigma },
+  { match: /computer science|fundamental/i, icon: Binary },
+  { match: /python|programming/i, icon: Code2 },
+  { match: /c\+\+/i, icon: Cpu },
+  { match: /data structure|algorithm/i, icon: BrainCircuit },
+  { match: /aptitude|logic/i, icon: Puzzle },
+  { match: /finance|market|trading|risk/i, icon: TrendingUp },
+  { match: /statistic|time series|modelling/i, icon: Percent },
+  { match: /pricing|numerical/i, icon: Coins },
+  { match: /system|network|engineering/i, icon: Database },
 ];
 
-function phaseIcon(phaseId: string) {
-  return (PHASE_ICONS.find(p => p.match.test(phaseId))?.icon ?? Layers) as React.ComponentType<{ className?: string }>;
+export function phaseIcon(colorOrTitle: string) {
+  const byKey = PHASE_ICON_BY_KEY[colorOrTitle];
+  if (byKey) return byKey as React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
+  return (PHASE_ICON_BY_TITLE.find(p => p.match.test(colorOrTitle))?.icon ?? Layers) as React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
 }
 
-/** Vibrant colour per semantic phase key (map colours are names, not hex). */
+/** plural helper, kills the "1 modules · 5 Lessons" wobble */
+export function plural(n: number, word: string) {
+  return `${n} ${word}${n === 1 ? '' : 's'}`;
+}
+
+/** Discipline-family palette: the banner hue encodes the DISCIPLINE the phase
+ * belongs to (onboarding / mathematics / computer science / programming /
+ * markets / engineering), while the per-phase icon differentiates phases inside
+ * a family. Deep enough that white banner text passes comfortably. */
 const PHASE_PALETTE: Record<string, string> = {
-  orientation: '#7d8da6',
-  math: '#34c759',
-  cs: '#a566ff',
-  python: '#e3a008',
-  cpp: '#1cb0f6',
-  dsa: '#ff8a00',
-  aptitude: '#00b8a9',
-  finance: '#ff5a5f',
-  stats: '#5a67d8',
-  pricing: '#d946a0',
-  systems: '#0e9bb5',
+  orientation: '#5f6f8c',
+  math: '#1e9e4f',
+  cs: '#7c3fd6',
+  python: '#0284c7',
+  cpp: '#0369a1',
+  dsa: '#7c3fd6',
+  aptitude: '#7c3fd6',
+  finance: '#dd3d43',
+  stats: '#1e9e4f',
+  pricing: '#1e9e4f',
+  systems: '#0891b2',
+};
+
+/** the discipline a phase colour key maps to (for the rail legend) */
+const PHASE_FAMILY: Record<string, string> = {
+  orientation: 'Onboarding',
+  math: 'Mathematics',
+  stats: 'Mathematics',
+  pricing: 'Mathematics',
+  cs: 'Computer science',
+  dsa: 'Computer science',
+  aptitude: 'Computer science',
+  python: 'Programming',
+  cpp: 'Programming',
+  finance: 'Markets',
+  systems: 'Engineering',
 };
 
 export function resolvePhaseColor(colorKey: string): string {
@@ -144,7 +188,7 @@ export function LearningPath({
     <div className={cn('grid gap-8', rail && 'lg:grid-cols-[minmax(0,1fr)_290px]')}>
       <div className="min-w-0 space-y-10">
         {visiblePhases.map(phase => {
-          const Icon = phaseIcon(phase.id);
+          const Icon = phaseIcon(phase.color);
           const color = resolvePhaseColor(phase.color);
           const phaseLessons = phase.modules.flatMap(m => m.lessons);
           const phaseDone = phaseLessons.filter(l => passed.has(l.id)).length;
@@ -157,39 +201,39 @@ export function LearningPath({
           const distantPhase = !fresh && !isFocusPhase && phaseDone === 0;
           return (
             <section key={phase.id} id={`phase-${phase.id}`} aria-label={phase.title}>
-              {/* phase banner, chunky, 3D edge */}
+              {/* phase banner: jewel gradient, icon chip, balanced text vs progress lockup */}
               <div
-                className="rounded-[28px] p-5 sm:p-7 text-white relative overflow-hidden"
+                className="rounded-[28px] p-5 sm:p-6 text-white relative overflow-hidden"
                 style={{
-                  background: `linear-gradient(135deg, ${color} 0%, ${hexToRgba(color, 0.8)} 100%)`,
-                  boxShadow: `0 6px 0 0 ${darken(color)}, 0 14px 30px -12px ${hexToRgba(color, 0.55)}`,
+                  background: `linear-gradient(150deg, ${darken(color, 0.78)} 0%, ${color} 100%)`,
+                  boxShadow: `0 6px 0 0 ${darken(color, 0.6)}, 0 14px 30px -12px ${hexToRgba(color, 0.55)}`,
                 }}
               >
-                <div className="absolute -right-6 -top-12 opacity-20 pointer-events-none select-none" aria-hidden>
-                  <Icon className="h-48 w-48" />
-                </div>
                 <div className="relative flex items-center gap-4 gap-y-3 flex-wrap">
-                  <span className="h-16 w-16 rounded-[22px] bg-white/25 backdrop-blur flex items-center justify-center shrink-0 border-2 border-white/30">
-                    <Icon className="h-8 w-8" />
+                  <span className="h-14 w-14 rounded-[20px] bg-white/20 backdrop-blur flex items-center justify-center shrink-0 border-2 border-white/30">
+                    <Icon className="h-7 w-7" />
                   </span>
                   <div className="min-w-[240px] flex-1 basis-[300px]">
-                    <p className="text-[11px] font-black uppercase tracking-[0.16em] text-white/85">Phase {phase.order} · ~{Math.round(phaseMin / 60)}h</p>
-                    <h2 className="text-xl sm:text-2xl font-black tracking-tight mt-0.5 leading-tight">{phase.title}</h2>
+                    <p className="text-[11px] font-black uppercase tracking-[0.16em] text-white/85">Phase {phase.order} · ~{Math.round(phaseMin / 60)}h · {PHASE_FAMILY[phase.color] ?? 'Core'}</p>
+                    <h2 className="text-xl sm:text-2xl font-black tracking-tight mt-0.5 leading-tight [text-wrap:balance]">{phase.title}</h2>
                     <p className="text-sm text-white/90 font-bold max-w-xl mt-1">{phase.summary}</p>
                   </div>
-                  <div className="flex flex-col items-stretch gap-1.5 min-w-[130px] shrink-0">
-                    <div className="h-4 rounded-full bg-black/25 border border-white/25 overflow-hidden">
-                      <div className="h-full rounded-full bg-white/95 transition-all duration-700" style={{ width: `${Math.max(phasePct, 2)}%` }} />
+                  {/* progress lockup: one bordered unit, % big, count under, no floating parts */}
+                  <div className="flex flex-col items-stretch gap-1.5 min-w-[132px] shrink-0 rounded-2xl bg-black/20 border border-white/20 px-3.5 py-2.5">
+                    <span className="text-[10px] font-black uppercase tracking-[0.14em] text-white/80">Progress</span>
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="text-2xl font-black tnum leading-none">{phasePct}</span><span className="text-xs font-black text-white/80">%</span>
+                      <span className="ml-auto text-[11px] font-black tnum text-white/90">{phaseDone}/{phaseLessons.length}</span>
                     </div>
-                    <span className="text-xs font-black tnum text-white flex items-center justify-between">
-                      <span>{phaseDone}/{phaseLessons.length} lessons</span><span>{phasePct}%</span>
-                    </span>
+                    <div className="h-2.5 rounded-full bg-black/25 overflow-hidden">
+                      <div className="h-full rounded-full bg-white/95 transition-all duration-700" style={{ width: `${phasePct}%` }} />
+                    </div>
                   </div>
                 </div>
               </div>
 
               {distantPhase ? (
-                <PhasePreview phase={phase} color={color} phaseMin={phaseMin} />
+                <PhasePreview phase={phase} color={color} phaseMin={phaseMin} icon={Icon} />
               ) : (
                 <ModuleList
                   phase={phase}
@@ -234,6 +278,29 @@ export function LearningPath({
               </div>
             </div>
 
+            {/* recommended lesson: keeps the rail alive mid-scroll and gives
+                the column a second anchor below the jump list */}
+            {currentLessonId && (() => {
+              const lesson = map.phases.flatMap(p => p.modules).flatMap(m => m.lessons).find(l => l.id === currentLessonId);
+              const phaseOf = visiblePhases.find(ph => ph.modules.some(m => m.lessons.some(l => l.id === currentLessonId)));
+              if (!lesson || !phaseOf) return null;
+              return (
+                <div className="qf-card p-4">
+                  <p className="text-[11px] font-black uppercase tracking-[0.14em] text-faint flex items-center gap-1.5">
+                    <Play className="h-3.5 w-3.5" /> Next up
+                  </p>
+                  <p className="mt-2 text-sm font-black tracking-tight leading-snug">{lesson.title}</p>
+                  <p className="mt-0.5 text-[11px] font-bold text-faint">
+                    Phase {phaseOf.order} · {phaseOf.title}
+                  </p>
+                  <div className="mt-2.5 flex items-center justify-between">
+                    <span className="chip tnum"><Clock className="h-3 w-3" /> {lesson.estMinutes} min</span>
+                    <Link href={`/learn/${lesson.id}`} className="btn3d btn3d-sm !text-xs">Continue <ArrowRight className="h-3 w-3" /></Link>
+                  </div>
+                </div>
+              );
+            })()}
+
             <div className="qf-card-flat p-4">
               <p className="text-[11px] font-black uppercase tracking-[0.14em] text-faint mb-3">Jump to phase</p>
               <ol className="space-y-1">
@@ -269,6 +336,9 @@ export function LearningPath({
               </p>
               <p className="mt-2 text-lg font-black tnum">~{Math.round(totalMin / 60)} hours</p>
               <p className="text-[11px] font-semibold text-muted mt-0.5">of fully authored lessons, labs and checks, at your pace.</p>
+              <p className="mt-3 pt-3 border-t border-border text-[10px] font-bold text-faint leading-relaxed">
+                Banner colour encodes the discipline: slate onboarding · green mathematics · violet computer science · blue programming · red markets · teal engineering.
+              </p>
             </div>
           </div>
         </aside>
@@ -277,16 +347,19 @@ export function LearningPath({
   );
 }
 
-/** Untouched phase → one compact, expandable preview card (not a wall of module teasers). */
+/** Untouched phase → one compact, expandable preview card (not a wall of module teasers).
+ * v3.2: shows the phase's own first modules and hours so each row differs. */
 function PhasePreview({
-  phase, color, phaseMin,
+  phase, color, phaseMin, icon: Icon,
 }: {
   phase: CurriculumMap['phases'][number];
   color: string;
   phaseMin: number;
+  icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
 }) {
-  const Icon = phaseIcon(phase.id);
   const lessons = phase.modules.reduce((n, m) => n + m.lessons.length, 0);
+  const lead = phase.modules[0];
+  const rest = phase.modules.length - 1;
   return (
     <details className="mt-4 group">
       <summary className="qf-card-flat px-5 py-4 flex items-center gap-4 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden hover:border-[var(--border-strong)] transition-colors">
@@ -298,10 +371,11 @@ function PhasePreview({
         </span>
         <div className="min-w-0 flex-1">
           <p className="text-sm font-black tracking-tight">
-            {phase.modules.length} modules · {lessons} lessons · ~{Math.round(phaseMin / 60)}h
+            {plural(phase.modules.length, 'module')} · {plural(lessons, 'lesson')} · ~{Math.round(phaseMin / 60)}h
           </p>
           <p className="mt-0.5 text-xs font-semibold text-muted truncate">
-            Starts with {phase.modules[0]?.title}, peek inside any time
+            Starts with <span className="font-extrabold text-foreground">{lead?.title}</span>
+            {rest > 0 && <> and {plural(rest, 'more module')}</>}, unlocks in path order
           </p>
         </div>
         <ChevronDown className="h-4 w-4 text-faint shrink-0 transition-transform group-open:rotate-180" />
@@ -312,9 +386,9 @@ function PhasePreview({
             <span className="h-2 w-2 rounded-full shrink-0" style={{ background: color }} />
             <span className="min-w-0 flex-1">
               <span className="block text-xs font-extrabold truncate">{mod.title}</span>
-              <span className="block text-[11px] font-bold text-faint tnum">{mod.lessons.length} lessons · {mod.difficulty}</span>
+              <span className="block text-[11px] font-bold text-faint tnum">{plural(mod.lessons.length, 'lesson')} · {mod.difficulty}</span>
             </span>
-            <span className="chip shrink-0"><Icon className="h-3 w-3" /></span>
+            <Icon className="h-3.5 w-3.5 shrink-0" style={{ color }} />
           </li>
         ))}
       </ul>
@@ -499,7 +573,7 @@ function ModuleTrail({
         <span className="chip tnum shrink-0">{modDone}/{mod.lessons.length}</span>
       </div>
       {/* trail sits on a soft band so the winding path reads as intentional, band width hugs the zigzag so there are no dead margins */}
-      <div className="relative flex flex-col items-center rounded-[44px] bg-surface-2/45 dark:bg-surface-2/25 border-2 border-dashed border-border/70 px-4 sm:px-6 py-8 max-w-[300px] sm:max-w-[500px] mx-auto w-full">
+      <div className="relative flex flex-col items-center rounded-[44px] bg-surface-2/45 dark:bg-surface-2/25 border-2 border-dashed border-border/70 px-4 sm:px-6 py-5 max-w-[300px] sm:max-w-[560px] mx-auto w-full">
         <Trail mod={mod} graph={graph} progress={progress} passed={passed} phaseColor={phaseColor} currentLessonId={currentLessonId} />
       </div>
     </div>
@@ -544,7 +618,7 @@ function Trail({
               isCurrent={!!isCurrent}
               color={phaseColor}
             />
-            {!last && <div className="h-7" />}
+            {!last && <div className="h-3" />}
           </div>
         );
       })}
@@ -603,7 +677,7 @@ function PathNode({
       </span>
       <span
         className={cn(
-          'relative z-10 mt-2.5 text-center text-[13px] font-extrabold leading-tight bg-background px-2 py-0.5 rounded-lg',
+          'relative z-10 mt-2 text-center text-[13px] font-extrabold leading-tight bg-background px-2 py-0.5 rounded-lg',
           unlocked ? 'text-foreground' : 'text-faint',
         )}
         style={{ maxWidth: 200 }}

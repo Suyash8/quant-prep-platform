@@ -20,20 +20,6 @@
       "text": "Compiler flags: two builds, two jobs"
     },
     {
-      "type": "interactive",
-      "component": "PipePipeline",
-      "params": {
-        "commands": [
-          "cat build.log",
-          "grep warning",
-          "awk '{print $1}'",
-          "sort | uniq -c",
-          "sort -rn | head -5"
-        ]
-      },
-      "caption": "Tooling is pipelines: compose small commands until the build tells you its secrets."
-    },
-    {
       "type": "p",
       "md": "C++ has no single 'the' build, you maintain at least two. The **debug build** compiles fast, keeps every diagnostic on, and is shaped for humans: optimisation off (`-O0`) so the debugger's line-by-line view matches the source, debug symbols (`-g`) so GDB and perf can name things. The **release build** is shaped for the machine: `-O2`/`-O3` optimisation, `-DNDEBUG` to compile out asserts, and `-g` kept anyway so profilers still map addresses to lines, symbols cost disk, not runtime. Warnings come from `-Wall -Wextra -Wpedantic` (not literally 'all', but the high-signal set), and `-Werror` promotes any warning to a build failure so warnings cannot accumulate into wallpaper."
     },
@@ -172,6 +158,39 @@
       "lang": "bash",
       "code": "# The debugging loop that finds real bugs fast:\ng++ -std=c++20 -g -O1 -fsanitize=address,undefined -o pricer_asan pricer.cpp\n./pricer_asan input.csv          # ASan prints the exact allocation stack of any OOB\n\n# Then optimise and benchmark the FIXED code:\ng++ -std=c++20 -O2 -march=native -o pricer pricer.cpp\nperf stat -e task-clock,cache-misses ./pricer input.csv",
       "caption": "Sanitise first, optimise second. Optimising buggy code optimises the bug."
+    },
+    {
+      "type": "interactive",
+      "component": "TerminalSteps",
+      "params": {
+        "steps": [
+          {
+            "cmd": "clang-format --style=file conv.cpp | diff conv.cpp - | head -6",
+            "out": [
+              "38c38",
+              "- return a*b+c;",
+              "+ return a * b + c;"
+            ],
+            "note": "formatting is not taste, it is policy: one file, one verdict"
+          },
+          {
+            "cmd": "clang-tidy conv.cpp --checks=bugprone*,performance*",
+            "out": [
+              "warning: loop variable copied on each iteration [performance-for-range-copy]",
+              "warning: narrowing conversion from double to float [bugprone-narrowing]"
+            ],
+            "note": "static analysis reads the code you wrote against the code you meant"
+          },
+          {
+            "cmd": "bear -- make",
+            "out": [
+              "compile_commands.json written (214 entries)"
+            ],
+            "note": "every tool downstream reads one index: clangd, tidy, coverage all speak it"
+          }
+        ]
+      },
+      "caption": "Tools are compilers that output opinions instead of objects. The index file they share is what makes a codebase navigable."
     },
     {
       "type": "p",

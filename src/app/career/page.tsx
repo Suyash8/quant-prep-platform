@@ -6,7 +6,7 @@ import { AppShell, PublicHeader } from '@/components/app-shell';
 import { ApplicationTracker } from '@/components/application-tracker';
 import {
   ArrowRight, BarChart3, Briefcase, Building2, ChevronRight, ClipboardList, Compass, FileText, Layers,
-  ListChecks, MapPin, Route, ShieldCheck, Table2, Target,
+  ListChecks, Route, ShieldCheck, Table2, Target,
 } from 'lucide-react';
 
 export const metadata = { title: 'Career explorer. QuantFoundry' };
@@ -57,7 +57,37 @@ const COMPANY_BLURB: Record<string, string> = {
 const TRACK_CHIP: Record<string, string> = { A: 'chip-success', B: 'chip-info', C: 'chip-danger', D: 'chip-warning', E: 'chip-accent' };
 const TRACK_TILE: Record<string, string> = { A: 'icon-tile-accent', B: 'icon-tile-info', C: 'icon-tile-danger', D: 'icon-tile-warning', E: 'icon-tile-violet' };
 
-const AVATAR_TILES = ['icon-tile-accent', 'icon-tile-info', 'icon-tile-warning', 'icon-tile-danger', 'icon-tile-violet', 'icon-tile-gold'];
+// requirement tiers rendered as chips; tones follow the legend colours
+// (essential=red, frequent=yellow, role-dependent=green, weak tiers ghost)
+const TIER_META: Record<string, { label: string; cls: string }> = {
+  essential: { label: 'Essential', cls: 'chip chip-danger' },
+  'frequently required': { label: 'Frequent', cls: 'chip chip-warning' },
+  'role-dependent': { label: 'Role dep.', cls: 'chip chip-accent' },
+  desirable: { label: 'Desirable', cls: 'chip' },
+  'advanced specialization': { label: 'Advanced', cls: 'chip' },
+};
+const TIER_ORDER = ['essential', 'frequently required', 'role-dependent', 'desirable', 'advanced specialization'];
+
+// display-only expansion of jargon skill slugs (data stays untouched)
+const SKILL_LABEL: Record<string, string> = {
+  cpp: 'C++',
+  dsa: 'DSA',
+  'databases/sql': 'Databases / SQL',
+  'calculus/numerical methods': 'Calculus / numerical methods',
+  'concurrency/low-latency': 'Concurrency / low latency',
+  'linux/tooling': 'Linux / tooling',
+};
+function matrixSkillLabel(skill: string): string {
+  const hit = SKILL_LABEL[skill];
+  if (hit) return hit;
+  return skill.replace(/-/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase());
+}
+
+/** graduate / internship hiring signal derived from mapped role titles */
+function hasGraduateRoles(roles: readonly { title: string }[]): boolean {
+  return roles.some(r => /intern|graduate|campus|analyst program|placement/i.test(r.title));
+}
+
 const POP_DELAYS = ['0ms', '70ms', '140ms', '210ms'];
 const SLIDE_DELAYS = ['0ms', '60ms', '120ms', '180ms', '240ms', '300ms'];
 
@@ -101,18 +131,26 @@ export default async function CareerPage() {
 
   const enriched = companies.map(c => {
     const full = getCompany(c.slug);
-    const tracks = new Set((full?.roles ?? []).map(r => r.track));
-    return { ...c, roles: full?.roles.length ?? 0, areas: full?.competencyAreas.length ?? 0, tracks: tracks.size };
+    const trackSet = [...new Set((full?.roles ?? []).map(r => r.track))].sort();
+    return {
+      ...c,
+      roles: full?.roles.length ?? 0,
+      areas: full?.competencyAreas.length ?? 0,
+      tracks: trackSet.length,
+      primaryTrack: trackSet[0],
+      trackLetters: trackSet.join('·'),
+      gradRoles: hasGraduateRoles(full?.roles ?? []),
+    };
   });
   const rolesTotal = enriched.reduce((n, c) => n + c.roles, 0);
   const areasTotal = enriched.reduce((n, c) => n + c.areas, 0);
   const tracksCount = Object.keys(map.tracks).length;
 
   const statTiles = [
-    { icon: Building2, tile: 'icon-tile-gold', value: String(companies.length), label: 'Companies profiled' },
+    { icon: Building2, tile: 'icon-tile-accent', value: String(companies.length), label: 'Companies profiled' },
     { icon: Briefcase, tile: 'icon-tile-info', value: String(rolesTotal), label: 'Roles mapped' },
-    { icon: Layers, tile: 'icon-tile-violet', value: String(areasTotal), label: 'Competency areas' },
-    { icon: Route, tile: 'icon-tile-accent', value: String(tracksCount), label: 'Career tracks' },
+    { icon: Layers, tile: 'icon-tile-neutral', value: String(areasTotal), label: 'Competency areas' },
+    { icon: Route, tile: 'icon-tile-info', value: String(tracksCount), label: 'Career tracks' },
   ];
 
   const body = (
@@ -132,10 +170,12 @@ export default async function CareerPage() {
       {/* stat row */}
       <section className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {statTiles.map((s, i) => (
-          <div key={s.label} className="stat-tile anim-pop-in" style={{ animationDelay: POP_DELAYS[i] }}>
+          <div key={s.label} className="stat-tile min-w-0 anim-pop-in" style={{ animationDelay: POP_DELAYS[i] }}>
             <span className={`icon-tile icon-tile-sm ${s.tile}`}><s.icon /></span>
-            <p className="stat-value mt-2 tnum">{s.value}</p>
-            <p className="stat-label">{s.label}</p>
+            <div className="stat-body">
+              <p className="stat-value tnum">{s.value}</p>
+              <p className="stat-label">{s.label}</p>
+            </div>
           </div>
         ))}
       </section>
@@ -200,10 +240,9 @@ export default async function CareerPage() {
           </div>
           <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
             <span className="text-faint font-bold">Legend:</span>
-            <span className="matrix-cell matrix-essential" style={{ height: '1.25rem', minWidth: '3.5rem' }}>essential</span>
-            <span className="matrix-cell matrix-frequent" style={{ height: '1.25rem', minWidth: '3.5rem' }}>frequent</span>
-            <span className="matrix-cell matrix-role" style={{ height: '1.25rem', minWidth: '3.5rem' }}>role-dep.</span>
-            <span className="matrix-cell matrix-varies" style={{ height: '1.25rem', minWidth: '3.5rem' }}>varies</span>
+            {TIER_ORDER.map(k => (
+              <span key={k} className={TIER_META[k].cls}>{TIER_META[k].label}</span>
+            ))}
             <span className="ml-auto text-faint font-semibold">Hover any cell for the full requirement wording</span>
           </div>
           <div className="qf-card p-2 sm:p-4 overflow-x-auto thin-scroll">
@@ -221,17 +260,16 @@ export default async function CareerPage() {
               <tbody>
                 {matrix.rows.map(r => (
                   <tr key={r.skill}>
-                    <td className="font-bold capitalize sticky left-0 bg-surface z-10" title={r.note ?? undefined}>
-                      {r.skill.replace(/-/g, ' ')}
+                    <td className="font-bold sticky left-0 bg-surface z-10" title={r.note ?? undefined}>
+                      {matrixSkillLabel(r.skill)}
                       {r.note && <span className="ml-1.5 text-faint" title={r.note}>ⓘ</span>}
                     </td>
                     {['assetManagers', 'banks', 'propTrading', 'hedgeFunds', 'marketData'].map(k => {
                       const v = r[k as keyof typeof r] as string;
-                      const cls = v === 'essential' ? 'matrix-essential' : v === 'frequently required' ? 'matrix-frequent' : v === 'role-dependent' ? 'matrix-role' : 'matrix-varies';
-                      const label = v === 'frequently required' ? 'freq' : v === 'role-dependent' ? 'role' : v === 'varies by seat' ? 'varies' : v;
+                      const tier = TIER_META[v];
                       return (
                         <td key={k} className="text-center">
-                          <span className={'matrix-cell !inline-flex items-center justify-center w-[4.5rem]'} title={v}>{label}</span>
+                          <span className={tier?.cls ?? 'chip'} title={v}>{tier?.label ?? v}</span>
                         </td>
                       );
                     })}
@@ -259,24 +297,24 @@ export default async function CareerPage() {
                 <div className="flex items-center gap-2.5 mb-2.5 px-1">
                   <h3 className="text-xs font-black uppercase tracking-[0.12em] text-muted">{label}</h3>
                   <span className="flex-1 h-0.5 rounded-full bg-border" />
-                  <span className="text-[11px] font-black text-faint tnum">{firms.length} firms</span>
+                  <span className="chip tnum">{firms.length} firms</span>
                 </div>
                 <div className="qf-card-flat divide-y">
                   {firms.map((c, i) => (
                     <Link
                       key={c.slug}
                       href={`/career/${c.slug}`}
-                      className="row-card !py-3.5 anim-slide-up group hover:bg-surface-2/50 transition-colors"
+                      className="row-card !py-3 anim-slide-up group hover:bg-surface-2/50 transition-colors"
                       style={{ animationDelay: SLIDE_DELAYS[i % SLIDE_DELAYS.length] }}
                     >
-                      <span className={`icon-tile ${AVATAR_TILES[i % AVATAR_TILES.length]}`}>
+                      <span className={`icon-tile ${TRACK_TILE[c.primaryTrack ?? ''] ?? 'icon-tile-neutral'}`}>
                         <span className="font-black text-lg">{c.name.charAt(0)}</span>
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="flex items-center gap-2 flex-wrap">
-                          <span className="text-[15px] font-bold group-hover:text-accent-deep dark:group-hover:text-accent transition-colors">{c.name}</span>
-                          <span className="chip hidden sm:inline-flex"><MapPin className="h-3 w-3" /> {c.roles} roles</span>
-                          <span className="chip hidden md:inline-flex"><Layers className="h-3 w-3" /> {c.areas} areas</span>
+                          <span className={`text-[15px] ${i === 0 ? 'font-black' : 'font-bold'} group-hover:text-accent-deep dark:group-hover:text-accent transition-colors`}>{c.name}</span>
+                          {c.gradRoles && <span className="chip chip-accent">Graduate roles</span>}
+                          <span className="text-xs font-bold text-faint tnum hidden sm:inline">{c.roles} roles · tracks {c.trackLetters}</span>
                         </span>
                         <span className="block mt-0.5 text-xs text-muted font-semibold truncate">{COMPANY_BLURB[c.slug] ?? CATEGORY_DESC[c.category] ?? 'Quantitative hiring preparation profile.'}</span>
                       </span>

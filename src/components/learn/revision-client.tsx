@@ -9,21 +9,20 @@
 import * as React from 'react';
 import Link from 'next/link';
 import {
-  ArrowRight, BookOpen, ChevronRight, CircleCheck, Clock, Code2, Flame, Layers, Lightbulb, Repeat, Sigma, TriangleAlert,
+  ArrowRight, BookOpen, ChevronRight, CircleCheck, Clock, Code2, Flame, Layers, Lightbulb, Repeat, Sigma,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { getLessonPack } from '@/lib/client/packs';
 import { getState, subscribe, hydrate, recordReviews, deleteCard } from '@/lib/client/local-state';
 import { RevisionSession, type DueCard } from '@/components/revision-session';
-import { Mascot } from '@/components/brand/mascot';
-import { ClosingCta } from '@/components/ui/page-kit';
 
 const TYPE_META: Record<string, { Icon: LucideIcon; tile: string; fill: string }> = {
-  concept: { Icon: BookOpen, tile: 'icon-tile-accent', fill: '' },
+  // deck rows are data, not celebration: info tiles + info fills only
+  concept: { Icon: BookOpen, tile: 'icon-tile-info', fill: 'prog-fill-info' },
   code: { Icon: Code2, tile: 'icon-tile-info', fill: 'prog-fill-info' },
-  formula: { Icon: Sigma, tile: 'icon-tile-violet', fill: 'prog-fill-violet' },
+  formula: { Icon: Sigma, tile: 'icon-tile-info', fill: 'prog-fill-info' },
 };
-const FALLBACK_TYPE = { Icon: Layers, tile: 'icon-tile-warning', fill: 'prog-fill-gold' };
+const FALLBACK_TYPE = { Icon: Layers, tile: 'icon-tile-neutral', fill: 'prog-fill-info' };
 
 const popDelay = (i: number) => ({ animationDelay: i * 70 + 'ms' });
 const slideDelay = (i: number) => ({ animationDelay: i * 90 + 'ms' });
@@ -68,7 +67,6 @@ async function resolveCards(keys: string[]): Promise<DueCard[]> {
 export function RevisionClient() {
   const [ready, setReady] = React.useState(false);
   const [dueCards, setDueCards] = React.useState<DueCard[]>([]);
-  const [upcomingTitles, setUpcomingTitles] = React.useState<Record<string, string>>({});
   const [, setTick] = React.useState(0);
 
   React.useEffect(() => {
@@ -89,35 +87,6 @@ export function RevisionClient() {
     return () => { alive = false; unsub(); };
   }, []);
 
-  // resolve human titles for the next-up list (falls back to a prettified slug)
-  React.useEffect(() => {
-    let alive = true;
-    void (async () => {
-      const s = getState();
-      const now = Date.now();
-      const keys = Object.entries(s.cards)
-        .filter(([, c]) => new Date(c.dueAt).getTime() > now)
-        .sort((a, b) => new Date(a[1].dueAt).getTime() - new Date(b[1].dueAt).getTime())
-        .slice(0, 8)
-        .map(([k]) => k);
-      const titles: Record<string, string> = {};
-      await Promise.all([...new Set(keys.map(k => k.slice(0, k.lastIndexOf(':'))))].map(async lessonId => {
-        try {
-          const lesson = await getLessonPack(lessonId);
-          titles[lessonId] = lesson.title;
-        } catch { /* keep slug fallback */ }
-      }));
-      if (alive && Object.keys(titles).length) setUpcomingTitles(titles);
-    })();
-    return () => { alive = false; };
-  }, []);
-
-  const prettyKey = (key: string): string => {
-    const lessonId = key.slice(0, key.lastIndexOf(':'));
-    if (upcomingTitles[lessonId]) return upcomingTitles[lessonId];
-    return cap(lessonId.replace(/-/g, ' '));
-  };
-
   const s = getState();
   const allCards = Object.entries(s.cards);
   const now = Date.now();
@@ -131,6 +100,8 @@ export function RevisionClient() {
   for (const [, c] of allCards) byType['concept'] = (byType['concept'] ?? 0) + 1;
   // richer types when the front can be sniffed from packs later; concept is the safe default
   const avgInterval = Math.round(allCards.reduce((n, [, c]) => n + c.intervalDays, 0) / Math.max(allCards.length, 1)) + 'd';
+  // distinct lessons contributing cards to the deck (key is "<lessonId>:<idx>")
+  const lessonCount = new Set(allCards.map(([k]) => k.slice(0, k.lastIndexOf(':')))).size;
 
   // review streak from updatedAt days
   const reviewDays = new Set<string>();
@@ -190,7 +161,7 @@ export function RevisionClient() {
         </div>
       ) : (
         <div className="qf-empty anim-pop-in">
-          <Mascot pose="sleep" size={88} />
+          <span className="empty-emoji text-6xl">🎉</span>
           <p className="mt-2 text-lg font-black">Nothing due, you&apos;re all caught up!</p>
           {allCards.length === 0 && (
             <>
@@ -205,25 +176,37 @@ export function RevisionClient() {
 
       {/* stat row */}
       <div className="mt-6 grid grid-cols-2 lg:grid-cols-4 gap-4 items-stretch">
-        <div className="stat-tile anim-pop-in flex flex-col" style={popDelay(0)}>
-          <span className="icon-tile-sm icon-tile-danger"><TriangleAlert /></span>
-          <div className="stat-value font-black mt-3">{dueCount}</div>
-          <div className="stat-label mt-1">Due now</div>
+        <div className="stat-tile min-w-0 anim-pop-in" style={popDelay(0)}>
+          <span className="icon-tile icon-tile-sm icon-tile-accent"><Clock /></span>
+          <div className="stat-body min-w-0">
+            <div className="stat-value tnum">{dueCount}</div>
+            <div className="stat-label">Due now</div>
+            <div className="stat-sub">scheduled by SM-2</div>
+          </div>
         </div>
-        <div className="stat-tile anim-pop-in flex flex-col" style={popDelay(1)}>
-          <span className="icon-tile-sm icon-tile-violet"><Layers /></span>
-          <div className="stat-value font-black mt-3">{allCards.length}</div>
-          <div className="stat-label mt-1">Total cards</div>
+        <div className="stat-tile min-w-0 anim-pop-in" style={popDelay(1)}>
+          <span className="icon-tile icon-tile-sm icon-tile-info"><Layers /></span>
+          <div className="stat-body min-w-0">
+            <div className="stat-value tnum">{allCards.length}</div>
+            <div className="stat-label">Total cards</div>
+            <div className="stat-sub">{allCards.length > 0 ? `across ${lessonCount} lesson${lessonCount === 1 ? '' : 's'}` : 'built from finished lessons'}</div>
+          </div>
         </div>
-        <div className="stat-tile anim-pop-in flex flex-col" style={popDelay(2)}>
-          <span className="icon-tile-sm icon-tile-gold"><Flame /></span>
-          <div className="stat-value font-black mt-3">{reviewStreak}d</div>
-          <div className="stat-label mt-1">Review streak</div>
+        <div className="stat-tile min-w-0 anim-pop-in" style={popDelay(2)}>
+          <span className="icon-tile icon-tile-sm icon-tile-neutral"><Flame /></span>
+          <div className="stat-body min-w-0">
+            <div className="stat-value tnum">{reviewStreak}d</div>
+            <div className="stat-label">Review streak</div>
+            <div className="stat-sub">{reviewDays.size} active day{reviewDays.size === 1 ? '' : 's'} in total</div>
+          </div>
         </div>
-        <div className="stat-tile anim-pop-in flex flex-col" style={popDelay(3)}>
-          <span className="icon-tile-sm icon-tile-accent"><CircleCheck /></span>
-          <div className="stat-value font-black mt-3">{retentionPct === null ? <span className="chip">Not enough reviews</span> : retentionPct + '%'}</div>
-          <div className="stat-label mt-1">Retention</div>
+        <div className="stat-tile min-w-0 anim-pop-in" style={popDelay(3)}>
+          <span className="icon-tile icon-tile-sm icon-tile-neutral"><CircleCheck /></span>
+          <div className="stat-body min-w-0">
+            <div className="stat-value tnum">{retentionPct === null ? '–' : retentionPct + '%'}</div>
+            <div className="stat-label">Retention</div>
+            <div className="stat-sub">{retentionPct === null ? 'no graded reviews yet' : 'recalled without lapse'}</div>
+          </div>
         </div>
       </div>
 
@@ -234,45 +217,72 @@ export function RevisionClient() {
         </div>
       )}
 
-      {/* deck + queue */}
-      <div className="mt-8 grid md:grid-cols-2 gap-4 items-start">
-        <section className="qf-card p-5 anim-slide-up" style={slideDelay(0)}>
-          <div className="section-head">
-            <span className="icon-tile-sm icon-tile-violet"><Layers /></span>
-            <h2>Deck composition</h2>
-            <span className="chip tnum ml-auto">avg interval {avgInterval}</span>
-          </div>
-          {allCards.length === 0 ? (
-            <div className="qf-empty">
-              <span className="empty-emoji">🗂️</span>
-              <p className="text-sm font-black">Empty, no cards yet</p>
+      {/* deck + queue: left column stretches (composition + offline note) so the
+          two columns end on the same baseline instead of a half-height void */}
+      <div className="mt-8 grid md:grid-cols-2 gap-4 items-stretch">
+        <div className="flex flex-col gap-4 min-w-0">
+          <section className="qf-card p-5 flex-1 min-w-0 flex flex-col anim-slide-up" style={slideDelay(0)}>
+            <div className="section-head">
+              <span className="icon-tile icon-tile-sm icon-tile-neutral"><Layers /></span>
+              <h2>Deck composition</h2>
+              <span className="chip tnum ml-auto">avg interval {avgInterval}</span>
             </div>
-          ) : (
-            <ul className="space-y-3.5">
-              {typeRows.map(t => {
-                const pct = Math.round((t.n / allCards.length) * 100);
-                const Icon = t.Icon;
-                return (
-                  <li key={t.type}>
-                    <div className="flex items-center gap-2.5 mb-1.5">
-                      <span className={'icon-tile-sm ' + t.tile}><Icon /></span>
-                      <span className="flex-1 min-w-0 text-sm font-semibold capitalize truncate">{cap(t.type.replace(/-/g, ' '))}</span>
-                      <span className="chip tnum">{t.n}</span>
-                      <span className="chip chip-accent tnum">{pct}%</span>
-                    </div>
+            {allCards.length === 0 ? (
+              <div className="qf-empty">
+                <span className="empty-emoji">🗂️</span>
+                <p className="text-sm font-black">Empty, no cards yet</p>
+              </div>
+            ) : (
+              <>
+                <ul className="space-y-3.5">
+                  {typeRows.map(t => {
+                    const pct = Math.round((t.n / allCards.length) * 100);
+                    const Icon = t.Icon;
+                    return (
+                      <li key={t.type}>
+                        <div className="flex items-center gap-2.5 mb-1.5">
+                          <span className={'icon-tile icon-tile-sm ' + t.tile}><Icon /></span>
+                          <span className="flex-1 min-w-0 text-sm font-semibold capitalize truncate">{cap(t.type.replace(/-/g, ' '))}</span>
+                          <span className="chip tnum">{t.n}</span>
+                          <span className="chip tnum">{pct}%</span>
+                        </div>
+                        <div className="prog-track h-2.5">
+                          <div className={'prog-fill ' + t.fill} style={{ width: Math.max(pct, 2) + '%' }} />
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+                <div className="mt-auto pt-4 border-t-2">
+                  <div className="flex items-center justify-between text-[11px] font-black uppercase tracking-wider mb-1.5">
+                    <span className="text-faint">Practiced at least once</span>
+                    <span className="tnum text-faint">{reviewedCards.length}/{allCards.length}</span>
+                  </div>
+                  {reviewedCards.length > 0 ? (
                     <div className="prog-track h-2.5">
-                      <div className={'prog-fill ' + t.fill} style={{ width: Math.max(pct, 2) + '%' }} />
+                      <div className="prog-fill" style={{ width: `${Math.min(100, Math.round((reviewedCards.length / allCards.length) * 100))}%` }} />
                     </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </section>
+                  ) : (
+                    <p className="text-[11px] font-bold text-faint">Not started, grade your first review to begin coverage.</p>
+                  )}
+                </div>
+              </>
+            )}
+          </section>
+          <div className="qf-card-flat p-4 min-w-0 anim-slide-up" style={slideDelay(2)}>
+            <div className="flex items-center gap-2.5">
+              <span className="icon-tile icon-tile-sm icon-tile-neutral"><Lightbulb /></span>
+              <div className="font-black text-sm tracking-tight">Works offline</div>
+            </div>
+            <p className="mt-2 text-xs font-semibold text-muted leading-relaxed">
+              Reviews run entirely on this device and sync when you&apos;re online, so you can revise on a plane.
+            </p>
+          </div>
+        </div>
 
-        <section className="qf-card p-5 anim-slide-up" style={slideDelay(1)}>
+        <section className="qf-card p-5 min-w-0 anim-slide-up" style={slideDelay(1)}>
           <div className="section-head">
-            <span className="icon-tile-sm icon-tile-info"><Clock /></span>
+            <span className="icon-tile icon-tile-sm icon-tile-info"><Clock /></span>
             <h2>Next up</h2>
             <span className="chip ml-auto">scheduled</span>
           </div>
@@ -282,10 +292,10 @@ export function RevisionClient() {
               <p className="text-sm font-black">Nothing scheduled ahead</p>
             </div>
           ) : (
-            <ul className="space-y-2">
+            <ul className="space-y-2 max-h-96 overflow-y-auto thin-scroll">
               {upcoming.map(([key, c], i) => (
                 <li key={key} className="row-card anim-slide-up" style={slideDelay(i + 2)}>
-                  <p className="flex-1 min-w-0 text-sm font-semibold leading-snug line-clamp-2">{prettyKey(key)}</p>
+                  <p className="flex-1 min-w-0 text-sm font-semibold leading-snug line-clamp-2">{key.split(':').slice(0, -1).join(':').replace(/-/g, ' ')}</p>
                   <span className="chip shrink-0">
                     <Clock className="h-3.5 w-3.5" />
                     {formatDue(c.dueAt)}
@@ -297,52 +307,6 @@ export function RevisionClient() {
           )}
         </section>
       </div>
-
-      {/* how spaced repetition works */}
-      <section className="mt-8 qf-card-flat p-5 anim-slide-up">
-        <div className="section-head">
-          <span className="icon-tile-sm icon-tile-info"><Repeat /></span>
-          <h2>How spaced repetition works</h2>
-        </div>
-        <p className="text-sm font-semibold text-muted max-w-2xl">
-          Every card you grade honestly moves on the SM-2 schedule: easy cards come back later, shaky ones come back tomorrow.
-        </p>
-        <div className="mt-4 flex items-center gap-3 overflow-x-auto thin-scroll pb-1" aria-hidden="true">
-          {[
-            { label: 'Today', tone: 'bg-danger' },
-            { label: 'Tomorrow', tone: 'bg-warning' },
-            { label: 'In 6 days', tone: 'bg-info' },
-            { label: 'In 16 days', tone: 'bg-accent' },
-            { label: 'In 43 days', tone: 'bg-violet' },
-            { label: 'Later, x ease', tone: 'bg-accent-deep' },
-          ].map((step, i) => (
-            <React.Fragment key={step.label}>
-              <div className="qf-card-flat bg-surface px-4 py-3 text-center shrink-0">
-                <span className={`mx-auto block h-3.5 w-3.5 rounded-full ${step.tone}`} />
-                <span className="mt-1.5 block text-xs font-black whitespace-nowrap">{step.label}</span>
-              </div>
-              {i < 5 && <span className="h-1 w-6 rounded-full bg-surface-3 shrink-0" />}
-            </React.Fragment>
-          ))}
-        </div>
-      </section>
-
-      <section className="mt-8">
-        <ClosingCta
-          icon={Repeat}
-          tone="violet"
-          title={dueCount > 0 ? `${dueCount} cards want 5 minutes.` : 'Your memory is fully booked for today.'}
-          line={dueCount > 0 ? 'A short honest pass now saves a long painful relearn next month.' : 'The scheduler will tell you when the next batch is ready. Go earn some new cards instead.'}
-          cta={dueCount > 0 ? <Link href="#review" className="btn3d">Start review now</Link> : <Link href="/learn" className="btn3d">Learn something new</Link>}
-          ghost={<Link href="/analytics" className="btn3d btn3d-ghost">See review analytics</Link>}
-          pose={dueCount > 0 ? 'wave' : 'sleep'}
-        />
-      </section>
-
-      <p className="mt-6 text-xs text-faint flex items-center gap-1.5 font-semibold">
-        <Lightbulb className="h-3.5 w-3.5" />
-        Reviews run entirely on this device and sync when you&apos;re online, so you can revise on a plane.
-      </p>
     </div>
   );
 }

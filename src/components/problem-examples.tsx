@@ -57,24 +57,24 @@ function ExampleCard({ example, index }: { example: ProblemExample; index: numbe
   const delay = index * 60 + 'ms';
 
   return (
-    <div className="qf-card-flat anim-slide-up p-4" style={{ animationDelay: delay }}>
+    <div className="anim-slide-up rounded-2xl border-2 border-border bg-surface-2 p-4" style={{ animationDelay: delay }}>
       <div className="mb-3 flex items-center justify-between gap-2">
-        <span className="chip chip-accent">Example {index + 1}</span>
+        <span className="chip">Example {index + 1}</span>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
           <div className="mb-1.5 flex items-center justify-between gap-2">
             <span className="text-[10px] font-black uppercase tracking-[0.14em] text-faint">Input</span>
             <CopyButton label="input" copied={copied === 'input'} onCopy={() => copy(example.input, 'input')} />
           </div>
-          <pre className="thin-scroll break-words whitespace-pre-wrap rounded-xl border-2 border-border bg-surface-2 p-3 font-mono text-sm">{example.input}</pre>
+          <pre className="thin-scroll break-words whitespace-pre-wrap rounded-xl border-2 border-border bg-surface p-3 font-mono text-sm">{example.input}</pre>
         </div>
         <div>
           <div className="mb-1.5 flex items-center justify-between gap-2">
             <span className="text-[10px] font-black uppercase tracking-[0.14em] text-faint">Output</span>
             <CopyButton label="output" copied={copied === 'output'} onCopy={() => copy(example.output, 'output')} />
           </div>
-          <pre className="thin-scroll break-words whitespace-pre-wrap rounded-xl border-2 border-border bg-surface-2 p-3 font-mono text-sm">{example.output}</pre>
+          <pre className="thin-scroll break-words whitespace-pre-wrap rounded-xl border-2 border-border bg-surface p-3 font-mono text-sm">{example.output}</pre>
         </div>
       </div>
       {example.explanation && (

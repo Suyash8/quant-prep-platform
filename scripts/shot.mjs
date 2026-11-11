@@ -1,7 +1,4 @@
 // usage: node scripts/shot.mjs <outDir> [baseUrl] [width] [height]
-// Portable screenshot harness (Part 2.4). Reproduces audit-all.sh behavior:
-// 1280x900 viewport, same login sequence, 3.5 s settle, full-page capture,
-// same route order, same login/logout steps. Records overflowX per page.
 import { chromium } from 'playwright';
 import fs from 'node:fs'; import path from 'node:path';
 

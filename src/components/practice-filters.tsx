@@ -10,7 +10,7 @@ import {
 
 interface Row {
   slug: string; title: string; difficulty: string; category: string; tags: string[];
-  estMinutes: number; status: string;
+  estMinutes: number; status: string; xp: number; summary: string;
 }
 
 const CATEGORIES = [
@@ -100,9 +100,9 @@ export function PracticeFilters({ problems }: { problems: Row[] }) {
     <div className="mt-6">
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative w-full sm:w-72">
-          <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-faint" aria-hidden="true" />
-          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search problems or tags"
-            className="qf-input py-2.5 text-sm" style={{ paddingLeft: '2.5rem' }} aria-label="Search problems" />
+          <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-faint" />
+          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search problems or tags…"
+            className="qf-input py-2.5 pl-10 text-sm" aria-label="Search problems" />
         </div>
         <select value={difficulty} onChange={e => setDifficulty(e.target.value)} className="qf-select-sm w-auto" aria-label="Difficulty">
           <option value="all">All difficulties</option>
@@ -119,8 +119,8 @@ export function PracticeFilters({ problems }: { problems: Row[] }) {
           <option value="attempted">Attempted ({counts.attempted})</option>
           <option value="new">Untried</option>
         </select>
-        <span className="tnum ml-auto text-xs font-bold text-faint hidden sm:block">{rows.length} shown</span>
-        <button onClick={surpriseMe} className="btn3d btn3d-gold btn3d-sm ml-auto sm:ml-0 shrink-0">
+        <span className="tnum ml-auto text-xs font-bold text-faint hidden sm:block">{rows.length} of {problems.length} shown</span>
+        <button onClick={surpriseMe} className="btn3d btn3d-sm ml-auto sm:ml-0 shrink-0">
           <Dices className="h-3.5 w-3.5" /> Surprise me
         </button>
       </div>
@@ -128,11 +128,14 @@ export function PracticeFilters({ problems }: { problems: Row[] }) {
       <div className="mt-4 space-y-5">
         {groups.map(g => {
           const solvedInGroup = g.rows.filter(r => r.status === 'solved').length;
+          const GroupIcon = CATEGORY_ICON[g.key] ?? CirclePlay;
           return (
             <section key={g.key} aria-label={g.key.replace(/-/g, ' ')}>
               {grouped && (
                 <div className="flex items-center gap-2.5 mb-2.5 px-1">
-                  <h2 className="text-xs font-black uppercase tracking-[0.12em] text-faint capitalize">{g.key.replace(/-/g, ' ')}</h2>
+                  <span className="icon-tile-sm icon-tile-neutral !h-7 !w-7 !rounded-lg"><GroupIcon className="!h-3.5 !w-3.5" aria-hidden /></span>
+                  <h2 className="text-sm font-black uppercase tracking-[0.1em] text-foreground capitalize">{g.key.replace(/-/g, ' ')}</h2>
+                  <span className="chip tnum">{g.rows.length}</span>
                   <span className="flex-1 h-0.5 rounded-full bg-border" />
                   <span className="text-[11px] font-black text-faint tnum">{solvedInGroup}/{g.rows.length} solved</span>
                 </div>
@@ -164,13 +167,23 @@ export function PracticeFilters({ problems }: { problems: Row[] }) {
 }
 
 function ProblemRow({ p, delay }: { p: Row; delay: string }) {
-  const tileCls = p.difficulty === 'easy' ? 'icon-tile-accent' : p.difficulty === 'medium' ? 'icon-tile-gold' : 'icon-tile-danger';
+  const tileCls = p.difficulty === 'easy' ? 'icon-tile-accent' : p.difficulty === 'medium' ? 'icon-tile-warning' : 'icon-tile-danger';
   const diffChip = p.difficulty === 'easy' ? 'chip chip-success' : p.difficulty === 'medium' ? 'chip chip-warning' : 'chip chip-danger';
   const RowIcon = CATEGORY_ICON[p.category] ?? CirclePlay;
   const solved = p.status === 'solved';
   const attempted = p.status === 'attempted';
+  // status colouring: solved rows get a tint + accent edge, attempted a gold
+  // edge, untried stay plain — scannable at a glance, not just via chips
+
+  const edge = solved ? 'before:absolute before:left-0 before:inset-y-0 before:w-1.5 before:bg-accent before:content-["\"] !bg-accent-soft/40'
+    : attempted ? 'before:absolute before:left-0 before:inset-y-0 before:w-1.5 before:bg-warning before:content-["\"]'
+    : '';
   return (
-    <Link href={`/practice/${p.slug}`} className={`row-card group anim-slide-up ${solved ? 'bg-accent-soft/30' : ''}`} style={{ animationDelay: delay }}>
+    <Link
+      href={`/practice/${p.slug}`}
+      className={`row-card relative overflow-hidden group anim-slide-up ${solved ? '!bg-accent-soft/40' : ''} ${edge}`}
+      style={{ animationDelay: delay }}
+    >
       {solved ? (
         <span className="icon-tile icon-tile-accent"><CheckCircle2 strokeWidth={2.5} /></span>
       ) : (
@@ -183,19 +196,25 @@ function ProblemRow({ p, delay }: { p: Row; delay: string }) {
         <span className="flex items-center gap-2">
           <span className={`truncate text-[15px] font-bold transition-colors ${solved ? 'text-accent-deep dark:text-accent' : 'group-hover:text-accent-deep dark:group-hover:text-accent'}`}>{p.title}</span>
         </span>
-        <span className="mt-1.5 flex flex-wrap items-center gap-1.5">
+        {/* the pitch line fills the middle column instead of dead whitespace */}
+        {p.summary && (
+          <span className="mt-1 block truncate text-xs font-semibold text-muted">{p.summary}</span>
+        )}
+        <span className="mt-1.5 flex flex-wrap items-center gap-2">
           <span className={diffChip}>{p.difficulty}</span>
-          <span className="chip hidden sm:inline-flex capitalize">{p.category.replace(/-/g, ' ')}</span>
-          <span className="chip"><Clock className="h-3 w-3" /> ~{p.estMinutes}m</span>
+          {/* metadata hierarchy: difficulty chip carries the colour, category is
+              ghost text, time is plain — one system instead of three chip rows */}
+          <span className="hidden sm:inline text-xs font-bold text-muted capitalize">{p.category.replace(/-/g, ' ')}</span>
+          <span className="inline-flex items-center gap-1 text-xs font-bold text-faint tnum"><Clock className="h-3 w-3" /> ~{p.estMinutes}m</span>
         </span>
       </span>
-      <span className={solved ? 'hidden' : 'chip chip-gold shrink-0 hidden sm:inline-flex'}><Zap className="h-3 w-3" aria-hidden="true" /> +30 XP</span>
+      <span className="chip chip-gold shrink-0 hidden sm:inline-flex"><Zap className="h-3 w-3" /> {p.xp} XP</span>
       {solved ? (
         <span className="chip chip-success shrink-0">solved</span>
       ) : attempted ? (
         <span className="chip chip-warning shrink-0">in progress</span>
       ) : (
-        <span className="btn3d btn3d-ghost btn3d-sm shrink-0 hidden md:inline-flex">Solve</span>
+        <span className="btn3d btn3d-ghost btn3d-sm !text-xs shrink-0 hidden md:inline-flex">Solve</span>
       )}
       <ChevronRight className="h-5 w-5 shrink-0 text-faint transition-transform group-hover:translate-x-0.5 group-hover:text-accent" />
     </Link>

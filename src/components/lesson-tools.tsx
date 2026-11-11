@@ -122,8 +122,8 @@ export function LessonFooterTools({ lessonId, initiallyBookmarked, note, prevHre
         <div className="p-4 pt-0">
           <textarea
             value={notes} onChange={e => onNotesChange(e.target.value)} rows={4}
-            placeholder="Write your own summary, questions, or things to revisit"
-            className="qf-textarea mt-3"
+            placeholder="Write your own summary, questions, or things to revisit…"
+            className="qf-textarea w-full mt-3"
             aria-label="Lesson notes"
           />
         </div>

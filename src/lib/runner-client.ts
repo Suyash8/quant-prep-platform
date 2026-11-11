@@ -39,7 +39,7 @@ export async function ensureRunner(): Promise<boolean> {
   starting = true;
   try {
     const seg = ['mini-services', 'code-runner', ['index', 'ts'].join('.')];
-    const entry = path.join(process.cwd(), ...seg);
+    const entry = path.join(/*turbopackIgnore: true*/ process.cwd(), ...seg);
     const child = spawn('bun', [entry], {
       detached: true,
       stdio: 'ignore',

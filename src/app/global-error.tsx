@@ -1,54 +1,26 @@
 'use client';
 
-// Root error boundary: includes its own html/body, minimal but on-brand.
-export default function GlobalError({ reset }: { error: Error & { digest?: string }; reset: () => void }) {
+import { RefreshCw } from 'lucide-react';
+
+export default function GlobalError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   return (
     <html lang="en">
-      <body
-        style={{
-          margin: 0,
-          minHeight: '100vh',
-          display: 'grid',
-          placeItems: 'center',
-          fontFamily: 'system-ui, sans-serif',
-          background: 'white',
-          color: 'rgb(35 47 63)',
-          padding: '2rem',
-        }}
-      >
-        <div
-          style={{
-            maxWidth: '26rem',
-            textAlign: 'center',
-            display: 'grid',
-            gap: '0.75rem',
-            justifyItems: 'center',
-            border: '2px solid rgb(207 215 224)',
-            borderRadius: '20px',
-            padding: '2rem',
-          }}
-        >
-          <div style={{ fontSize: '2rem' }} role="img" aria-label="Siggy the mascot">Σ</div>
-          <h1 style={{ fontSize: '1.15rem', margin: 0 }}>The app hit a hard error.</h1>
-          <p style={{ fontSize: '0.9rem', color: 'rgb(91 107 125)', margin: 0 }}>
-            Reload to recover. Nothing you studied was lost.
+      <body style={{ margin: 0, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#ffffff', fontFamily: 'system-ui, sans-serif' }}>
+        <div role="alert" style={{ textAlign: 'center', padding: '2rem', maxWidth: 420 }}>
+          <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 56, height: 56, borderRadius: 16, background: '#ffe9ea', color: '#b02a30', marginBottom: 12 }}>
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-9-9" /><path d="M12 8v4" /><path d="M12 16h.01" /></svg>
+          </div>
+          <h1 style={{ fontSize: 22, fontWeight: 900, margin: '0 0 6px' }}>QuantFoundry could not start</h1>
+          <p style={{ fontSize: 14, fontWeight: 600, color: '#5b6b7d', margin: '0 0 16px' }}>
+            The app hit an error it could not recover from. Your saved progress stays on your device.
+            {error.digest ? ` Reference: ${error.digest}.` : ''}
           </p>
           <button
             type="button"
             onClick={reset}
-            style={{
-              marginTop: '0.5rem',
-              background: 'rgb(42 166 74)',
-              color: 'white',
-              fontWeight: 800,
-              border: 'none',
-              borderRadius: '14px',
-              padding: '0.75rem 1.5rem',
-              cursor: 'pointer',
-              boxShadow: '0 4px 0 rgb(26 124 56)',
-            }}
+            style={{ fontWeight: 800, fontSize: 15, padding: '12px 28px', borderRadius: 16, border: 0, background: '#2aa64a', color: '#fff', boxShadow: '0 5px 0 #1d8a3e', cursor: 'pointer' }}
           >
-            Reload the app
+            Try again
           </button>
         </div>
       </body>

@@ -51,9 +51,9 @@ export default async function ProjectsPage() {
   });
 
   const statTiles = [
-    { icon: Layers, tile: 'icon-tile-violet', value: String(projects.length), label: 'Total projects' },
-    { icon: PlayCircle, tile: 'icon-tile-info', value: String(inProgress), label: 'In progress' },
-    { icon: CheckCircle2, tile: 'icon-tile-accent', value: String(completed), label: 'Completed' },
+    { icon: Layers, tile: 'icon-tile-neutral', value: String(projects.length), label: 'Total projects', sub: `across ${Object.keys(TIER_META).length} tiers` },
+    { icon: PlayCircle, tile: 'icon-tile-info', value: String(inProgress), label: 'In progress', sub: 'tracked in your account' },
+    { icon: CheckCircle2, tile: 'icon-tile-accent', value: String(completed), label: 'Completed', sub: 'defensible line by line' },
   ];
 
   const body = (
@@ -74,10 +74,13 @@ export default async function ProjectsPage() {
       {/* stat row */}
       <section className="grid grid-cols-3 gap-3">
         {statTiles.map((s, i) => (
-          <div key={s.label} className="stat-tile anim-pop-in" style={{ animationDelay: POP_DELAYS[i] }}>
+          <div key={s.label} className="stat-tile min-w-0 anim-pop-in" style={{ animationDelay: POP_DELAYS[i] }}>
             <span className={`icon-tile icon-tile-sm ${s.tile}`}><s.icon /></span>
-            <p className="stat-value mt-2 tnum">{s.value}</p>
-            <p className="stat-label">{s.label}</p>
+            <div className="stat-body min-w-0">
+              <p className="stat-value tnum">{s.value}</p>
+              <p className="stat-label">{s.label}</p>
+              <p className="stat-sub">{s.sub}</p>
+            </div>
           </div>
         ))}
       </section>
@@ -86,16 +89,23 @@ export default async function ProjectsPage() {
       <section className="mt-8 grid md:grid-cols-2 gap-4">
         {cards.map((p, i) => {
           const prog = progressBy.get(p.slug);
+          const isCompleted = prog?.status === 'completed';
+          const isInProgress = prog?.status === 'in_progress';
           const tier = TIER_META[p.difficulty] ?? TIER_META.core;
           const TierIcon = tier.icon;
           const skills = LANG_SKILLS[p.language] ?? [];
+          // status edge so cards scan by state: gold for completed, warning
+          // stripe for in-progress, muted stripe for not-started
+          const edge = isCompleted ? '!border-gold/70'
+            : isInProgress ? 'before:absolute before:left-0 before:inset-y-0 before:w-1.5 before:bg-warning before:content-[""]'
+            : 'before:absolute before:left-0 before:inset-y-0 before:w-1.5 before:bg-border-strong before:content-[""] opacity-95';
           return (
             <div
               key={p.slug}
-              className={`qf-card p-5 flex flex-col anim-slide-up hover:-translate-y-0.5 hover:shadow-lg transition-all ${prog?.status === 'completed' ? '!border-gold/70 relative overflow-hidden' : ''}`}
+              className={`qf-card p-5 flex flex-col min-w-0 relative overflow-hidden anim-slide-up hover:-translate-y-0.5 hover:shadow-lg transition-all ${edge}`}
               style={{ animationDelay: SLIDE_DELAYS[i % SLIDE_DELAYS.length] }}
             >
-              {prog?.status === 'completed' && (
+              {isCompleted && (
                 <span className="absolute right-4 top-4 icon-tile icon-tile-gold !h-8 !w-8 anim-bob"><Trophy className="!h-4 !w-4" /></span>
               )}
               <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -103,12 +113,10 @@ export default async function ProjectsPage() {
                   <span className={`icon-tile ${tier.tile}`}><TierIcon /></span>
                   <span className={`chip ${tier.chip} capitalize`}>{p.difficulty}</span>
                 </div>
-                {prog ? (
-                  prog.status === 'completed' ? (
-                    <span className="chip chip-success anim-pop-in"><CheckCircle2 className="h-3 w-3" /> completed</span>
-                  ) : (
-                    <span className="chip chip-warning">in progress</span>
-                  )
+                {isCompleted ? (
+                  <span className="chip chip-gold anim-pop-in"><CheckCircle2 className="h-3 w-3" /> completed</span>
+                ) : isInProgress ? (
+                  <span className="chip chip-warning">in progress</span>
                 ) : (
                   <span className="chip">Not started</span>
                 )}
@@ -122,19 +130,23 @@ export default async function ProjectsPage() {
                 <span className="chip tnum"><Clock className="h-3 w-3" /> ~{p.hours}h</span>
               </div>
               <p className="mt-2.5 text-sm text-muted leading-relaxed line-clamp-2">{p.desc}</p>
-              {prog && prog.status !== 'completed' && (
+              {prog && isInProgress && (
                 <div className="mt-3">
                   <div className="flex items-center justify-between text-[11px] font-black uppercase tracking-wider mb-1.5">
                     <span className="text-faint">Milestones</span>
-                    <span className="tnum text-warning-strong dark:text-warning">{prog.milestonesDone}/{p.milestoneTotal || ', '}</span>
+                    <span className="tnum text-warning-strong dark:text-warning">{prog.milestonesDone}/{p.milestoneTotal || 0}</span>
                   </div>
-                  <div className="prog-track h-2.5">
-                    <div className="prog-fill prog-fill-gold" style={{ width: `${Math.min(100, Math.round((prog.milestonesDone / Math.max(p.milestoneTotal || 1, 1)) * 100))}%` }} />
-                  </div>
+                  {prog.milestonesDone > 0 ? (
+                    <div className="prog-track h-2.5">
+                      <div className="prog-fill prog-fill-info" style={{ width: `${Math.min(100, Math.round((prog.milestonesDone / Math.max(p.milestoneTotal || 1, 1)) * 100))}%` }} />
+                    </div>
+                  ) : (
+                    <p className="text-[11px] font-bold text-faint">No milestones logged yet</p>
+                  )}
                 </div>
               )}
               <div className="mt-auto pt-4">
-                <Link href={`/projects/${p.slug}`} className="btn3d btn3d-sm">
+                <Link href={`/projects/${p.slug}`} className="btn3d btn3d-ghost btn3d-sm">
                   Open spec <ArrowRight className="h-3.5 w-3.5" />
                 </Link>
               </div>

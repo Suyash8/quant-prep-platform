@@ -1,9 +1,8 @@
 import { redirect } from 'next/navigation';
-import Link from 'next/link';
 import { getCurrentUser } from '@/lib/auth';
 import { PublicHeader } from '@/components/app-shell';
 import { AuthForm } from '@/components/auth-form';
-import { CloudOff } from 'lucide-react';
+import { getRegistry, listProblems } from '@/lib/content';
 
 export const metadata = { title: 'Sign in. QuantFoundry' };
 
@@ -13,17 +12,7 @@ export default async function LoginPage() {
   return (
     <div className="min-h-screen flex flex-col">
       <PublicHeader />
-      <AuthForm mode="login" />
-      <footer className="mt-auto border-t-2 border-border bg-surface">
-        <div className="max-w-6xl mx-auto px-4 lg:px-6 py-4 flex flex-wrap items-center justify-between gap-2 text-xs font-bold text-faint">
-          <span className="flex items-center gap-1.5"><CloudOff className="h-3.5 w-3.5" aria-hidden="true" /> Works offline, your progress syncs when you are back.</span>
-          <span className="flex items-center gap-3">
-            <Link href="/about" className="hover:text-muted">About</Link>
-            <Link href="/methodology" className="hover:text-muted">Methodology</Link>
-            <Link href="/curriculum" className="hover:text-muted">Curriculum</Link>
-          </span>
-        </div>
-      </footer>
+      <AuthForm mode="login" stats={{ lessons: getRegistry().lessons.length, labs: 33, problems: listProblems().length }} />
     </div>
   );
 }

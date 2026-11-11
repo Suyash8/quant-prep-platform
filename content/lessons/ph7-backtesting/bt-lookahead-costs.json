@@ -20,12 +20,6 @@
       "text": "Look-ahead bias: the time machine in your loop"
     },
     {
-      "type": "interactive",
-      "component": "LatencyBudget",
-      "params": {},
-      "caption": "Lookahead is negative latency: free microseconds you will not get in production."
-    },
-    {
       "type": "p",
       "md": "The classic pattern: compute a signal from today's close, then simulate the fill *at today's close*. In live trading the close is not knowable until it prints, the signal and the fill race each other, and reality loses. Variants are sneakier: using a restated fundamental (published later) on its original date, using today's volume profile to time an intraday entry, or normalising features with statistics computed over the whole sample (a full-sample mean is future information to a 2015 data point)."
     },
@@ -45,6 +39,36 @@
       "variant": "pitfall",
       "title": "Subtle look-ahead checklist",
       "md": "Signals that use same-bar high/low for stop logic; volatilities estimated including the current bar; machine-learning features scaled with full-sample statistics; event studies using the announcement-day close to 'decide'. Each one leaks the future. Audit: for any timestamp $t$, could every input to the decision have been known strictly before the fill time?"
+    },
+    {
+      "type": "interactive",
+      "component": "TerminalSteps",
+      "params": {
+        "steps": [
+          {
+            "cmd": "python backtest.py signal=close",
+            "out": [
+              "Sharpe 2.31, trades 184, net 12.4%"
+            ],
+            "note": "the leaked version: the signal read the same close it was scored on"
+          },
+          {
+            "cmd": "python backtest.py signal=prev_close",
+            "out": [
+              "Sharpe 0.71, trades 184, net 3.1%"
+            ],
+            "note": "one bar of lag and the edge mostly evaporates: that gap is the cost of the leak"
+          },
+          {
+            "cmd": "python backtest.py signal=prev_close --costs bps=4",
+            "out": [
+              "Sharpe 0.44, net 1.9%"
+            ],
+            "note": "the honest version also pays to trade"
+          }
+        ]
+      },
+      "caption": "Look-ahead is the flattering bug: the strategy answers using the same bar that grades it. Lag the signal by one step and watch the Sharpe tell on it."
     },
     {
       "type": "p",

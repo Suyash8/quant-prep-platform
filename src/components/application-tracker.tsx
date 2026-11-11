@@ -91,7 +91,7 @@ export function ApplicationTracker({ initial }: { initial: AppRow[] }) {
           {rows.map(r => {
             const removeLabel = 'Remove ' + r.company + ' application';
             return (
-              <div key={r.id} className="py-3 flex items-center gap-3 text-sm flex-wrap anim-slide-up">
+              <div key={r.id} className="py-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm anim-slide-up">
                 <span className={`icon-tile icon-tile-sm ${tileFor(r.company)}`}>
                   <span className="font-black text-sm tracking-tight">{monogram(r.company)}</span>
                 </span>
@@ -106,10 +106,10 @@ export function ApplicationTracker({ initial }: { initial: AppRow[] }) {
                   defaultValue={r.note}
                   onBlur={e => update(r.id, { note: e.target.value })}
                   placeholder="notes…"
-                  className="qf-input h-9 py-0 text-xs w-44"
+                  className="qf-input h-9 py-0 text-xs flex-1 min-w-[140px] max-w-[180px]"
                   aria-label="Notes"
                 />
-                <button onClick={() => remove(r.id)} className="text-faint hover:text-danger press shrink-0" aria-label={removeLabel}>
+                <button onClick={() => remove(r.id)} className="text-faint hover:text-danger press shrink-0 pr-1" aria-label={removeLabel}>
                   <Trash2 className="h-4 w-4" />
                 </button>
               </div>

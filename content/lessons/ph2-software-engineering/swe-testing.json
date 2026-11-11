@@ -20,16 +20,6 @@
       "text": "Unit tests: one behaviour, one function"
     },
     {
-      "type": "interactive",
-      "component": "RegressionLab",
-      "params": {
-        "n": 40,
-        "noise": 1.2,
-        "fitPolynomial": 1
-      },
-      "caption": "Fit a line to noisy defect data: one test suite is a sample, the trend is the signal."
-    },
-    {
       "type": "p",
       "md": "A **unit test** exercises one unit of behaviour, a function or class, in isolation, with no database, network or filesystem in the way. Isolation buys the two properties that make tests worth running: **speed** (thousands of unit tests in seconds, so they run on every save) and **precision** (when a unit test fails, you know exactly where). The structure is Arrange-Act-Assert: build the inputs, call the code once, assert one outcome. Test the boundaries where financial code actually breaks: zero, negative, and the exact rounding boundary."
     },
@@ -38,6 +28,47 @@
       "lang": "python",
       "code": "# pricing.py\nfrom decimal import Decimal, ROUND_HALF_UP\n\ndef notional(price: Decimal, qty: int) -> Decimal:\n    \"\"\"Gross notional of a fill, rounded to cents, half up.\"\"\"\n    if qty < 0:\n        raise ValueError(\"quantity must be non-negative\")\n    return (price * qty).quantize(Decimal(\"0.01\"), rounding=ROUND_HALF_UP)\n\n# test_pricing.py\nimport pytest\nfrom decimal import Decimal\nfrom pricing import notional\n\ndef test_typical_fill():\n    assert notional(Decimal(\"42.17\"), 300) == Decimal(\"12651.00\")\n\ndef test_rounding_boundary_half_up():\n    assert notional(Decimal(\"10.125\"), 1) == Decimal(\"10.13\")\n\ndef test_zero_quantity():\n    assert notional(Decimal(\"42.17\"), 0) == Decimal(\"0.00\")\n\ndef test_negative_quantity_rejected():\n    with pytest.raises(ValueError):\n        notional(Decimal(\"42.17\"), -100)",
       "caption": "Four tests, four behaviours: the normal case, the rounding boundary, zero, and the error path, run with `pytest` and they finish in milliseconds."
+    },
+    {
+      "type": "interactive",
+      "component": "TerminalSteps",
+      "params": {
+        "steps": [
+          {
+            "cmd": "pytest -q",
+            "out": [
+              "..F.",
+              "1 failed, 3 passed in 0.31s"
+            ],
+            "note": "one red: the failing test is a specification of the bug"
+          },
+          {
+            "cmd": "pytest -q tests/test_fill_rounding.py -x",
+            "out": [
+              "FAILED tests/test_fill_rounding.py::test_fx_leg",
+              "assert round(0.005, 2) == 0.01"
+            ],
+            "note": "failures print the contract: expected vs got"
+          },
+          {
+            "cmd": "pytest --cov=fill -q",
+            "out": [
+              "fill/rounding.py      91%",
+              "missing: 24-25"
+            ],
+            "note": "coverage maps the code your tests never speak for"
+          },
+          {
+            "cmd": "pytest -q",
+            "out": [
+              "....",
+              "4 passed in 0.28s"
+            ],
+            "note": "green: the spec and the code agree again"
+          }
+        ]
+      },
+      "caption": "A test suite is executable specification: each failure names a contract, and coverage shows which lines no contract protects."
     },
     {
       "type": "callout",

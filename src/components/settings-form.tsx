@@ -4,7 +4,7 @@ import * as React from 'react';
 import { useTheme } from 'next-themes';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
-import { Target, UserRound, Palette, ShieldCheck, LogOut, Monitor, Sun, Moon, Flame, Zap, Star, Trophy, Check, Accessibility, Keyboard, Sigma } from 'lucide-react';
+import { Target, UserRound, Palette, ShieldCheck, LogOut, Monitor, Sun, Moon, Flame, Check, Accessibility } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export function SettingsForm({ user }: { user: { name: string; email: string; role: string; memberSince?: string | Date } }) {
@@ -61,19 +61,20 @@ export function SettingsForm({ user }: { user: { name: string; email: string; ro
     <div className="grid gap-5 lg:grid-cols-2 max-w-4xl">
       {/* gamification summary + daily goal */}
       {gamed && (
-        <section className="qf-card p-5 lg:col-span-2 relative overflow-hidden">
-          <div className="relative">
+        <section className="qf-card p-5 lg:col-span-2">
+          <div>
             <div className="flex items-center gap-3 flex-wrap">
-              <span className="icon-tile-gold h-11 w-11"><Target className="h-6 w-6" /></span>
+              <span className="icon-tile icon-tile-gold h-11 w-11"><Target className="h-6 w-6" /></span>
               <div className="flex-1 min-w-[180px]">
                 <h2 className="font-black">Daily goal</h2>
                 <p className="text-xs font-semibold text-muted">How much XP do you want to chase each day?</p>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="chip chip-warning tnum"><Star className="h-3 w-3" /> Level {gamed.level}</span>
-                <span className="chip chip-gold tnum"><Zap className="h-3 w-3" /> {gamed.xp.toLocaleString()} XP</span>
-                <span className="chip chip-danger tnum"><Flame className="h-3 w-3" /> {gamed.streakCount}d streak</span>
-                <span className="chip tnum"><Trophy className="h-3 w-3" /> best {gamed.longestStreak}d</span>
+              {/* one highlighted chip, the rest are quiet text stats */}
+              <div className="flex items-center gap-x-4 gap-y-1.5 flex-wrap">
+                <span className="chip chip-warning tnum"><Flame className="h-3 w-3" /> {gamed.streakCount}-day streak</span>
+                <span className="text-sm font-semibold text-muted whitespace-nowrap">Level <span className="font-black text-foreground tnum">{gamed.level}</span></span>
+                <span className="text-sm font-semibold text-muted whitespace-nowrap tnum"><span className="font-black text-foreground">{gamed.xp.toLocaleString()}</span> XP</span>
+                <span className="text-sm font-semibold text-muted whitespace-nowrap">best <span className="font-black text-foreground tnum">{gamed.longestStreak}d</span></span>
               </div>
             </div>
             <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -89,18 +90,18 @@ export function SettingsForm({ user }: { user: { name: string; email: string; ro
                     className={cn(
                       'press rounded-2xl border-2 p-3 text-center relative transition-all',
                       active
-                        ? 'border-accent bg-accent-soft shadow-[0_4px_0_0_var(--accent-deep)] -translate-y-0.5'
+                        ? 'border-accent bg-accent-soft'
                         : 'border-border bg-surface hover:bg-surface-2 hover:border-border-strong',
                     )}
                   >
                     {active && (
-                      <span className="absolute -top-2 -right-2 h-6 w-6 rounded-full bg-accent text-white flex items-center justify-center shadow-[0_2px_0_0_var(--accent-deep)]" aria-hidden>
-                        <Zap className="h-3.5 w-3.5" strokeWidth={2.75} />
+                      <span className="absolute top-1.5 right-1.5 h-5 w-5 rounded-full bg-accent text-on-accent flex items-center justify-center" aria-hidden>
+                        <Check className="h-3 w-3" strokeWidth={3} />
                       </span>
                     )}
                     <span className={cn('block text-lg font-black tnum', active && 'text-accent-deep dark:text-accent')}>{xp}</span>
                     <span className="block text-[11px] font-extrabold text-muted">XP / day</span>
-                    <span className="block text-[10px] font-bold text-faint">{vibe}</span>
+                    <span className="block text-[10px] font-bold text-muted">{vibe}</span>
                   </button>
                 );
               })}
@@ -110,9 +111,9 @@ export function SettingsForm({ user }: { user: { name: string; email: string; ro
       )}
 
       {/* profile */}
-      <section className="qf-card p-5">
+      <section className="qf-card p-5 flex flex-col">
         <div className="flex items-center gap-3">
-          <span className="icon-tile h-11 w-11"><UserRound className="h-6 w-6" /></span>
+          <span className="icon-tile icon-tile-neutral h-11 w-11"><UserRound className="h-6 w-6" /></span>
           <div>
             <h2 className="font-black">Profile</h2>
             <p className="text-xs font-semibold text-muted">How your name appears across the app</p>
@@ -131,20 +132,26 @@ export function SettingsForm({ user }: { user: { name: string; email: string; ro
             </button>
           </div>
         </label>
-        <dl className="mt-4 space-y-2 text-sm font-semibold">
+        <dl className="mt-4 space-y-2 text-sm font-semibold flex-1">
           <div className="flex items-center justify-between gap-3 rounded-xl bg-surface-2/60 px-3 py-2">
             <dt className="text-muted">Email</dt><dd className="truncate">{user.email}</dd>
           </div>
           <div className="flex items-center justify-between gap-3 rounded-xl bg-surface-2/60 px-3 py-2">
             <dt className="text-muted">Role</dt><dd><span className="chip chip-info">{user.role}</span></dd>
           </div>
+          {user.memberSince && (
+            <div className="flex items-center justify-between gap-3 rounded-xl bg-surface-2/60 px-3 py-2">
+              <dt className="text-muted">Learning since</dt>
+              <dd className="tnum">{new Date(user.memberSince).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}</dd>
+            </div>
+          )}
         </dl>
       </section>
 
       {/* appearance */}
       <section className="qf-card p-5">
         <div className="flex items-center gap-3">
-          <span className="icon-tile-violet h-11 w-11"><Palette className="h-6 w-6" /></span>
+          <span className="icon-tile icon-tile-violet h-11 w-11"><Palette className="h-6 w-6" /></span>
           <div>
             <h2 className="font-black">Appearance</h2>
             <p className="text-xs font-semibold text-muted">Pick the theme that is easy on your eyes</p>
@@ -170,18 +177,11 @@ export function SettingsForm({ user }: { user: { name: string; email: string; ro
             );
           })}
         </div>
-        <ul className="mt-4 grid gap-2 text-xs font-semibold">
-          {[
-            { icon: Accessibility, text: 'Reduced-motion preferences are respected, animations tone down automatically.' },
-            { icon: Keyboard, text: 'Everything is keyboard-navigable with visible focus rings.' },
-            { icon: Sigma, text: 'Mathematics stays selectable, copyable and searchable.' },
-          ].map(row => (
-            <li key={row.text} className="flex items-center gap-2.5 rounded-xl bg-surface-2/60 border border-border/50 px-3 py-2.5">
-              <row.icon className="h-4 w-4 text-violet shrink-0" />
-              <span className="leading-relaxed">{row.text}</span>
-            </li>
-          ))}
-        </ul>
+        {/* one compact note instead of three identical full-width rows */}
+        <p className="mt-4 flex items-start gap-2.5 rounded-xl bg-surface-2/60 border border-border/50 px-3 py-2.5 text-xs font-semibold text-muted leading-relaxed">
+          <Accessibility className="h-4 w-4 text-violet shrink-0 mt-0.5" aria-hidden />
+          <span>Reduced-motion preferences are respected and animations tone down automatically. Everything is keyboard-navigable with visible focus rings, and mathematics stays selectable, copyable and searchable.</span>
+        </p>
       </section>
 
       {/* privacy */}
@@ -193,19 +193,20 @@ export function SettingsForm({ user }: { user: { name: string; email: string; ro
             <p className="text-xs font-semibold text-muted">Your data stays in this deployment</p>
           </div>
         </div>
-        <ul className="mt-4 space-y-2 text-sm font-semibold flex-1">
+        {/* two-column definition grid: labels left on a shared column, values right with consistent padding */}
+        <dl className="mt-4 flex-1 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2.5 content-start rounded-2xl border border-border/60 bg-surface-2/60 p-3.5 text-sm font-semibold">
           {[
             { k: 'Storage', v: 'This deployment’s own database, nothing leaves it' },
             { k: 'Passwords', v: 'Salted scrypt hashes, never plain text' },
             { k: 'Sessions', v: 'httpOnly cookies with signed ids' },
             { k: 'Third parties', v: 'None, no analytics, no trackers, no ads' },
           ].map(row => (
-            <li key={row.k} className="flex items-center justify-between gap-3 rounded-xl bg-surface-2/60 px-3 py-2">
-              <span className="text-muted shrink-0">{row.k}</span>
-              <span className="text-right">{row.v}</span>
-            </li>
+            <React.Fragment key={row.k}>
+              <dt className="text-muted">{row.k}</dt>
+              <dd className="text-right pr-2 min-w-0">{row.v}</dd>
+            </React.Fragment>
           ))}
-        </ul>
+        </dl>
         <p className="mt-3 text-[11px] font-semibold text-faint leading-relaxed">
           To erase your data, contact the deployment administrator.
         </p>
@@ -221,12 +222,6 @@ export function SettingsForm({ user }: { user: { name: string; email: string; ro
           </div>
         </div>
         <dl className="mt-4 space-y-2 text-sm font-semibold flex-1">
-          {user.memberSince && (
-            <div className="flex items-center justify-between gap-3 rounded-xl bg-surface-2/60 px-3 py-2">
-              <dt className="text-muted">Learning since</dt>
-              <dd className="tnum">{new Date(user.memberSince).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}</dd>
-            </div>
-          )}
           <div className="flex items-center justify-between gap-3 rounded-xl bg-surface-2/60 px-3 py-2">
             <dt className="text-muted">Signed in as</dt>
             <dd className="truncate max-w-[180px]">{user.email}</dd>

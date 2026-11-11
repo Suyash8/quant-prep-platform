@@ -85,7 +85,7 @@ export function ComplexityCompare({ params }: { params: Record<string, unknown> 
   const maxRaw = Math.max(...fns.map(({ f }) => f(nMax)), 1);
   const normalized = raw.map(v => v / maxRaw);
   const W = 560, H = 250, P = 36;
-  const colors = ['var(--accent)', 'var(--warning-strong)', 'var(--success)', 'var(--danger)', 'var(--violet)'];
+  const colors = ['var(--accent)', '#9a6d0b', 'var(--success)', 'var(--danger)', '#6d28d9'];
   const curves = fns.map(({ f, e }, idx) => {
     const pts: string[] = [];
     for (let i = 1; i <= 200; i++) {
@@ -341,7 +341,7 @@ export function BSTVisual({ params }: { params: Record<string, unknown> }) {
               <circle cx={px(i)} cy={py(i)} r={16}
                 fill={n.v === target ? ACCENT : onPath ? 'var(--accent-soft)' : 'var(--surface)'}
                 stroke={ACCENT} strokeWidth={onPath ? 2 : 1} />
-              <text x={px(i)} y={py(i) + 4} textAnchor="middle" fontSize="11" fill={n.v === target ? 'white' : INK}>{n.v}</text>
+              <text x={px(i)} y={py(i) + 4} textAnchor="middle" fontSize="11" fill={n.v === target ? '#fff' : INK}>{n.v}</text>
             </g>
           );
         })}

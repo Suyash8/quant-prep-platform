@@ -4,29 +4,13 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
-  Sigma, Zap, Flame, Trophy, Undo2, Code2, BookOpenCheck, ShieldCheck, Mail, Lock, User, Eye, EyeOff,
-  CheckCircle2, LockKeyhole, CloudOff,
+  Sigma, Zap, Flame, Trophy, Undo2, Code2, BookOpenCheck, ShieldCheck,
+  Mail, Lock, User, Eye, EyeOff,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Mascot } from '@/components/brand/mascot';
 
-function pwStrength(pw: string): { label: string; pct: number; tone: string } {
-  let score = 0;
-  if (pw.length >= 8) score++;
-  if (/[A-Z]/.test(pw) && /[a-z]/.test(pw)) score++;
-  if (/\d/.test(pw)) score++;
-  if (/[^A-Za-z0-9]/.test(pw)) score++;
-  const table = [
-    { label: 'Too short', pct: 12, tone: 'prog-fill-danger' },
-    { label: 'Weak', pct: 30, tone: 'prog-fill-danger' },
-    { label: 'Fair', pct: 55, tone: 'prog-fill-gold' },
-    { label: 'Good', pct: 80, tone: 'prog-fill' },
-    { label: 'Strong', pct: 100, tone: 'prog-fill' },
-  ];
-  return table[score];
-}
-
-export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
+export function AuthForm({ mode, stats }: { mode: 'login' | 'register'; stats?: { lessons: number; labs: number; problems: number } }) {
   const router = useRouter();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -34,6 +18,11 @@ export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
   const [showPw, setShowPw] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [touched, setTouched] = useState<{ email: boolean; password: boolean }>({ email: false, password: false });
+
+  const lessons = stats?.lessons ?? 283;
+  const labs = stats?.labs ?? 33;
+  const problems = stats?.problems ?? 28;
 
   // After a successful sign-in we send the user back to whatever they were
   // trying to reach (the `next` param), falling back to the dashboard.
@@ -73,9 +62,13 @@ export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
     }
   }
 
+  const pwLen = password.length;
+  const strength = Math.min(100, pwLen >= 12 ? 100 : pwLen >= 8 ? 65 : pwLen >= 5 ? 35 : pwLen > 0 ? 15 : 0);
+  const strengthLabel = pwLen === 0 ? '' : strength >= 100 ? 'Strong' : strength >= 65 ? 'Good' : strength >= 35 ? 'Fair' : 'Weak';
+
   const perks = mode === 'register'
     ? [
-        { icon: BookOpenCheck, text: '283 lessons sequenced by a real prerequisite graph' },
+        { icon: BookOpenCheck, text: `${lessons} lessons sequenced by a real prerequisite graph` },
         { icon: Code2, text: 'Code graded by actual compilers, not multiple choice' },
         { icon: Undo2, text: 'Spaced repetition that keeps what you learn' },
         { icon: ShieldCheck, text: 'No job promises, just honest, measurable progress' },
@@ -88,97 +81,97 @@ export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
       ];
 
   const firstFive = [
-    'The placement diagnostic, 28 questions',
-    'Your first lesson, 6 minutes long',
-    'The first 5 flashcards in your deck',
+    { icon: BookOpenCheck, text: 'Lesson one of the path, about six minutes' },
+    { icon: Zap, text: 'Your first 20 XP and the daily goal ring' },
+    { icon: Undo2, text: 'The diagnostic offer, so you can skip what you know' },
   ];
 
-  const strength = pwStrength(password);
-
   return (
-    <div className="min-h-[80vh] flex items-center justify-center px-4 py-10 relative overflow-hidden">
-      {/* playful background blobs + floating math symbols */}
+    <div className="min-h-screen flex flex-col relative overflow-hidden">
+      {/* playful background blobs and floating math symbols */}
       <div className="pointer-events-none absolute -left-20 top-10 h-56 w-56 rounded-full bg-accent-soft blur-2xl" aria-hidden />
       <div className="pointer-events-none absolute -right-16 bottom-8 h-56 w-56 rounded-full bg-info-soft blur-2xl" aria-hidden />
-      <div className="pointer-events-none absolute inset-0 select-none" aria-hidden>
-        <span className="absolute left-[8%] top-[16%] text-4xl font-black text-accent/15 anim-float">Σ</span>
-        <span className="absolute right-[10%] top-[24%] text-3xl font-black text-info/15 anim-float-slow" style={{ animationDelay: '0.8s' }}>σ</span>
-        <span className="absolute left-[16%] bottom-[14%] text-3xl font-black text-violet/15 anim-float-slow" style={{ animationDelay: '1.4s' }}>Δ</span>
-      </div>
+      <span className="pointer-events-none absolute left-[8%] top-[22%] text-4xl font-black text-accent/15 anim-float" aria-hidden>Σ</span>
+      <span className="pointer-events-none absolute right-[10%] top-[16%] text-3xl font-black text-info/20 anim-float-slow" aria-hidden>σ</span>
+      <span className="pointer-events-none absolute left-[12%] bottom-[14%] text-3xl font-black text-accent/15 anim-float-slow" aria-hidden>Δ</span>
 
-      <div className="w-full max-w-4xl relative grid lg:grid-cols-[1fr_400px] gap-8 items-center">
+      <div className="flex-1 flex items-center justify-center px-4 py-10 relative">
+      <div className="w-full max-w-4xl relative grid lg:grid-cols-[1fr_400px] gap-8 items-stretch">
         {/* the pitch panel, fills the left half with real content */}
         <aside className="hidden lg:block">
-          <div className="qf-card-flat p-6 relative overflow-hidden bg-dots">
-            <div className="absolute -right-8 -top-8 h-28 w-28 rounded-full bg-accent-soft" aria-hidden />
+          <div className="qf-card-flat p-6 relative overflow-hidden bg-dots h-full">
+            <Mascot pose={mode === 'login' ? 'wave' : 'cheer'} size={84} className="absolute right-5 top-5 anim-bob" />
             <div className="relative">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <span className="h-11 w-11 rounded-2xl bg-accent text-white flex items-center justify-center shadow-[0_4px_0_0_var(--accent-deep)]">
-                    <Sigma className="h-6 w-6" aria-hidden />
-                  </span>
-                  <div>
-                    <p className="font-black tracking-tight text-lg leading-none">QuantFoundry</p>
-                    <p className="text-xs font-bold text-faint uppercase tracking-[0.12em] mt-1">Quant dev, built properly</p>
-                  </div>
+              <div className="flex items-center gap-3">
+                <span className="h-11 w-11 rounded-2xl bg-accent text-on-accent flex items-center justify-center shadow-[0_4px_0_0_var(--accent-deep)]">
+                  <Sigma className="h-6 w-6" aria-hidden />
+                </span>
+                <div>
+                  <p className="font-black tracking-tight text-lg leading-none">QuantFoundry</p>
+                  <p className="text-[11px] font-bold text-faint uppercase tracking-[0.12em] mt-1">Quant dev, built properly</p>
                 </div>
-                <Mascot pose="wave" size={64} />
               </div>
 
               {mode === 'login' ? (
                 <div className="mt-5 flex flex-wrap gap-2">
                   <span className="hud-pill"><Flame className="h-4 w-4 text-flame anim-flame" /> 7-day streak</span>
-                  <span className="hud-pill"><Zap className="h-4 w-4 text-gold" /> 1,480 XP</span>
+                  <span className="hud-pill"><Zap className="h-4 w-4 text-warning-strong dark:text-warning" /> 1,480 XP</span>
                   <span className="hud-pill"><Trophy className="h-4 w-4 text-accent-deep dark:text-accent" /> Level 4</span>
                 </div>
               ) : (
                 <div className="mt-5 grid grid-cols-3 gap-2.5">
-                  {[['283', 'lessons'], ['40+', 'live labs'], ['25', 'code problems']].map(([v, l]) => (
-                    <div key={l} className="stat-tile text-center" style={{ padding: '.7rem .5rem' }}>
-                      <p className="tnum text-xl font-black">{v}</p>
-                      <p className="stat-label">{l}</p>
+                  <div className="stat-tile !p-3">
+                    <div className="stat-body">
+                      <p className="stat-value !text-xl tnum">{lessons}</p>
+                      <p className="stat-label">lessons</p>
                     </div>
-                  ))}
+                  </div>
+                  <div className="stat-tile !p-3">
+                    <div className="stat-body">
+                      <p className="stat-value !text-xl tnum">{labs}</p>
+                      <p className="stat-label">live labs</p>
+                    </div>
+                  </div>
+                  <div className="stat-tile !p-3">
+                    <div className="stat-body">
+                      <p className="stat-value !text-xl tnum">{problems}</p>
+                      <p className="stat-label">code problems</p>
+                    </div>
+                  </div>
                 </div>
               )}
 
-              <p className="mt-5 text-xs font-black uppercase tracking-[0.14em] text-faint">
+              <p className="mt-5 text-[11px] font-black uppercase tracking-[0.14em] text-faint">
                 {mode === 'register' ? 'What you get' : 'While you were away'}
               </p>
               <ul className="mt-3.5 space-y-3.5">
                 {perks.map(p => (
                   <li key={p.text} className="flex items-start gap-3">
-                    <span className="icon-tile-sm icon-tile-accent shrink-0">
-                      <p.icon className="h-4 w-4" strokeWidth={2.5} aria-hidden="true" />
+                    <span className="h-8 w-8 shrink-0 rounded-xl bg-accent-soft text-accent-deep dark:text-accent flex items-center justify-center">
+                      <p.icon className="h-4 w-4" strokeWidth={2.5} />
                     </span>
-                    <span className="text-sm font-bold leading-snug pt-0.5">{p.text}</span>
+                    <span className="text-sm font-bold leading-snug pt-1">{p.text}</span>
                   </li>
                 ))}
               </ul>
-              {mode === 'register' && (
-                <div className="mt-5 qf-callout qf-callout-info">
-                  <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" aria-hidden="true" />
-                  <div>
-                    <p className="text-xs font-black uppercase tracking-[0.12em] text-muted mb-1.5">In your first 5 minutes</p>
-                    <ul className="space-y-1">
-                      {firstFive.map(t => <li key={t} className="text-sm font-bold">{t}</li>)}
-                    </ul>
-                  </div>
+              <div className="mt-6 pt-5 border-t-2 border-border">
+                <div className="flex items-center justify-between text-sm font-black">
+                  <span className="text-muted">Price</span>
+                  <span className="text-accent-deep dark:text-accent">Free, while we earn your trust</span>
                 </div>
-              )}
-              <div className="mt-6 pt-5 border-t-2 border-border flex flex-wrap gap-2">
-                <span className="chip"><CloudOff className="h-3 w-3" aria-hidden="true" /> Works offline</span>
-                <span className="chip chip-accent">Free, forever</span>
-                <span className="chip chip-warning">You actually have to study</span>
+                <div className="mt-2.5 flex items-center justify-between text-sm font-black">
+                  <span className="text-muted">Catch</span>
+                  <span>You actually have to study</span>
+                </div>
               </div>
             </div>
           </div>
         </aside>
 
-        {/* the form */}
-        <div className="w-full max-w-sm mx-auto lg:mx-0 lg:justify-self-start">
-          <div className="text-center mb-7">
-            <span className="mx-auto h-14 w-14 rounded-3xl bg-accent text-white flex items-center justify-center shadow-[0_5px_0_0_var(--accent-deep)] anim-bob">
+        {/* the form, vertically centered in its stretched column */}
+        <div className="w-full max-w-sm mx-auto lg:mx-0 lg:justify-self-center flex flex-col justify-center items-center">
+          <div className="text-center mb-6">
+            <span className="mx-auto h-14 w-14 rounded-3xl bg-accent text-on-accent flex items-center justify-center shadow-[0_5px_0_0_var(--accent-deep)] anim-bob">
               <Sigma className="h-7 w-7" aria-hidden />
             </span>
             <h1 className="mt-4 text-2xl font-black tracking-tight">
@@ -190,67 +183,105 @@ export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
                 : 'Pick up where you left off, streaks are waiting.'}
             </p>
           </div>
-          <form onSubmit={submit} className="qf-card p-6 space-y-4">
+          <form onSubmit={submit} className="qf-card p-6 space-y-4 w-full">
             {mode === 'register' && (
               <div>
-                <label htmlFor="name" className="qf-field-label"><User className="h-3.5 w-3.5" aria-hidden="true" /> Name</label>
-                <input
-                  id="name" type="text" required minLength={2} value={name}
-                  onChange={e => setName(e.target.value)}
-                  className="qf-input h-12"
-                  placeholder="Ada Lovelace"
-                  autoComplete="name"
-                />
+                <label htmlFor="name" className="text-sm font-extrabold">Name</label>
+                <div className="relative mt-1.5">
+                  <User className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-faint" aria-hidden />
+                  <input
+                    id="name" type="text" required minLength={2} value={name}
+                    onChange={e => setName(e.target.value)}
+                    className="qf-input !h-12 !pl-10"
+                    placeholder="Ada Lovelace"
+                    autoComplete="name"
+                  />
+                </div>
               </div>
             )}
             <div>
-              <label htmlFor="email" className="qf-field-label"><Mail className="h-3.5 w-3.5" aria-hidden="true" /> Email</label>
-              <input
-                id="email" type="email" required value={email}
-                onChange={e => setEmail(e.target.value)}
-                className="qf-input h-12"
-                placeholder="you@example.com"
-                autoComplete="email"
-              />
+              <label htmlFor="email" className="text-sm font-extrabold">Email</label>
+              <div className="relative mt-1.5">
+                <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-faint" aria-hidden />
+                <input
+                  id="email" type="email" required value={email}
+                  onChange={e => { setEmail(e.target.value); setTouched(t => ({ ...t, email: true })); }}
+                  onBlur={() => setTouched(t => ({ ...t, email: true }))}
+                  className="qf-input !h-12 !pl-10"
+                  placeholder="you@example.com"
+                  autoComplete="email"
+                />
+              </div>
+              {mode === 'register' && touched.email && email.length > 0 && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) && (
+                <p className="mt-1 text-xs font-bold text-danger">That does not look like an email address yet.</p>
+              )}
             </div>
             <div>
-              <label htmlFor="password" className="qf-field-label"><Lock className="h-3.5 w-3.5" aria-hidden="true" /> Password</label>
-              <div className="relative">
+              <label htmlFor="password" className="text-sm font-extrabold">Password</label>
+              <div className="relative mt-1.5">
+                <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-faint" aria-hidden />
                 <input
                   id="password" type={showPw ? 'text' : 'password'} required minLength={mode === 'register' ? 8 : 1}
                   value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  className="qf-input h-12"
-                  style={{ paddingRight: '3rem' }}
+                  onChange={e => { setPassword(e.target.value); setTouched(t => ({ ...t, password: true })); }}
+                  className="qf-input !h-12 !pl-10 !pr-11"
                   placeholder="••••••••"
                   autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
                   aria-describedby={mode === 'register' ? 'pw-hint' : undefined}
                 />
                 <button
                   type="button"
-                  onClick={() => setShowPw(v => !v)}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 press h-9 w-9 inline-flex items-center justify-center rounded-xl text-muted hover:bg-surface-2"
+                  onClick={() => setShowPw(s => !s)}
                   aria-label={showPw ? 'Hide password' : 'Show password'}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 h-8 w-8 inline-flex items-center justify-center rounded-xl text-muted hover:bg-surface-2"
                 >
-                  {showPw ? <EyeOff className="h-4.5 w-4.5" aria-hidden /> : <Eye className="h-4.5 w-4.5" aria-hidden />}
+                  {showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
-              {mode === 'register' && password.length > 0 && (
-                <div className="mt-2 flex items-center gap-2">
-                  <div className="prog-track flex-1"><div className={strength.tone} style={{ width: `${strength.pct}%` }} /></div>
-                  <span className="chip">{strength.label}</span>
-                </div>
-              )}
               {mode === 'register' && (
-                <p id="pw-hint" className="qf-field-hint">At least 8 characters. Longer with a mix of cases and digits grades faster.</p>
+                <>
+                  <div className="mt-2 flex items-center gap-2" aria-hidden>
+                    <span className="flex gap-1.5 flex-1">
+                      {[1, 2, 3, 4].map(seg => (
+                        <span
+                          key={seg}
+                          className={`h-2 flex-1 rounded-full transition-colors ${
+                            strength >= seg * 25
+                              ? strength >= 100 ? 'bg-accent' : strength >= 65 ? 'bg-accent-strong' : strength >= 35 ? 'bg-info-strong' : 'bg-danger-strong'
+                              : 'bg-surface-3'
+                          }`}
+                        />
+                      ))}
+                    </span>
+                    {strengthLabel && (
+                      <span className={`text-[11px] font-black ${strength >= 65 ? 'text-accent-deep dark:text-accent' : strength >= 35 ? 'text-info-strong dark:text-info' : 'text-danger'}`}>
+                        {strengthLabel}
+                      </span>
+                    )}
+                  </div>
+                  <p id="pw-hint" className="mt-1.5 text-xs font-bold text-muted">At least 8 characters.</p>
+                </>
               )}
             </div>
             {error && (
               <p role="alert" className="text-sm font-bold text-danger bg-danger-soft rounded-xl px-3 py-2 anim-shake">{error}</p>
             )}
-            <button type="submit" disabled={busy} className="btn3d w-full text-base" style={{ padding: '.9rem 1.5rem' }}>
+            <button type="submit" disabled={busy} className="btn3d w-full !py-3.5 text-base">
               {busy ? 'Working…' : mode === 'register' ? 'Create account' : 'Sign in'}
             </button>
+            {mode === 'register' && (
+              <div className="pt-1">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-faint">Your first five minutes</p>
+                <ul className="mt-2 space-y-2">
+                  {firstFive.map(f => (
+                    <li key={f.text} className="flex items-center gap-2.5 text-xs font-bold">
+                      <span className="icon-tile-sm icon-tile-accent !h-7 !w-7"><f.icon className="!h-3.5 !w-3.5" aria-hidden /></span>
+                      {f.text}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             <p className="text-sm text-center font-semibold text-muted">
               {mode === 'register' ? (
                 <>Already have an account? <Link href="/login" className="text-accent-deep dark:text-accent hover:underline font-extrabold">Sign in</Link></>
@@ -259,15 +290,23 @@ export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
               )}
             </p>
           </form>
-          <p className="mt-4 text-center text-xs font-bold text-muted flex items-center justify-center gap-1.5">
-            <LockKeyhole className="h-3.5 w-3.5 text-accent-deep dark:text-accent" aria-hidden="true" />
+          <p className="mt-4 text-center text-xs font-semibold text-muted max-w-xs">
             No card needed. Your progress stays on your device and syncs when you are online.
-          </p>
-          <p className="mt-2 text-center text-xs font-bold text-faint">
-            <Link href="/about" className="hover:text-muted">About</Link> · <Link href="/methodology" className="hover:text-muted">Methodology</Link>
           </p>
         </div>
       </div>
+      </div>
+
+      {/* anchored footer bar instead of links floating mid-page */}
+      <footer className="relative border-t-2 border-border/70 py-4 mt-auto">
+        <p className="text-center text-xs font-semibold text-muted">
+          <Link href="/about" className="hover:text-foreground transition-colors">About</Link>
+          <span className="mx-2 text-faint" aria-hidden>·</span>
+          <Link href="/methodology" className="hover:text-foreground transition-colors">Methodology</Link>
+          <span className="mx-2 text-faint" aria-hidden>·</span>
+          <Link href="/curriculum" className="hover:text-foreground transition-colors">Peek at the curriculum</Link>
+        </p>
+      </footer>
     </div>
   );
 }

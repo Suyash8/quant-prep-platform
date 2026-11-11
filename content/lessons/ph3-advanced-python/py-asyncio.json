@@ -21,12 +21,6 @@
       "text": "The event loop: concurrency without threads"
     },
     {
-      "type": "interactive",
-      "component": "LatencyBudget",
-      "params": {},
-      "caption": "Where the milliseconds of one request go, and what awaiting I/O instead of blocking buys you."
-    },
-    {
       "type": "p",
       "md": "Asyncio achieves concurrency on **one thread** with cooperative scheduling. A *coroutine* is a function defined with `async def` that can pause itself at any `await` and hand control back to the **event loop**, which then runs whichever other coroutine is ready. Contrast with threads, which the OS preempts whenever it likes: coroutines only switch where you wrote `await`, so interleaving points are visible in the source. Between awaits, a coroutine runs uninterrupted, which is why carefully-placed awaits give you race-free access to shared state without locks."
     },
@@ -73,6 +67,42 @@
       "lang": "python",
       "code": "import asyncio\n\nasync def work(n):\n    await asyncio.sleep(0.01 * n)\n    if n == 2:\n        raise ValueError(\"venue down\")\n    return n * 10\n\nasync def main():\n    res = await asyncio.gather(work(1), work(2), work(3),\n                               return_exceptions=True)\n    print(res)\n\nasyncio.run(main())\n# [10, ValueError('venue down'), 30]",
       "caption": "With return_exceptions=True, failures become values you can branch on."
+    },
+    {
+      "type": "interactive",
+      "component": "TerminalSteps",
+      "params": {
+        "steps": [
+          {
+            "cmd": "python -c \"import asyncio; print(asyncio.gather)\"",
+            "out": [
+              "<function gather at 0x104b2d9c0>"
+            ]
+          },
+          {
+            "cmd": "python bench.py --mode sequential",
+            "out": [
+              "3 requests in 0.902s"
+            ],
+            "note": "serial: each wait queues behind the previous one"
+          },
+          {
+            "cmd": "python bench.py --mode gather",
+            "out": [
+              "3 requests in 0.318s"
+            ],
+            "note": "one event loop, three awaited tasks: the waits overlap, the compute does not"
+          },
+          {
+            "cmd": "python -c \"import asyncio; print(asyncio.cpu_count())\"",
+            "out": [
+              "8"
+            ],
+            "note": "asyncio parallelises waiting, not cores: compute-bound work needs processes"
+          }
+        ]
+      },
+      "caption": "asyncio is a scheduler for waits. The gather run is not faster per call; it overlaps the dead time between calls."
     },
     {
       "type": "p",

@@ -8,12 +8,20 @@ import { AppShell, PublicHeader } from '@/components/app-shell';
 import { InteractiveBlock } from '@/components/interactive/registry';
 import { REGISTRY } from '@/components/interactive/registry';
 import { ClientMathFigure } from '@/components/gamified/client-md';
-import { ClosingCta } from '@/components/ui/page-kit';
 
 export const metadata = { title: 'Interactive labs. QuantFoundry' };
 
 type LabEntry = { name: string; params: Record<string, unknown>; caption: string };
-type LabGroup = { title: string; domain: string; Icon: LucideIcon; tile: string; accentVar: string; desc: string; components: LabEntry[] };
+type LabGroup = {
+  title: string;
+  domain: string;
+  Icon: LucideIcon;
+  tile: string;
+  chipCls: string;
+  accentVar: string;
+  desc: string;
+  components: LabEntry[];
+};
 
 const GROUPS: LabGroup[] = [
   {
@@ -21,6 +29,7 @@ const GROUPS: LabGroup[] = [
     domain: 'Calculus',
     Icon: Sigma,
     tile: 'icon-tile-info',
+    chipCls: 'chip-info',
     accentVar: '--info',
     desc: 'Manipulate parameters and watch the mathematics respond, every lab is computed live from real formulas.',
     components: [
@@ -35,6 +44,7 @@ const GROUPS: LabGroup[] = [
     domain: 'Probability',
     Icon: Dices,
     tile: 'icon-tile-violet',
+    chipCls: 'border-transparent bg-violet-soft text-violet-ink dark:text-violet',
     accentVar: '--violet',
     desc: 'Simulation you can verify: empirical distributions converge to theory as trials grow.',
     components: [
@@ -51,6 +61,7 @@ const GROUPS: LabGroup[] = [
     domain: 'Stochastic',
     Icon: Waves,
     tile: 'icon-tile-accent',
+    chipCls: 'chip-accent',
     accentVar: '--accent',
     desc: 'Random walks, Brownian motion and Markov chains, the mathematical substrate of pricing.',
     components: [
@@ -65,6 +76,7 @@ const GROUPS: LabGroup[] = [
     domain: 'Finance',
     Icon: Coins,
     tile: 'icon-tile-gold',
+    chipCls: 'chip-gold',
     accentVar: '--gold',
     desc: 'Pricing and portfolio labs: the Greeks, payoffs, curves and the efficient frontier.',
     components: [
@@ -82,6 +94,7 @@ const GROUPS: LabGroup[] = [
     domain: 'Markets',
     Icon: Landmark,
     tile: 'icon-tile-warning',
+    chipCls: 'chip-warning',
     accentVar: '--warning',
     desc: 'Order books, matching engines and computer internals, see the machine the lessons describe.',
     components: [
@@ -100,6 +113,7 @@ const GROUPS: LabGroup[] = [
     domain: 'Systems',
     Icon: Cpu,
     tile: 'icon-tile-danger',
+    chipCls: 'chip-danger',
     accentVar: '--danger',
     desc: 'The plumbing behind trading platforms: shells, sockets, allocators, floating point, the lessons made tangible.',
     components: [
@@ -166,15 +180,6 @@ const FORMULAS: Record<string, { tex: string; label: string }> = {
 };
 
 const USED_COUNT = GROUPS.reduce((n, g) => n + g.components.length, 0);
-
-// static Tailwind spans for the grid remainder filler (dynamic strings don't compile)
-
-
-const FILLER_SPAN: Record<number, string> = {
-  1: 'sm:col-span-1 lg:col-span-1',
-  2: 'sm:col-span-2 lg:col-span-2',
-  3: 'sm:col-span-1 lg:col-span-3',
-};
 
 const pretty = (name: string) => name.replace(/([a-z0-9])([A-Z])/g, '$1 $2');
 const slideDelay = (i: number) => ({ animationDelay: i * 60 + 'ms' });
@@ -295,36 +300,6 @@ export default async function LabPage({ searchParams }: { searchParams: Promise<
         </section>
       )}
 
-      {/* featured lab: a real live preview, not a screenshot */}
-      {!active && (
-        <section className="mt-6 qf-card overflow-hidden anim-pop-in">
-          <div className="grid lg:grid-cols-[0.9fr_1.1fr]">
-            <div className="p-6 sm:p-8 bg-dots flex flex-col justify-center gap-3">
-              <span className="chip chip-warning self-start">Featured lab</span>
-              <h2 className="text-xl font-black tracking-tight">The order book, live in your browser</h2>
-              <p className="text-sm font-semibold text-muted leading-relaxed">
-                Drag the price, watch the spread, the depth ladder and the trade tape react. Every one of the {USED_COUNT} labs is this real: computed from actual formulas, no video, no screenshots.
-              </p>
-              <div className="flex flex-wrap gap-2">
-                <span className="chip">Math</span>
-                <span className="chip">Probability</span>
-                <span className="chip">Finance</span>
-                <span className="chip">CS</span>
-                <span className="chip">Systems</span>
-              </div>
-              <Link href="/lab?lab=OrderBookVisual" className="btn3d self-start mt-1">
-                Open the order book lab <ArrowUpRight className="h-4 w-4" aria-hidden="true" />
-              </Link>
-            </div>
-            <div className="p-3 sm:p-4 border-l-2 border-border min-w-0">
-              <div className="rounded-2xl border-2 border-border bg-dots p-3 sm:p-4 [&_figure]:my-0">
-                <InteractiveBlock component="OrderBookVisual" params={{}} caption="Best bid, best ask, and the spread between them." />
-              </div>
-            </div>
-          </div>
-        </section>
-      )}
-
       {/* lab browser */}
       {GROUPS.map((g, gi) => {
         const GIcon = g.Icon;
@@ -340,42 +315,40 @@ export default async function LabPage({ searchParams }: { searchParams: Promise<
               </div>
               <span className="chip tnum ml-auto">{g.components.length} labs</span>
             </div>
-            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-stretch">
+            {/* auto-fill grid so short sections never leave ragged trailing columns */}
+            <div className="mt-4 grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3.5 items-stretch">
               {g.components.map((c, ci) => {
                 const isActive = active?.name === c.name;
                 const num = GROUPS.slice(0, gi).reduce((n, x) => n + x.components.length, 0) + ci + 1;
-                // fill the remainder of the last row so grids never end ragged
-                // (static spans only, dynamic class strings do not compile)
-                const isLast = ci === g.components.length - 1;
-                const remLg = g.components.length % 4;
-                const fillCls =
-                  isLast && remLg === 1 ? 'sm:col-span-2 lg:col-span-3'
-                  : isLast && remLg === 2 ? 'lg:col-span-2'
-                  : isLast && g.components.length % 2 === 1 ? 'sm:col-span-2'
-                  : '';
+                const formula = FORMULAS[c.name];
                 return (
                   <Link
                     key={c.name}
                     href={'/lab?lab=' + c.name}
-                    className={`qf-card p-5 flex flex-col gap-3 press hover:-translate-y-0.5 hover:shadow-lg transition-all anim-slide-up ${fillCls}`}
+                    className="qf-card p-5 min-w-0 flex flex-col gap-3 press hover:-translate-y-0.5 hover:shadow-lg transition-all anim-slide-up"
                     style={{ ...slideDelay(ci), borderTop: `4px solid var(${g.accentVar})` }}
                     aria-current={isActive ? 'true' : undefined}
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <span className={`icon-tile icon-tile-sm ${g.tile} font-black tnum`} style={isActive ? { outline: '2px solid var(--info)' } : undefined}>
+                      <span className="icon-tile icon-tile-sm icon-tile-neutral !text-[13px] font-black tnum" style={isActive ? { outline: '2px solid var(--info)' } : undefined}>
                         {num}
                       </span>
                       {isActive
                         ? <span className="chip chip-info">viewing</span>
-                        : <span className="chip hidden sm:inline-flex">{g.domain}</span>}
+                        : <span className={`chip hidden sm:inline-flex ${g.chipCls}`}>{g.domain}</span>}
                     </div>
                     <div className="flex-1 min-w-0">
                       <h3 className="font-bold tracking-tight">{pretty(c.name)}</h3>
                       <p className="mt-1.5 text-xs text-muted font-semibold leading-relaxed line-clamp-3">{c.caption}</p>
                     </div>
-                    <span className="btn3d btn3d-ghost btn3d-sm mt-auto w-full">
-                      Open lab
-                      <ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" />
+                    {/* one consistent meta line, derived from real lab data (the formula every lab computes) */}
+                    <p className="flex items-center gap-1.5 text-[11px] font-bold text-faint min-w-0">
+                      <FlaskConical className="h-3 w-3 shrink-0" aria-hidden />
+                      <span className="truncate">Interactive · {formula ? formula.label : 'lab'}</span>
+                    </p>
+                    <span className="btn3d btn3d-ghost btn3d-sm mt-auto w-full !text-xs">
+                      Launch
+                      <ArrowUpRight className="h-3.5 w-3.5" />
                     </span>
                   </Link>
                 );
@@ -386,16 +359,16 @@ export default async function LabPage({ searchParams }: { searchParams: Promise<
       })}
 
       {/* closing CTA, no dead zones */}
-      <div className="mt-10">
-        <ClosingCta
-          icon={BookOpen}
-          tone="accent"
-          title="Labs live inside lessons too."
-          line={`Every one of these ${USED_COUNT} labs is embedded right where the theory that explains it lives.`}
-          cta={<Link href="/curriculum" className="btn3d">Open the curriculum</Link>}
-          ghost={<Link href="/lab?lab=BlackScholesLab" className="btn3d btn3d-ghost">Try Black-Scholes first</Link>}
-          pose="think"
-        />
+      <div className="mt-10 qf-card p-5 flex items-center gap-4 flex-wrap anim-slide-up bg-dots">
+        <span className="icon-tile icon-tile-accent shrink-0">
+          <BookOpen />
+        </span>
+        <p className="flex-1 min-w-[220px] text-sm font-bold text-muted">
+          Every one of these {USED_COUNT} labs is embedded inside the lesson that teaches it, with the theory just before it.
+        </p>
+        <Link href="/curriculum" className="btn3d btn3d-sm shrink-0">
+          Open the curriculum <ArrowUpRight className="h-3.5 w-3.5" />
+        </Link>
       </div>
     </div>
   );

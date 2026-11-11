@@ -2,12 +2,11 @@ import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { getCurrentUser } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { listAssessments } from '@/lib/content';
+import { getAssessment, listAssessments } from '@/lib/content';
 import { AppShell } from '@/components/app-shell';
-import { ClosingCta } from '@/components/ui/page-kit';
 import {
   BookOpenCheck, CheckCircle2, ClipboardList, Clock, Cpu, Dices, History, Landmark,
-  ListChecks, MessagesSquare, RotateCcw, Server, Sigma, Sparkles, Trophy, Coins, Target,
+  ListChecks, MessagesSquare, RotateCcw, Server, Sigma, Sparkles, Trophy, Coins,
 } from 'lucide-react';
 
 export const metadata = { title: 'Assessment Centre. QuantFoundry' };
@@ -54,6 +53,13 @@ const KIND_META: Record<string, {
   },
 };
 
+// kind chip hierarchy: diagnostic info, screening warning, common subject kind ghost
+const KIND_CHIP: Record<string, string> = {
+  diagnostic: 'chip chip-info',
+  assessment: 'chip',
+  screening: 'chip chip-warning',
+};
+
 export default async function AssessmentsPage() {
   const user = await getCurrentUser();
   if (!user) redirect('/login?next=/assessments');
@@ -70,7 +76,15 @@ export default async function AssessmentsPage() {
 
   const completedCount = bestById.size;
   const bestOverall = attempts.length ? Math.max(...attempts.map(a => a.scorePct)) : null;
-  const bestDisplay = bestOverall === null ? ', ' : Math.round(bestOverall) + '%';
+  const bestDisplay = bestOverall === null ? '—' : Math.round(bestOverall) + '%';
+
+  // per-card copy: each assessment's own description (registry read, no queries)
+  const descriptions = new Map<string, string>();
+  for (const a of assessments) {
+    const full = getAssessment(a.id);
+    const d = full?.description?.replace(/\$\$?[^$]*\$\$?/g, ' ').replace(/\s+/g, ' ').trim();
+    if (d) descriptions.set(a.id, d);
+  }
 
   const statDelays = ['0ms', '80ms', '160ms'];
 
@@ -88,29 +102,28 @@ export default async function AssessmentsPage() {
         </header>
 
         <section className="grid gap-3 sm:grid-cols-3" aria-label="Assessment stats">
-          <div className="stat-tile anim-pop-in" style={{ animationDelay: statDelays[0] }}>
-            <div className="flex items-center gap-2.5">
-              <span className="icon-tile-sm icon-tile-violet"><Sparkles strokeWidth={2.5} /></span>
-              <span className="stat-label">Available</span>
+          <div className="stat-tile min-w-0 anim-pop-in" style={{ animationDelay: statDelays[0] }}>
+            <span className="icon-tile icon-tile-sm icon-tile-neutral"><Sparkles strokeWidth={2.5} /></span>
+            <div className="stat-body">
+              <p className="stat-value tnum">{assessments.length}</p>
+              <p className="stat-label">Available</p>
+              <p className="stat-sub">ready when you are</p>
             </div>
-            <p className="mt-2.5 stat-value font-black tnum">{assessments.length}</p>
-            <p className="mt-2 stat-label">ready when you are</p>
           </div>
-          <div className="stat-tile anim-pop-in" style={{ animationDelay: statDelays[1] }}>
-            <div className="flex items-center gap-2.5">
-              <span className="icon-tile-sm icon-tile-accent"><CheckCircle2 strokeWidth={2.5} /></span>
-              <span className="stat-label">Completed</span>
+          <div className="stat-tile min-w-0 anim-pop-in" style={{ animationDelay: statDelays[1] }}>
+            <span className={`icon-tile icon-tile-sm ${completedCount > 0 ? 'icon-tile-accent' : 'icon-tile-neutral'}`}><CheckCircle2 strokeWidth={2.5} /></span>
+            <div className="stat-body">
+              <p className="stat-value tnum">{completedCount}<span className="text-base font-extrabold text-muted">/{assessments.length}</span></p>
+              <p className="stat-label">Completed</p>
             </div>
-            <p className="mt-2.5 stat-value font-black tnum">{completedCount}<span className="text-base font-extrabold text-muted">/{assessments.length}</span></p>
-            <p className="mt-2 stat-label">assessments attempted</p>
           </div>
-          <div className="stat-tile anim-pop-in" style={{ animationDelay: statDelays[2] }}>
-            <div className="flex items-center gap-2.5">
-              <span className="icon-tile-sm icon-tile-gold"><Trophy strokeWidth={2.5} /></span>
-              <span className="stat-label">Best score</span>
+          <div className="stat-tile min-w-0 anim-pop-in" style={{ animationDelay: statDelays[2] }}>
+            <span className={`icon-tile icon-tile-sm ${bestOverall !== null ? 'icon-tile-gold' : 'icon-tile-neutral'}`}><Trophy strokeWidth={2.5} /></span>
+            <div className="stat-body">
+              <p className="stat-value tnum">{bestDisplay}</p>
+              <p className="stat-label">Best score</p>
+              <p className="stat-sub">across all attempts</p>
             </div>
-            <p className="mt-2.5 stat-value font-black tnum">{bestDisplay}</p>
-            <p className="mt-2 stat-label">across all attempts</p>
           </div>
         </section>
 
@@ -130,38 +143,39 @@ export default async function AssessmentsPage() {
               const minutesLabel = a.timeLimitMinutes > 0 ? a.timeLimitMinutes + ' min' : 'untimed';
               const topic = topicIcon(a.id, meta.icon, meta.tile);
               const TileIcon = topic.icon;
-              const statusChipCls = !attempted ? 'chip' : passed ? 'chip chip-success' : 'chip chip-warning';
               return (
                 <div key={a.id} className="qf-card anim-slide-up flex flex-col p-5 transition-all hover:-translate-y-0.5 hover:shadow-lg" style={{ animationDelay: delay }}>
-                  <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start justify-between gap-2">
                     <span className={'icon-tile ' + topic.tile}><TileIcon strokeWidth={2.5} /></span>
-                    {attempted && <span className={'chip tnum ' + (passed ? 'chip-success' : 'chip-warning')}>best {bestPct}%</span>}
+                    {attempted && (
+                      <span className={'chip tnum shrink-0 ' + (passed ? 'chip-success' : 'chip-warning')}>Best {bestPct}%</span>
+                    )}
                   </div>
                   <h3 className="mt-3.5 text-lg font-extrabold tracking-tight">{a.title}</h3>
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    <span className="chip"><ListChecks className="h-3 w-3" /> {a.questionCount} questions</span>
-                    <span className="chip"><Clock className="h-3 w-3" /> {minutesLabel}</span>
-                    <span className="chip chip-info">{meta.label}</span>
+                  <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                    <span className={KIND_CHIP[a.kind] ?? 'chip'}>{meta.label}</span>
+                    <span className="inline-flex items-center gap-1 text-xs font-semibold text-faint tnum">
+                      <ListChecks className="h-3.5 w-3.5" aria-hidden /> {a.questionCount} questions
+                    </span>
+                    <span className="inline-flex items-center gap-1 text-xs font-semibold text-faint tnum">
+                      <Clock className="h-3.5 w-3.5" aria-hidden /> {minutesLabel}
+                    </span>
                   </div>
-                  <p className="mt-2.5 text-sm font-medium text-muted line-clamp-2">{a.description.replace(/\$\$?[^$]*\$\$?/g, '').slice(0, 110)}</p>
+                  <p className="mt-2.5 text-sm font-medium text-muted line-clamp-2">{descriptions.get(a.id) ?? meta.desc}</p>
                   <div className="flex-1" />
-                  {attempted ? (
-                    <div className="mt-3.5">
-                      <div className="flex items-center justify-between text-[11px] font-black uppercase tracking-wider mb-1.5">
-                        <span className="text-faint">{passed ? 'Best score' : 'Best so far'}</span>
-                        <span className={'tnum ' + (passed ? 'text-accent-deep dark:text-accent' : 'text-warning-strong dark:text-warning')}>{bestPct}%</span>
-                      </div>
-                      <div className="prog-track h-2.5">
-                        <div className={passed ? 'prog-fill' : 'prog-fill prog-fill-gold'} style={{ width: bestPct + '%' }} />
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="mt-3.5 flex items-center gap-1.5 text-xs font-bold text-faint">
-                      <Target className="h-3.5 w-3.5" aria-hidden="true" /> First attempt sets your baseline
+                  {attempted && bestPct > 0 && (
+                    <div className="prog-track h-2.5 mt-3.5">
+                      <div className={passed ? 'prog-fill' : 'prog-fill prog-fill-gold'} style={{ width: bestPct + '%' }} />
                     </div>
                   )}
                   <div className="mt-4 flex items-center justify-between gap-3">
-                    <span className={statusChipCls}>{!attempted ? 'not started' : passed ? 'passed' : 'in progress'}</span>
+                    {!attempted ? (
+                      <span className="text-xs font-bold text-faint">Not started</span>
+                    ) : passed ? (
+                      <span className="chip chip-success">Passed</span>
+                    ) : (
+                      <span className="chip">In progress</span>
+                    )}
                     <Link href={`/assessments/${a.id}`} className="btn3d btn3d-sm ml-auto">
                       {attempted ? <RotateCcw className="h-3.5 w-3.5" /> : <ListChecks className="h-3.5 w-3.5" />}
                       {attempted ? 'Retake' : 'Start'}
@@ -173,9 +187,9 @@ export default async function AssessmentsPage() {
           </div>
         </section>
 
-        <section className="mt-10">
+        <section className="mt-8">
           <div className="section-head">
-            <span className="icon-tile-sm icon-tile-gold"><History strokeWidth={2.5} /></span>
+            <span className="icon-tile icon-tile-sm icon-tile-gold"><History strokeWidth={2.5} /></span>
             <h2>Recent attempts</h2>
           </div>
           <div className="qf-card p-3 sm:p-4">
@@ -214,18 +228,6 @@ export default async function AssessmentsPage() {
               </ul>
             )}
           </div>
-        </section>
-
-        <section className="mt-10">
-          <ClosingCta
-            icon={ClipboardList}
-            tone="info"
-            title={`${assessments.length - completedCount} untried assessments remain.`}
-            line="Each one is 20 minutes or less and lands its result straight into your mastery profile."
-            cta={<Link href="/assessments/apt-quantitative" className="btn3d">Take the aptitude test</Link>}
-            ghost={<Link href="/revision" className="btn3d btn3d-ghost">Study for it first</Link>}
-            pose="think"
-          />
         </section>
       </div>
     </AppShell>

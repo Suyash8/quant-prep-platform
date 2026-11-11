@@ -269,7 +269,7 @@ export function MarkovChainSim({ params }: { params: Record<string, unknown> }) 
             <g key={i}>
               {i > 0 && <line x1={20 + ((i - 1) * (W - 40)) / Math.max(run.length - 1, 1)} y1={60 + (((i - 1) % 2) * 16 - 8)} x2={x} y2={y} stroke={MUTED} />}
               <circle cx={x} cy={y} r={11} fill={i === 0 ? ACCENT : 'var(--surface)'} stroke={ACCENT} />
-              <text x={x} y={y + 3.5} textAnchor="middle" fontSize="8.5" fill={i === 0 ? 'white' : INK}>{s.slice(0, 4)}</text>
+              <text x={x} y={y + 3.5} textAnchor="middle" fontSize="8.5" fill={i === 0 ? '#fff' : INK}>{s.slice(0, 4)}</text>
             </g>
           );
         })}
@@ -428,7 +428,7 @@ export function TimeSeriesDecompose({ params }: { params: Record<string, unknown
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto">
         {line('total', MUTED)}
         {line('tr', ACCENT)}
-        {line('se', 'var(--warning-strong)', '4 3')}
+        {line('se', '#9a6d0b', '4 3')}
       </svg>
       <div className="mt-2 grid sm:grid-cols-2 gap-3">
         <Slider label="trend slope" value={trend} min={-1} max={1.5} step={0.05} onChange={() => {}} />

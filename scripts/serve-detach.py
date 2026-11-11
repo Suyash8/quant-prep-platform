@@ -6,7 +6,7 @@ Usage: python3 scripts/serve-detach.py [port]
 import os, sys, shutil, subprocess, time, urllib.request
 
 PORT = sys.argv[1] if len(sys.argv) > 1 else "3002"
-ROOT = "/home/z/my-project"
+ROOT = "/home/z/my-project/qf-v4"
 STANDALONE = os.path.join(ROOT, ".next/standalone")
 LOG = "/tmp/server.log"
 ENV = dict(

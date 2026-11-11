@@ -1,159 +1,154 @@
-// QuantFoundry mascot: Siggy, a rounded sigma creature.
-// Original character built from SVG primitives using design tokens only.
-// Poses: wave | think | cheer | sleep | lost | offline | celebrate
-import type { CSSProperties } from 'react';
+import * as React from 'react';
 
-type Pose = 'wave' | 'think' | 'cheer' | 'sleep' | 'lost' | 'offline' | 'celebrate';
-const S = 96;
-
-// Face expression per pose
-function face(pose: Pose): { eyes: string; mouth: string } {
-  switch (pose) {
-    case 'sleep': return { eyes: 'closed', mouth: 'soft' };
-    case 'lost': return { eyes: 'wide', mouth: 'flat' };
-    case 'offline': return { eyes: 'closed', mouth: 'flat' };
-    case 'cheer':
-    case 'celebrate': return { eyes: 'happy', mouth: 'big' };
-    case 'think': return { eyes: 'up', mouth: 'flat' };
-    default: return { eyes: 'open', mouth: 'smile' };
-  }
-}
+/**
+ * QuantFoundry mascot: an original "sigma creature".
+ * Built only from SVG primitives and design tokens (no copied brand shapes):
+ * a rounded green body, a darker belly edge, a small sigma mark, big eyes,
+ * stubby limbs. Geometric on purpose so it scales and themes cleanly.
+ */
+export type MascotPose = 'wave' | 'think' | 'cheer' | 'sleep' | 'lost' | 'offline' | 'celebrate';
 
 export function Mascot({
   pose = 'wave',
-  size = S,
+  size = 96,
   className,
-  style,
+  label,
 }: {
-  pose?: Pose;
+  pose?: MascotPose;
   size?: number;
   className?: string;
-  style?: CSSProperties;
+  label?: string;
 }) {
-  const f = face(pose);
-  const bodyY = pose === 'sleep' ? 60 : 54;
+  const w = size;
+  const h = size * 1.05;
+  const eyeClosed = pose === 'sleep';
+  const title = label ?? (pose === 'lost' ? 'The mascot looks lost' : 'QuantFoundry mascot');
+
   return (
     <svg
-      viewBox="0 0 120 100"
-      width={size}
-      height={(size * 100) / 120}
-      className={`qf-mascot ${className ?? ''}`}
-      style={style}
-      aria-hidden="true"
-      focusable="false"
+      width={w}
+      height={h}
+      viewBox="0 0 100 105"
+      fill="none"
+      role={label ? 'img' : undefined}
+      aria-hidden={label ? undefined : true}
+      className={className}
     >
-      {/* limbs behind body */}
-      {(pose === 'wave' || pose === 'cheer' || pose === 'celebrate') && (
-        <rect x="86" y="38" width="14" height="10" rx="5" fill="var(--accent-deep)" transform="rotate(-28 86 38)" />
-      )}
-      {(pose === 'cheer' || pose === 'celebrate') && (
+      <title>{title}</title>
+
+      {/* soft ground shadow */}
+      <ellipse cx="50" cy="97" rx="26" ry="5" fill="var(--shadow-hard)" opacity="0.35" />
+
+      {/* legs */}
+      <rect x="34" y="80" width="10" height="12" rx="5" fill="var(--accent-deep)" />
+      <rect x="56" y="80" width="10" height="12" rx="5" fill="var(--accent-deep)" />
+
+      {/* arms: pose-dependent */}
+      {pose === 'cheer' || pose === 'celebrate' ? (
         <>
-          <rect x="20" y="36" width="14" height="10" rx="5" fill="var(--accent-deep)" transform="rotate(24 20 36)" />
-          {/* little confetti sparkles */}
-          <circle cx="14" cy="20" r="3.4" fill="var(--gold)" />
-          <rect x="104" y="14" width="7" height="7" rx="2" fill="var(--info)" transform="rotate(20 104 14)" />
-          <circle cx="30" cy="10" r="2.6" fill="var(--violet)" />
+          <rect x="8" y="42" width="9" height="22" rx="4.5" fill="var(--accent-strong)" transform="rotate(-24 12 52)" />
+          <rect x="83" y="42" width="9" height="22" rx="4.5" fill="var(--accent-strong)" transform="rotate(24 88 52)" />
+        </>
+      ) : pose === 'wave' ? (
+        <>
+          <rect x="9" y="46" width="9" height="20" rx="4.5" fill="var(--accent-strong)" transform="rotate(32 13 56)" />
+          <rect x="83" y="52" width="9" height="16" rx="4.5" fill="var(--accent-strong)" />
+        </>
+      ) : pose === 'think' ? (
+        <>
+          <rect x="10" y="54" width="9" height="16" rx="4.5" fill="var(--accent-strong)" transform="rotate(14 14 62)" />
+          <rect x="82" y="54" width="9" height="16" rx="4.5" fill="var(--accent-strong)" />
+        </>
+      ) : pose === 'offline' ? (
+        <>
+          <rect x="10" y="58" width="9" height="14" rx="4.5" fill="var(--accent-strong)" />
+          <rect x="82" y="58" width="9" height="14" rx="4.5" fill="var(--accent-strong)" />
+        </>
+      ) : (
+        <>
+          <rect x="10" y="54" width="9" height="16" rx="4.5" fill="var(--accent-strong)" />
+          <rect x="82" y="54" width="9" height="16" rx="4.5" fill="var(--accent-strong)" />
         </>
       )}
 
-      {/* body: rounded sigma creature */}
-      <ellipse cx="60" cy={bodyY + 14} rx="34" ry="26" fill="var(--accent)" />
-      {/* belly edge */}
-      <ellipse cx="60" cy={bodyY + 18} rx="22" ry="16" fill="var(--accent-deep)" opacity="0.28" />
-      {/* feet */}
-      <rect x="40" y={bodyY + 32} width="16" height="9" rx="4.5" fill="var(--accent-deep)" />
-      <rect x="64" y={bodyY + 32} width="16" height="9" rx="4.5" fill="var(--accent-deep)" />
-
-      {/* sigma glyph on the belly */}
+      {/* body: rounded blob with darker belly edge */}
       <path
-        d="M52 52 l8 8 -8 8 m16 -16 l-8 8 8 8"
+        d="M50 12c22 0 34 14 34 34 0 20-12 34-34 34S16 66 16 46c0-20 12-34 34-34z"
+        fill="var(--accent)"
         stroke="var(--accent-deep)"
-        strokeWidth="4"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        fill="none"
-        opacity="0.75"
+        strokeWidth="3"
+      />
+      {/* belly */}
+      <path d="M50 34c13 0 20 8 20 18 0 10-7 18-20 18s-20-8-20-18c0-10 7-18 20-18z" fill="var(--accent-soft)" opacity="0.9" />
+
+      {/* sigma mark on the belly (the brand shape) */}
+      <path
+        d="M57 42v4l-9 8 9 8v4h-13v-4l8-8-8-8v-4h13z"
+        fill="var(--accent-deep)"
       />
 
       {/* eyes */}
-      {f.eyes === 'open' && (
+      {eyeClosed ? (
         <>
-          <circle cx="50" cy="46" r="5" fill='white' />
-          <circle cx="70" cy="46" r="5" fill='white' />
-          <circle cx="51.5" cy="47" r="2.5" fill="var(--foreground)" />
-          <circle cx="71.5" cy="47" r="2.5" fill="var(--foreground)" />
+          <path d="M36 48c2 3 6 3 8 0" stroke="var(--foreground)" strokeWidth="3" strokeLinecap="round" />
+          <path d="M56 48c2 3 6 3 8 0" stroke="var(--foreground)" strokeWidth="3" strokeLinecap="round" />
         </>
-      )}
-      {f.eyes === 'happy' && (
+      ) : (
         <>
-          <path d="M44 48 q6 -8 12 0" stroke='white' strokeWidth="3.4" strokeLinecap="round" fill="none" />
-          <path d="M64 48 q6 -8 12 0" stroke='white' strokeWidth="3.4" strokeLinecap="round" fill="none" />
-        </>
-      )}
-      {f.eyes === 'closed' && (
-        <>
-          <path d="M44 47 q6 4 12 0" stroke="var(--accent-deep)" strokeWidth="3" strokeLinecap="round" fill="none" />
-          <path d="M64 47 q6 4 12 0" stroke="var(--accent-deep)" strokeWidth="3" strokeLinecap="round" fill="none" />
-        </>
-      )}
-      {f.eyes === 'up' && (
-        <>
-          <circle cx="50" cy="44" r="5" fill='white' />
-          <circle cx="70" cy="44" r="5" fill='white' />
-          <circle cx="50" cy="42" r="2.5" fill="var(--foreground)" />
-          <circle cx="70" cy="42" r="2.5" fill="var(--foreground)" />
-        </>
-      )}
-      {f.eyes === 'wide' && (
-        <>
-          <circle cx="50" cy="46" r="6.5" fill='white' />
-          <circle cx="70" cy="46" r="6.5" fill='white' />
-          <circle cx="50" cy="46" r="3" fill="var(--foreground)" />
-          <circle cx="70" cy="46" r="3" fill="var(--foreground)" />
+          <circle cx="39" cy="47" r="6.5" fill="#ffffff" />
+          <circle cx="61" cy="47" r="6.5" fill="#ffffff" />
+          <circle cx={pose === 'think' ? 41 : 39} cy={pose === 'think' ? 49 : 48} r="3" fill="var(--foreground)" />
+          <circle cx={pose === 'think' ? 63 : 61} cy={pose === 'think' ? 49 : 48} r="3" fill="var(--foreground)" />
         </>
       )}
 
       {/* mouth */}
-      {f.mouth === 'smile' && (
-        <path d="M54 58 q6 5 12 0" stroke="var(--accent-deep)" strokeWidth="3" strokeLinecap="round" fill="none" />
-      )}
-      {f.mouth === 'big' && (
-        <path d="M52 56 q8 10 16 0 z" fill="var(--accent-deep)" />
-      )}
-      {f.mouth === 'soft' && (
-        <path d="M56 58 q4 3 8 0" stroke="var(--accent-deep)" strokeWidth="3" strokeLinecap="round" fill="none" />
-      )}
-      {f.mouth === 'flat' && (
-        <path d="M54 59 h12" stroke="var(--accent-deep)" strokeWidth="3" strokeLinecap="round" fill="none" />
+      {pose === 'celebrate' || pose === 'cheer' ? (
+        <path d="M43 58c3 5 11 5 14 0" stroke="var(--accent-deep)" strokeWidth="3" strokeLinecap="round" fill="none" />
+      ) : pose === 'lost' ? (
+        <path d="M45 59c2 2 8 2 10 0" stroke="var(--accent-deep)" strokeWidth="3" strokeLinecap="round" />
+      ) : (
+        <path d="M44 57c3 4 9 4 12 0" stroke="var(--accent-deep)" strokeWidth="3" strokeLinecap="round" />
       )}
 
-      {/* pose extras */}
+      {/* pose accessories */}
       {pose === 'think' && (
         <>
-          <circle cx="92" cy="22" r="7" fill="var(--surface-2)" stroke="var(--border-strong)" strokeWidth="2" />
-          <circle cx="101" cy="12" r="4.5" fill="var(--surface-2)" stroke="var(--border-strong)" strokeWidth="2" />
-          <rect x="18" y="44" width="14" height="9" rx="4.5" fill="var(--accent-deep)" transform="rotate(18 18 44)" />
+          <circle cx="82" cy="26" r="3" fill="var(--info)" />
+          <circle cx="89" cy="17" r="4" fill="var(--info)" opacity="0.75" />
+          <circle cx="95" cy="7" r="5" fill="var(--info)" opacity="0.5" />
         </>
       )}
       {pose === 'sleep' && (
-        <>
-          <text x="86" y="26" fontSize="12" fontWeight="900" fill="var(--info)">z</text>
-          <text x="98" y="14" fontSize="9" fontWeight="900" fill="var(--info)">z</text>
-        </>
+        <text x="72" y="22" fontSize="12" fontWeight="900" fill="var(--info)" fontFamily="var(--font-sans)">z</text>
       )}
       {pose === 'lost' && (
-        <>
-          <text x="88" y="20" fontSize="13" fontWeight="900" fill="var(--warning-strong)">?</text>
-          <text x="22" y="20" fontSize="10" fontWeight="900" fill="var(--warning-strong)">?</text>
-        </>
+        <text x="78" y="24" fontSize="16" fontWeight="900" fill="var(--warning)" fontFamily="var(--font-sans)">?</text>
       )}
       {pose === 'offline' && (
-        <>
-          {/* unplugged cord */}
-          <path d="M96 30 h10 m4 0 h4" stroke="var(--foreground-faint)" strokeWidth="3" strokeLinecap="round" />
-          <path d="M110 24 l8 12 m0 -12 l-8 12" stroke="var(--danger-strong)" strokeWidth="3" strokeLinecap="round" />
-        </>
+        <g stroke="var(--info)" strokeWidth="3" strokeLinecap="round" fill="none">
+          <path d="M74 20c6 0 10 4 10 9 0 5-4 9-9 9H60" />
+          <path d="M66 31l-6 7 6 7" strokeLinejoin="round" />
+          <path d="M70 45l6 6" />
+        </g>
+      )}
+      {pose === 'celebrate' && (
+        <g stroke="var(--gold)" strokeWidth="3" strokeLinecap="round">
+          <path d="M12 26l3-6 3 6" />
+          <path d="M82 24l3-6 3 6" />
+          <path d="M50 4v6" stroke="var(--violet)" />
+          <circle cx="20" cy="12" r="2.5" fill="var(--flame)" stroke="none" />
+          <circle cx="80" cy="10" r="2.5" fill="var(--flame)" stroke="none" />
+        </g>
+      )}
+      {pose === 'wave' && (
+        <g stroke="var(--info)" strokeWidth="3" strokeLinecap="round">
+          <path d="M4 30c1-3 3-5 6-6" />
+          <path d="M2 38c2-2 4-3 6-3" opacity="0.6" />
+        </g>
       )}
     </svg>
   );
 }
+
+export default Mascot;

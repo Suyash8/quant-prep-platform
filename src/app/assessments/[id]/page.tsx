@@ -1,16 +1,12 @@
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { getCurrentUser } from '@/lib/auth';
-import { getAssessment } from '@/lib/content';
+import { getAssessment, listAssessments } from '@/lib/content';
 import { db } from '@/lib/db';
 import { AppShell } from '@/components/app-shell';
 import { AssessmentPlayer, type PlayerAssessment } from '@/components/assessment-player';
 import { sanitizedForClient } from '@/lib/grading';
-import { SectionHead, ClosingCta, ProgressRing } from '@/components/ui/page-kit';
-import {
-  ArrowLeft, ClipboardCheck, Clock, History, ListChecks, RotateCcw, Trophy, BookOpenCheck,
-  Timer, Pause, SkipForward, ShieldCheck, Lightbulb, Layers,
-} from 'lucide-react';
+import { ArrowLeft, ChevronRight, ClipboardCheck, ClipboardList, Clock, History, ListChecks, RotateCcw, Trophy } from 'lucide-react';
 
 export default async function AssessmentPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -28,6 +24,41 @@ export default async function AssessmentPage({ params }: { params: Promise<{ id:
   const best = attempts.length ? Math.max(...attempts.map(a => a.scorePct)) : null;
   const questionCount = assessment.sections.reduce((n, s) => n + s.questions.length, 0);
 
+  // sibling assessments from the same content registry import (zero new queries),
+  // same kind first so the strip stays topically adjacent
+  const others = listAssessments().filter(x => x.id !== assessment.id);
+  const siblings = [
+    ...others.filter(x => x.kind === assessment.kind),
+    ...others.filter(x => x.kind !== assessment.kind),
+  ].slice(0, 4);
+
+  const metaTiles = [
+    {
+      icon: ListChecks,
+      tile: 'icon-tile-info',
+      value: String(questionCount),
+      label: 'questions',
+    },
+    {
+      icon: Clock,
+      tile: 'icon-tile-info',
+      value: assessment.timeLimitMinutes > 0 ? String(assessment.timeLimitMinutes) : '—',
+      label: assessment.timeLimitMinutes > 0 ? 'minute limit' : 'untimed',
+    },
+    {
+      icon: Trophy,
+      tile: best !== null ? 'icon-tile-gold' : 'icon-tile-neutral',
+      value: best !== null ? Math.round(best) + '%' : '—',
+      label: best !== null ? 'your best score' : 'no attempts yet',
+    },
+    {
+      icon: RotateCcw,
+      tile: 'icon-tile-neutral',
+      value: String(attempts.length),
+      label: `${attempts.length === 1 ? 'attempt' : 'attempts'} · retake any time`,
+    },
+  ];
+
   const player: PlayerAssessment = {
     id: assessment.id,
     title: assessment.title,
@@ -38,28 +69,15 @@ export default async function AssessmentPage({ params }: { params: Promise<{ id:
     sections: assessment.sections.map(s => ({ title: s.title, questions: s.questions.map(sanitizedForClient) })),
   };
 
-  const rules = [
-    { icon: Timer, text: assessment.timeLimitMinutes > 0 ? `Timed, ${assessment.timeLimitMinutes} minutes, visible countdown` : 'Untimed, take it at your own pace' },
-    { icon: Pause, text: 'No pausing once started, the clock is part of the test' },
-    { icon: SkipForward, text: 'You can skip a question and come back to it' },
-    { icon: ShieldCheck, text: 'Graded locally from the content pack, verified on sync' },
-  ];
-
-  const tips = [
-    'Answer every question, blanks score zero and there is no penalty for a wrong guess.',
-    '80 percent is the passing bar. Below that, the affected lessons land in your revision queue.',
-    'The result feeds your diagnostic profile, so retakes keep the honest history you see below.',
-  ];
-
   return (
     <AppShell user={{ name: user.name, email: user.email, role: user.role }} isAdmin={user.role === 'admin'}>
       <div className="max-w-4xl mx-auto px-4 lg:px-6 py-8">
         <Link href="/assessments" className="text-sm font-extrabold text-muted hover:text-accent transition-colors inline-flex items-center gap-1.5 mb-4">
-          <ArrowLeft className="h-4 w-4" aria-hidden="true" /> All assessments
+          <ArrowLeft className="h-4 w-4" /> All assessments
         </Link>
 
         <header className="page-hero">
-          <span className="icon-tile icon-tile-violet"><ClipboardCheck className="h-7 w-7" aria-hidden="true" /></span>
+          <span className="icon-tile icon-tile-accent"><ClipboardCheck className="h-7 w-7" /></span>
           <div>
             <h1>{assessment.title}</h1>
             <p className="page-sub line-clamp-2">{assessment.description.replace(/\$\$?[^$]*\$\$?/g, '').slice(0, 140)}</p>
@@ -68,122 +86,67 @@ export default async function AssessmentPage({ params }: { params: Promise<{ id:
 
         {/* meta stat tiles */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div className="stat-tile">
-            <span className="icon-tile icon-tile-sm icon-tile-info"><ListChecks className="h-5 w-5" aria-hidden="true" /></span>
-            <div className="stat-value mt-1 tnum">{questionCount}</div>
-            <div className="stat-label mt-1">questions · {assessment.sections.length} {assessment.sections.length === 1 ? 'section' : 'sections'}</div>
-          </div>
-          <div className="stat-tile">
-            <span className="icon-tile icon-tile-sm icon-tile-warning"><Clock className="h-5 w-5" aria-hidden="true" /></span>
-            <div className="stat-value mt-1 tnum">{assessment.timeLimitMinutes > 0 ? assessment.timeLimitMinutes : '∞'}</div>
-            <div className="stat-label mt-1">{assessment.timeLimitMinutes > 0 ? 'minute limit' : 'untimed'}</div>
-          </div>
-          <div className="stat-tile">
-            <span className="icon-tile icon-tile-sm icon-tile-gold"><Trophy className="h-5 w-5" aria-hidden="true" /></span>
-            <div className="stat-value mt-1 tnum">{best !== null ? Math.round(best) + '%' : 'no try yet'}</div>
-            <div className="stat-label mt-1">your best score</div>
-          </div>
-          <div className="stat-tile">
-            <span className="icon-tile icon-tile-sm icon-tile-accent"><RotateCcw className="h-5 w-5" aria-hidden="true" /></span>
-            <div className="stat-value mt-1 tnum">{attempts.length}</div>
-            <div className="stat-label mt-1">{attempts.length === 1 ? 'attempt' : 'attempts'} · retake any time</div>
-          </div>
-        </div>
-
-        {/* what to expect: section breakdown */}
-        <section className="mt-8">
-          <SectionHead icon={Layers} tone="info" title="What to expect" right={<span className="chip tnum">{questionCount} questions</span>} />
-          <div className="qf-card p-5 space-y-3">
-            {assessment.sections.map((s, i) => (
-              <div key={i} className="row-card !shadow-none border-0 bg-surface-2/60">
-                <span className="icon-tile-sm icon-tile-violet"><BookOpenCheck className="h-4 w-4" aria-hidden="true" /></span>
-                <span className="flex-1 min-w-0 font-bold text-sm">{s.title}</span>
-                <span className="chip tnum"><ListChecks className="h-3 w-3" aria-hidden="true" /> {s.questions.length} {s.questions.length === 1 ? 'question' : 'questions'}</span>
-                <span className="chip tnum hidden sm:inline-flex"><Clock className="h-3 w-3" aria-hidden="true" /> ~{Math.max(1, Math.round(s.questions.length * 1.2))} min</span>
+          {metaTiles.map(t => (
+            <div key={t.label} className="stat-tile min-w-0">
+              <span className={`icon-tile icon-tile-sm ${t.tile}`}><t.icon className="h-5 w-5" /></span>
+              <div className="stat-body">
+                <div className="stat-value tnum">{t.value}</div>
+                <div className="stat-label">{t.label}</div>
               </div>
-            ))}
-          </div>
-        </section>
-
-        {/* rules + best summary */}
-        <section className="mt-8 grid gap-4 md:grid-cols-[1.4fr_0.6fr]">
-          <div className="qf-card-flat p-5">
-            <SectionHead icon={ShieldCheck} tone="accent" title="The rules, plainly" />
-            <ul className="space-y-2.5">
-              {rules.map((r, i) => (
-                <li key={i} className="flex items-start gap-2.5 text-sm font-semibold">
-                  <span className="icon-tile-sm icon-tile-accent shrink-0"><r.icon className="h-3.5 w-3.5" aria-hidden="true" /></span>
-                  {r.text}
-                </li>
-              ))}
-            </ul>
-          </div>
-          <div className="qf-card-flat p-5 flex flex-col items-center justify-center text-center gap-2">
-            {best !== null ? (
-              <>
-                <ProgressRing value={Math.round(best)} size={72} tone="var(--gold)" label={`Best score ${Math.round(best)} percent`}>
-                  <span className="text-sm font-black tnum">{Math.round(best)}%</span>
-                </ProgressRing>
-                <p className="stat-label">best of {attempts.length} {attempts.length === 1 ? 'attempt' : 'attempts'}</p>
-              </>
-            ) : (
-              <>
-                <ProgressRing value={0} size={72} label="No attempts yet">
-                  <ClipboardCheck className="h-6 w-6 text-violet" aria-hidden="true" />
-                </ProgressRing>
-                <p className="stat-label">first attempt not taken yet</p>
-              </>
-            )}
-          </div>
-        </section>
-
-        {/* the start card, holds the single dominant green CTA */}
-        <div className="mt-8">
-          <AssessmentPlayer assessment={player} compactIntro />
+            </div>
+          ))}
         </div>
 
         {/* previous attempts */}
         {attempts.length > 0 && (
-          <section className="mt-8">
-            <SectionHead icon={History} tone="danger" title="Previous attempts" right={<span className="chip tnum">{attempts.length} shown</span>} />
+          <section className="mt-6">
+            <div className="section-head">
+              <span className="icon-tile icon-tile-sm icon-tile-neutral"><History className="h-5 w-5" /></span>
+              <h2>Previous attempts</h2>
+              <span className="chip tnum ml-auto">{attempts.length} {attempts.length === 1 ? 'attempt' : 'attempts'}</span>
+            </div>
             <div className="qf-card-flat divide-y">
-              {attempts.map((a, i) => (
-                <div key={a.id} className="px-4 py-3 flex items-center gap-3 text-sm font-semibold">
-                  <span className="flex items-center gap-2.5 min-w-0 shrink-0">
-                    <span className="h-8 w-8 rounded-xl bg-surface-2 flex items-center justify-center text-xs font-black tnum shrink-0">#{attempts.length - i}</span>
-                    <span className="text-faint tnum text-xs">{a.submittedAt?.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
-                  </span>
-                  <span className="prog-track flex-1 min-w-[64px] h-2.5">
-                    <span className={`prog-fill ${a.scorePct >= 80 ? '' : a.scorePct >= 50 ? 'prog-fill-gold' : 'prog-fill-danger'}`} style={{ width: `${Math.round(a.scorePct)}%` }} />
-                  </span>
-                  <span className={`chip tnum shrink-0 ${a.scorePct >= 80 ? 'chip-success' : a.scorePct >= 50 ? 'chip-warning' : 'chip-danger'}`}>{Math.round(a.scorePct)}%</span>
-                </div>
-              ))}
+              {attempts.map((a, i) => {
+                const pct = Math.round(a.scorePct);
+                const fill = pct >= 80 ? 'bg-accent' : pct >= 50 ? 'bg-warning' : 'bg-danger';
+                const day = a.submittedAt?.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) ?? '';
+                return (
+                  <div key={a.id} className="px-4 py-2.5 flex items-center gap-4 text-sm font-semibold">
+                    <span className="shrink-0 tnum text-faint">#{attempts.length - i} · {day} · {pct}%</span>
+                    <span className="ml-auto w-1/2 max-w-md h-2 rounded-full bg-surface-3 overflow-hidden">
+                      <span className={`block h-full rounded-full ${fill}`} style={{ width: `${pct}%` }} />
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           </section>
         )}
 
-        {/* tips */}
-        <section className="mt-8">
-          <SectionHead icon={Lightbulb} tone="warning" title="Before you start" />
-          <div className="qf-callout qf-callout-warn">
-            <Lightbulb className="h-5 w-5 shrink-0 mt-0.5" aria-hidden="true" />
-            <ul className="space-y-1.5">
-              {tips.map((t, i) => <li key={i} className="text-sm font-semibold">{t}</li>)}
-            </ul>
-          </div>
-        </section>
+        <div className="mt-6">
+          <AssessmentPlayer assessment={player} compactIntro subduedIntro />
+        </div>
 
-        <section className="mt-8">
-          <ClosingCta
-            icon={ClipboardCheck}
-            tone="violet"
-            title={`${questionCount} questions, no surprises after that.`}
-            line={`${assessment.timeLimitMinutes > 0 ? `${assessment.timeLimitMinutes} minutes on the clock, o` : 'O'}pen the card above when you are ready and the timer starts with question one.`}
-            ghost={<Link href="/revision" className="btn3d btn3d-ghost">Warm up on revision first</Link>}
-            pose="think"
-          />
-        </section>
+        {/* also available: closes the gap between the start card and the footer */}
+        {siblings.length > 0 && (
+          <section className="mt-8" aria-label="Also available">
+            <div className="section-head">
+              <span className="icon-tile icon-tile-sm icon-tile-neutral"><ClipboardList className="h-5 w-5" /></span>
+              <h2>Also available</h2>
+              <span className="chip tnum ml-auto">{siblings.length} more</span>
+            </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {siblings.map(s => (
+              <Link key={s.id} href={`/assessments/${s.id}`} className="row-card">
+                  <span className="icon-tile icon-tile-sm icon-tile-neutral"><ClipboardList /></span>
+                  <span className="flex-1 min-w-0 font-semibold text-sm leading-tight truncate">{s.title}</span>
+                  <span className="chip tnum shrink-0">{s.questionCount}q · {s.timeLimitMinutes}m</span>
+                  <ChevronRight className="h-4 w-4 text-faint shrink-0" />
+                </Link>
+              ))}
+            </div>
+          </section>
+        )}
       </div>
     </AppShell>
   );

@@ -20,16 +20,6 @@
       "text": "GoogleTest: assertions and fixtures"
     },
     {
-      "type": "interactive",
-      "component": "RegressionLab",
-      "params": {
-        "n": 36,
-        "noise": 0.6,
-        "fitPolynomial": 1
-      },
-      "caption": "A test suite is a regression line through your defect history: watch the fit tighten."
-    },
-    {
       "type": "p",
       "md": "GoogleTest rests on two primitives. `TEST(Suite, Name)` defines a test as ordinary C++ plus **assertions**. `EXPECT_*` records a failure and *continues* the test (one test can report several problems); `ASSERT_*` records a failure and *returns from the test immediately*, mandatory when continuing would dereference invalid state. Fixtures, a class deriving from `::testing::Test` with `TEST_F` - give every test a freshly constructed environment: the fixture's constructor runs per test, `SetUp()` runs before each test's body, `TearDown()` after. This per-test freshness is what kills order-dependence: no test can corrupt another's state."
     },
@@ -80,6 +70,38 @@
       "lang": "cpp",
       "code": "// tests/test_pnl.cpp - GoogleTest, testing what actually breaks\n#include <gtest/gtest.h>\n#include \"pricer/pnl.hpp\"\n\nTEST(PnL, FlatPositionHasZeroPnL) {\n    Position p{0, 0.0};\n    EXPECT_DOUBLE_EQ(realised_pnl(p, 100.0), 0.0);\n}\n\nTEST(PnL, AverageCostUpdatesOnIncreasing) {\n    Position p;\n    p.apply_fill(+100, 50.0);\n    p.apply_fill(+100, 60.0);\n    EXPECT_DOUBLE_EQ(p.avg_cost, 55.0);      // weighted, not last-price\n}\n\nTEST(PnL, ReducingFlipRealisesCorrectly) {\n    Position p;\n    p.apply_fill(+100, 50.0);\n    p.apply_fill(-150, 60.0);                // flip to short\n    EXPECT_DOUBLE_EQ(p.realised, 1000.0);   // 100 * 10 profit\n    EXPECT_EQ(p.qty, -50);\n    EXPECT_DOUBLE_EQ(p.avg_cost, 60.0);      // new side priced at fill\n}\n\nTEST(PnL, NoFloatingDriftAcrossCycle) {\n    Position p;\n    for (int i = 0; i < 100000; ++i) p.apply_fill(+1, 0.1);\n    EXPECT_NEAR(p.qty * p.avg_cost, 10000.0, 1e-6);   // accumulation sanity\n}",
       "caption": "Test the invariants and the flip cases, those are where P&L bugs live."
+    },
+    {
+      "type": "interactive",
+      "component": "TerminalSteps",
+      "params": {
+        "steps": [
+          {
+            "cmd": "./pricing_tests --gtest_filter=BlackScholes*",
+            "out": [
+              "[ RUN      ] BlackScholes.PutAtZeroRate",
+              "[  FAILED  ] BlackScholes.PutAtZeroRate",
+              "actual: -0.42 vs expected -0.40"
+            ],
+            "note": "a fixture, a case, and a printed contract violation"
+          },
+          {
+            "cmd": "./pricing_tests --gtest_repeat=100 --gtest_break_on_failure",
+            "out": [
+              "[  PASSED  ] 214 tests"
+            ],
+            "note": "repeat matters: races and rounding fail on the 60th run, not the first"
+          },
+          {
+            "cmd": "ctest -R regression -j8",
+            "out": [
+              "100% tests passed, 0 failures"
+            ],
+            "note": "the suite is one command: what CI runs is what you ran"
+          }
+        ]
+      },
+      "caption": "A test framework is scaffolding around assertions: fixtures build the world, filters aim at one contract, and repeats catch the failures that need bad luck."
     },
     {
       "type": "p",

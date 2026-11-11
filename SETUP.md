@@ -1,8 +1,8 @@
-# QuantFoundry, Setup & Run Guide
+# QuantFoundry — Setup & Run Guide
 
 QuantFoundry is a Duolingo-style quant-finance learning platform: 283 bite-sized
 lessons across 11 phases, judged coding problems, timed drills, spaced-repetition
-revision, interactive labs, assessments, career mapping and a study planner,
+revision, interactive labs, assessments, career mapping and a study planner —
 wrapped in a gamified XP/streak/quest system.
 
 ## Requirements
@@ -11,11 +11,11 @@ wrapped in a gamified XP/streak/quest system.
 |---|---|---|
 | Node.js | ≥ 20.9 (22+ recommended) | runtime for Next.js 16 |
 | Bun | ≥ 1.1 | package manager + script runner (`curl -fsSL https://bun.sh/install | bash`) |
-| PostgreSQL | ≥ 15 | required (the schema uses Prisma + PostgreSQL). Docker, system Postgres or the `embedded-postgres` npm package all work |
+| SQLite | bundled via Prisma | no server needed |
 
 The code runner (in-browser C++/Python execution) resolves `g++` and `python3`
 from your PATH at startup. Without them, coding problems fall back to a
-client-side simulator, everything else works.
+client-side simulator — everything else works.
 
 ## Quick start (dev mode)
 
@@ -23,19 +23,14 @@ client-side simulator, everything else works.
 # 1. install dependencies (postinstall runs `prisma generate` automatically)
 bun install
 
-# 2. start PostgreSQL and point DATABASE_URL at it, for example:
-#    docker run -d --name qf-pg -p 5433:5432 -e POSTGRES_USER=qf -e POSTGRES_PASSWORD=qf -e POSTGRES_DB=quantfoundry postgres:17
-#    export DATABASE_URL="postgresql://qf:qf@127.0.0.1:5433/quantfoundry?schema=public"
-#    (no Docker? `bun add -d embedded-postgres` and run scripts/pg-embedded.sh)
-
-# 3. create + sync the database schema
+# 2. create + sync the SQLite database
 bun run db:push
 
-# 4. start the dev server on http://localhost:3000
+# 3. start the dev server on http://localhost:3000
 bun run dev
 ```
 
-Open **http://localhost:3000**, click **Register**, create your account,
+Open **http://localhost:3000**, click **Register**, create your account —
 **the first account you register becomes the admin** (sees the `/admin`
 content-validation panel).
 
@@ -78,7 +73,7 @@ DATABASE_URL=file:../db/custom.db   # relative to prisma/schema.prisma
 | `bun run build` | production build (standalone output) |
 | `bun run start` | run the production build |
 | `bun run db:generate` | regenerate the Prisma client |
-| `bun run db:push` | sync `prisma/schema.prisma` to the PostgreSQL database |
+| `bun run db:push` | sync `prisma/schema.prisma` to SQLite |
 | `node scripts/validate-content.mjs` | validate all 283 lesson JSON files |
 | `node --test scripts/unit-tests.mjs` | run the 25 unit tests |
 | `python3 scripts/seed-visual.py` | reseed the demo account with realistic progress |
@@ -89,14 +84,14 @@ DATABASE_URL=file:../db/custom.db   # relative to prisma/schema.prisma
 All curriculum lives as schema-validated JSON under `content/`:
 `lessons/` (11 phases), `problems/` (28 judged), `assessments/`,
 `projects/`, `companies/`, `map/`, `registry.json`. Adding lessons requires
-no frontend changes, validate with the script above or the `/admin` panel.
+no frontend changes — validate with the script above or the `/admin` panel.
 
 ## Test accounts (shipped database)
 
 | Email | Password | Purpose |
 |---|---|---|
 | `e2e@test.dev` | `e2etest12345` | progress-rich learner (11,408 XP) |
-| `visual@test.dev` | `visualtest12345` | demo learner, 3 weeks of realistic progress (1,480 XP, 7-day streak), also admin |
+| `visual@test.dev` | `visualtest12345` | demo learner — 3 weeks of realistic progress (1,480 XP, 7-day streak), also admin |
 
 For a clean start, delete `db/custom.db` and run `bun run db:push` again.
 
@@ -106,4 +101,4 @@ For a clean start, delete `db/custom.db` and run `bun run db:push` again.
 - **`prisma generate` skipped by npm** → npm 10+ may skip postinstall scripts;
   run `bun install` (recommended) or `npx prisma generate` manually.
 - **Design tokens look off** → hard-refresh; the PWA service worker bumps on
-  each release (`public/sw.js`, current cache `qf3-v2`).
+  each release (`public/sw.js`, current cache `qf-v4`).

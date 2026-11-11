@@ -19,7 +19,6 @@ import { ClientMd, ClientMathFigure } from '@/components/gamified/client-md';
 import { ClientBlock } from '@/components/gamified/player-blocks';
 import { Confetti } from '@/components/gamified/confetti';
 import { InteractiveBlock } from '@/components/interactive/registry';
-import { Mascot } from '@/components/brand/mascot';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 
@@ -41,6 +40,16 @@ interface PlayerState {
 }
 
 interface MiniHud { streakCount: number; xp: number }
+
+/** real data about the deck, used to fill the briefing card */
+interface IntroOutline {
+  headings: string[];
+  labs: number;
+  exercises: number;
+  quiz: number;
+  cards: number;
+  flashcards: number;
+}
 
 export function LessonPlayer({
   lessonId, title, moduleTitle, cards, fullQuiz, flashcards, nextHref, nextTitle,
@@ -194,6 +203,17 @@ export function LessonPlayer({
   const hasFeedback = isQuiz && !!state.feedback[card.question.id];
   const answered = isQuiz ? isAnswered(card.question, state.answers[card.question.id]) : false;
 
+  const introOutline: IntroOutline = {
+    headings: cards
+      .filter((c): c is Extract<PlayerCard, { kind: 'concept' }> => c.kind === 'concept' && c.title.length > 0)
+      .map(c => stripMd(c.title)),
+    labs: cards.filter(c => c.kind === 'lab').length,
+    exercises: cards.filter(c => c.kind === 'exercise').length,
+    quiz: cards.filter(c => c.kind === 'quiz').length,
+    cards: cards.length,
+    flashcards: flashcards.length,
+  };
+
   const primaryAction = (() => {
     if (isQuiz) {
       if (!hasFeedback) return { label: 'CHECK', disabled: !answered, onClick: () => checkAnswer(card.question.id, state.answers[card.question.id]!) };
@@ -218,111 +238,53 @@ export function LessonPlayer({
             <X className="h-5 w-5" />
           </button>
           <div className="flex-1 h-5 gauge-track" role="progressbar" aria-valuenow={progressPct} aria-valuemin={0} aria-valuemax={100}>
-            <div className="gauge-fill bg-accent xp-stripes !rounded-full" style={{ width: `${progressPct}%`, minWidth: progressPct > 0 ? '18px' : undefined }} />
+            <div className="gauge-fill bg-accent xp-stripes !rounded-full min-w-2" style={{ width: `${progressPct}%`, minWidth: progressPct > 0 ? '18px' : undefined }} />
           </div>
-          {hud && (
-            <span className="hidden sm:flex items-center gap-2 shrink-0">
-              <span className="hud-pill" title="Day streak">
-                <Flame className="h-4 w-4 text-flame anim-flame" aria-hidden="true" />
+          {/* one hud-pill group: streak, xp and the card counter share the same pill style */}
+          <span className="flex items-center gap-1.5 shrink-0">
+            {hud && (
+              <span className="hidden sm:inline-flex hud-pill !py-1" title="Day streak">
+                <Flame className="h-4 w-4 text-flame anim-flame" />
                 <span className="tnum">{hud.streakCount}</span>
               </span>
-              <span className="hud-pill" title="Total XP">
-                <Zap className="h-4 w-4 text-warning" aria-hidden="true" />
+            )}
+            {hud && (
+              <span className="hidden sm:inline-flex hud-pill !py-1" title="Total XP">
+                <Zap className="h-4 w-4 text-warning" />
                 <span className="tnum">{hud.xp.toLocaleString()}</span>
               </span>
-            </span>
-          )}
-          <span className="hud-pill shrink-0 tnum">{state.idx + 1}/{total}</span>
+            )}
+            <span className="hud-pill !py-1 tnum" title={`Card ${state.idx + 1} of ${total}`}>{state.idx + 1}/{total}</span>
+          </span>
         </div>
       </header>
 
-      {/* card stage: three zones at lg. Center card vertically in free height. */}
-      <div ref={cardRef} className="flex-1 overflow-y-auto thin-scroll bg-dots">
-        <div className="max-w-6xl mx-auto px-4 py-6 pb-12 flex gap-6 items-start min-h-full">
-          {/* left rail: lesson map, visible >= lg */}
-          <aside className="hidden lg:block w-56 shrink-0" aria-label="Lesson map">
-            <div className="qf-card-flat p-4 sticky top-4">
-              <p className="text-xs font-black uppercase tracking-[0.12em] text-muted mb-1">In this lesson</p>
-              <p className="text-sm font-bold leading-snug mb-3">{moduleTitle}</p>
-              <ol className="space-y-1">
-                {cards.map((c, i) => {
-                  const active = i === state.idx;
-                  const done = i < state.idx;
-                  const Icon = c.kind === 'quiz' ? BookOpen : c.kind === 'lab' ? Sparkles : c.kind === 'intro' ? GraduationCap : c.kind === 'summary' ? Trophy : Clock;
-                  return (
-                    <li key={i} className={cn(
-                      'flex items-center gap-2 rounded-xl px-2 py-1.5 text-xs font-extrabold',
-                      active ? 'bg-accent-soft text-accent-deep dark:text-accent anim-pulse-ring' : done ? 'text-muted' : 'text-faint',
-                    )}>
-                      <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                      <span className="truncate">{cardLabel(c)}</span>
-                      <span className="ml-auto tnum">{i + 1}</span>
-                    </li>
-                  );
-                })}
-              </ol>
-            </div>
-          </aside>
-
-          {/* center: the card in a qf-card, vertically centered in the free height */}
-          <div className="flex-1 min-w-0 min-h-full flex flex-col justify-center">
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={state.idx}
-                initial={{ opacity: 0, x: 48 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -48 }}
-                transition={{ duration: 0.22, ease: 'easeOut' }}
-                className="qf-card bg-surface p-6 sm:p-8"
-              >
-                <p className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-accent-deep dark:text-accent mb-1.5 flex items-center gap-1.5">
-                  <Sparkles className="h-3.5 w-3.5" /> {cardLabel(card)}
-                  {card.kind === 'quiz' && <span className="text-faint">· {card.index + 1} of {card.total}</span>}
-                </p>
-                <div key={`c${shakeKey}`} className={cn(shakeKey > 0 && hasFeedback && !state.feedback[isQuiz ? card.question.id : '']?.correct && 'anim-shake')}>
-                  <CardBody
-                    card={card}
-                    state={state}
-                    onAnswer={(qid, v) => setState(s => ({ ...s, answers: { ...s.answers, [qid]: v } }))}
-                    onExercise={markExercise}
-                  />
-                </div>
-              </motion.div>
-            </AnimatePresence>
-          </div>
-
-          {/* right rail: rewards + tips, visible >= xl (1280) */}
-          <aside className="hidden xl:block w-64 shrink-0" aria-label="Lesson rewards">
-            <div className="sticky top-4 space-y-4">
-              <div className="qf-card-flat p-4">
-                <p className="text-xs font-black uppercase tracking-[0.12em] text-muted mb-2">Rewards</p>
-                <ul className="space-y-2 text-sm font-bold">
-                  <li className="flex items-center gap-2">
-                    <span className="icon-tile-sm icon-tile-gold"><Zap className="h-3.5 w-3.5" aria-hidden="true" /></span>
-                    XP for finishing, streak safe
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <span className="icon-tile-sm icon-tile-violet"><BookOpen className="h-3.5 w-3.5" aria-hidden="true" /></span>
-                    {flashcards.length} revision cards unlock
-                  </li>
-                  {hud && (
-                    <li className="flex items-center gap-2">
-                      <span className="icon-tile-sm icon-tile-warning"><Flame className="h-3.5 w-3.5" aria-hidden="true" /></span>
-                      {hud.streakCount}-day streak running
-                    </li>
-                  )}
-                </ul>
+      {/* card stage */}
+      <div ref={cardRef} className="flex-1 overflow-y-auto thin-scroll">
+        <div className="max-w-3xl mx-auto px-4 py-6 pb-12">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={state.idx}
+              initial={{ opacity: 0, x: 48 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -48 }}
+              transition={{ duration: 0.22, ease: 'easeOut' }}
+            >
+              <p className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-accent-deep dark:text-accent mb-1.5 flex items-center gap-1.5">
+                <Sparkles className="h-3.5 w-3.5" /> {cardLabel(card)}
+                {card.kind === 'quiz' && <span className="text-faint">· {card.index + 1} of {card.total}</span>}
+              </p>
+              <div key={`c${shakeKey}`} className={cn(shakeKey > 0 && hasFeedback && !state.feedback[isQuiz ? card.question.id : '']?.correct && 'anim-shake')}>
+                <CardBody
+                  card={card}
+                  state={state}
+                  outline={introOutline}
+                  onAnswer={(qid, v) => setState(s => ({ ...s, answers: { ...s.answers, [qid]: v } }))}
+                  onExercise={markExercise}
+                />
               </div>
-              <div className="qf-card-flat p-4">
-                <p className="text-xs font-black uppercase tracking-[0.12em] text-muted mb-2">Tips</p>
-                <ul className="space-y-1.5 text-xs font-bold text-muted">
-                  <li className="flex items-center gap-1.5"><kbd className="kbd">Enter</kbd> continues the lesson</li>
-                  <li className="flex items-center gap-1.5">Wrong answers explain themselves.</li>
-                  <li className="flex items-center gap-1.5">Works offline, plane friendly.</li>
-                </ul>
-              </div>
-            </div>
-          </aside>
+            </motion.div>
+          </AnimatePresence>
         </div>
       </div>
 
@@ -335,7 +297,7 @@ export function LessonPlayer({
               animate={{ y: 0, opacity: 1 }}
               transition={{ type: 'spring', stiffness: 380, damping: 30 }}
               className={cn(
-                'max-w-6xl mx-auto px-4 pt-4 pb-0',
+                'max-w-3xl mx-auto px-4 pt-4',
               )}
             >
               <div className={cn(
@@ -360,27 +322,34 @@ export function LessonPlayer({
             </motion.div>
           </AnimatePresence>
         )}
-        <div className="max-w-6xl mx-auto px-4 py-4 flex items-center gap-3">
-          {state.idx > 0 && !hasFeedback && (
+        <div className="max-w-3xl mx-auto px-4 py-4">
+          <div className="qf-card-flat px-4 sm:px-5 py-3.5 flex items-center gap-3">
+            {state.idx > 0 && !hasFeedback && (
+              <button
+                onClick={() => patch({ idx: state.idx - 1 })}
+                className="btn3d btn3d-ghost btn3d-sm hidden sm:inline-flex"
+              >
+                Back
+              </button>
+            )}
             <button
-              onClick={() => patch({ idx: state.idx - 1 })}
-              className="btn3d btn3d-ghost btn3d-sm hidden sm:inline-flex"
+              id="player-primary"
+              onClick={primaryAction.onClick}
+              disabled={primaryAction.disabled || submitting}
+              className={cn('btn3d btn3d-player flex-1', !hasFeedback && isQuiz ? 'btn3d-blue' : '')}
             >
-              Back
+              {submitting ? 'Scoring…' : primaryAction.label}
+              {!isQuiz && <ChevronRight className="h-6 w-6" />}
             </button>
-          )}
-          <button
-            id="player-primary"
-            onClick={primaryAction.onClick}
-            disabled={primaryAction.disabled || submitting}
-            className={cn('btn3d btn3d-player flex-1', !hasFeedback && isQuiz ? 'btn3d-blue' : '')}
-          >
-            {submitting ? 'Scoring…' : primaryAction.label}
-            {!isQuiz && <ChevronRight className="h-6 w-6" aria-hidden="true" />}
-          </button>
-          <span className="hidden md:inline-flex items-center gap-1 text-xs font-extrabold text-faint shrink-0">
-            <kbd className="kbd">Enter</kbd> key works
-          </span>
+            {/* secondary escape lives in the bar instead of floating the primary alone */}
+            <button
+              onClick={() => setExitAsk(true)}
+              className="btn3d btn3d-ghost btn3d-sm shrink-0 hidden sm:inline-flex"
+              title="Save your place and exit"
+            >
+              Save &amp; exit
+            </button>
+          </div>
         </div>
       </div>
 
@@ -422,16 +391,17 @@ export function LessonPlayer({
 /* ------------------------------------------------------------------ */
 
 function CardBody({
-  card, state, onAnswer, onExercise,
+  card, state, onAnswer, onExercise, outline,
 }: {
   card: PlayerCard;
   state: PlayerState;
+  outline?: IntroOutline;
   onAnswer: (qid: string, v: string | string[]) => void;
   onExercise: (kind: 'guided' | 'independent', done: boolean) => void;
 }) {
   switch (card.kind) {
     case 'intro':
-      return <IntroCard card={card} />;
+      return <IntroCard card={card} outline={outline} />;
     case 'concept':
       return (
         <div>
@@ -507,31 +477,41 @@ function CardBody({
   }
 }
 
-function IntroCard({ card }: { card: Extract<PlayerCard, { kind: 'intro' }> }) {
+function IntroCard({ card, outline }: { card: Extract<PlayerCard, { kind: 'intro' }>; outline?: IntroOutline }) {
   return (
     <div className="py-1">
-      <div className="flex items-center justify-center gap-4">
-        <Mascot pose="wave" size={72} />
-        <div className="text-left">
+      {/* lockup on the same left grid line as the Introduction label above */}
+      <div className="flex items-center gap-4 text-left">
+        <div className="h-14 w-14 rounded-3xl bg-accent-soft flex items-center justify-center anim-bob shrink-0">
+          <GraduationCap className="h-7 w-7 text-accent" />
+        </div>
+        <div className="min-w-0">
           <p className="text-[11px] font-bold text-faint uppercase tracking-[0.14em]">Lesson briefing</p>
           <h1 className="text-2xl sm:text-[1.7rem] font-black tracking-tight leading-tight">{card.title}</h1>
         </div>
       </div>
-      <div className="mt-4 flex flex-wrap justify-center gap-2">
+      <div className="mt-4 flex flex-wrap gap-2">
         <span className="chip chip-info"><Clock className="h-3 w-3" /> ~{card.estMinutes} min</span>
         <span className="chip chip-warning"><Target className="h-3 w-3" /> {card.difficulty}</span>
       </div>
       <div className="mt-4 grid gap-3 md:grid-cols-2 md:text-left">
-        <div className="text-left rounded-2xl border-2 border-transparent bg-accent-soft p-4">
-          <p className="text-xs font-extrabold uppercase tracking-wide text-accent-deep dark:text-accent mb-1.5">Why this matters</p>
+        {/* both cards share one treatment (qf-card-flat, same padding) so the row has one rhythm */}
+        <div className="text-left qf-card-flat p-4">
+          <p className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-wide text-faint mb-2">
+            <span className="icon-tile-sm icon-tile-accent !h-7 !w-7"><Lightbulb className="!h-4 !w-4" /></span>
+            Why this matters
+          </p>
           <p className="text-sm leading-relaxed font-semibold"><ClientMd text={card.motivation} /></p>
         </div>
-        <div className="text-left rounded-2xl border-2 border-border bg-surface-2/60 p-4">
-          <p className="text-xs font-extrabold uppercase tracking-wide text-faint mb-2">By the end you can</p>
+        <div className="text-left qf-card-flat p-4">
+          <p className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-wide text-faint mb-2">
+            <span className="icon-tile-sm icon-tile-info !h-7 !w-7"><Target className="!h-4 !w-4" /></span>
+            By the end you can
+          </p>
           <ul className="space-y-2">
             {card.objectives.map((o, i) => (
               <li key={i} className="flex gap-2.5 items-start text-sm">
-                <span className="icon-tile-sm icon-tile-accent shrink-0"><Check className="h-3 w-3" aria-hidden="true" /></span>
+                <span className="h-5 w-5 shrink-0 rounded-full bg-info-soft text-info-strong dark:text-info text-[10px] font-black flex items-center justify-center mt-0.5">{i + 1}</span>
                 <span><ClientMd text={o} /></span>
               </li>
             ))}
@@ -539,8 +519,37 @@ function IntroCard({ card }: { card: Extract<PlayerCard, { kind: 'intro' }> }) {
         </div>
       </div>
       {card.skills.length > 0 && (
-        <div className="mt-3 flex flex-wrap gap-1.5 justify-center">
+        <div className="mt-3 flex flex-wrap gap-1.5">
           {card.skills.map(s => <span key={s} className="chip">{s.replace(/-/g, ' ')}</span>)}
+        </div>
+      )}
+      {/* real lesson data fills the lower half of the briefing */}
+      {outline && (
+        <div className="mt-3 qf-card-flat p-4">
+          <p className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-wide text-faint mb-2.5">
+            <span className="icon-tile-sm icon-tile-neutral !h-7 !w-7"><MapIcon className="!h-4 !w-4" /></span>
+            Inside this lesson
+          </p>
+          {outline.headings.length > 0 && (
+            <ol className="space-y-1.5 mb-3">
+              {outline.headings.slice(0, 8).map((h, i) => (
+                <li key={i} className="flex items-center gap-2.5 text-sm font-semibold text-muted min-w-0">
+                  <span className="h-5 w-5 shrink-0 rounded-lg bg-surface-3 text-muted text-[10px] font-black tnum flex items-center justify-center">{i + 1}</span>
+                  <span className="truncate">{h}</span>
+                </li>
+              ))}
+              {outline.headings.length > 8 && (
+                <li className="text-xs font-semibold text-faint pl-8">+ {outline.headings.length - 8} more sections</li>
+              )}
+            </ol>
+          )}
+          <div className="flex flex-wrap gap-1.5">
+            <span className="chip tnum">{outline.cards} cards</span>
+            {outline.labs > 0 && <span className="chip tnum">{outline.labs} interactive {outline.labs === 1 ? 'lab' : 'labs'}</span>}
+            {outline.exercises > 0 && <span className="chip tnum">{outline.exercises} {outline.exercises === 1 ? 'exercise' : 'exercises'}</span>}
+            {outline.quiz > 0 && <span className="chip tnum">{outline.quiz} quiz {outline.quiz === 1 ? 'question' : 'questions'}</span>}
+            {outline.flashcards > 0 && <span className="chip tnum">{outline.flashcards} revision {outline.flashcards === 1 ? 'card' : 'cards'}</span>}
+          </div>
         </div>
       )}
     </div>
@@ -594,9 +603,9 @@ function ExerciseCard({ card, done, onDone }: {
       )}>
         <input
           type="checkbox"
-          className="qf-check"
           checked={done}
           onChange={e => onDone(card.exKind, e.target.checked)}
+          className="qf-check"
         />
         <span className="text-sm font-bold">{done ? 'Exercise completed, nice work!' : 'I worked through this exercise (pen and paper or editor)'}</span>
       </label>
@@ -621,16 +630,22 @@ function QuizCard({ question, value, onAnswer, revealed }: {
         {question.type === 'mcq' && question.options?.map((opt, i) => (
           <button
             key={i}
-            type="button"
             disabled={revealed}
             onClick={() => onAnswer(qid, String(i))}
             className={cn(
-              'qf-answer-tile',
-              value === String(i) && 'qf-selected',
-              revealed && value === String(i) && 'qf-correct',
+              'w-full text-left flex items-center gap-3 rounded-2xl border-2 px-4 py-3 text-sm font-semibold transition-all press',
+              value === String(i)
+                ? 'border-info bg-info-soft shadow-[0_3px_0_0_var(--border-strong)]'
+                : 'border-border bg-surface hover:bg-surface-2',
+              revealed && value === String(i) && 'border-accent bg-accent-soft',
             )}
           >
-            <span className={cn('qf-letter', value === String(i) && 'text-white')}>{String.fromCharCode(65 + i)}</span>
+            <span className={cn(
+              'h-7 w-7 shrink-0 rounded-xl border-2 flex items-center justify-center text-xs font-black',
+              value === String(i) ? 'border-info bg-info text-white' : 'border-border-strong text-muted',
+            )}>
+              {String.fromCharCode(65 + i)}
+            </span>
             <span className="prose-qf"><ClientMd text={opt} /></span>
           </button>
         ))}
@@ -644,13 +659,17 @@ function QuizCard({ question, value, onAnswer, revealed }: {
                 ? ((value as string[]) ?? []).filter(x => x !== String(i))
                 : [...((value as string[]) ?? []), String(i)])}
               className={cn(
-                'qf-answer-tile',
-                sel && 'qf-selected',
+                'w-full text-left flex items-center gap-3 rounded-2xl border-2 px-4 py-3 text-sm font-semibold transition-all press',
+                sel ? 'border-info bg-info-soft' : 'border-border bg-surface hover:bg-surface-2',
               )}
             >
-              <span className={cn('qf-letter', sel && 'text-white')} aria-hidden="true">{String.fromCharCode(65 + i)}</span>
+              <span className={cn(
+                'h-7 w-7 shrink-0 rounded-lg border-2 flex items-center justify-center',
+                sel ? 'border-info bg-info text-white' : 'border-border-strong',
+              )}>
+                {sel && <Check className="h-4 w-4" />}
+              </span>
               <span className="prose-qf"><ClientMd text={opt} /></span>
-              {sel && <Check className="h-4 w-4" aria-hidden="true" />}
             </button>
           );
         })}
@@ -661,7 +680,7 @@ function QuizCard({ question, value, onAnswer, revealed }: {
               value={(value as string) ?? ''}
               onChange={e => onAnswer(qid, e.target.value)}
               placeholder="Your answer"
-              className="qf-input max-w-56 h-14 text-lg font-black tnum text-center font-mono"
+              className="qf-input !h-14 w-44 !rounded-2xl text-lg font-bold tnum text-center"
             />
             {question.unit && <span className="text-sm font-bold text-muted">{question.unit}</span>}
           </div>
@@ -672,7 +691,7 @@ function QuizCard({ question, value, onAnswer, revealed }: {
             value={(value as string) ?? ''}
             onChange={e => onAnswer(qid, e.target.value)}
             placeholder="Exact output, one line per output line"
-            className="qf-textarea font-mono"
+            className="qf-textarea !min-h-0 w-full font-mono"
           />
         )}
         {question.type === 'short' && (
@@ -680,8 +699,8 @@ function QuizCard({ question, value, onAnswer, revealed }: {
             rows={3} disabled={revealed}
             value={(value as string) ?? ''}
             onChange={e => onAnswer(qid, e.target.value)}
-            placeholder="Answer in your own words"
-            className="qf-textarea"
+            placeholder="Answer in your own words…"
+            className="qf-textarea !min-h-0 w-full"
           />
         )}
       </div>

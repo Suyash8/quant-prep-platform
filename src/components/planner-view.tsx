@@ -3,23 +3,24 @@
 import * as React from 'react';
 import Link from 'next/link';
 import {
-  CalendarClock, CalendarDays, Clock, Coffee, Gauge, Info, RefreshCw, Route,
-  SlidersHorizontal, Sparkles, Sun, BookOpen, Zap, LifeBuoy, Download, Printer,
+  CalendarClock, CalendarDays, Clock, Coffee, Gauge, Info, Route,
+  SlidersHorizontal, Sparkles, Sun, BookOpen, Zap,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
 export interface PlanTask { week: number; day: number; kind: string; title: string; ref?: string; minutes: number }
 export interface Plan { tasks: PlanTask[]; weeks: number; totalHours: number; note: string; feasibility: string }
 
+// one unified chip system for activity types: lesson = filled green, practice/drill = filled info,
+// revision = ghost, assessment = filled amber, buffer = ghost
 const KIND_STYLE: Record<string, string> = {
-  lesson: 'chip-accent',
-  practice: 'chip-success',
-  revision: 'chip-warning',
-  assessment: 'chip-danger',
+  lesson: 'chip-success',
+  practice: 'chip-info',
+  revision: '',
+  assessment: 'chip-warning',
   buffer: '',
 };
 
-const DAY_TILE = ['icon-tile-accent', 'icon-tile-info', 'icon-tile-violet', 'icon-tile-warning', 'icon-tile-danger', 'icon-tile-gold'];
 const POP_DELAYS = ['0ms', '70ms', '140ms', '210ms'];
 
 function groupByDay(tasks: PlanTask[]): [number, PlanTask[]][] {
@@ -82,16 +83,16 @@ export function Planner({ initialPlan }: { initialPlan: Plan | null }) {
   }, [plan]);
 
   const statTiles = stats ? [
-    { icon: BookOpen, tile: 'icon-tile-info', value: String(stats.lessonsPerWeek), label: 'Lessons / week' },
-    { icon: Zap, tile: 'icon-tile-gold', value: String(stats.xpPerWeek), label: 'XP / week' },
     { icon: CalendarDays, tile: 'icon-tile-accent', value: stats.finishLabel, label: 'Finish by' },
-    { icon: Clock, tile: 'icon-tile-violet', value: String(stats.hoursPerWeek), label: 'Hours / week' },
+    { icon: BookOpen, tile: 'icon-tile-info', value: String(stats.lessonsPerWeek), label: 'Lessons / week' },
+    { icon: Zap, tile: 'icon-tile-neutral', value: String(stats.xpPerWeek), label: 'XP / week' },
+    { icon: Clock, tile: 'icon-tile-neutral', value: String(stats.hoursPerWeek), label: 'Hours / week' },
   ] : [];
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-6">
-      {/* constraints form */}
-      <div className="qf-card p-6 h-fit anim-slide-up min-w-0">
+    <div className="grid lg:grid-cols-[320px_1fr] gap-6 items-stretch">
+      {/* constraints form: stretches with the plan column, filled by the plan summary below */}
+      <div className="qf-card p-6 flex flex-col min-w-0 anim-slide-up">
         <div className="section-head">
           <span className="icon-tile icon-tile-sm icon-tile-info"><SlidersHorizontal /></span>
           <h2>Your constraints</h2>
@@ -149,15 +150,34 @@ export function Planner({ initialPlan }: { initialPlan: Plan | null }) {
           <button onClick={generate} disabled={busy} className="btn3d w-full">
             <Sparkles className="h-4 w-4" /> {busy ? 'Planning…' : plan ? 'Regenerate plan' : 'Generate plan'}
           </button>
-          <p className="text-xs text-faint leading-relaxed">
-            The planner walks lessons in prerequisite order, it never schedules a lesson before its prerequisites,
-            and it will not compress a 1,000-hour programme into a 90-day promise.
-          </p>
+          {plan && (() => {
+            // honest summary computed from the plan data already in scope
+            const lessons = plan.tasks.filter(t => t.kind === 'lesson').length;
+            const hours = Math.round(plan.tasks.reduce((n, t) => n + t.minutes, 0) / 60);
+            return (
+              <div className="mt-5 rounded-2xl border-2 border-border bg-surface-2/50 p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="icon-tile icon-tile-sm icon-tile-info"><Route className="h-4 w-4" /></span>
+                  <p className="text-[10px] font-black uppercase tracking-[0.1em] text-muted">This plan covers</p>
+                </div>
+                <p className="text-sm font-bold leading-relaxed text-muted">
+                  <span className="font-black text-foreground tnum">{plan.weeks}</span> weeks ·{' '}
+                  <span className="font-black text-foreground tnum">{lessons}</span> lessons ·{' '}
+                  <span className="font-black text-foreground tnum">≈{hours}h</span> of study
+                  across <span className="font-black text-foreground tnum">{plan.tasks.length}</span> sessions.
+                </p>
+              </div>
+            );
+          })()}
         </div>
+        <p className="mt-auto pt-5 text-xs text-muted leading-relaxed">
+          The planner walks lessons in prerequisite order, it never schedules a lesson before its prerequisites,
+          and it will not compress a 1,000-hour programme into a 90-day promise.
+        </p>
       </div>
 
       {/* plan output */}
-      <div className="min-w-0">
+      <div>
         {plan ? (
           <div className="space-y-4">
             <div className="flex items-center gap-3 flex-wrap">
@@ -171,10 +191,12 @@ export function Planner({ initialPlan }: { initialPlan: Plan | null }) {
             {stats && (
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                 {statTiles.map((s, i) => (
-                  <div key={s.label} className="stat-tile anim-pop-in" style={{ animationDelay: POP_DELAYS[i] }}>
+                  <div key={s.label} className="stat-tile anim-pop-in min-w-0" style={{ animationDelay: POP_DELAYS[i] }}>
                     <span className={`icon-tile icon-tile-sm ${s.tile}`}><s.icon /></span>
-                    <p className="stat-value mt-2 tnum">{s.value}</p>
-                    <p className="stat-label">{s.label}</p>
+                    <div className="stat-body min-w-0">
+                      <div className="stat-value tnum whitespace-nowrap">{s.value}</div>
+                      <div className="stat-label">{s.label}</div>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -184,13 +206,13 @@ export function Planner({ initialPlan }: { initialPlan: Plan | null }) {
               <span className="icon-tile icon-tile-sm icon-tile-info"><Info /></span>
               <div className="min-w-0">
                 <p className="font-bold text-sm">{plan.feasibility}</p>
-                <p className="mt-1 text-xs text-faint leading-relaxed">
+                <p className="mt-1 text-xs text-muted leading-relaxed">
                   {plan.note} XP estimates assume +1 XP per focused minute.
                 </p>
               </div>
             </div>
 
-            <div className="space-y-4">
+            <div className="space-y-4 max-h-[640px] overflow-y-auto thin-scroll pr-1">
               {[...byWeek.entries()].map(([week, tasks]) => {
                 const weekMinutes = tasks.reduce((n, t) => n + t.minutes, 0);
                 return (
@@ -206,18 +228,18 @@ export function Planner({ initialPlan }: { initialPlan: Plan | null }) {
                         const isBufferDay = dayTasks.every(t => t.kind === 'buffer');
                         const DayIcon = isBufferDay ? Coffee : (day % 7 === 6 || day % 7 === 0) ? Sun : BookOpen;
                         return (
-                          <div key={day} className="row-card items-start">
-                            <span className={`icon-tile icon-tile-sm ${DAY_TILE[(day - 1) % DAY_TILE.length]}`}><DayIcon /></span>
+                          <div key={day} className="qf-card-flat p-3 flex flex-col sm:flex-row sm:items-center gap-3 min-w-0">
+                            <span className="icon-tile icon-tile-sm icon-tile-neutral shrink-0 self-start sm:self-center"><DayIcon /></span>
                             <div className="flex-1 min-w-0">
                               <p className="font-bold text-sm">Study day {day}</p>
                               <div className="mt-1.5 flex flex-wrap gap-1.5">
                                 {dayTasks.map((t, ti) => {
-                                  const kindCls = KIND_STYLE[t.kind] ? 'chip ' + KIND_STYLE[t.kind] : 'chip';
+                                  const kindCls = (KIND_STYLE[t.kind] ? 'chip ' + KIND_STYLE[t.kind] : 'chip') + ' min-w-0 max-w-full overflow-hidden';
                                   const label = t.title.length > 42 ? t.title.slice(0, 41) + '…' : t.title;
                                   const inner = (
                                     <>
-                                      <span className="text-[10px] uppercase tracking-wide opacity-70">{t.kind}</span>
-                                      {label}
+                                      <span className="text-[10px] uppercase tracking-wide font-bold text-muted shrink-0">{t.kind}</span>
+                                      <span className="min-w-0 truncate">{label}</span>
                                     </>
                                   );
                                   return t.ref ? (
@@ -228,7 +250,8 @@ export function Planner({ initialPlan }: { initialPlan: Plan | null }) {
                                 })}
                               </div>
                             </div>
-                            <div className="flex flex-col items-end gap-1 shrink-0">
+                            {/* fixed-width slot so every day's XP/minutes stack aligns */}
+                            <div className="flex sm:flex-col sm:w-24 shrink-0 items-end justify-end gap-1">
                               <span className="chip chip-warning tnum"><Zap className="h-3 w-3" /> {dayMinutes} XP</span>
                               <span className="chip tnum"><Clock className="h-3 w-3" /> {dayMinutes} min</span>
                             </div>
@@ -239,33 +262,6 @@ export function Planner({ initialPlan }: { initialPlan: Plan | null }) {
                   </div>
                 );
               })}
-            </div>
-
-            {/* if you fall behind + export */}
-            <div className="grid sm:grid-cols-2 gap-4 mt-2">
-              <div className="qf-card-flat p-5">
-                <div className="section-head">
-                  <span className="icon-tile-sm icon-tile-warning"><LifeBuoy /></span>
-                  <h2>If you fall behind</h2>
-                </div>
-                <ul className="space-y-2 text-sm font-semibold text-muted">
-                  <li className="flex gap-2"><span className="chip chip-warning shrink-0">1</span> Miss a day, do not double the next one. The plan rebalances when you regenerate.</li>
-                  <li className="flex gap-2"><span className="chip chip-warning shrink-0">2</span> Short on time, do the revision queue first. Keeping old material alive is cheaper than relearning.</li>
-                  <li className="flex gap-2"><span className="chip chip-warning shrink-0">3</span> Two weeks behind, drop to a lighter pace. Consistency beats intensity.</li>
-                </ul>
-              </div>
-              <div className="qf-card-flat p-5">
-                <div className="section-head">
-                  <span className="icon-tile-sm icon-tile-info"><Download /></span>
-                  <h2>Plan export</h2>
-                </div>
-                <p className="text-sm font-semibold text-muted leading-relaxed">
-                  This plan lives in your browser and syncs to your account. Print this page for a paper copy, or reopen the planner any time to regenerate it after life happens.
-                </p>
-                <button type="button" onClick={() => window.print()} className="btn3d btn3d-ghost btn3d-sm mt-4">
-                  <Printer className="h-3.5 w-3.5" aria-hidden="true" /> Print this plan
-                </button>
-              </div>
             </div>
           </div>
         ) : (
