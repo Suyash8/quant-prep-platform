@@ -21,6 +21,8 @@ export interface PlayerAssessment {
   description: string;
   sections: { title: string; questions: SafeQuestion[] }[];
   areaLabels?: string[];
+  passMarkPercent?: number;
+  scoreBands?: { minPercent: number; maxPercent: number; title: string; text: string; lessonIds?: string[] }[];
 }
 
 interface PlayerResult {
@@ -48,6 +50,9 @@ export function AssessmentPlayer({ assessment, compactIntro = false, subduedIntr
   const [result, setResult] = React.useState<PlayerResult | null>(null);
   const [busy, setBusy] = React.useState(false);
   const startedAt = React.useRef<number>(0);
+  const elapsedNow = () => Math.max(0, Math.round((Date.now() - startedAt.current) / 1000));
+  const submitRef = React.useRef<(() => unknown) | null>(null);
+  const [elapsedS, setElapsedS] = React.useState(0);
 
   const allQuestions = React.useMemo(() => assessment.sections.flatMap(s => s.questions), [assessment.sections]);
   const total = allQuestions.length;
@@ -108,12 +113,13 @@ export function AssessmentPlayer({ assessment, compactIntro = false, subduedIntr
         if (xp > 0) toast.success(`Assessment complete, +${xp} XP`);
         return;
       }
+      setElapsedS(elapsedNow());
       const res = await fetch('/api/assessments/submit', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           assessmentId: assessment.id,
           answers,
-          timeSpentS: Math.round((Date.now() - startedAt.current) / 1000),
+          timeSpentS: elapsedNow(),
         }),
       });
       const data = await res.json();
@@ -127,7 +133,6 @@ export function AssessmentPlayer({ assessment, compactIntro = false, subduedIntr
     } catch { toast.error('Network error.'); } finally { setBusy(false); }
   }
 
-  const submitRef = React.useRef(submit);
   React.useEffect(() => { submitRef.current = submit; });
 
   function retake() {
@@ -189,8 +194,8 @@ export function AssessmentPlayer({ assessment, compactIntro = false, subduedIntr
               <span className="chip"><Clock className="h-3 w-3" /> {assessment.timeLimitMinutes > 0 ? assessment.timeLimitMinutes + ' min' : 'untimed'}</span>
             </div>
             <h1 className="mt-3 text-2xl font-black tracking-tight">{assessment.title}</h1>
-            <div className="prose-qf mt-3 text-sm"><QMath text={assessment.description} /></div>
-            <ul className="mt-4 space-y-2 text-sm font-semibold text-muted">
+            <div className="prose-qf mt-3 text-[15px]"><QMath text={assessment.description} /></div>
+            <ul className="mt-4 space-y-2 text-[15px] font-semibold text-muted">
               <li className="flex items-center gap-2.5 rounded-xl bg-surface-2/60 px-3 py-2"><CheckCircle2 className="h-4 w-4 text-accent shrink-0" /> {total} questions across {assessment.sections.length} sections</li>
               <li className="flex items-center gap-2.5 rounded-xl bg-surface-2/60 px-3 py-2"><CheckCircle2 className="h-4 w-4 text-accent shrink-0" /> Time limit: <strong>{assessment.timeLimitMinutes} minutes</strong> ,  a timer runs once you start</li>
               <li className="flex items-center gap-2.5 rounded-xl bg-surface-2/60 px-3 py-2"><CheckCircle2 className="h-4 w-4 text-accent shrink-0" /> Scoring happens server-side; explanations appear after submission</li>
@@ -209,7 +214,7 @@ export function AssessmentPlayer({ assessment, compactIntro = false, subduedIntr
   }
 
   if (result) {
-    return <AssessmentResult assessment={assessment} result={result} onRetake={retake} timeSpentS={Math.max(0, Math.round((Date.now() - startedAt.current) / 1000))} />;
+    return <AssessmentResult assessment={assessment} result={result} onRetake={retake} timeSpentS={elapsedS} />;
   }
 
   const q = allQuestions[index];
@@ -276,11 +281,11 @@ export function AssessmentPlayer({ assessment, compactIntro = false, subduedIntr
           </button>
         ) : (
           <button onClick={submit} disabled={busy} className="btn3d w-full sm:w-auto sm:min-w-48">
-            <Send className="h-4 w-4" /> {busy ? 'Scoring…' : 'Submit assessment'}
+            <Send className="h-4 w-4" /> {busy ? 'Scoring…' : 'Finish assessment'}
           </button>
         )}
       </div>
-      <p className="mx-auto mt-3 max-w-2xl text-center text-xs font-semibold text-faint">
+      <p className="mx-auto mt-3 max-w-2xl text-center text-[13px] font-semibold text-faint">
         Scoring happens server-side, correct answers never reach the browser before submission.
       </p>
     </div>
@@ -295,7 +300,7 @@ function QuestionInput({ q, value, onChange }: { q: SafeQuestion; value: string 
           const selected = value === String(i);
           const btnCls = 'w-full text-left rounded-2xl border-2 p-4 font-bold transition-all flex items-center gap-3 '
             + (selected ? 'border-accent bg-accent-soft' : 'border-border hover:border-accent');
-          const badgeCls = 'grid h-7 w-7 shrink-0 place-items-center rounded-lg border-2 text-xs font-black tnum '
+          const badgeCls = 'grid h-7 w-7 shrink-0 place-items-center rounded-lg border-2 text-[13px] font-black tnum '
             + (selected ? 'border-accent bg-accent text-accent-foreground' : 'border-border text-faint');
           return (
             <button key={i} type="button" onClick={() => onChange(String(i))} className={btnCls} aria-pressed={selected}>
@@ -331,7 +336,7 @@ function QuestionInput({ q, value, onChange }: { q: SafeQuestion; value: string 
             </button>
           );
         })}
-        <p className="text-xs font-semibold text-faint">Select all that apply.</p>
+        <p className="text-[13px] font-semibold text-faint">Select all that apply.</p>
       </div>
     );
   }
@@ -341,7 +346,7 @@ function QuestionInput({ q, value, onChange }: { q: SafeQuestion; value: string 
     return (
       <textarea
         rows={3} value={val} onChange={e => onChange(e.target.value)}
-        className="qf-textarea font-mono text-sm"
+        className="qf-textarea font-mono text-[15px]"
         placeholder="Exact output (one line per output line)"
         aria-label="Answer"
       />
@@ -378,7 +383,9 @@ function AssessmentResult({ assessment, result, onRetake, timeSpentS }: {
   timeSpentS: number;
 }) {
   const isDiagnostic = assessment.id.startsWith('diag-');
-  const passed = result.pct >= 70;
+  const passMark = assessment.passMarkPercent ?? 70;
+  const passed = result.pct >= passMark;
+  const band = assessment.scoreBands?.find(b => result.pct >= b.minPercent && result.pct <= b.maxPercent);
   const ringColor = passed ? 'var(--accent)' : 'var(--warning)';
   const wrong = Math.max(result.total - result.correct, 0);
   const timeLabel = String(Math.floor(timeSpentS / 60)).padStart(2, '0') + ':' + String(timeSpentS % 60).padStart(2, '0');
@@ -388,7 +395,7 @@ function AssessmentResult({ assessment, result, onRetake, timeSpentS }: {
     ? 'Baseline complete'
     : passed
       ? 'Passed, nicely done!'
-      : 'Below the 70% pass mark';
+      : `Below the ${passMark}% pass mark`;
   const bannerSub = isDiagnostic
     ? 'Advisory only, it maps your gaps, it does not gate anything.'
     : passed
@@ -402,13 +409,25 @@ function AssessmentResult({ assessment, result, onRetake, timeSpentS }: {
   return (
     <div className="mx-auto max-w-3xl space-y-6 pb-10">
       {passed && <Confetti />}
+      {band && (
+        <div className="qf-card p-5" data-testid="score-band">
+          <p className="text-[13px] font-black uppercase tracking-wide text-muted">Your band: {band.minPercent} to {band.maxPercent}%</p>
+          <h2 className="mt-1 text-xl font-black">{band.title}</h2>
+          <p className="mt-1 text-[15px] font-semibold text-muted">{band.text}</p>
+          {band.lessonIds && band.lessonIds.length > 0 && (
+            <ul className="mt-3 flex flex-wrap gap-2">
+              {band.lessonIds.map(id => <li key={id}><a className="chip chip-info" href={`/learn/${id}`}>{id.replace(/-/g, ' ')}</a></li>)}
+            </ul>
+          )}
+        </div>
+      )}
 
       {/* Score */}
       <div className="qf-card relative overflow-hidden p-6 text-center sm:p-8">
         <div className="absolute -left-10 -bottom-12 h-40 w-40 rounded-full bg-accent-soft anim-float-slow" aria-hidden />
         <div className="absolute -right-8 -top-10 h-32 w-32 rounded-full bg-info-soft anim-float" aria-hidden />
         <div className="relative">
-          <p className="text-xs font-black uppercase tracking-[0.12em] text-faint">{assessment.title} ,  result</p>
+          <p className="text-[13px] font-black uppercase tracking-[0.12em] text-faint">{assessment.title} ,  result</p>
 
           <div className="anim-pop-in relative mx-auto mt-5 h-44 w-44">
             <svg viewBox="0 0 160 160" className="h-44 w-44 -rotate-90">
@@ -423,7 +442,7 @@ function AssessmentResult({ assessment, result, onRetake, timeSpentS }: {
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center">
               <span className="text-5xl font-black tnum">{result.pct}%</span>
-              <span className="mt-1 text-xs font-bold text-muted tnum">{result.correct}/{result.total} correct</span>
+              <span className="mt-1 text-[13px] font-bold text-muted tnum">{result.correct}/{result.total} correct</span>
             </div>
           </div>
 
@@ -433,12 +452,12 @@ function AssessmentResult({ assessment, result, onRetake, timeSpentS }: {
               : <AlertTriangle className="h-6 w-6 shrink-0 text-warning-strong" strokeWidth={2.5} />}
             <div>
               <p className={bannerTitleCls}>{bannerTitle}</p>
-              <p className="mt-0.5 text-xs font-semibold text-muted">{bannerSub}</p>
+              <p className="mt-0.5 text-[13px] font-semibold text-muted">{bannerSub}</p>
             </div>
           </div>
 
           {isDiagnostic && (
-            <p className="mx-auto mt-4 max-w-xl text-sm leading-relaxed text-muted">
+            <p className="mx-auto mt-4 max-w-xl text-[15px] leading-relaxed text-muted">
               Use this baseline to pick where to start on the{' '}
               <Link href="/curriculum" className="font-bold text-accent hover:underline">curriculum</Link>{' '}
               (weak areas first), and retake it later to measure movement.
@@ -493,7 +512,7 @@ function AssessmentResult({ assessment, result, onRetake, timeSpentS }: {
               const barCls = 'prog-fill h-full ' + (pct >= 75 ? '' : pct >= 40 ? 'prog-fill-gold' : 'prog-fill-danger');
               return (
                 <div key={area}>
-                  <div className="mb-1 flex justify-between text-xs font-bold">
+                  <div className="mb-1 flex justify-between text-[13px] font-bold">
                     <span className="capitalize">{area.replace(/-/g, ' ')}</span>
                     <span className="tnum text-faint">{t.correct}/{t.total} · {pct}%</span>
                   </div>
@@ -504,7 +523,7 @@ function AssessmentResult({ assessment, result, onRetake, timeSpentS }: {
               );
             })}
           </div>
-          <p className="mt-4 text-xs font-semibold text-faint">
+          <p className="mt-4 text-[13px] font-semibold text-faint">
             Recommended: start with your two weakest areas. The curriculum sequencer already orders prerequisites for you.
           </p>
         </div>
@@ -516,11 +535,11 @@ function AssessmentResult({ assessment, result, onRetake, timeSpentS }: {
           <span className="icon-tile-sm icon-tile-info"><ListChecks strokeWidth={2.5} /></span>
           <h2>Section breakdown</h2>
         </div>
-        <ul className="space-y-2 text-sm font-semibold">
+        <ul className="space-y-2 text-[15px] font-semibold">
           {result.sectionResults.map(s => (
             <li key={s.title} className="flex items-center justify-between gap-3 rounded-xl bg-surface-2 px-3 py-2">
               <span>{s.title}</span>
-              <span className={'chip tnum ' + (s.pct >= 70 ? 'chip-success' : 'chip-warning')}>{s.correct}/{s.total} · {s.pct}%</span>
+              <span className={'chip tnum ' + (s.pct >= passMark ? 'chip-success' : 'chip-warning')}>{s.correct}/{s.total} · {s.pct}%</span>
             </li>
           ))}
         </ul>
@@ -534,7 +553,7 @@ function AssessmentResult({ assessment, result, onRetake, timeSpentS }: {
         </div>
         {assessment.sections.flatMap(sec => sec.questions).map(q => {
           const r = result.perQuestion[q.id];
-          const cardCls = 'qf-card-flat anim-slide-up p-4 text-sm ' + (r?.correct ? 'border-accent' : '');
+          const cardCls = 'qf-card-flat anim-slide-up p-4 text-[15px] ' + (r?.correct ? 'border-accent' : '');
           return (
             <div key={q.id} className={cardCls}>
               <div className="flex items-start gap-2.5">
@@ -560,7 +579,7 @@ function AssessmentResult({ assessment, result, onRetake, timeSpentS }: {
         <Link href="/assessments" className="btn3d">
           Back to centre <ArrowRight className="h-4 w-4" />
         </Link>
-        <Link href="/curriculum" className="ml-auto inline-flex items-center gap-1 text-sm font-bold text-accent hover:underline">
+        <Link href="/curriculum" className="ml-auto inline-flex items-center gap-1 text-[15px] font-bold text-accent hover:underline">
           Review curriculum <ArrowRight className="h-3.5 w-3.5" />
         </Link>
       </div>

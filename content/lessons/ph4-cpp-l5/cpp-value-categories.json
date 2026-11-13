@@ -2,7 +2,7 @@
   "id": "cpp-value-categories",
   "moduleId": "ph4-cpp-l5",
   "title": "Value Categories, auto and decltype",
-  "estMinutes": 27,
+  "estMinutes": 30,
   "difficulty": "advanced",
   "prereqs": [
     "cpp-constexpr"
@@ -142,7 +142,7 @@
       "The standard guarantees moved-from objects are *valid but unspecified*, safe to assign or destroy, nothing more.",
       "auto&& in a range-for binds whatever the iterator yields without copying."
     ],
-    "solution": "(a) `a` is an **lvalue**; the temporary `Position{{10.5, 11.0}, \"AAPL\"}` is a **prvalue** (and, C++17, it initialises its destination directly with guaranteed elision); `std::move(a)` is an **xvalue**, a cast, nothing moved yet.\n\n(b) The standard guarantees `a` is in a **valid but unspecified** state: it may be assigned to or destroyed safely. You may assume **nothing** about `a.fills`' size, implementations usually leave it empty, but that is not contractual.\n\n(c)\n\n```cpp\n// C++17\nfor (auto&& f : b.fills) {\n    // process f - no copies: auto&& binds the element itself\n}\n```\n\n`auto&&` is the universal reference: whatever the range yields (here `double&`), it binds without copying."
+    "solution": "(a) `a` is an **lvalue**; the temporary `Position{{10.5, 11.0}, \"AAPL\"}` is a **prvalue** (and, C++17, it initialises its destination directly with guaranteed elision); `std::move(a)` is an **xvalue**, a cast, nothing moved yet.\n\n(b) The standard guarantees `a` is in a **valid but unspecified** state: it may be assigned to or destroyed safely. You may assume **nothing** about `a.fills`' size, implementations usually leave it empty, but that is not contractual.\n\n(c)\n\n```cpp\n#include <vector>\n#include <string>\nstruct Position { std::vector<double> fills; std::string symbol; };\nint main() {\n    Position b{{10.5, 11.0}, \"AAPL\"};\n    for (auto&& f : b.fills) {\n        f += 0.5; // binds each stored element without a copy\n    }\n}\n```\n\n`auto&&` is the universal reference: whatever the range yields (here `double&`), it binds without copying."
   },
   "commonMistakes": [
     "Writing decltype((x)) when decltype(x) was meant: the parentheses turn the id-expression into an lvalue expression, silently changing int into int&.",
@@ -164,7 +164,7 @@
     {
       "id": "q1",
       "type": "code-output",
-      "prompt": "What does this C++17 program print?",
+      "prompt": "What does this decltype and an lvalue alias example print?",
       "language": "cpp",
       "code": "#include <iostream>\n#include <type_traits>\nint main() {\n    int x = 5;\n    decltype(x) a = x + 1;        // int\n    decltype((x)) b = x;          // int&\n    b += 4;\n    std::cout << x << \" \" << a << \" \" << std::is_same_v<decltype(b), int&>;\n}",
       "answer": "9 6 1",
@@ -173,7 +173,7 @@
     {
       "id": "q2",
       "type": "code-output",
-      "prompt": "What does this C++17 program print?",
+      "prompt": "What does this auto value versus auto reference example print?",
       "language": "cpp",
       "code": "#include <iostream>\nint& liveRef(int& r) { return r; }\nint main() {\n    int px = 3;\n    auto a = liveRef(px);   // by-value auto: copy\n    a += 7;\n    auto& b = liveRef(px);  // auto&: alias\n    b += 17;\n    std::cout << px << \" \" << a;\n}",
       "answer": "20 10",
@@ -200,10 +200,10 @@
       "type": "mcq",
       "prompt": "What does std::move(x) actually do?",
       "options": [
-        "Copies x into a new temporary",
+        "Guarantees x is empty afterwards",
         "Casts x to an xvalue so T&& overloads can win, it moves nothing itself",
-        "Deallocates x's resources immediately",
-        "Guarantees x is empty afterwards"
+        "Copies x into a new temporary",
+        "Deallocates x's resources immediately"
       ],
       "answerIndex": 1,
       "explanation": "std::move is just a static_cast to an rvalue (xvalue). The resource transfer happens in the move constructor or move assignment it selects; the source is afterwards valid but unspecified."
@@ -213,12 +213,12 @@
       "type": "mcq",
       "prompt": "`const std::string& s = getName();` where getName() returns std::string by value. Is this safe?",
       "options": [
-        "No: the temporary dies at the end of the statement and s dangles",
         "Yes: binding a temporary to a const reference extends the temporary's lifetime to that of the reference",
+        "Yes, but the string is silently copied",
         "Only if getName() is noexcept",
-        "Yes, but the string is silently copied"
+        "No: the temporary dies at the end of the statement and s dangles"
       ],
-      "answerIndex": 1,
+      "answerIndex": 0,
       "explanation": "Lifetime extension: a temporary bound to a const reference lives as long as the reference. The same rule does NOT apply to references obtained through function returns or member references, only direct binding of the temporary itself."
     },
     {
@@ -227,8 +227,9 @@
       "prompt": "What type does decltype((x)) yield when x is declared as `int x;`, and why?",
       "modelAnswer": "int&, the parenthesised expression (x) is an lvalue expression of type int, and decltype of an lvalue expression yields T&.",
       "keywords": [
-        "int&",
-        "lvalue"
+        "int&|int &",
+        "lvalue",
+        "reference|decltype"
       ],
       "explanation": "decltype of a plain id-expression gives the declared type (int); adding parentheses makes it an lvalue expression, so decltype yields int&. The single most-cited decltype trap."
     }

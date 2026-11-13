@@ -46,7 +46,7 @@ export default async function PlannerPage() {
             <p className="page-sub">A weekly plan that fits your life</p>
           </div>
         </header>
-        <p className="-mt-2.5 mb-6 max-w-3xl text-sm text-muted font-semibold leading-relaxed anim-slide-up">
+        <p className="-mt-2.5 mb-6 max-w-3xl text-[15px] text-muted font-semibold leading-relaxed anim-slide-up">
           A realistic schedule built from your constraints and the prerequisite graph, lessons, practice, revision,
           weekly self-assessments and buffer days. Regenerate any time; progress is never lost.
         </p>

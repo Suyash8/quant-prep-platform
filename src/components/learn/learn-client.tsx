@@ -52,6 +52,7 @@ export function LearnClient({ initialLessonId }: { initialLessonId?: string }) {
 
   React.useEffect(() => {
     const id = currentLessonId();
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- sync to the client-side route, which the server cannot know offline
     if (id && id !== lessonId) { setLessonId(id); return; }
     if (!id) return;
     let alive = true;
@@ -98,7 +99,7 @@ export function LearnClient({ initialLessonId }: { initialLessonId?: string }) {
             <Layers className="h-8 w-8 text-muted" />
           </div>
           <h1 className="mt-4 text-xl font-extrabold">Lesson not found</h1>
-          <p className="mt-2 text-muted text-sm">That lesson id does not exist. It may have been renamed.</p>
+          <p className="mt-2 text-muted text-[15px]">That lesson id does not exist. It may have been renamed.</p>
           <Link href="/curriculum" className="btn3d mt-6"><ArrowLeft className="h-4 w-4" /> Back to path</Link>
         </div>
       </div>
@@ -118,12 +119,12 @@ export function LearnClient({ initialLessonId }: { initialLessonId?: string }) {
             <Layers className="h-8 w-8 text-muted" />
           </div>
           <h1 className="mt-4 text-xl font-extrabold">This lesson is locked</h1>
-          <p className="mt-2 text-muted text-sm max-w-lg mx-auto font-semibold">
+          <p className="mt-2 text-muted text-[15px] max-w-lg mx-auto font-semibold">
             Lessons build on each other, so clear these first. Unlocking is automatic:
           </p>
           <ul className="mt-5 space-y-2 text-left max-w-md mx-auto">
             {data.prereqs.map(p => (
-              <li key={p.id} className="flex items-center justify-between border-2 border-border rounded-2xl px-4 py-2.5 text-sm font-semibold">
+              <li key={p.id} className="flex items-center justify-between border-2 border-border rounded-2xl px-4 py-2.5 text-[15px] font-semibold">
                 <span>{p.title}</span>
                 <span className={`chip ${done.has(p.id) ? 'chip-success' : 'chip-accent'}`}>{done.has(p.id) ? 'done' : 'open'}</span>
               </li>
@@ -159,7 +160,7 @@ export function LearnClient({ initialLessonId }: { initialLessonId?: string }) {
 
   return (
     <div className="max-w-3xl mx-auto px-4 lg:px-6 py-8">
-      <nav className="text-xs text-faint mb-3 flex items-center gap-1.5 flex-wrap" aria-label="Breadcrumb">
+      <nav className="text-[13px] text-faint mb-3 flex items-center gap-1.5 flex-wrap" aria-label="Breadcrumb">
         <Link href="/curriculum" className="hover:text-muted">Curriculum</Link> ›
         <span>{data.phaseTitle}</span> ›
         <Link href={`/curriculum#module-${data.moduleId}`} className="hover:text-muted">{data.moduleTitle}</Link> ›
@@ -174,13 +175,13 @@ export function LearnClient({ initialLessonId }: { initialLessonId?: string }) {
           <Link href={`/learn/${lessonId}`} className="btn3d btn3d-sm">Card mode</Link>
         </div>
         <h1 className="text-2xl font-black tracking-tight">{lesson.title}</h1>
-        <div className="mt-2 flex flex-wrap gap-3 text-xs text-faint">
+        <div className="mt-2 flex flex-wrap gap-3 text-[13px] text-faint">
           <span className="inline-flex items-center gap-1"><Clock className="h-3.5 w-3.5" /> ~{lesson.estMinutes} min</span>
           <span className="inline-flex items-center gap-1"><Target className="h-3.5 w-3.5" /> {lesson.difficulty}</span>
           <span>{lesson.skills.map(s => s.replace(/-/g, ' ')).join(' · ')}</span>
         </div>
         {data.prereqs.length > 0 && (
-          <p className="mt-2 text-xs text-faint">
+          <p className="mt-2 text-[13px] text-faint">
             Prerequisites:{' '}
             {data.prereqs.map((p, i) => (
               <span key={p.id}>{i > 0 && ' · '}<Link href={`/learn/${p.id}`} className={`hover:underline ${done.has(p.id) ? 'text-success' : 'text-accent'}`}>{p.title}</Link></span>
@@ -190,16 +191,16 @@ export function LearnClient({ initialLessonId }: { initialLessonId?: string }) {
       </header>
 
       <div className="border-l-4 border-accent bg-accent-soft rounded-r-lg px-4 py-3.5 mb-8">
-        <p className="text-xs font-semibold uppercase tracking-wide text-accent mb-1.5">Why this matters</p>
-        <p className="text-sm leading-relaxed"><QMath text={lesson.motivation} /></p>
+        <p className="text-[13px] font-semibold uppercase tracking-wide text-accent mb-1.5">Why this matters</p>
+        <p className="text-[15px] leading-relaxed"><QMath text={lesson.motivation} /></p>
       </div>
 
       <section className="mb-8 qf-card-flat p-4">
-        <h2 className="text-xs font-black uppercase tracking-[0.12em] text-faint mb-2.5 flex items-center gap-1.5"><Target className="h-3.5 w-3.5 text-accent" /> Learning objectives</h2>
-        <ul className="text-sm space-y-1.5">
+        <h2 className="text-[13px] font-black uppercase tracking-[0.12em] text-faint mb-2.5 flex items-center gap-1.5"><Target className="h-3.5 w-3.5 text-accent" /> Learning objectives</h2>
+        <ul className="text-[15px] space-y-1.5">
           {lesson.objectives.map((o, i) => (
             <li key={i} className="flex gap-2.5 items-start rounded-lg px-2 py-1.5 hover:bg-surface-2/60 transition-colors">
-              <span className="h-5 w-5 shrink-0 rounded-full bg-accent-soft text-accent-deep dark:text-accent text-[10px] font-black tnum flex items-center justify-center mt-0.5">{i + 1}</span>
+              <span className="h-5 w-5 shrink-0 rounded-full bg-accent-soft text-accent-deep dark:text-accent text-[12px] font-black tnum flex items-center justify-center mt-0.5">{i + 1}</span>
               <span className="text-muted">{o}</span>
             </li>
           ))}
@@ -223,7 +224,7 @@ export function LearnClient({ initialLessonId }: { initialLessonId?: string }) {
       />
 
       <h2 className="h-lesson">Knowledge check</h2>
-      <p className="text-sm text-muted -mt-4 mb-4">
+      <p className="text-[15px] text-muted -mt-4 mb-4">
         Score at least <strong>80%</strong> to pass. Graded instantly on your device; progress syncs when you&apos;re online.
       </p>
       <Quiz payload={{ lessonId }} questions={safeQuestions} fullQuestions={lesson.quiz} />
@@ -233,7 +234,7 @@ export function LearnClient({ initialLessonId }: { initialLessonId?: string }) {
           <h2 className="h-lesson">Common mistakes</h2>
           <ul className="space-y-2">
             {lesson.commonMistakes.map((m, i) => (
-              <li key={i} className="flex gap-2.5 text-sm border rounded-lg px-3.5 py-2.5 bg-danger-soft/40 border-danger/20">
+              <li key={i} className="flex gap-2.5 text-[15px] border rounded-lg px-3.5 py-2.5 bg-danger-soft/40 border-danger/20">
                 <AlertTriangle className="h-4 w-4 text-danger shrink-0 mt-0.5" />
                 <span>{m}</span>
               </li>
@@ -246,13 +247,13 @@ export function LearnClient({ initialLessonId }: { initialLessonId?: string }) {
         <>
           <h2 className="h-lesson">Where you will use this</h2>
           {lesson.realWorldApplication && (
-            <div className="flex gap-3 text-sm qf-card-flat p-4 mb-2">
+            <div className="flex gap-3 text-[15px] qf-card-flat p-4 mb-2">
               <span className="icon-tile icon-tile-sm icon-tile-info shrink-0"><Building2 className="h-5 w-5" /></span>
               <span className="leading-relaxed">{lesson.realWorldApplication}</span>
             </div>
           )}
           {lesson.quantFinanceApplication && (
-            <div className="flex gap-3 text-sm qf-card-flat p-4">
+            <div className="flex gap-3 text-[15px] qf-card-flat p-4">
               <span className="icon-tile icon-tile-sm icon-tile-gold shrink-0"><TrendingUp className="h-5 w-5" /></span>
               <span className="leading-relaxed">{lesson.quantFinanceApplication}</span>
             </div>
@@ -263,7 +264,7 @@ export function LearnClient({ initialLessonId }: { initialLessonId?: string }) {
       <h2 className="h-lesson">Summary</h2>
       <ul className="space-y-2 mb-8">
         {lesson.summary.map((sItem, i) => (
-          <li key={i} className="flex gap-2.5 text-sm border rounded-lg px-3.5 py-2.5 bg-surface">
+          <li key={i} className="flex gap-2.5 text-[15px] border rounded-lg px-3.5 py-2.5 bg-surface">
             <span className="text-accent font-black">›</span>
             <span>{sItem}</span>
           </li>
@@ -273,7 +274,7 @@ export function LearnClient({ initialLessonId }: { initialLessonId?: string }) {
       {lesson.references && lesson.references.length > 0 && (
         <>
           <h2 className="h-lesson">References</h2>
-          <ul className="space-y-1.5 text-sm mb-8">
+          <ul className="space-y-1.5 text-[15px] mb-8">
             {lesson.references.map((r, i) => (
               <li key={i}>
                 <a href={r.url} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">{r.label}</a>
@@ -307,7 +308,7 @@ function LessonSkeleton() {
           <div key={i} className="h-4 bg-surface-2 rounded" style={{ width: `${88 - (i % 3) * 12}%` }} />
         ))}
       </div>
-      <p className="mt-8 text-xs text-faint text-center">Loading lesson…</p>
+      <p className="mt-8 text-[13px] text-faint text-center">Loading lesson…</p>
     </div>
   );
 }

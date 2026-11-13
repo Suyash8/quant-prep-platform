@@ -32,7 +32,7 @@ export function CurriculumSearch({ lessons }: { lessons: SearchRow[] }) {
           <input
             value={q} onChange={e => setQ(e.target.value)}
             placeholder="Search lessons, modules, phases… (e.g. eigenvalue, order book, virtual destructor)"
-            className="qf-input h-10 py-0 pl-9 pr-8 text-sm"
+            className="qf-input h-10 py-0 pl-9 pr-8 text-[15px]"
             aria-label="Search curriculum"
           />
           {q && (
@@ -55,14 +55,14 @@ export function CurriculumSearch({ lessons }: { lessons: SearchRow[] }) {
       {results.length > 0 && (
         <ul className="mt-3 border rounded-xl bg-surface divide-y max-w-2xl overflow-hidden">
           {results.map(l => (
-            <li key={l.id} className="px-4 py-2.5 text-sm flex items-center gap-3">
-              <span className="text-[11px] text-faint w-24 shrink-0 hidden sm:block">{l.phaseTitle.replace(' , .*', '').slice(0, 22)}</span>
+            <li key={l.id} className="px-4 py-2.5 text-[15px] flex items-center gap-3">
+              <span className="text-[12px] text-faint w-24 shrink-0 hidden sm:block">{l.phaseTitle.replace(' , .*', '').slice(0, 22)}</span>
               {l.published ? (
                 <Link href={`/learn/${l.id}`} className="flex-1 hover:text-accent">
-                  {l.title} <span className="text-[11px] text-faint">· {l.moduleTitle}</span>
+                  {l.title} <span className="text-[12px] text-faint">· {l.moduleTitle}</span>
                 </Link>
               ) : (
-                <span className="flex-1 text-faint">{l.title} <span className="text-[11px]">· in development</span></span>
+                <span className="flex-1 text-faint">{l.title} <span className="text-[12px]">· in development</span></span>
               )}
               {l.status && (
                 <span className={`chip ${['passed', 'mastered'].includes(l.status) ? 'chip-success' : l.status === 'needs_revision' ? 'chip-danger' : 'chip-accent'}`}>
@@ -73,7 +73,7 @@ export function CurriculumSearch({ lessons }: { lessons: SearchRow[] }) {
           ))}
         </ul>
       )}
-      {q && results.length === 0 && <p className="mt-3 text-sm text-faint max-w-2xl">No lessons match “{q}”.</p>}
+      {q && results.length === 0 && <p className="mt-3 text-[15px] text-faint max-w-2xl">No lessons match “{q}”.</p>}
     </div>
   );
 }

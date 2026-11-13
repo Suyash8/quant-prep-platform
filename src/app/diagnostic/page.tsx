@@ -18,7 +18,7 @@ const STEPS = [
   {
     icon: ListChecks,
     tile: 'icon-tile-info',
-    title: 'Answer 28 real questions',
+    title: 'Answer real questions',
     body: 'Arithmetic to finance fundamentals, escalating difficulty, no trick questions, and you can move freely between sections.',
   },
   {
@@ -35,7 +35,7 @@ const STEPS = [
   },
 ];
 
-const META_CHIP = 'chip !px-3 !py-1.5 !text-sm';
+const META_CHIP = 'chip !px-3 !py-1.5 !text-[15px]';
 
 export default async function DiagnosticPage() {
   const user = await getCurrentUser();
@@ -49,7 +49,7 @@ export default async function DiagnosticPage() {
           <div className="qf-empty">
             <span className="empty-emoji" aria-hidden>🧭</span>
             <h2 className="font-extrabold text-lg">Diagnostic not installed</h2>
-            <p className="mt-1 text-sm text-muted">Run the content seed and reload this page, your path is waiting.</p>
+            <p className="mt-1 text-[15px] text-muted">Run the content seed and reload this page, your path is waiting.</p>
           </div>
         </div>
       </AppShell>
@@ -84,10 +84,10 @@ export default async function DiagnosticPage() {
           <div className="relative max-w-2xl mx-auto text-center flex flex-col items-center">
             <span className="chip"><Route className="h-3.5 w-3.5" /> PHASE 0 · ORIENTATION</span>
             <h2 className="mt-3 text-2xl font-extrabold tracking-tight">Find your true starting point</h2>
-            <p className="mt-2.5 text-sm text-muted leading-relaxed">
+            <p className="mt-2.5 text-[15px] text-muted leading-relaxed">
               Seven mini-sections, arithmetic, algebra, logic, programming, CS fundamentals, probability and finance, escalate from quick warm-ups to genuinely challenging problems.
             </p>
-            <p className="mt-2 text-sm text-muted leading-relaxed">
+            <p className="mt-2 text-[15px] text-muted leading-relaxed">
               No studying needed first: the score exists to place you at the right phase and calibrate difficulty, not to grade you.
             </p>
             {/* meta chips stay ghost, only the Start CTA below is accent-filled */}
@@ -113,10 +113,10 @@ export default async function DiagnosticPage() {
               <div key={s.title} className="qf-card p-5 anim-slide-up hover:-translate-y-0.5 hover:shadow-lg transition-all" style={{ animationDelay: STEP_DELAYS[i] }}>
                 <div className="flex items-center justify-between">
                   <span className={`icon-tile ${s.tile}`}><s.icon /></span>
-                  <span className="text-[11px] font-black text-faint tnum uppercase tracking-wider">Step {i + 1}</span>
+                  <span className="text-[12px] font-black text-faint tnum uppercase tracking-wider">Step {i + 1}</span>
                 </div>
                 <h3 className="mt-3 font-bold">{s.title}</h3>
-                <p className="mt-1 text-sm text-muted leading-relaxed">{s.body}</p>
+                <p className="mt-1 text-[15px] text-muted leading-relaxed">{s.body}</p>
               </div>
             ))}
           </div>
@@ -125,7 +125,7 @@ export default async function DiagnosticPage() {
         {/* reassurance */}
         <div className="flex items-center gap-3 anim-slide-up" style={{ animationDelay: STEP_DELAYS[2] }}>
           <span className="icon-tile icon-tile-accent"><ShieldCheck /></span>
-          <p className="font-semibold text-sm sm:text-base">
+          <p className="font-semibold text-[15px] sm:text-base">
             No stakes, results only tune your path
             <span className="text-muted font-semibold"> · nothing is shared, and you can retake it any time.</span>
           </p>

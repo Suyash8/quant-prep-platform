@@ -1,0 +1,259 @@
+{
+  "id": "pf-position-sizing-kelly",
+  "moduleId": "ph7-portfolio",
+  "title": "Kelly Sizing, Volatility Targets and Drawdowns",
+  "estMinutes": 35,
+  "difficulty": "advanced",
+  "prereqs": [
+    "pf-factor-models-attribution"
+  ],
+  "objectives": [
+    "Compute a binary Kelly fraction under stated odds",
+    "Distinguish full Kelly from fractional Kelly and volatility targeting",
+    "Apply explicit drawdown controls without claiming guaranteed safety"
+  ],
+  "motivation": "A strategy can win more often than it loses and still lose capital if its position is too large. Sizing turns a forecast and a loss distribution into exposure. It must reflect estimation error, exposure multiplier, costs and the possibility that the model is wrong. Start with the bankroll definition and the loss bound: does a losing trade cost a fixed stake, a fraction of current equity or potentially more than equity? The binary Kelly formula applies to a particular repeated-bet model, not to every instrument carrying a probability estimate. A small probability of ruin changes the decision sharply.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "The signal is not the position"
+    },
+    {
+      "type": "p",
+      "md": "A strategy can win more often than it loses and still lose capital if its position is too large. Sizing turns a forecast and a loss distribution into exposure. It must reflect estimation error, exposure multiplier, costs and the possibility that the model is wrong. Start with the bankroll definition and the loss bound: does a losing trade cost a fixed stake, a fraction of current equity or potentially more than equity? The binary Kelly formula applies to a particular repeated-bet model, not to every instrument carrying a probability estimate. A small probability of ruin changes the decision sharply."
+    },
+    {
+      "type": "h2",
+      "text": "Derive the binary fraction"
+    },
+    {
+      "type": "p",
+      "md": "Suppose a win earns b times the stake, a loss loses the entire stake, and p is win probability with q=1-p. Betting fraction f of current equity gives expected log growth p*log(1+b*f)+q*log(1-f). Setting its derivative to zero gives f=(b*p-q)/b, subject to the allowed domain. For a long-only bet with no exposure multiplier, clip the optimum to [0,1) as appropriate and handle boundary cases separately. Negative Kelly suggests not taking that long bet under these assumptions; it is not automatic permission to short a market instrument whose payoff is different."
+    },
+    {
+      "type": "h2",
+      "text": "Worked example: a small edge"
+    },
+    {
+      "type": "p",
+      "md": "With p=0.55 and even odds b=1, full Kelly is 0.10. A win multiplies equity by 1.10 and a loss by 0.90. Betting half Kelly uses 0.05 instead, reducing both exposure and ideal-model expected growth. The exact expected log growth is not the log of expected wealth: logarithm is nonlinear, and compounding makes the path matter. Ten successive losses at full Kelly leave 0.9^10, about 0.348678 of starting equity. This large possible drawdown explains why a growth-optimal strategy can still be uncomfortable or unsuitable for an investor with capital and liquidity constraints."
+    },
+    {
+      "type": "math",
+      "tex": "g(f)=p\\log(1+bf)+(1-p)\\log(1-f),\\qquad f^*=\\frac{bp-(1-p)}{b}",
+      "caption": "Formula under the assumptions stated in the surrounding explanation."
+    },
+    {
+      "type": "h2",
+      "text": "Fractional Kelly addresses uncertainty only imperfectly"
+    },
+    {
+      "type": "p",
+      "md": "In practice p and b are estimated, regimes change and losses may not be bounded by the stake. Overestimating edge can cause severe overbetting. Fractional Kelly scales the calculated fraction by a coefficient such as one half, but no universal coefficient repairs a misspecified tail distribution. Correlated bets cannot each receive an isolated bankroll as if independent. Aggregate exposure across shared factors and overlapping trades. Include fees and financing in the payoff estimate before calculating growth. Estimation uncertainty can justify a smaller position or no trade, rather than merely rounding a precise-looking fraction to an executable lot size."
+    },
+    {
+      "type": "h2",
+      "text": "Worked example: volatility targeting"
+    },
+    {
+      "type": "p",
+      "md": "A simple volatility target sets exposure multiplier L=target_vol/forecast_vol. For a target annual volatility of 10% and a forecast of 20%, L=0.5 before caps. If forecast volatility falls to 5%, the raw target becomes 2, which may exceed exposure multiplier or liquidity limits. State the annualisation convention and whether the forecast is lagged. Using the realised future volatility in a backtest is a look-ahead leak. A volatility target controls exposure to a forecast second moment; it does not bound drawdowns or guarantee the next period's volatility. Jumps, liquidity gaps and stale forecasts can produce much larger losses."
+    },
+    {
+      "type": "h2",
+      "text": "Drawdown controls are explicit policies"
+    },
+    {
+      "type": "p",
+      "md": "Track equity relative to its running peak. Drawdown as a positive fraction is (peak-equity)/peak for positive peak equity. An equity curve [100,120,90,110] has a maximum drawdown of 25%, from 120 to 90. A control may reduce exposure after a threshold or stop trading pending review. Define how it restarts, how cash flows affect the peak and what happens when prices gap across the threshold. A stop based on observed marks cannot guarantee execution at the threshold. Test the full policy because repeated stop-and-restart behaviour can turn noise into extra turnover and costs."
+    },
+    {
+      "type": "h2",
+      "text": "Sizing belongs inside risk governance"
+    },
+    {
+      "type": "p",
+      "md": "Combine a sizing rule with position, concentration, liquidity and stress limits. Record forecasts and model versions used at each decision so the calculation can be replayed. The growth lab illustrates compounding, not a recommendation to maximise Kelly exposure. Backtest net returns with realistic execution and examine worst paths, not just average growth. When several models share a market factor, a portfolio-level cap can matter more than each trade's attractive standalone estimate. Explain assumptions to the person bearing losses. No Kelly fraction, volatility target or drawdown rule can guarantee returns or eliminate the chance that the model fails in a new regime."
+    },
+    {
+      "type": "h2",
+      "text": "Worked example: run and check"
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "p,b=0.55,1.0\nf=(b*p-(1-p))/b\nassert abs(f-0.1)<1e-12\nprint(f\"{f:.3f} {0.5*f:.3f}\")\nprint(f\"{0.10/0.20:.3f}\")\nequity=[100,120,90,110]\npeak=equity[0]\nworst=0.0\nfor x in equity:\n    peak=max(peak,x)\n    worst=max(worst,(peak-x)/peak)\nassert worst==0.25\nprint(f\"{worst:.3f}\")",
+      "caption": "Complete Python 3.11+ example"
+    },
+    {
+      "type": "p",
+      "md": "The exact output is `0.100 0.050; 0.500; 0.250`. Run the example before changing a parameter, then predict the direction of the change. The assertions encode the stated checks; a failed assertion means that the implementation and the claimed result disagree."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Check this misconception",
+      "md": "At b=1, f=2p-1=0.10 of current bankroll. This is a conditional exposure rule, not a forecast or guarantee of annual return."
+    },
+    {
+      "type": "interactive",
+      "component": "CompoundGrowth",
+      "params": {},
+      "caption": "Related concept lab. The lab illustrates the named building block; it is not a full implementation of every model in this lesson."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Calculate full and half Kelly for p=0.55 and b=1. Success check: Fractions are 0.10 and 0.05.",
+    "hints": [
+      "Set q=1-p.",
+      "Use (b*p-q)/b.",
+      "Multiply full Kelly by one half."
+    ],
+    "solution": "\n```python\np,b=0.55,1\nf=(b*p-(1-p))/b\nassert abs(f-0.1)<1e-12\nprint(f\"{f:.2f} {f/2:.2f}\")\n```\nExpected output: `0.10 0.05`.",
+    "successCheck": "Fractions are 0.10 and 0.05."
+  },
+  "independentExercise": {
+    "prompt": "Compute maximum drawdown for [100,120,90,110]. Success check: The result is 25 percent.",
+    "hints": [
+      "Maintain a running peak.",
+      "Measure each decline relative to that peak.",
+      "Keep the largest positive decline."
+    ],
+    "solution": "\n```python\npeak=100\ndd=0\nfor v in [100,120,90,110]:\n    peak=max(peak,v)\n    dd=max(dd,(peak-v)/peak)\nassert dd==0.25\nprint(f\"{100*dd:.1f}%\")\n```\nExpected output: `25.0%`.",
+    "successCheck": "The result is 25 percent."
+  },
+  "commonMistakes": [
+    "At b=1, f=2p-1=0.10 of current bankroll. This is a conditional exposure rule, not a forecast or guarantee of annual return.",
+    "A basic target scales exposure by target volatility divided by a causal forecast. It does not know future realised volatility or enforce a maximum drawdown."
+  ],
+  "realWorldApplication": "Use the assumptions and checks above when reviewing kelly sizing, volatility targets and drawdowns. Record inputs, state the failure conditions and compare the result with a simple independent calculation.",
+  "quantFinanceApplication": "For a trading or risk workflow, validate the model and timestamp conventions before using kelly sizing, volatility targets and drawdowns. The worked result is conditional on its assumptions, not a return promise.",
+  "summary": [
+    "Compute a binary Kelly fraction under stated odds",
+    "Distinguish full Kelly from fractional Kelly and volatility targeting",
+    "Apply explicit drawdown controls without claiming guaranteed safety"
+  ],
+  "quiz": [
+    {
+      "type": "mcq",
+      "prompt": "Under even odds and p=0.55, what is full binary Kelly?",
+      "options": [
+        "Ten percent of current bankroll",
+        "Fifty-five percent of initial bankroll",
+        "Five percent of every asset independently",
+        "A guaranteed ten percent annual return"
+      ],
+      "answerIndex": 0,
+      "explanation": "At b=1, f=2p-1=0.10 of current bankroll. This is a conditional exposure rule, not a forecast or guarantee of annual return.",
+      "id": "q1",
+      "objective": 0
+    },
+    {
+      "type": "mcq",
+      "prompt": "What does a volatility target directly use?",
+      "options": [
+        "The guaranteed worst possible drawdown",
+        "Forecast volatility relative to a target",
+        "Only the number of winning trades",
+        "Future realised volatility known in advance"
+      ],
+      "answerIndex": 1,
+      "explanation": "A basic target scales exposure by target volatility divided by a causal forecast. It does not know future realised volatility or enforce a maximum drawdown.",
+      "id": "q2",
+      "objective": 1
+    },
+    {
+      "type": "numeric",
+      "prompt": "Peak equity is 120 and current equity is 90. What is positive drawdown as a decimal fraction?",
+      "answer": 0.25,
+      "tolerance": 1e-06,
+      "explanation": "Drawdown is (120-90)/120=0.25. Dividing by current equity instead would compute a required recovery percentage, a different quantity.",
+      "id": "q3",
+      "objective": 2
+    },
+    {
+      "type": "code-output",
+      "prompt": "What exposure multiplier does this volatility target print?",
+      "code": "print(f\"{0.10/0.20:.3f}\")",
+      "language": "python",
+      "answer": "0.500",
+      "explanation": "The target is half the forecast volatility, so the raw exposure multiplier is 0.5 before caps. This relies on a forecast rather than a guaranteed realised risk.",
+      "id": "q4",
+      "objective": 1
+    },
+    {
+      "type": "short",
+      "prompt": "Why can estimated full Kelly be too large in practice?",
+      "modelAnswer": "Errors in probabilities, payoffs, tails and correlations can overstate the edge and make the chosen exposure unsafe.",
+      "keywords": [
+        "estimates|estimate|estimation|errors|error",
+        "probability|probabilities|payoff|edge",
+        "tails|tail|correlations|correlation|correlated|risks|risk"
+      ],
+      "explanation": "Kelly is optimal only within its stated distribution and objective. Forecast error and unmodelled tail dependence can turn the calculated optimum into severe overbetting.",
+      "id": "q5",
+      "objective": 0
+    },
+    {
+      "type": "ms",
+      "prompt": "Which claims are sound?",
+      "options": [
+        "Fractional Kelly lowers the model exposure",
+        "A drawdown stop may be crossed by a gap",
+        "Kelly sizing removes model uncertainty",
+        "A volatility target guarantees no losses"
+      ],
+      "answerIndices": [
+        0,
+        1
+      ],
+      "explanation": "Scaling Kelly reduces exposure but cannot remove model risk. Stops operate on observable prices and achievable fills, so gaps can exceed the intended threshold.",
+      "id": "q6",
+      "objective": 2
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "Under even odds and p=0.55, what is full binary Kelly?",
+      "back": "Ten percent of current bankroll"
+    },
+    {
+      "type": "concept",
+      "front": "What does a volatility target directly use?",
+      "back": "Forecast volatility relative to a target"
+    },
+    {
+      "type": "concept",
+      "front": "Peak equity is 120 and current equity is 90. What is positive drawdown as a decimal fraction?",
+      "back": "The result is 0.25 under the stated inputs."
+    },
+    {
+      "type": "concept",
+      "front": "Why can estimated full Kelly be too large in practice?",
+      "back": "Errors in probabilities, payoffs, tails and correlations can overstate the edge and make the chosen exposure unsafe."
+    },
+    {
+      "type": "concept",
+      "front": "Which claims are sound?",
+      "back": "Fractional Kelly lowers the model exposure, A drawdown stop may be crossed by a gap"
+    }
+  ],
+  "references": [
+    {
+      "label": "Kelly: information rate paper",
+      "url": "https://www.princeton.edu/~wbialek/rome/refs/kelly_56.pdf"
+    },
+    {
+      "label": "SEC: investor education",
+      "url": "https://www.investor.gov/introduction-investing"
+    },
+    {
+      "label": "MIT OCW: portfolio theory",
+      "url": "https://ocw.mit.edu/courses/15-401-finance-theory-i-fall-2008/"
+    }
+  ],
+  "skills": [
+    "portfolio"
+  ]
+}

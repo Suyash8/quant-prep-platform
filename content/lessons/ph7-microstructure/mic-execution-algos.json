@@ -1,0 +1,259 @@
+{
+  "id": "mic-execution-algos",
+  "moduleId": "ph7-microstructure",
+  "title": "TWAP, VWAP, POV and Execution Risk",
+  "estMinutes": 35,
+  "difficulty": "advanced",
+  "prereqs": [
+    "mic-adverse-selection"
+  ],
+  "objectives": [
+    "Compute TWAP and volume-weighted integer schedules",
+    "Distinguish a participation rule from a fixed schedule",
+    "Explain implementation shortfall and the impact-risk trade-off"
+  ],
+  "motivation": "You must buy a parent order without assuming that every share can trade instantly at the initial mid. Trading quickly reduces exposure to adverse price moves while waiting, but can consume liquidity and move the market. Trading slowly may reduce immediate impact yet leave an expensive unfinished order. An execution algorithm chooses child orders subject to time, quantity, participation, price and risk constraints. It is not simply a predictor of future returns. Define the decision price, deadline, allowed venues and treatment of unfilled quantity before comparing schedules. A perfect schedule benchmark can still hide impossible fills.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Execution is a constrained decision"
+    },
+    {
+      "type": "p",
+      "md": "You must buy a parent order without assuming that every share can trade instantly at the initial mid. Trading quickly reduces exposure to adverse price moves while waiting, but can consume liquidity and move the market. Trading slowly may reduce immediate impact yet leave an expensive unfinished order. An execution algorithm chooses child orders subject to time, quantity, participation, price and risk constraints. It is not simply a predictor of future returns. Define the decision price, deadline, allowed venues and treatment of unfilled quantity before comparing schedules. A perfect schedule benchmark can still hide impossible fills."
+    },
+    {
+      "type": "h2",
+      "text": "TWAP divides time"
+    },
+    {
+      "type": "p",
+      "md": "A time-weighted schedule targets roughly equal quantities in equal time intervals. For an integer parent order, specify remainder handling instead of rounding every slice independently. Buying 11 units across 4 slices gives [3,3,3,2] when the earliest slices receive the remainder. The sum remains exactly 11. A fixed schedule is simple and auditable, but it ignores the intraday volume curve and cannot guarantee equal execution prices. Limit prices, pauses and market closures may prevent completion. The system needs a stated catch-up or cancellation policy rather than silently forcing the final slice through an unsafe price limit."
+    },
+    {
+      "type": "h2",
+      "text": "VWAP follows a forecast volume curve"
+    },
+    {
+      "type": "p",
+      "md": "A VWAP schedule allocates a parent order in proportion to expected market volume in each interval. With volume weights [1,2,1] and a 10-unit order, ideal allocations are [2.5,5,2.5]. Flooring gives [2,5,2], leaving one unit. The largest-remainder method assigns it to the earliest tied fractional remainder, producing [3,5,2]. This rule preserves the total and makes ties deterministic. A forecast-volume schedule is not the same as the realised VWAP benchmark after the day ends. Using the realised full-day volume curve in a historical simulation leaks information unavailable at the start."
+    },
+    {
+      "type": "math",
+      "tex": "\\operatorname{IS}_{\\mathrm{buy}}=\\sum_i q_i p_i-Qp_0+\\operatorname{fees}",
+      "caption": "Formula under the assumptions stated in the surrounding explanation."
+    },
+    {
+      "type": "h2",
+      "text": "POV reacts to observed volume"
+    },
+    {
+      "type": "p",
+      "md": "Percentage-of-volume execution aims for a participation rate in observed trading activity. If the target is ten percent and eligible external volume since the last decision is 1,000 shares, the simple target is 100 shares, subject to previous fills and limits. State whether the algorithm's own trades are included in the denominator; otherwise the intended percentage is ambiguous. Delayed prints, auctions and excluded venues also change eligible volume. A POV rule may finish early during a volume burst or fail to complete during a quiet day. Completion by a deadline requires an additional policy, not an assumption that liquidity will arrive."
+    },
+    {
+      "type": "h2",
+      "text": "Worked example: implementation shortfall"
+    },
+    {
+      "type": "p",
+      "md": "At the buy decision, the reference price is 100 and the parent is 100 shares. Sixty fill at 101 and forty at 102. Compute realised purchase cost as quantities times prices, 60*101+40*102=10,140, compared with 10,000 at the decision price, so shortfall is 140 before fees. Dividing by 10,000 gives 140 basis points. This benchmark includes delay and execution effects relative to the chosen decision time. For incomplete orders, define an opportunity-cost mark for the unfilled quantity; dropping unfilled shares can make a poor algorithm look artificially cheap."
+    },
+    {
+      "type": "h2",
+      "text": "Impact and risk pull in opposite directions"
+    },
+    {
+      "type": "p",
+      "md": "The Almgren-Chriss framework formalises a stylised trade-off between expected execution cost and uncertainty from price moves while holding remaining inventory. Faster trading can increase temporary impact while reducing inventory exposure. Permanent and temporary impact assumptions, volatility, risk aversion and constraints shape the optimal path. The result is conditional on a model, not a universal best schedule. Price drift, nonlinear impact, stochastic liquidity and adverse selection complicate real markets. Compare strategies using the same parent orders and realistic fill rules, and report completion and tail cost alongside the average benchmark difference."
+    },
+    {
+      "type": "h2",
+      "text": "Controls belong beside the schedule"
+    },
+    {
+      "type": "p",
+      "md": "Validate child quantity, cumulative fills, participation and limit prices before routing. Reconcile partial fills and cancels, and avoid sending duplicate children after an acknowledgement timeout. Forecast versions and deterministic rounding rules should be logged so a schedule can be replayed. The order-book lab illustrates visible depth and price levels; it does not guarantee fills or estimate hidden liquidity. Backtests need fees, latency, queue position and market-hours handling. A schedule that sums to the parent is only arithmetically correct. Operational correctness also means not overshooting, respecting hard limits and making any residual quantity visible when the deadline arrives. Define benchmark conventions in the order record. A buy shortfall has the opposite sign convention from a sell shortfall, and commissions should enter both. An implementation should test a symmetric buy and sell example to avoid reporting better execution with the wrong sign."
+    },
+    {
+      "type": "h2",
+      "text": "Worked example: run and check"
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "from fractions import Fraction\nQ,n=11,4\nbase,remainder=divmod(Q,n)\ntwap=[base+(i<remainder) for i in range(n)]\nassert twap==[3,3,3,2]\nweights=[1,2,1]\nraw=[Fraction(10*w,sum(weights)) for w in weights]\nslices=[int(x) for x in raw]\norder=sorted(range(3),key=lambda i:(-(raw[i]-slices[i]),i))\nfor i in order[:10-sum(slices)]:\n    slices[i]+=1\nassert slices==[3,5,2]\nprint(twap)\nprint(slices)\nprint(60*101+40*102-100*100)",
+      "caption": "Complete Python 3.11+ example"
+    },
+    {
+      "type": "p",
+      "md": "The exact output is `[3, 3, 3, 2]; [3, 5, 2]; 140`. Run the example before changing a parameter, then predict the direction of the change. The assertions encode the stated checks; a failed assertion means that the implementation and the claimed result disagree."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Check this misconception",
+      "md": "TWAP targets time-uniform quantity, not price equality or guaranteed fills. Realised future volume belongs to an unavailable benchmark unless it was already observed."
+    },
+    {
+      "type": "interactive",
+      "component": "OrderBookVisual",
+      "params": {},
+      "caption": "Related concept lab. The lab illustrates the named building block; it is not a full implementation of every model in this lesson."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Split 11 units into four integer TWAP slices with earliest remainder allocation. Success check: The result sums to 11 and equals [3,3,3,2].",
+    "hints": [
+      "Use integer quotient and remainder.",
+      "Give each slice the quotient.",
+      "Add one to the first remainder slices."
+    ],
+    "solution": "\n```python\nb,r=divmod(11,4)\na=[b+int(i<r) for i in range(4)]\nassert sum(a)==11\nprint(a)\n```\nExpected output: `[3, 3, 3, 2]`.",
+    "successCheck": "The result sums to 11 and equals [3,3,3,2]."
+  },
+  "independentExercise": {
+    "prompt": "Recompute the 100-share execution shortfall in basis points. Success check: The result is 140 basis points before fees.",
+    "hints": [
+      "Compute the weighted execution cost.",
+      "Subtract decision notional.",
+      "Divide by decision notional and multiply by 10,000."
+    ],
+    "solution": "\n```python\ncost=60*101+40*102\nref=100*100\nbps=(cost-ref)/ref*10000\nassert abs(bps-140)<1e-12\nprint(f\"{bps:.1f}\")\n```\nExpected output: `140.0`.",
+    "successCheck": "The result is 140 basis points before fees."
+  },
+  "commonMistakes": [
+    "TWAP targets time-uniform quantity, not price equality or guaranteed fills. Realised future volume belongs to an unavailable benchmark unless it was already observed.",
+    "POV adjusts to observed eligible activity and a defined participation denominator. It does not know the full future volume curve and may not finish without a separate deadline policy."
+  ],
+  "realWorldApplication": "Use the assumptions and checks above when reviewing twap, vwap, pov and execution risk. Record inputs, state the failure conditions and compare the result with a simple independent calculation.",
+  "quantFinanceApplication": "For a trading or risk workflow, validate the model and timestamp conventions before using twap, vwap, pov and execution risk. The worked result is conditional on its assumptions, not a return promise.",
+  "summary": [
+    "Compute TWAP and volume-weighted integer schedules",
+    "Distinguish a participation rule from a fixed schedule",
+    "Explain implementation shortfall and the impact-risk trade-off"
+  ],
+  "quiz": [
+    {
+      "type": "mcq",
+      "prompt": "What defines a TWAP target schedule?",
+      "options": [
+        "Equal quantities across equal time intervals",
+        "Quantities based on realised future volume",
+        "Guaranteed fills at the opening price",
+        "A fixed profit target for every child order"
+      ],
+      "answerIndex": 0,
+      "explanation": "TWAP targets time-uniform quantity, not price equality or guaranteed fills. Realised future volume belongs to an unavailable benchmark unless it was already observed.",
+      "id": "q1",
+      "objective": 0
+    },
+    {
+      "type": "mcq",
+      "prompt": "Which quantity does a basic POV rule react to?",
+      "options": [
+        "Only the parent order's original deadline",
+        "Observed eligible market trading volume",
+        "A future realised full-day volume curve",
+        "A guaranteed permanent impact estimate"
+      ],
+      "answerIndex": 1,
+      "explanation": "POV adjusts to observed eligible activity and a defined participation denominator. It does not know the full future volume curve and may not finish without a separate deadline policy.",
+      "id": "q2",
+      "objective": 1
+    },
+    {
+      "type": "numeric",
+      "prompt": "Buy 60 shares at 101 and 40 at 102 versus a decision price of 100. What is shortfall in currency units before fees?",
+      "answer": 140,
+      "tolerance": 1e-06,
+      "explanation": "The execution cost is 10,140 against a 10,000 reference. The difference is 140; using an unweighted average ignores the unequal fill quantities.",
+      "id": "q3",
+      "objective": 2
+    },
+    {
+      "type": "code-output",
+      "prompt": "What integer TWAP slices are printed for 11 units in four intervals?",
+      "code": "q,r=divmod(11,4)\nprint([q+(i<r) for i in range(4)])",
+      "language": "python",
+      "answer": "[3, 3, 3, 2]",
+      "explanation": "Each interval receives two units, then the three residual units go to the earliest intervals. Independent rounding could fail to preserve the parent quantity.",
+      "id": "q4",
+      "objective": 0
+    },
+    {
+      "type": "short",
+      "prompt": "What trade-off does a stylised optimal-execution model balance?",
+      "modelAnswer": "Expected market impact from trading quickly against price risk from holding the remaining inventory while waiting.",
+      "keywords": [
+        "impact|cost",
+        "risk|volatility",
+        "inventory|remain|remaining|wait|waiting"
+      ],
+      "explanation": "Faster execution can reduce exposure time while consuming more liquidity. Slower execution may reduce immediate impact but creates waiting risk and possible non-completion.",
+      "id": "q5",
+      "objective": 2
+    },
+    {
+      "type": "ms",
+      "prompt": "Which backtest choices avoid misleading execution claims?",
+      "options": [
+        "Report completion and residual quantity",
+        "Use volume forecasts available at decision time",
+        "Drop every unfilled share from the comparison",
+        "Assume touching a quote guarantees a fill"
+      ],
+      "answerIndices": [
+        0,
+        1
+      ],
+      "explanation": "Completion and causal volume inputs keep the comparison honest. Excluding difficult residuals or assuming free queue priority can make an infeasible schedule appear cheap.",
+      "id": "q6",
+      "objective": 2
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "What defines a TWAP target schedule?",
+      "back": "Equal quantities across equal time intervals"
+    },
+    {
+      "type": "concept",
+      "front": "Which quantity does a basic POV rule react to?",
+      "back": "Observed eligible market trading volume"
+    },
+    {
+      "type": "concept",
+      "front": "Buy 60 shares at 101 and 40 at 102 versus a decision price of 100. What is shortfall in currency units before fees?",
+      "back": "The result is 140 under the stated inputs."
+    },
+    {
+      "type": "concept",
+      "front": "What trade-off does a stylised optimal-execution model balance?",
+      "back": "Expected market impact from trading quickly against price risk from holding the remaining inventory while waiting."
+    },
+    {
+      "type": "concept",
+      "front": "Which backtest choices avoid misleading execution claims?",
+      "back": "Report completion and residual quantity, Use volume forecasts available at decision time"
+    }
+  ],
+  "references": [
+    {
+      "label": "Almgren and Chriss: optimal execution",
+      "url": "https://www.smallake.kr/wp-content/uploads/2016/03/optliq.pdf"
+    },
+    {
+      "label": "CFA Institute: trading costs",
+      "url": "https://www.cfainstitute.org/insights/professional-learning/refresher-readings/2026/trade-strategy-execution"
+    },
+    {
+      "label": "SEC: market structure",
+      "url": "https://www.sec.gov/marketstructure"
+    }
+  ],
+  "skills": [
+    "microstructure"
+  ]
+}

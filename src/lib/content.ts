@@ -1,3 +1,4 @@
+import type { Block, QuizQuestion } from '@/lib/content-types';
 import 'server-only';
 import fs from 'fs';
 import path from 'path';
@@ -40,8 +41,8 @@ export interface Lesson {
   id: string; moduleId: string; title: string; estMinutes: number; difficulty: string;
   prereqs: string[]; objectives: string[]; motivation: string;
   blocks: Block[];
-  guidedExercise: { prompt: string; hints: string[]; solution: string };
-  independentExercise: { prompt: string; hints: string[]; solution: string };
+  guidedExercise: { prompt: string; hints: string[]; solution: string; snippet?: boolean; file?: string; requires?: string[]; successCheck?: string };
+  independentExercise: { prompt: string; hints: string[]; solution: string; snippet?: boolean; file?: string; requires?: string[]; successCheck?: string };
   commonMistakes: string[];
   realWorldApplication?: string;
   quantFinanceApplication?: string;
@@ -52,32 +53,7 @@ export interface Lesson {
   skills: string[];
 }
 
-export type Block =
-  | { type: 'p'; md: string }
-  | { type: 'h2' | 'h3'; text: string }
-  | { type: 'math'; tex: string; caption?: string }
-  | { type: 'code'; lang: string; code: string; caption?: string }
-  | { type: 'callout'; variant: string; title: string; md: string }
-  | { type: 'list'; ordered?: boolean; items: string[] }
-  | { type: 'table'; headers: string[]; rows: string[][] }
-  | { type: 'steps'; title?: string; items: string[] }
-  | { type: 'interactive'; component: string; params: Record<string, unknown>; caption?: string }
-  | { type: 'ref'; items: { label: string; url: string }[] };
-
-export type QuizQuestion = {
-  id: string; type: 'mcq' | 'ms' | 'numeric' | 'short' | 'code-output';
-  prompt: string;
-  options?: string[];
-  answerIndex?: number;
-  answerIndices?: number[];
-  answer?: number;
-  tolerance?: number;
-  modelAnswer?: string;
-  keywords?: string[];
-  code?: string;
-  language?: string;
-  explanation: string;
-};
+export type { Block, QuizQuestion } from '@/lib/content-types';
 
 export interface Registry {
   generatedAt: string;
@@ -152,6 +128,7 @@ export function getLessonById(id: string): { lesson: Lesson; moduleId: string } 
 
 
 export interface Problem {
+  lessons?: string[];
   slug: string; title: string; difficulty: 'easy' | 'medium' | 'hard'; category: string;
   tags: string[]; statement: Block[]; inputFormat: string; outputFormat: string;
   constraints: string[]; examples: { input: string; output: string; explanation?: string }[];
@@ -187,6 +164,8 @@ export interface Assessment {
   id: string; title: string; kind: 'diagnostic' | 'assessment' | 'interview' | 'screening';
   timeLimitMinutes: number; description: string; areas?: string[];
   sections: { title: string; questions: QuizQuestion[] }[];
+  passMarkPercent?: number;
+  scoreBands?: { minPercent: number; maxPercent: number; title: string; text: string; lessonIds?: string[] }[];
 }
 
 export function listAssessments(): { id: string; title: string; kind: string; timeLimitMinutes: number; questionCount: number }[] {
@@ -241,6 +220,7 @@ export interface Company {
   roles: { title: string; track: string; notes: string }[];
   publishedExpectations: { claim: string; sourceUrl: string; retrievedAt: string; confidence: string }[];
   competencyAreas: string[]; prepModules: string[]; prepAssessments: string[]; notes: string;
+  asOf?: string; verificationStatus?: string;
 }
 
 export function listCompanies(): { slug: string; name: string; category: string }[] {
@@ -289,3 +269,19 @@ export const PHASE_COLORS: Record<string, string> = {
   cpp: '#9f1239', dsa: '#7c2d12', aptitude: '#a16207', finance: '#166534',
   stats: '#6d28d9', pricing: '#1e40af', systems: '#334155',
 };
+
+let labCountCache: number | null = null;
+/** Distinct interactive labs actually embedded in published lessons. */
+export function countLabs(): number {
+  if (labCountCache !== null) return labCountCache;
+  const names = new Set<string>();
+  for (const l of getRegistry().lessons) {
+    const lesson = getLesson(l.moduleId, l.id);
+    for (const b of lesson?.blocks ?? []) {
+      const c = (b as { component?: unknown }).component;
+      if (typeof c === 'string') names.add(c);
+    }
+  }
+  labCountCache = names.size;
+  return labCountCache;
+}

@@ -12,10 +12,10 @@ export default function Error({ error, reset }: { error: Error & { digest?: stri
             <RefreshCw aria-hidden />
           </span>
           <h1 className="text-xl font-black tracking-tight">That did not load</h1>
-          <p className="max-w-md text-sm font-semibold text-muted">
+          <p className="max-w-md text-[15px] font-semibold text-muted">
             Something on our side failed while building this page. Your progress is safe on your device. Try again in a moment.
           </p>
-          {error.digest ? <p className="text-xs font-bold text-faint">Reference: {error.digest}</p> : null}
+          {error.digest ? <p className="text-[13px] font-bold text-faint">Reference: {error.digest}</p> : null}
           <div className="mt-1 flex flex-wrap items-center justify-center gap-3">
             <button type="button" className="btn3d" onClick={reset}>Try again</button>
             <Link href="/" className="btn3d btn3d-ghost">Go home</Link>

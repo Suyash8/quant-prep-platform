@@ -21,7 +21,9 @@ export default async function AssessmentPage({ params }: { params: Promise<{ id:
     orderBy: { submittedAt: 'desc' },
     take: 6,
   });
-  const best = attempts.length ? Math.max(...attempts.map(a => a.scorePct)) : null;
+  const isDevice = (d: string | null) => { try { return JSON.parse(d ?? '{}').source === 'offline-sync'; } catch { return false; } };
+  const serverAttempts = attempts.filter(a => !isDevice(a.detail));
+  const best = serverAttempts.length ? Math.max(...serverAttempts.map(a => a.scorePct)) : null; // server-graded only
   const questionCount = assessment.sections.reduce((n, s) => n + s.questions.length, 0);
 
   // sibling assessments from the same content registry import (zero new queries),
@@ -42,13 +44,13 @@ export default async function AssessmentPage({ params }: { params: Promise<{ id:
     {
       icon: Clock,
       tile: 'icon-tile-info',
-      value: assessment.timeLimitMinutes > 0 ? String(assessment.timeLimitMinutes) : '—',
+      value: assessment.timeLimitMinutes > 0 ? String(assessment.timeLimitMinutes) : 'Untimed',
       label: assessment.timeLimitMinutes > 0 ? 'minute limit' : 'untimed',
     },
     {
       icon: Trophy,
       tile: best !== null ? 'icon-tile-gold' : 'icon-tile-neutral',
-      value: best !== null ? Math.round(best) + '%' : '—',
+      value: best !== null ? Math.round(best) + '%' : 'None yet',
       label: best !== null ? 'your best score' : 'no attempts yet',
     },
     {
@@ -66,13 +68,15 @@ export default async function AssessmentPage({ params }: { params: Promise<{ id:
     timeLimitMinutes: assessment.timeLimitMinutes,
     description: assessment.description,
     areaLabels: assessment.areas,
+    passMarkPercent: assessment.passMarkPercent,
+    scoreBands: assessment.scoreBands,
     sections: assessment.sections.map(s => ({ title: s.title, questions: s.questions.map(sanitizedForClient) })),
   };
 
   return (
     <AppShell user={{ name: user.name, email: user.email, role: user.role }} isAdmin={user.role === 'admin'}>
       <div className="max-w-4xl mx-auto px-4 lg:px-6 py-8">
-        <Link href="/assessments" className="text-sm font-extrabold text-muted hover:text-accent transition-colors inline-flex items-center gap-1.5 mb-4">
+        <Link href="/assessments" className="text-[15px] font-extrabold text-muted hover:text-accent transition-colors inline-flex items-center gap-1.5 mb-4">
           <ArrowLeft className="h-4 w-4" /> All assessments
         </Link>
 
@@ -111,8 +115,8 @@ export default async function AssessmentPage({ params }: { params: Promise<{ id:
                 const fill = pct >= 80 ? 'bg-accent' : pct >= 50 ? 'bg-warning' : 'bg-danger';
                 const day = a.submittedAt?.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) ?? '';
                 return (
-                  <div key={a.id} className="px-4 py-2.5 flex items-center gap-4 text-sm font-semibold">
-                    <span className="shrink-0 tnum text-faint">#{attempts.length - i} · {day} · {pct}%</span>
+                  <div key={a.id} className="px-4 py-2.5 flex items-center gap-4 text-[15px] font-semibold">
+                    <span className="shrink-0 tnum text-faint">#{attempts.length - i} · {day} · {pct}%{isDevice(a.detail) ? ' · device, not verified' : ''}</span>
                     <span className="ml-auto w-1/2 max-w-md h-2 rounded-full bg-surface-3 overflow-hidden">
                       <span className={`block h-full rounded-full ${fill}`} style={{ width: `${pct}%` }} />
                     </span>
@@ -139,7 +143,7 @@ export default async function AssessmentPage({ params }: { params: Promise<{ id:
             {siblings.map(s => (
               <Link key={s.id} href={`/assessments/${s.id}`} className="row-card">
                   <span className="icon-tile icon-tile-sm icon-tile-neutral"><ClipboardList /></span>
-                  <span className="flex-1 min-w-0 font-semibold text-sm leading-tight truncate">{s.title}</span>
+                  <span className="flex-1 min-w-0 font-semibold text-[15px] leading-tight truncate">{s.title}</span>
                   <span className="chip tnum shrink-0">{s.questionCount}q · {s.timeLimitMinutes}m</span>
                   <ChevronRight className="h-4 w-4 text-faint shrink-0" />
                 </Link>

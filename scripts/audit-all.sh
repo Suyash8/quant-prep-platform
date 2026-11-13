@@ -6,7 +6,7 @@ mkdir -p "$OUT"; rm -f "$OUT"/*.png "$OUT"/*.json "$OUT"/scores.txt 2>/dev/null
 
 # Login flow
 agent-browser open $BASE/login --viewport 1280x900 >/dev/null 2>&1; sleep 1.5
-agent-browser eval "(function(){var e=document.querySelector('input[type=email]');Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value').set.call(e,'visual@test.dev');e.dispatchEvent(new Event('input',{bubbles:true}));var p=document.querySelector('input[type=password]');Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value').set.call(p,'visualtest12345');p.dispatchEvent(new Event('input',{bubbles:true}));return 'ok'})()" >/dev/null 2>&1
+agent-browser eval "(function(){var e=document.querySelector('input[type=email]');Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value').set.call(e,'$QF_DEMO_EMAIL');e.dispatchEvent(new Event('input',{bubbles:true}));var p=document.querySelector('input[type=password]');Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value').set.call(p,'$QF_DEMO_PASSWORD');p.dispatchEvent(new Event('input',{bubbles:true}));return 'ok'})()" >/dev/null 2>&1
 sleep 0.4
 agent-browser click "button[type=submit]" >/dev/null 2>&1; sleep 3
 
@@ -33,7 +33,7 @@ shot register /register
 
 # log back in
 agent-browser open $BASE/login --viewport 1280x900 >/dev/null 2>&1; sleep 1.5
-agent-browser eval "(function(){var e=document.querySelector('input[type=email]');Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value').set.call(e,'visual@test.dev');e.dispatchEvent(new Event('input',{bubbles:true}));var p=document.querySelector('input[type=password]');Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value').set.call(p,'visualtest12345');p.dispatchEvent(new Event('input',{bubbles:true}));return 'ok'})()" >/dev/null 2>&1
+agent-browser eval "(function(){var e=document.querySelector('input[type=email]');Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value').set.call(e,'$QF_DEMO_EMAIL');e.dispatchEvent(new Event('input',{bubbles:true}));var p=document.querySelector('input[type=password]');Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value').set.call(p,'$QF_DEMO_PASSWORD');p.dispatchEvent(new Event('input',{bubbles:true}));return 'ok'})()" >/dev/null 2>&1
 sleep 0.4
 agent-browser click "button[type=submit]" >/dev/null 2>&1; sleep 3
 

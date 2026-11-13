@@ -250,7 +250,7 @@ export default async function LabPage({ searchParams }: { searchParams: Promise<
                   </span>
                   <h2>About this lab</h2>
                 </div>
-                <p className="text-sm text-muted font-semibold leading-relaxed">{active.caption}</p>
+                <p className="text-[15px] text-muted font-semibold leading-relaxed">{active.caption}</p>
                 <div className="mt-4">
                   {activeFormula ? (
                     <div className="qf-card-flat p-3">
@@ -285,8 +285,8 @@ export default async function LabPage({ searchParams }: { searchParams: Promise<
                             <OIcon />
                           </span>
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-bold truncate">{pretty(o.name)}</p>
-                            <p className="text-xs text-muted font-semibold truncate">{og.domain}</p>
+                            <p className="text-[15px] font-bold truncate">{pretty(o.name)}</p>
+                            <p className="text-[13px] text-muted font-semibold truncate">{og.domain}</p>
                           </div>
                           <ChevronRight className="h-4 w-4 text-faint shrink-0" />
                         </Link>
@@ -311,7 +311,7 @@ export default async function LabPage({ searchParams }: { searchParams: Promise<
               </span>
               <div className="flex-1 min-w-0">
                 <h2>{g.title}</h2>
-                <p className="text-xs text-muted font-semibold">{g.desc}</p>
+                <p className="text-[13px] text-muted font-semibold">{g.desc}</p>
               </div>
               <span className="chip tnum ml-auto">{g.components.length} labs</span>
             </div>
@@ -339,14 +339,14 @@ export default async function LabPage({ searchParams }: { searchParams: Promise<
                     </div>
                     <div className="flex-1 min-w-0">
                       <h3 className="font-bold tracking-tight">{pretty(c.name)}</h3>
-                      <p className="mt-1.5 text-xs text-muted font-semibold leading-relaxed line-clamp-3">{c.caption}</p>
+                      <p className="mt-1.5 text-[13px] text-muted font-semibold leading-relaxed line-clamp-3">{c.caption}</p>
                     </div>
                     {/* one consistent meta line, derived from real lab data (the formula every lab computes) */}
-                    <p className="flex items-center gap-1.5 text-[11px] font-bold text-faint min-w-0">
+                    <p className="flex items-center gap-1.5 text-[12px] font-bold text-faint min-w-0">
                       <FlaskConical className="h-3 w-3 shrink-0" aria-hidden />
                       <span className="truncate">Interactive · {formula ? formula.label : 'lab'}</span>
                     </p>
-                    <span className="btn3d btn3d-ghost btn3d-sm mt-auto w-full !text-xs">
+                    <span className="btn3d btn3d-ghost btn3d-sm mt-auto w-full !text-[13px]">
                       Launch
                       <ArrowUpRight className="h-3.5 w-3.5" />
                     </span>
@@ -363,7 +363,7 @@ export default async function LabPage({ searchParams }: { searchParams: Promise<
         <span className="icon-tile icon-tile-accent shrink-0">
           <BookOpen />
         </span>
-        <p className="flex-1 min-w-[220px] text-sm font-bold text-muted">
+        <p className="flex-1 min-w-[220px] text-[15px] font-bold text-muted">
           Every one of these {USED_COUNT} labs is embedded inside the lesson that teaches it, with the theory just before it.
         </p>
         <Link href="/curriculum" className="btn3d btn3d-sm shrink-0">

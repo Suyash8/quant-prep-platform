@@ -5,7 +5,7 @@
 set -u
 export LD_PRELOAD=/home/z/my-project/scripts/qf-fence.so
 export LD_LIBRARY_PATH="/home/z/my-project/pgdist/pg/lib"
-export DATABASE_URL="postgresql://qf:qf@127.0.0.1:5433/quantfoundry?schema=public"
+: "${DATABASE_URL:?set DATABASE_URL}"; export DATABASE_URL
 export SESSION_SECRET="v3-browser-test-secret"
 
 AB="agent-browser"

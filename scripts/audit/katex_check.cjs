@@ -1,0 +1,9 @@
+/* eslint-disable @typescript-eslint/no-require-imports -- CommonJS entry point from the supplied audit. */
+const katex=require(process.argv[2]+'/node_modules/katex');const fs=require('fs'),path=require('path');
+const root=process.argv[2]+'/content';let bad=[],n=0;
+function mathSpans(s){const out=[];s=s.replace(/\\\$/g,'\u0001');let m;const re=/\$\$([\s\S]+?)\$\$|\$([^$\n]+?)\$/g;while((m=re.exec(s)))out.push((m[1]||m[2]).replace(/\u0001/g,'\\$'));return out;}
+function strings(o,cb,p=''){if(typeof o==='string')cb(o,p);else if(Array.isArray(o))o.forEach((x,i)=>strings(x,cb,p+'['+i+']'));else if(o&&typeof o==='object')for(const k in o){if(['code','tests','solutions','url','id','slug','starterFiles'].includes(k))continue;strings(o[k],cb,p+'.'+k);}}
+function walk(d){for(const f of fs.readdirSync(d)){const p=path.join(d,f);if(fs.statSync(p).isDirectory())walk(p);else if(p.endsWith('.json')&&!p.includes('registry')){let j;try{j=JSON.parse(fs.readFileSync(p,'utf8'))}catch(e){bad.push([p,'JSON',e.message]);continue}
+ strings(j,(s,pp)=>{ if(pp.endsWith('.tex')){ n++;try{katex.renderToString(s,{throwOnError:true,strict:'ignore'})}catch(e){bad.push([path.basename(p),pp,e.message.slice(0,90)])}return;} for(const t of mathSpans(s)){n++;try{katex.renderToString(t,{throwOnError:true,strict:'ignore'})}catch(e){bad.push([path.basename(p),pp,t.slice(0,50),e.message.slice(0,80)])}}});
+ if(j.blocks)j.blocks.forEach((b,i)=>{if(b.type==='math'){n++;try{katex.renderToString(b.tex,{throwOnError:true,strict:'ignore'})}catch(e){bad.push([path.basename(p),'blocks['+i+'].tex',b.tex.slice(0,50),e.message.slice(0,80)])}}});}}}
+walk(root);console.log('math spans checked',n,'failures',bad.length);bad.slice(0,40).forEach(b=>console.log(JSON.stringify(b)));

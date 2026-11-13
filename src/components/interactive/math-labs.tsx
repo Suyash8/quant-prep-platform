@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Slider, LabFrame, PlotArea, safeFn, rng, fmt, INK, MUTED, FAINT, ACCENT } from './core';
+import { Slider, LabFrame, PlotArea, safeFn, compileExpression, ExprNotice, rng, fmt, INK, MUTED, FAINT, ACCENT } from './core';
 
 /* ---------------- NumberLine ---------------- */
 export function NumberLine({ params }: { params: Record<string, unknown> }) {
@@ -17,13 +17,13 @@ export function NumberLine({ params }: { params: Record<string, unknown> }) {
         {Array.from({ length: Math.floor(max) - Math.ceil(min) + 1 }, (_, i) => Math.ceil(min) + i).map(v => (
           <g key={v}>
             <line x1={toX(v)} y1={39} x2={toX(v)} y2={51} stroke={INK} strokeWidth={1} />
-            <text x={toX(v)} y={68} textAnchor="middle" fontSize="11" fill={MUTED}>{v}</text>
+            <text x={toX(v)} y={68} textAnchor="middle" fontSize="12" fill={MUTED}>{v}</text>
           </g>
         ))}
         {markers.filter(m => m >= min && m <= max).map((m, i) => (
           <g key={i}>
             <circle cx={toX(m)} cy={45} r={5} fill={ACCENT} />
-            <text x={toX(m)} y={26} textAnchor="middle" fontSize="10" fill={ACCENT}>{m}</text>
+            <text x={toX(m)} y={26} textAnchor="middle" fontSize="12" fill={ACCENT}>{m}</text>
           </g>
         ))}
       </svg>
@@ -93,8 +93,8 @@ export function CompoundGrowth({ params }: { params: Record<string, unknown> }) 
         <polyline fill="none" stroke={ACCENT} strokeWidth={2}
           points={pts.map(([t, v]) => `${toX(t)},${toY(v)}`).join(' ')} />
         <line x1={P} y1={toY(simple)} x2={W - P} y2={toY(simple)} stroke={MUTED} strokeDasharray="4 3" />
-        <text x={P + 6} y={toY(simple) - 5} fontSize="11" fill={MUTED}>simple interest path</text>
-        <text x={W - P - 6} y={toY(maxY) + 14} textAnchor="end" fontSize="11" fill={ACCENT}>{fmt(maxY, 0)}</text>
+        <text x={P + 6} y={toY(simple) - 5} fontSize="12" fill={MUTED}>simple interest path</text>
+        <text x={W - P - 6} y={toY(maxY) + 14} textAnchor="end" fontSize="12" fill={ACCENT}>{fmt(maxY, 0)}</text>
       </svg>
       <div className="mt-2 grid sm:grid-cols-2 gap-3">
         <Slider label="principal" value={principal} min={1000} max={200000} step={1000} onChange={setPrincipal} format={v => fmt(v, 0)} />
@@ -108,37 +108,52 @@ export function CompoundGrowth({ params }: { params: Record<string, unknown> }) 
 
 /* ---------------- FunctionPlotter ---------------- */
 export function FunctionPlotter({ params }: { params: Record<string, unknown> }) {
-  const expr = (params.expression as string) ?? (params.fn as string) ?? 'sin(x)';
+  // Contract: params.expressions (array of strings) for several curves, or params.expression / params.fn for one.
+  const listed = Array.isArray(params.expressions) ? (params.expressions as unknown[]).filter((e): e is string => typeof e === 'string' && e.trim().length > 0) : [];
+  const exprs = listed.length > 0 ? listed : [((params.expression as string) ?? (params.fn as string) ?? 'sin(x)')];
   const [x0, x1] = [params.xmin as number ?? params.xMin as number ?? -5, params.xmax as number ?? params.xMax as number ?? 5];
   const [ymin, setYmin] = React.useState(params.ymin as number ?? params.yMin as number ?? -3);
   const [ymax, setYmax] = React.useState(params.ymax as number ?? params.yMax as number ?? 3);
-  const f = (safeFn(expr, x => x));
+  // Never substitute an unrelated curve: an expression that does not parse is reported, not plotted as y = x.
+  const compiled = exprs.map(e => { try { return { f: compileExpression(e), err: null as string | null }; } catch (err) { return { f: (_x: number) => NaN, err: err instanceof Error ? err.message : 'invalid expression' }; } });
+  const fns = compiled.map(c => c.f);
+  const badExprs = exprs.filter((_, i) => compiled[i].err);
+  const COLORS = [ACCENT, 'var(--info)', 'var(--warning)', 'var(--danger)'];
   const W = 560, H = 300, P = 34;
   const N = 300;
-  const pts = (() => {
-    const out: string[] = [];
+  const paths = fns.map(f => {
+    const segs: string[][] = [[]];
     for (let i = 0; i <= N; i++) {
       const x = x0 + ((x1 - x0) * i) / N;
       const y = f(x);
-      if (!Number.isFinite(y) || Math.abs(y) > 1e7) { out.push('M'); continue; }
+      if (!Number.isFinite(y) || Math.abs(y) > 1e7) { if (segs[segs.length - 1].length) segs.push([]); continue; }
       const px = P + ((x - x0) / (x1 - x0 || 1)) * (W - 2 * P);
       const py = H - P - ((y - ymin) / (ymax - ymin || 1)) * (H - 2 * P);
-      out.push(`${px},${py}`);
+      segs[segs.length - 1].push(`${px},${py}`);
     }
-    return out;
-  })();
-  const path = pts.filter(p => p !== 'M').join(' ');
-  const toX = (x: number) => P + ((x - x0) / (x1 - x0 || 1)) * (W - 2 * P);
+    return segs.filter(sg => sg.length > 1);
+  });
   const axisY = H - P - ((0 - ymin) / (ymax - ymin || 1)) * (H - 2 * P);
   const axisX = P + ((0 - x0) / (x1 - x0 || 1)) * (W - 2 * P);
+  const title = exprs.length === 1 ? `f(x) = ${exprs[0]}` : `Compare ${exprs.length} functions`;
   return (
-    <LabFrame title={`f(x) = ${expr}`} caption={`Domain [${fmt(x0)}, ${fmt(x1)}].`} note="Sliders adjust the vertical window; watch how asymptotes and growth rates appear.">
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" role="img" aria-label={`Graph of ${expr}`}>
+    <LabFrame title={title} caption={`Domain [${fmt(x0)}, ${fmt(x1)}].`} note="Sliders adjust the vertical window; watch how asymptotes and growth rates appear.">
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" role="img" aria-label={`Graph of ${exprs.join(' and ')}`}>
         <line x1={P} y1={axisY} x2={W - P} y2={axisY} stroke={FAINT} />
         <line x1={axisX} y1={P} x2={axisX} y2={H - P} stroke={FAINT} />
-        <polyline fill="none" stroke={ACCENT} strokeWidth={2} points={path} />
-        <text x={W - P - 4} y={axisY - 6} textAnchor="end" fontSize="10" fill={FAINT}>y = 0</text>
+        {paths.map((segs, i) => segs.map((sg, j) => <polyline key={`${i}-${j}`} fill="none" stroke={COLORS[i % COLORS.length]} strokeWidth={2} points={sg.join(' ')} />))}
+        <text x={W - P - 4} y={axisY - 6} textAnchor="end" fontSize="12" fill={FAINT}>y = 0</text>
       </svg>
+      {badExprs.length > 0 && (
+        <p role="alert" className="mt-2 rounded-lg border-2 border-warning bg-warning-soft px-3 py-2 text-[13px] font-bold">Could not read: {badExprs.join(', ')}. That curve is not drawn.</p>
+      )}
+      {exprs.length > 1 && (
+        <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[13px] font-bold" aria-label="Legend">
+          {exprs.map((e, i) => (
+            <li key={i} className="flex items-center gap-1.5"><span className="inline-block h-1 w-5 rounded" style={{ background: COLORS[i % COLORS.length] }} aria-hidden />{`f${i + 1}(x) = ${e}`}</li>
+          ))}
+        </ul>
+      )}
       <div className="mt-2 grid grid-cols-2 gap-3">
         <Slider label="ymin" value={ymin} min={-100} max={0} step={0.5} onChange={setYmin} format={v => fmt(v, 1)} />
         <Slider label="ymax" value={ymax} min={0} max={100} step={0.5} onChange={setYmax} format={v => fmt(v, 1)} />
@@ -186,6 +201,7 @@ export function DerivativeLab({ params }: { params: Record<string, unknown> }) {
   };
   return (
     <LabFrame title={`Derivative of f(x) = ${expr}`} caption={`At x = ${fmt(point)}: secant slope (h=${fmt(h)}) = ${fmt(secant, 4)}, symmetric derivative = ${fmt(deriv, 4)}. Shrink h and watch the secant converge on the tangent.`}>
+      <ExprNotice exprs={[expr]} />
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto">
         <line x1={P} y1={toY(0)} x2={W - P} y2={toY(0)} stroke={FAINT} />
         <line x1={toX(0)} y1={P} x2={toX(0)} y2={H - P} stroke={FAINT} />
@@ -248,6 +264,7 @@ export function IntegralLab({ params }: { params: Record<string, unknown> }) {
   })();
   return (
     <LabFrame title={`Riemann sum of f(x) = ${expr} on [${a}, ${b}]`} caption={`${n} midpoint rectangles: ${fmt(approx, 5)}. Simpson reference: ${fmt(exact, 5)}. Error: ${fmt(Math.abs(approx - exact), 5)}, halve dx and the error falls roughly 4×.`}>
+      <ExprNotice exprs={[expr]} />
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto">
         <line x1={P} y1={toY(0)} x2={W - P} y2={toY(0)} stroke={FAINT} />
         {bars.map((bar, i) => {
@@ -277,21 +294,17 @@ export function TaylorLab({ params }: { params: Record<string, unknown> }) {
   const ymin = -3, ymax = 6;
   const toX = (x: number) => P + ((x - xMin) / (xMax - xMin || 1)) * (W - 2 * P);
   const toY = (y: number) => H - P - ((y - ymin) / (ymax - ymin || 1)) * (H - 2 * P);
-  // numeric derivatives at center
-
-
-  const deriv = (k: number): number => {
-    const h = Math.max(1e-4, 1e-3 * Math.max(1, Math.abs(center)));
-    let s = 0;
-    for (let i = 0; i <= k; i++) {
-      const coef = ((-1) ** i) * comb(k, i);
-      s += coef * f(center + (k - 2 * i) * h);
-    }
-    return s / Math.pow(2 * h, k);
-  };
+  // Exact derivatives at the centre for the supported functions; anything else uses a clearly labelled fit.
+  const exact = React.useMemo(() => exactDerivatives(expr), [expr]);
+  const fitted = React.useMemo(() => (exact ? null : taylorCoefficients(f, center, 9)), [exact, f, center]);
+  const deriv = (k: number): number => (exact ? exact(k, center) : (fitted as number[])[k] * fact(k));
+  const maxOrder = exact ? 9 : 7;
+  // Visible feedback instead of a misleading smooth curve: undefined centre, or non-finite samples inside the fit window.
+  const centreUndefined = !Number.isFinite(f(center)) || (exact ? !Number.isFinite(exact(0, center)) || !Number.isFinite(exact(1, center)) : false);
+  const badSamples = exact ? 0 : Array.from({ length: 48 }, (_, i) => f(center + 0.35 * Math.cos(((2 * i + 1) * Math.PI) / 96))).filter(y => !Number.isFinite(y)).length;
   const polyAt = (x: number) => {
     let s = 0;
-    for (let k = 0; k <= order; k++) {
+    for (let k = 0; k <= Math.min(order, maxOrder); k++) {
       s += (deriv(k) / fact(k)) * Math.pow(x - center, k);
     }
     return s;
@@ -302,13 +315,19 @@ export function TaylorLab({ params }: { params: Record<string, unknown> }) {
       const x = xMin + ((xMax - xMin) * i) / 250;
       const y = f(x);
       if (Number.isFinite(y)) fp.push(`${toX(x)},${toY(Math.max(ymin, Math.min(ymax, y)))}`);
-      const ty = polyAt(x);
+      const ty = centreUndefined ? NaN : polyAt(x);
       if (Number.isFinite(ty)) tp.push(`${toX(x)},${toY(Math.max(ymin, Math.min(ymax, ty)))}`);
     }
     return { fp: fp.join(' '), tp: tp.join(' ') };
   })();
   return (
-    <LabFrame title={`Taylor polynomial of ${expr} around x = ${center}`} caption={`Order ${order} polynomial (blue dashed) vs the true function. Increase the order, the approximation improves near the centre first.`}>
+    <LabFrame title={`Taylor polynomial of ${expr} around x = ${center}`} caption={`Order ${order} Taylor polynomial (dashed) vs the true function. ${exact ? 'Coefficients are exact derivatives at the centre.' : 'This function has no closed-form derivatives here, so the curve is a fitted approximation near the centre, not the exact Taylor polynomial.'} Higher order helps only where the series converges, e.g. ln(1+x) fails beyond |x| = 1.`}>
+      <ExprNotice exprs={[expr]} />
+      {(centreUndefined || badSamples > 0) && (
+        <p role="alert" className="mb-2 text-[13px] font-bold text-danger">
+          {centreUndefined ? `f is not defined at x = ${center}, so there is no Taylor polynomial there. Pick a centre inside the domain.` : `f is undefined at ${badSamples} of 48 sample points near x = ${center}, so the fitted curve is not reliable here.`}
+        </p>
+      )}
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto">
         <line x1={P} y1={toY(0)} x2={W - P} y2={toY(0)} stroke={FAINT} />
         <line x1={toX(center)} y1={P} x2={toX(center)} y2={H - P} stroke={FAINT} strokeDasharray="3 3" />
@@ -316,12 +335,51 @@ export function TaylorLab({ params }: { params: Record<string, unknown> }) {
         <polyline fill="none" stroke={ACCENT} strokeWidth={2} strokeDasharray="5 3" points={paths.tp} />
       </svg>
       <div className="mt-2">
-        <Slider label="order" value={order} min={0} max={9} step={1} onChange={setOrder} format={v => v.toFixed(0)} />
+        <Slider label="order" value={Math.min(order, maxOrder)} min={0} max={maxOrder} step={1} onChange={setOrder} format={v => v.toFixed(0)} />
       </div>
     </LabFrame>
   );
 }
 
+/**
+ * Exact k-th derivative at c for functions with a closed form. Returns null when the expression is not one of them.
+ * Exported for tests.
+ */
+export function exactDerivatives(expr: string): ((k: number, c: number) => number) | null {
+  const e = expr.replace(/\s+/g, '').toLowerCase();
+  const f = (n: number): number => (n < 2 ? 1 : n * f(n - 1));
+  if (e === 'exp(x)' || e === 'e^x') return (_k, c) => Math.exp(c);
+  if (e === 'sin(x)') return (k, c) => Math.sin(c + (k * Math.PI) / 2);
+  if (e === 'cos(x)') return (k, c) => Math.cos(c + (k * Math.PI) / 2);
+  if (e === 'sinh(x)') return (k, c) => (k % 2 === 0 ? Math.sinh(c) : Math.cosh(c));
+  if (e === 'cosh(x)') return (k, c) => (k % 2 === 0 ? Math.cosh(c) : Math.sinh(c));
+  if (e === 'ln(1+x)' || e === 'log(1+x)') return (k, c) => (k === 0 ? Math.log(1 + c) : (((k - 1) % 2 === 0 ? 1 : -1) * f(k - 1)) / Math.pow(1 + c, k));
+  if (e === '1/(1-x)') return (k, c) => f(k) / Math.pow(1 - c, k + 1);
+  if (e === '1/(1+x)') return (k, c) => (((k % 2 === 0) ? 1 : -1) * f(k)) / Math.pow(1 + c, k + 1);
+  return null;
+}
+
+/** Exported for tests. Returns a_k ~ f^(k)(c)/k! for k = 0..deg using a well-scaled least-squares fit. */
+export function taylorCoefficients(f: (x: number) => number, c: number, deg: number, r = 0.35): number[] {
+  const N = 48, m = deg + 1;
+  const A: number[][] = Array.from({ length: m }, () => new Array(m + 1).fill(0));
+  for (let i = 0; i < N; i++) {
+    const t = Math.cos(((2 * i + 1) * Math.PI) / (2 * N)); // Chebyshev nodes in [-1, 1]
+    const y = f(c + r * t);
+    if (!Number.isFinite(y)) continue;
+    const pw = [1]; for (let k = 1; k < m * 2; k++) pw.push(pw[k - 1] * t);
+    for (let a = 0; a < m; a++) { for (let b = 0; b < m; b++) A[a][b] += pw[a + b]; A[a][m] += pw[a] * y; }
+  }
+  for (let col = 0; col < m; col++) {
+    let piv = col; for (let r2 = col + 1; r2 < m; r2++) if (Math.abs(A[r2][col]) > Math.abs(A[piv][col])) piv = r2;
+    [A[col], A[piv]] = [A[piv], A[col]];
+    const d = A[col][col] || 1e-300;
+    for (let r2 = col + 1; r2 < m; r2++) { const fct = A[r2][col] / d; for (let k = col; k <= m; k++) A[r2][k] -= fct * A[col][k]; }
+  }
+  const x = new Array(m).fill(0);
+  for (let i = m - 1; i >= 0; i--) { let sum = A[i][m]; for (let j = i + 1; j < m; j++) sum -= A[i][j] * x[j]; x[i] = sum / (A[i][i] || 1e-300); }
+  return x.map((v, k) => v / Math.pow(r, k));
+}
 function comb(n: number, k: number): number { return fact(n) / (fact(k) * fact(n - k)); }
 function fact(n: number): number { let s = 1; for (let i = 2; i <= n; i++) s *= i; return s; }
 
@@ -352,7 +410,7 @@ export function VectorVisual({ params }: { params: Record<string, unknown> }) {
         ))}
         {showSum && <Arrow x1={toX(0)} y1={toY(0)} x2={toX(sum[0])} y2={toY(sum[1])} color="var(--success)" label="sum" dashed />}
       </svg>
-      <label className="mt-2 flex items-center gap-2 text-xs text-muted justify-center">
+      <label className="mt-2 flex items-center gap-2 text-[13px] text-muted justify-center">
         <input type="checkbox" checked={showSum} onChange={e => setShowSum(e.target.checked)} className="qf-check !h-4 !w-4" /> show sum vector
       </label>
     </LabFrame>
@@ -369,10 +427,13 @@ function Arrow({ x1, y1, x2, y2, color, label, dashed }: { x1: number; y1: numbe
         points={`${x2},${y2} ${x2 - len * Math.cos(angle - 0.4)},${y2 - len * Math.sin(angle - 0.4)} ${x2 - len * Math.cos(angle + 0.4)},${y2 - len * Math.sin(angle + 0.4)}`}
         fill={color}
       />
-      {label && <text x={x2 + 6} y={y2 - 4} fontSize="10" fill={color}>{label}</text>}
+      {label && <text x={x2 + 6} y={y2 - 4} fontSize="12" fill={color}>{label}</text>}
     </g>
   );
 }
+
+/** The real unit square, counter-clockwise from the origin. Exported for the geometry regression. */
+export const UNIT_SQUARE: number[][] = [[0, 0], [1, 0], [1, 1], [0, 1]];
 
 /* ---------------- MatrixTransform ---------------- */
 export function MatrixTransform({ params }: { params: Record<string, unknown> }) {
@@ -384,9 +445,9 @@ export function MatrixTransform({ params }: { params: Record<string, unknown> })
   const det = matrix[0][0] * matrix[1][1] - matrix[0][1] * matrix[1][0];
   const apply = ([x, y]: number[]): [number, number] => [matrix[0][0] * x + matrix[0][1] * y, matrix[1][0] * x + matrix[1][1] * y];
   const basis = [[1, 0], [0, 1]];
-  const unit = [[1, 0], [0.6, 1], [0, 1], [1, 0.6]];
+  const unit = UNIT_SQUARE;
   return (
-    <LabFrame title={`Matrix $A = \\begin{pmatrix}${matrix[0][0]} & ${matrix[0][1]} \\\\ ${matrix[1][0]} & ${matrix[1][1]}\\end{pmatrix}`.replace(/\$/g, '')} caption={`det A = ${fmt(det)}. The unit square maps to a parallelogram of area |det A|; negative det flips orientation.`}>
+    <LabFrame title={`Matrix A = [[${matrix[0][0]}, ${matrix[0][1]}], [${matrix[1][0]}, ${matrix[1][1]}]] acting on the unit square`} caption={`det A = ${fmt(det)}. The unit square (dashed, area 1) maps to a parallelogram of area |det A| = ${fmt(Math.abs(det))}${det < 0 ? '; the negative sign means orientation is flipped' : det === 0 ? '; it collapses onto a line' : ''}.`}>
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full max-w-sm mx-auto h-auto">
         {Array.from({ length: 2 * gridRange + 1 }, (_, i) => i - gridRange).map(v => (
           <g key={v} stroke={FAINT} strokeOpacity={0.3}>
@@ -437,7 +498,7 @@ export function MonteCarloPi({ params }: { params: Record<string, unknown> }) {
         </svg>
         <div className="flex-1 w-full space-y-2">
           <Slider label="points" value={n} min={100} max={50000} step={100} onChange={setN} format={v => v.toFixed(0)} />
-          <button onClick={() => setSeed(s => s + 1)} className="text-xs px-3 py-1.5 border rounded-md hover:bg-surface-2">
+          <button onClick={() => setSeed(s => s + 1)} className="text-[13px] px-3 py-1.5 border rounded-md hover:bg-surface-2">
             Resample (seed {seed})
           </button>
         </div>

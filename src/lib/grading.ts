@@ -11,9 +11,27 @@ function norm(s: string): string {
     .replace(/\n+$/, '');
 }
 
-function keywordsHit(answer: string, keywords: string[]): number {
-  const a = answer.toLowerCase();
-  const hits = keywords.filter(k => a.includes(k.toLowerCase())).length;
+/** Match alternative groups at token boundaries. Technical tokens such as int& remain literal. */
+export function keywordsHit(answer: string, keywords: string[]): number {
+  function stem(word: string): string {
+    if (word.length <= 3) return word;
+    if (word.endsWith('ies') && word.length > 4) return word.slice(0, -3) + 'y';
+    if (word.endsWith('ing') && word.length > 5) return word.slice(0, -3).replace(/(.)\1$/, '$1');
+    if (word.endsWith('ed') && word.length > 4) return word.slice(0, -2).replace(/(.)\1$/, '$1');
+    if (word.endsWith('s') && !word.endsWith('ss')) return word.slice(0, -1);
+    return word;
+  }
+  const canonical = (value: string) => value.toLowerCase().normalize('NFKC')
+    .replace(/[\u2010-\u2015]/g, '-').split(/\s+/).filter(Boolean)
+    .map(token => stem(token.replace(/^[.,;:!?()[\]{}]+|[.,;:!?()[\]{}]+$/g, ''))).join(' ');
+  const normal = canonical(answer);
+  const matches = (value: string) => {
+    const term = canonical(value);
+    if (!term) return false;
+    const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp('(?:^|[^a-z0-9_])' + escaped + '(?=$|[^a-z0-9_])', 'i').test(normal);
+  };
+  const hits = keywords.filter(group => group.split('|').some(matches)).length;
   return keywords.length ? hits / keywords.length : 0;
 }
 
@@ -25,7 +43,7 @@ export function gradeAnswer(q: QuizQuestion, a: unknown): boolean {
   if (a === undefined || a === null) return false;
   switch (q.type) {
     case 'mcq':
-      return Number(a) === q.answerIndex;
+      return String(a).trim() !== '' && Number(a) === q.answerIndex;
     case 'ms': {
       if (!Array.isArray(a)) return false;
       const want = [...(q.answerIndices ?? [])].sort().join(',');
@@ -33,8 +51,9 @@ export function gradeAnswer(q: QuizQuestion, a: unknown): boolean {
       return want === got;
     }
     case 'numeric': {
+      if (String(a).trim() === '') return false;
       const v = Number(a);
-      if (Number.isNaN(v)) return false;
+      if (!Number.isFinite(v)) return false;
       const tol = q.tolerance ?? 1e-6;
       return Math.abs(v - (q.answer as number)) <= Math.max(tol, Math.abs(q.answer as number) * 1e-9);
     }

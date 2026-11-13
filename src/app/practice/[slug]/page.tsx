@@ -2,7 +2,7 @@ import { notFound, redirect } from 'next/navigation';
 import Link from 'next/link';
 import { getCurrentUser } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { getProblem } from '@/lib/content';
+import { getProblem, getLessonById } from '@/lib/content';
 import { AppShell } from '@/components/app-shell';
 import { BlockRenderer } from '@/components/lesson-blocks';
 import { CodeWorkspace } from '@/components/code-workspace';
@@ -42,12 +42,14 @@ export default async function ProblemPage({ params }: { params: Promise<{ slug: 
     stubs.python = `import sys\n\ndef main():\n    data = sys.stdin.read().split()\n    # TODO: solve - parse from data, print answers\n    pass\n\nmain()\n`;
   }
 
+  // Only lessons that exist: an unresolved id is dropped, never shown as a dead link.
+  const relatedLessons = (problem.lessons ?? []).map(id => getLessonById(id)?.lesson).filter((l): l is NonNullable<ReturnType<typeof getLessonById>>['lesson'] => !!l);
   const difficultyChip = problem.difficulty === 'easy' ? 'chip chip-success' : problem.difficulty === 'medium' ? 'chip chip-warning' : 'chip chip-danger';
 
   return (
     <AppShell user={{ name: user.name, email: user.email, role: user.role }} isAdmin={user.role === 'admin'}>
-      <div className="max-w-6xl mx-auto">
-        <div className="p-4 sm:p-5 lg:p-6 space-y-5">
+      <div className="mx-auto max-w-[1600px] px-4 sm:px-5 lg:px-6 xl:grid xl:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] xl:items-start xl:gap-6">
+        <div className="py-4 sm:py-5 lg:py-6 space-y-5">
             {/* Statement panel */}
             <section className="qf-card p-5 sm:p-6">
               <div className="flex flex-wrap items-center gap-2">
@@ -69,6 +71,14 @@ export default async function ProblemPage({ params }: { params: Promise<{ slug: 
               <article>
                 {problem.statement.map((b, i) => <BlockRenderer key={i} block={b} />)}
               </article>
+              {relatedLessons.length > 0 && (
+                <div className="mt-4 flex flex-wrap items-center gap-2">
+                  <span className="text-[12px] font-black uppercase tracking-wide text-faint">Related lessons</span>
+                  {relatedLessons.map(l => (
+                    <Link key={l.id} href={`/learn/${l.id}`} className="chip hover:border-accent">{l.title}</Link>
+                  ))}
+                </div>
+              )}
             </section>
 
             {/* Format & constraints */}
@@ -77,7 +87,7 @@ export default async function ProblemPage({ params }: { params: Promise<{ slug: 
                 <span className="icon-tile-sm icon-tile-neutral"><SlidersHorizontal strokeWidth={2.5} /></span>
                 <h2>Format &amp; constraints</h2>
               </div>
-              <div className="space-y-2.5 rounded-2xl border-2 border-border bg-surface-2 p-4 text-sm">
+              <div className="space-y-2.5 rounded-2xl border-2 border-border bg-surface-2 p-4 text-[15px]">
                 <p><strong>Input:</strong> <QMath text={problem.inputFormat} /></p>
                 <p><strong>Output:</strong> <QMath text={problem.outputFormat} /></p>
                 <div>
@@ -87,7 +97,7 @@ export default async function ProblemPage({ params }: { params: Promise<{ slug: 
                   </ul>
                 </div>
               </div>
-              <p className="mt-3 flex items-center gap-1.5 text-xs font-semibold text-faint">
+              <p className="mt-3 flex items-center gap-1.5 text-[13px] font-semibold text-faint">
                 <Info className="h-3.5 w-3.5 shrink-0" />
                 <span className="tnum">Time limit {timeLimitS}s · memory {problem.memoryLimitMb} MB · {problem.tests.length} tests ({visibleTestCount} visible)</span>
               </p>
@@ -109,11 +119,11 @@ export default async function ProblemPage({ params }: { params: Promise<{ slug: 
             <details className="qf-card-flat overflow-hidden group">
               <summary className="flex cursor-pointer select-none items-center gap-2.5 px-4 py-2 list-none [&::-webkit-details-marker]:hidden">
                 <span className="icon-tile-sm icon-tile-neutral !h-8 !w-8"><Lightbulb className="!h-4 !w-4" strokeWidth={2.5} /></span>
-                <span className="text-sm font-extrabold">Hints</span>
+                <span className="text-[15px] font-extrabold">Hints</span>
                 <span className="chip tnum ml-auto">{problem.hints.length}</span>
                 <ChevronDown className="h-4 w-4 text-faint shrink-0 transition-transform group-open:rotate-180" />
               </summary>
-              <ul className="space-y-2.5 px-4 pb-4 pt-1 text-sm">
+              <ul className="space-y-2.5 px-4 pb-4 pt-1 text-[15px]">
                 {problem.hints.map((h, i) => (
                   <li key={i} className="rounded-xl border-2 border-border bg-surface-2 p-3 text-muted"><QMath text={h} /></li>
                 ))}
@@ -124,8 +134,8 @@ export default async function ProblemPage({ params }: { params: Promise<{ slug: 
             <details className="qf-card-flat overflow-hidden group">
               <summary className="flex cursor-pointer select-none items-center gap-2.5 px-4 py-2 list-none [&::-webkit-details-marker]:hidden">
                 <span className="icon-tile-sm icon-tile-neutral !h-8 !w-8"><GraduationCap className="!h-4 !w-4" strokeWidth={2.5} /></span>
-                <span className="text-sm font-extrabold">Editorial</span>
-                <span className="ml-auto hidden text-xs font-semibold text-faint sm:inline">work the problem yourself first</span>
+                <span className="text-[15px] font-extrabold">Editorial</span>
+                <span className="ml-auto hidden text-[13px] font-semibold text-faint sm:inline">work the problem yourself first</span>
                 <ChevronDown className="h-4 w-4 text-faint shrink-0 transition-transform group-open:rotate-180" />
               </summary>
               <div className="px-4 pb-2">
@@ -141,11 +151,11 @@ export default async function ProblemPage({ params }: { params: Promise<{ slug: 
                   <h2>Your submissions</h2>
                   <span className="chip tnum ml-auto">{attempts.length}</span>
                 </div>
-                <ul className="space-y-2 text-xs">
+                <ul className="space-y-2 text-[13px]">
                   {attempts.map(a => (
                     <li key={a.id} className="flex items-center justify-between gap-2 rounded-xl bg-surface-2 px-3 py-2">
                       <span className="font-semibold text-muted tnum">{new Date(a.createdAt).toLocaleString()} · {a.language}</span>
-                      <span className={'chip tnum ' + (a.status === 'passed' ? 'chip-success' : 'chip-danger')}>{a.passedTests}/{a.totalTests}</span>
+                      <span className={'chip tnum ' + (a.status === 'passed' ? 'chip-success' : 'chip-danger')}>{a.language === 'synced' ? (a.status === 'passed' ? 'passed offline' : 'attempted offline') : `${a.passedTests}/${a.totalTests}`}</span>
                     </li>
                   ))}
                 </ul>
@@ -160,7 +170,7 @@ export default async function ProblemPage({ params }: { params: Promise<{ slug: 
           </div>
 
         {/* workspace, full width below the statement, nothing clipped */}
-        <div className="px-4 pb-10 sm:px-5 lg:px-6">
+        <div className="pb-10 xl:sticky xl:top-20 xl:py-6 xl:pb-6">
           <CodeWorkspace slug={slug} stubs={stubs} examples={examples} timeLimitMs={problem.timeLimitMs} />
         </div>
       </div>

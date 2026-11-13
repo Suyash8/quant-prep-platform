@@ -1,5 +1,5 @@
 import 'server-only';
-import { randomBytes, scryptSync, timingSafeEqual, createHash } from 'crypto';
+import { randomBytes, scryptSync, timingSafeEqual, createHmac } from 'crypto';
 import { cookies } from 'next/headers';
 import { db } from '@/lib/db';
 
@@ -26,21 +26,32 @@ export function verifyPassword(password: string, stored: string): boolean {
 // ---------- sessions ----------
 
 
+function sessionSecret(): string {
+  const secret = process.env.SESSION_SECRET;
+  if (secret) return secret;
+  // Never sign cookies with a public constant in production: fail loudly instead.
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('SESSION_SECRET must be set in production');
+  }
+  return 'quantfoundry-local-dev-secret';
+}
+
+function signSession(id: string): string {
+  return createHmac('sha256', sessionSecret()).update(id).digest('hex').slice(0, 32);
+}
+
 export function sessionIdToCookie(id: string): string {
   // sign with a per-deployment secret so cookie tampering fails
-
-
-  const secret = process.env.SESSION_SECRET ?? 'quantfoundry-local-dev-secret';
-  const sig = createHash('sha256').update(id + secret).digest('hex').slice(0, 16);
-  return `${id}.${sig}`;
+  return `${id}.${signSession(id)}`;
 }
 
 function cookieToSessionId(v: string): string | null {
   const [id, sig] = v.split('.');
   if (!id || !sig) return null;
-  const secret = process.env.SESSION_SECRET ?? 'quantfoundry-local-dev-secret';
-  const expect = createHash('sha256').update(id + secret).digest('hex').slice(0, 16);
-  return sig === expect ? id : null;
+  const expect = signSession(id);
+  const a = Buffer.from(sig);
+  const b = Buffer.from(expect);
+  return a.length === b.length && timingSafeEqual(a, b) ? id : null;
 }
 
 export async function createSession(userId: string): Promise<void> {

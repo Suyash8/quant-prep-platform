@@ -1,0 +1,112 @@
+{
+  "slug": "union-find-correlated",
+  "title": "Correlated Asset Clusters",
+  "difficulty": "medium",
+  "category": "graphs",
+  "tags": [
+    "graphs",
+    "union-find",
+    "quant-finance"
+  ],
+  "statement": [
+    {
+      "type": "p",
+      "md": "A risk team groups assets into clusters. Assets are numbered $0$ to $n-1$. You get pairwise correlations for some pairs. Two assets are **linked** when their correlation is strictly greater than a threshold $\\theta$. A cluster is a maximal set of assets connected through chains of links, so if A is linked to B and B to C, all three are in one cluster even when A and C are not directly linked."
+    },
+    {
+      "type": "p",
+      "md": "All correlations and the threshold have exactly two decimal digits, so compare them exactly as hundredths, never as floating point numbers. Assets with no link form a cluster of one."
+    }
+  ],
+  "inputFormat": "First line: $n$, $m$ and $\\theta$ (two decimals). Then $m$ lines `i j rho` with $0 \\le i, j < n$, $i \\ne j$ and $-1.00 \\le \\rho \\le 1.00$ with two decimals.",
+  "outputFormat": "First line: the number of clusters. Then one line per cluster with its members in increasing order separated by spaces. Clusters are ordered by their smallest member.",
+  "constraints": [
+    "$1 \\le n \\le 10^5$, $0 \\le m \\le 2 \\cdot 10^5$",
+    "$\\rho$ and $\\theta$ have exactly two decimal digits",
+    "A pair may appear more than once; each line is judged on its own"
+  ],
+  "examples": [
+    {
+      "input": "5 4 0.50\n0 1 0.80\n1 2 0.55\n3 4 0.50\n0 2 -0.20\n",
+      "output": "3\n0 1 2\n3\n4\n"
+    }
+  ],
+  "hints": [
+    "Use a disjoint set union (union-find) with path compression. Union i and j only when rho > theta.",
+    "Parse the two decimals into integers (hundredths) so equality at the threshold is exact."
+  ],
+  "editorial": [
+    {
+      "type": "p",
+      "md": "Each qualifying pair triggers one `union`. With path compression and union by size the total cost is almost linear. After processing every pair, group assets by their root, sort members, and order the clusters by their smallest member."
+    },
+    {
+      "type": "p",
+      "md": "Comparing floats is the trap here: `0.35 > 0.35` is false, but values produced by arithmetic may not compare equal. Converting to integers of hundredths removes the question."
+    }
+  ],
+  "lessons": [
+    "disc-graphs-trees",
+    "alg-graph-traversal",
+    "pf-diversification-frontier"
+  ],
+  "solutions": {
+    "python": "import sys\n\n\ndef hundredths(text):\n    neg = text.startswith('-')\n    whole, _, frac = text.lstrip('-').partition('.')\n    v = int(whole) * 100 + int((frac + '00')[:2])\n    return -v if neg else v\n\n\ndef main():\n    tok = sys.stdin.read().split()\n    n, m = int(tok[0]), int(tok[1])\n    theta = hundredths(tok[2])\n    parent = list(range(n))\n\n    def find(x):\n        while parent[x] != x:\n            parent[x] = parent[parent[x]]\n            x = parent[x]\n        return x\n\n    for e in range(m):\n        i, j = int(tok[3 + 3 * e]), int(tok[4 + 3 * e])\n        if hundredths(tok[5 + 3 * e]) > theta:\n            a, b = find(i), find(j)\n            if a != b:\n                parent[b] = a\n    groups = {}\n    for v in range(n):\n        groups.setdefault(find(v), []).append(v)\n    clusters = sorted(groups.values(), key=lambda g: g[0])  # members are already in increasing order\n    print('\\n'.join([str(len(clusters))] + [' '.join(map(str, g)) for g in clusters]))\n\n\nmain()",
+    "cpp": "#include <algorithm>\n#include <cstdio>\n#include <cstdlib>\n#include <numeric>\n#include <string>\n#include <vector>\nusing namespace std;\n\nstatic vector<int> parent;\n\nstatic int findRoot(int x) {\n    while (parent[x] != x) {\n        parent[x] = parent[parent[x]];\n        x = parent[x];\n    }\n    return x;\n}\n\nstatic int hundredths(const char* s) {\n    bool neg = s[0] == '-';\n    if (neg) s++;\n    int whole = 0;\n    while (*s && *s != '.') whole = whole * 10 + (*s++ - '0');\n    int frac = 0, digits = 0;\n    if (*s == '.') {\n        s++;\n        while (*s && digits < 2) {\n            frac = frac * 10 + (*s++ - '0');\n            digits++;\n        }\n    }\n    while (digits++ < 2) frac *= 10;\n    int v = whole * 100 + frac;\n    return neg ? -v : v;\n}\n\nint main() {\n    int n, m;\n    char buf[64];\n    if (scanf(\"%d %d %63s\", &n, &m, buf) != 3) return 1;\n    int theta = hundredths(buf);\n    parent.resize(n);\n    iota(parent.begin(), parent.end(), 0);\n    for (int e = 0; e < m; e++) {\n        int i, j;\n        if (scanf(\"%d %d %63s\", &i, &j, buf) != 3) return 1;\n        if (hundredths(buf) > theta) {\n            int a = findRoot(i), b = findRoot(j);\n            if (a != b) parent[b] = a;\n        }\n    }\n    vector<vector<int>> groups(n);\n    for (int v = 0; v < n; v++) groups[findRoot(v)].push_back(v);\n    vector<vector<int>> clusters;\n    for (auto& g : groups) {\n        if (!g.empty()) clusters.push_back(g);\n    }\n    sort(clusters.begin(), clusters.end(), [](const vector<int>& a, const vector<int>& b) { return a[0] < b[0]; });\n    printf(\"%zu\\n\", clusters.size());\n    for (const auto& g : clusters) {\n        for (size_t k = 0; k < g.size(); k++) printf(k ? \" %d\" : \"%d\", g[k]);\n        printf(\"\\n\");\n    }\n    return 0;\n}"
+  },
+  "tests": [
+    {
+      "input": "5 4 0.50\n0 1 0.80\n1 2 0.55\n3 4 0.50\n0 2 -0.20\n",
+      "expected": "3\n0 1 2\n3\n4\n",
+      "hidden": false
+    },
+    {
+      "input": "1 0 0.00\n",
+      "expected": "1\n0\n",
+      "hidden": true
+    },
+    {
+      "input": "2 1 -1.00\n0 1 -1.00\n",
+      "expected": "2\n0\n1\n",
+      "hidden": true
+    },
+    {
+      "input": "2 1 0.99\n0 1 1.00\n",
+      "expected": "1\n0 1\n",
+      "hidden": true
+    },
+    {
+      "input": "3 3 0.00\n0 1 0.00\n1 2 -0.01\n0 2 0.01\n",
+      "expected": "2\n0 2\n1\n",
+      "hidden": true
+    },
+    {
+      "input": "4 3 -0.50\n3 2 -0.49\n2 1 -0.49\n1 0 -0.49\n",
+      "expected": "1\n0 1 2 3\n",
+      "hidden": true
+    },
+    {
+      "input": "3 2 0.10\n0 1 0.10\n0 1 0.11\n",
+      "expected": "2\n0 1\n2\n",
+      "hidden": true
+    },
+    {
+      "input": "1 0 -0.15\n",
+      "expected": "1\n0\n",
+      "hidden": true
+    },
+    {
+      "input": "2 5 0.00\n0 1 0.55\n0 1 -0.61\n1 0 0.52\n0 1 0.66\n1 0 -0.59\n",
+      "expected": "1\n0 1\n",
+      "hidden": true
+    },
+    {
+      "input": "6 10 0.36\n0 5 0.36\n3 4 0.93\n0 3 0.02\n5 4 0.82\n4 3 0.22\n0 5 0.31\n4 5 -0.40\n0 3 -0.73\n1 4 0.68\n5 2 -0.67\n",
+      "expected": "3\n0\n1 3 4 5\n2\n",
+      "hidden": true
+    }
+  ],
+  "timeLimitMs": 4000,
+  "memoryLimitMb": 256,
+  "estMinutes": 30
+}

@@ -1,0 +1,112 @@
+{
+  "slug": "order-book-depth",
+  "title": "Order Book Depth",
+  "difficulty": "medium",
+  "category": "systems-design",
+  "tags": [
+    "systems-design",
+    "order-book",
+    "hashing",
+    "sorting"
+  ],
+  "statement": [
+    {
+      "type": "p",
+      "md": "A market data handler rebuilds a depth-of-book view from a message stream. Each message either adds quantity at a price level or removes quantity from it. After the whole stream, print the **top $k$ price levels** on each side with their total resting quantity."
+    },
+    {
+      "type": "p",
+      "md": "Bids are ordered from the highest price down, asks from the lowest price up. Levels whose quantity reaches zero disappear. A side with fewer than $k$ levels prints all it has, and an empty side prints `-`."
+    }
+  ],
+  "inputFormat": "First line: $n$ and $k$. Then $n$ messages, one per line: `A side price qty` adds $qty$ at $price$ on `side` (`B` or `S`); `C side price qty` removes $qty$ from that level.",
+  "outputFormat": "Two lines. The first starts with `BIDS`, the second with `ASKS`. Each is followed by up to $k$ levels written `price:qty` separated by spaces, or by `-` when the side is empty.",
+  "constraints": [
+    "$1 \\le n \\le 2 \\cdot 10^5$, $1 \\le k \\le 10$",
+    "$1 \\le price \\le 10^9$, $1 \\le qty \\le 10^9$",
+    "A remove never takes more than the level currently holds; level totals fit in 64 bits"
+  ],
+  "examples": [
+    {
+      "input": "6 2\nA B 100 5\nA B 99 7\nA B 100 3\nA S 101 4\nC B 99 7\nA S 102 1\n",
+      "output": "BIDS 100:8\nASKS 101:4 102:1\n"
+    }
+  ],
+  "hints": [
+    "Keep one hash map per side from price to total quantity. Delete the key when the quantity reaches 0.",
+    "Sort only at the end: the whole stream costs O(n), and sorting the surviving levels costs O(L log L)."
+  ],
+  "editorial": [
+    {
+      "type": "p",
+      "md": "Aggregating as the stream arrives needs only a hash map per side. Only the final snapshot is requested, so the levels can be sorted once at the end. If you needed the top of book after every message, a sorted map or heap would be the right structure instead."
+    },
+    {
+      "type": "p",
+      "md": "Deleting zero-quantity levels matters: a stale level with quantity 0 would show up in the depth and hide the next real level."
+    }
+  ],
+  "lessons": [
+    "mic-order-books",
+    "qalg-orderbook-structures"
+  ],
+  "solutions": {
+    "python": "import sys\n\n\ndef main():\n    lines = sys.stdin.read().split('\\n')\n    n, k = map(int, lines[0].split())\n    book = {'B': {}, 'S': {}}\n    for line in lines[1:1 + n]:\n        kind, side, price, qty = line.split()\n        price, qty = int(price), int(qty)\n        levels = book[side]\n        total = levels.get(price, 0) + (qty if kind == 'A' else -qty)\n        if total == 0:\n            levels.pop(price, None)\n        else:\n            levels[price] = total\n\n    def show(levels, descending):\n        top = sorted(levels, reverse=descending)[:k]\n        return ' '.join(f\"{p}:{levels[p]}\" for p in top) if top else '-'\n\n    print('BIDS ' + show(book['B'], True))\n    print('ASKS ' + show(book['S'], False))\n\n\nmain()",
+    "cpp": "#include <algorithm>\n#include <cstdio>\n#include <string>\n#include <unordered_map>\n#include <vector>\nusing namespace std;\n\nstatic void show(const char* name, unordered_map<long long, long long>& levels, bool descending, int k) {\n    vector<long long> prices;\n    for (const auto& kv : levels) prices.push_back(kv.first);\n    sort(prices.begin(), prices.end());\n    if (descending) reverse(prices.begin(), prices.end());\n    printf(\"%s\", name);\n    if (prices.empty()) printf(\" -\");\n    for (size_t i = 0; i < prices.size() && (int)i < k; i++) printf(\" %lld:%lld\", prices[i], levels[prices[i]]);\n    printf(\"\\n\");\n}\n\nint main() {\n    int n, k;\n    if (scanf(\"%d %d\", &n, &k) != 2) return 1;\n    unordered_map<long long, long long> bids, asks;\n    while (n--) {\n        char kind, side;\n        long long price, qty;\n        if (scanf(\" %c %c %lld %lld\", &kind, &side, &price, &qty) != 4) return 1;\n        auto& levels = side == 'B' ? bids : asks;\n        long long total = levels[price] + (kind == 'A' ? qty : -qty);\n        if (total == 0) levels.erase(price);\n        else levels[price] = total;\n    }\n    show(\"BIDS\", bids, true, k);\n    show(\"ASKS\", asks, false, k);\n    return 0;\n}"
+  },
+  "tests": [
+    {
+      "input": "6 2\nA B 100 5\nA B 99 7\nA B 100 3\nA S 101 4\nC B 99 7\nA S 102 1\n",
+      "expected": "BIDS 100:8\nASKS 101:4 102:1\n",
+      "hidden": false
+    },
+    {
+      "input": "1 1\nA B 1 1\n",
+      "expected": "BIDS 1:1\nASKS -\n",
+      "hidden": true
+    },
+    {
+      "input": "2 3\nA S 1000000000 1000000000\nC S 1000000000 1000000000\n",
+      "expected": "BIDS -\nASKS -\n",
+      "hidden": true
+    },
+    {
+      "input": "5 2\nA B 5 1\nA B 6 1\nA B 7 1\nA S 8 2\nA S 9 2\n",
+      "expected": "BIDS 7:1 6:1\nASKS 8:2 9:2\n",
+      "hidden": true
+    },
+    {
+      "input": "4 10\nA B 1 1\nA B 1 1\nC B 1 2\nA S 2 2\n",
+      "expected": "BIDS -\nASKS 2:2\n",
+      "hidden": true
+    },
+    {
+      "input": "3 1\nA S 3 1\nA S 2 1\nA S 1 1\n",
+      "expected": "BIDS -\nASKS 1:1\n",
+      "hidden": true
+    },
+    {
+      "input": "1 4\nA B 7 4\n",
+      "expected": "BIDS 7:4\nASKS -\n",
+      "hidden": true
+    },
+    {
+      "input": "5 3\nA B 4 7\nC B 4 5\nA S 8 9\nA S 4 8\nC S 8 3\n",
+      "expected": "BIDS 4:2\nASKS 4:8 8:6\n",
+      "hidden": true
+    },
+    {
+      "input": "7 1\nA S 4 3\nA S 3 6\nA S 3 4\nA S 7 4\nA S 4 7\nC S 4 1\nA S 5 8\n",
+      "expected": "BIDS -\nASKS 3:10\n",
+      "hidden": true
+    },
+    {
+      "input": "8 3\nA B 6 3\nA S 5 9\nA B 6 8\nA B 6 1\nA S 5 1\nA S 6 9\nC B 6 7\nA B 3 8\n",
+      "expected": "BIDS 6:5 3:8\nASKS 5:10 6:9\n",
+      "hidden": true
+    }
+  ],
+  "timeLimitMs": 4000,
+  "memoryLimitMb": 256,
+  "estMinutes": 30
+}

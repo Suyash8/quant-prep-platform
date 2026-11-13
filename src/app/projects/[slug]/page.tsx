@@ -6,6 +6,7 @@ import { getProject, getCurriculumGraph, type LessonNode } from '@/lib/content';
 import { AppShell } from '@/components/app-shell';
 import { BlockRenderer } from '@/components/lesson-blocks';
 import { ProjectTracker } from '@/components/project-tracker';
+import { ProjectTabs } from '@/components/project-tabs';
 import {
   ArrowRight, BookOpen, Check, CheckCircle2, ChevronRight, Clock, FileCode2, FileText,
   Flag, Info, Lightbulb, ListChecks, Lock, Rocket, Scale, Trophy, Zap,
@@ -18,6 +19,25 @@ const TIER_META: Record<string, { tile: string; chip: string; icon: typeof BookO
 };
 
 const SLIDE_DELAYS = ['0ms', '60ms', '120ms', '180ms', '240ms', '300ms'];
+
+/** Split stored markdown into paragraph and list blocks so bullet lists render as lists. */
+function mdBlocks(text: string) {
+  return text.split(/\n{2,}/).flatMap(chunk => {
+    const lines = chunk.split('\n').map(l => l.trim()).filter(Boolean);
+    const out: Array<{ type: 'p'; md: string } | { type: 'list'; ordered: boolean; items: string[] }> = [];
+    let para: string[] = [];
+    let items: string[] = [];
+    const flushPara = () => { if (para.length) out.push({ type: 'p', md: para.join(' ') }); para = []; };
+    const flushItems = () => { if (items.length) out.push({ type: 'list', ordered: false, items }); items = []; };
+    for (const l of lines) {
+      if (/^[-*] /.test(l)) { flushPara(); items.push(l.slice(2)); }
+      else if (items.length) { items[items.length - 1] += ' ' + l; }
+      else para.push(l);
+    }
+    flushPara(); flushItems();
+    return out;
+  });
+}
 
 export default async function ProjectDetailPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
@@ -48,8 +68,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
 
   return (
     <AppShell user={{ name: user.name, email: user.email, role: user.role }} isAdmin={user.role === 'admin'}>
-      <div className="max-w-4xl mx-auto px-4 lg:px-6 py-8">
-        <nav className="text-xs text-faint mb-3 font-semibold">
+      <div className="max-w-6xl mx-auto px-4 lg:px-6 py-8">
+        <nav className="text-[13px] text-faint mb-3 font-semibold">
           <Link href="/projects" className="hover:text-muted">Projects</Link> › {project.title}
         </nav>
 
@@ -58,7 +78,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
           <div className="flex items-start gap-4 flex-wrap sm:flex-nowrap">
             <span className={`icon-tile ${tier.tile}`}><TierIcon /></span>
             <div className="flex-1 min-w-0">
-              <p className="text-[11px] font-black uppercase tracking-[0.14em] text-faint">Project {project.order}</p>
+              <p className="text-[12px] font-black uppercase tracking-[0.14em] text-faint">Project {project.order}</p>
               <h1 className="text-2xl font-extrabold tracking-tight mt-0.5">{project.title}</h1>
               <div className="mt-3 flex items-center gap-1.5 flex-wrap">
                 <span className={`chip ${tier.chip} capitalize`}>{project.difficulty}</span>
@@ -82,6 +102,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
           initialNotes={progress?.notes ?? ''}
         />
 
+        <ProjectTabs labels={['Overview', 'Milestones', 'Starter files', 'Criteria']} counts={['', project.milestones.length, project.starterFiles.length, '']}>
+        <div>
         {/* prerequisites */}
         {prereqNodes.length > 0 && (
           <section className="mt-8">
@@ -102,8 +124,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                   >
                     <span className={`icon-tile icon-tile-sm ${isDone ? 'icon-tile-accent' : 'icon-tile-info'}`}><BookOpen /></span>
                     <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-sm truncate">{n.title}</p>
-                      <p className="text-xs text-faint mt-0.5">{n.moduleTitle}</p>
+                      <p className="font-semibold text-[15px] truncate">{n.title}</p>
+                      <p className="text-[13px] text-faint mt-0.5">{n.moduleTitle}</p>
                     </div>
                     {isDone ? <CheckCircle2 className="h-5 w-5 text-accent shrink-0" /> : <Lock className="h-4 w-4 text-faint shrink-0" />}
                     <ChevronRight className="h-4 w-4 text-faint shrink-0" />
@@ -123,7 +145,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                 <span className="icon-tile icon-tile-sm icon-tile-accent"><Info /></span>
                 <h2>Context</h2>
               </div>
-              <div className="prose-qf text-sm"><BlockRenderer block={{ type: 'p', md: project.context }} /></div>
+              <div className="prose-qf text-[15px]"><BlockRenderer block={{ type: 'p', md: project.context }} /></div>
             </div>
           </div>
           <div className="qf-card p-5 anim-slide-up relative overflow-hidden">
@@ -133,7 +155,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                 <span className="icon-tile icon-tile-sm icon-tile-info"><FileText /></span>
                 <h2>Problem statement</h2>
               </div>
-              <div className="prose-qf text-sm"><BlockRenderer block={{ type: 'p', md: project.problem }} /></div>
+              <div className="prose-qf text-[15px]">{mdBlocks(project.problem).map((b, i) => <BlockRenderer key={i} block={b} />)}</div>
             </div>
           </div>
         </section>
@@ -149,14 +171,16 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
             <ul className="space-y-1">
               {project.requirements.map((r, i) => (
                 <li key={i} className="flex gap-3 items-start rounded-xl px-3 py-2.5 hover:bg-surface-2/60 transition-colors">
-                  <span className="h-6 w-6 shrink-0 rounded-lg bg-accent-soft text-accent-deep dark:text-accent text-[11px] font-black tnum flex items-center justify-center mt-0.5">{i + 1}</span>
-                  <span className="text-sm font-semibold leading-relaxed">{r}</span>
+                  <span className="h-6 w-6 shrink-0 rounded-lg bg-accent-soft text-accent-deep dark:text-accent text-[12px] font-black tnum flex items-center justify-center mt-0.5">{i + 1}</span>
+                  <span className="text-[15px] font-semibold leading-relaxed">{r}</span>
                 </li>
               ))}
             </ul>
           </div>
         </section>
 
+        </div>
+        <div>
         {/* milestones detail */}
         <section className="mt-8">
           <div className="section-head">
@@ -174,7 +198,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                   style={{ animationDelay: SLIDE_DELAYS[i % SLIDE_DELAYS.length] }}
                 >
                   <span
-                    className={`w-8 h-8 rounded-full font-black text-sm flex items-center justify-center shrink-0 tnum z-10 ring-4 ring-surface ${
+                    className={`w-8 h-8 rounded-full font-black text-[15px] flex items-center justify-center shrink-0 tnum z-10 ring-4 ring-surface ${
                       isDone ? 'bg-accent text-white' : 'border-2 border-border-strong bg-surface text-faint'
                     }`}
                   >
@@ -182,10 +206,10 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
                   </span>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2 flex-wrap">
-                      <h3 className={`font-bold text-sm ${isDone ? 'text-accent-deep dark:text-accent' : ''}`}>{m.title}</h3>
+                      <h3 className={`font-bold text-[15px] ${isDone ? 'text-accent-deep dark:text-accent' : ''}`}>{m.title}</h3>
                       <span className={`chip tnum ${isDone ? 'chip-success' : ''}`}><Clock className="h-3 w-3" /> ~{m.estHours}h{isDone ? ' · done' : ''}</span>
                     </div>
-                    <p className="mt-1 text-sm text-muted leading-relaxed">{m.detail}</p>
+                    <p className="mt-1 text-[15px] text-muted leading-relaxed">{m.detail}</p>
                   </div>
                 </li>
               );
@@ -201,11 +225,13 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
           </div>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             {project.designGuidance.map((b, i) => (
-              <div key={i} className="qf-card-flat p-5 prose-qf text-sm"><BlockRenderer block={b} /></div>
+              <div key={i} className="qf-card-flat p-5 prose-qf text-[15px]"><BlockRenderer block={b} /></div>
             ))}
           </div>
         </section>
 
+        </div>
+        <div>
         {/* starter files */}
         {project.starterFiles.length > 0 && (
           <section className="mt-8">
@@ -216,13 +242,15 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
             </div>
             {project.starterFiles.map(f => (
               <figure key={f.path} className="mt-3">
-                <figcaption className="text-xs text-faint mb-1 flex items-center gap-1.5 font-semibold"><FileCode2 className="h-3 w-3" /> {f.path}</figcaption>
+                <figcaption className="text-[13px] text-faint mb-1 flex items-center gap-1.5 font-semibold"><FileCode2 className="h-3 w-3" /> {f.path}</figcaption>
                 <div className="code-block"><code>{f.content}</code></div>
               </figure>
             ))}
           </section>
         )}
 
+        </div>
+        <div>
         {/* evaluation criteria */}
         <section className="mt-8">
           <div className="section-head">
@@ -256,8 +284,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
             <ul className="space-y-1">
               {project.documentationRequirements.map((d, i) => (
                 <li key={i} className="flex gap-3 items-start rounded-xl px-3 py-2.5 hover:bg-surface-2/60 transition-colors">
-                  <span className="h-6 w-6 shrink-0 rounded-lg bg-info-soft text-info text-[11px] font-black tnum flex items-center justify-center mt-0.5">{i + 1}</span>
-                  <span className="text-sm font-semibold leading-relaxed">{d}</span>
+                  <span className="h-6 w-6 shrink-0 rounded-lg bg-info-soft text-info text-[12px] font-black tnum flex items-center justify-center mt-0.5">{i + 1}</span>
+                  <span className="text-[15px] font-semibold leading-relaxed">{d}</span>
                 </li>
               ))}
             </ul>
@@ -272,11 +300,14 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
             <span className="chip ml-auto">Optional · for the ambitious</span>
           </div>
           <div className="qf-card p-5">
-            <ul className="prose-qf list-disc pl-5 space-y-1.5 text-sm">
+            <ul className="prose-qf list-disc pl-5 space-y-1.5 text-[15px]">
               {project.extensionChallenges.map((e, i) => <li key={i}>{e}</li>)}
             </ul>
           </div>
         </section>
+
+        </div>
+        </ProjectTabs>
 
         {/* closing CTA */}
         <section className="mt-10 rounded-2xl border-2 border-accent bg-accent-soft p-5 sm:p-6 anim-slide-up">
@@ -285,7 +316,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
               <span className="icon-tile bg-surface text-accent-deep dark:text-accent"><Trophy /></span>
               <div>
                 <h2 className="font-extrabold text-lg tracking-tight">Build it, ship it, show it</h2>
-                <p className="text-sm text-muted">Log milestones as you go, honest notes and reproducible benchmarks become the evidence employers ask about.</p>
+                <p className="text-[15px] text-muted">Log milestones as you go, honest notes and reproducible benchmarks become the evidence employers ask about.</p>
               </div>
             </div>
             <div className="flex items-center gap-2.5 flex-wrap">

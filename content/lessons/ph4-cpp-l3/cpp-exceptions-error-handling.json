@@ -1,0 +1,254 @@
+{
+  "id": "cpp-exceptions-error-handling",
+  "moduleId": "ph4-cpp-l3",
+  "title": "Exceptions, Error Codes and Safety Guarantees",
+  "estMinutes": 35,
+  "difficulty": "advanced",
+  "prereqs": [
+    "cpp-raii"
+  ],
+  "objectives": [
+    "Explain propagation and destruction during stack unwinding",
+    "Distinguish basic, strong and nothrow guarantees",
+    "Choose explicit errors or exceptions at a service boundary"
+  ],
+  "motivation": "You load a pricing configuration before the market opens. A missing field is an ordinary operational failure, but a half-updated configuration could make later calculations silently wrong. Error handling has two jobs: report what failed and specify what state remains. Start by writing the postcondition for both success and failure. An exception can carry the reason across call frames; an error result makes each failure branch visible. Neither mechanism repairs state automatically. You must design ownership and mutation so the caller can decide whether to retry, reject the input or stop the service.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Failures are interface behaviour"
+    },
+    {
+      "type": "p",
+      "md": "You load a pricing configuration before the market opens. A missing field is an ordinary operational failure, but a half-updated configuration could make later calculations silently wrong. Error handling has two jobs: report what failed and specify what state remains. Start by writing the postcondition for both success and failure. An exception can carry the reason across call frames; an error result makes each failure branch visible. Neither mechanism repairs state automatically. You must design ownership and mutation so the caller can decide whether to retry, reject the input or stop the service."
+    },
+    {
+      "type": "h2",
+      "text": "Throw, catch and unwind"
+    },
+    {
+      "type": "p",
+      "md": "A throw expression creates an exception object and transfers control to a matching handler. Catch standard exception hierarchies by const reference to preserve dynamic type and avoid copying. During propagation, automatic objects in exited scopes are destroyed in reverse construction order. Only fully constructed objects are destroyed. If a constructor fails, its completed bases and members are cleaned up, but that object's own destructor does not run. RAII handles files, memory and locks on these paths. A raw pointer variable does not own its allocation merely because it is on the stack. Establish ownership before another operation can throw."
+    },
+    {
+      "type": "h2",
+      "text": "Name the guarantee"
+    },
+    {
+      "type": "p",
+      "md": "The basic guarantee means invariants still hold and resources do not leak, although values may change. The strong guarantee adds commit-or-rollback semantics: failure has no observable effect on the protected state. The nothrow guarantee says the operation does not fail by throwing. These are operation contracts, not labels for an entire class. Allocation, callbacks and logging can weaken them. A vector operation may provide the strong guarantee under suitable element-type conditions, but arbitrary throwing moves can prevent it. Document actual preconditions rather than assuming every container mutation is transactional."
+    },
+    {
+      "type": "h2",
+      "text": "Worked example: prepare, then commit"
+    },
+    {
+      "type": "p",
+      "md": "The active price vector is [100, 101] and a replacement is [102, -1]. Validate a temporary before changing the active vector. Reject the negative value, leaving [100, 101] unchanged. For the valid replacement [102, 103], swap the temporary into place after all checks succeed. With the ordinary allocator, vector swap is non-throwing, so the commit is small and clear. Assigning each validated element directly into the active vector is different: the first element could change before the second fails. The complete program demonstrates the failed transaction followed by a successful one."
+    },
+    {
+      "type": "h2",
+      "text": "Worked example: release on both paths"
+    },
+    {
+      "type": "p",
+      "md": "A local guard that owns a lock releases it when a nested validator throws. You do not need an unlock call in every catch branch. Imagine two acquired resources, file then lock: unwinding destroys the lock guard before the file wrapper, reversing construction. Catching and continuing can still be unsafe if the interrupted operation promised only the basic guarantee. Decide whether the remaining state is suitable for another task. A destructor must not let an exception escape during unwinding, because that invokes termination. Report flush or close failures through an explicit operation when a caller needs to handle them."
+    },
+    {
+      "type": "h2",
+      "text": "noexcept is not recovery"
+    },
+    {
+      "type": "p",
+      "md": "The noexcept specifier promises that an exception will not escape. If one does, std::terminate is called; it is not converted into an error value. Conditional noexcept lets a template depend on its members and may let containers prefer a safe move. Do not add it to an allocating function to make a benchmark look clean. Hot trading paths often choose status values to keep failure and latency policies visible, while startup paths may use exceptions. Measure the target implementation: the language does not promise a fixed cost. A nothrow function can still block or terminate; it is not automatically suitable for a latency budget."
+    },
+    {
+      "type": "h2",
+      "text": "Production error boundaries"
+    },
+    {
+      "type": "p",
+      "md": "std::error_code combines a numeric value and an error category. It is useful at operating-system and library boundaries. Check the code before consuming a result; a default constructed error_code represents success. Make it difficult to observe an invalid payload through your result interface. Translate errors once at an architectural boundary, preserving useful context without logging secrets. In an order gateway, distinguish rejection from an unknown outcome after a timeout. Retrying an unknown order is a protocol decision, not something a catch-all handler settles. Test injected failures, resource counts and state equality alongside normal-case throughput."
+    },
+    {
+      "type": "h2",
+      "text": "Worked example: run and check"
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <iostream>\n#include <stdexcept>\n#include <vector>\nvoid replace(std::vector<int>& a, std::vector<int> b) {\n    for (int x : b) if (x < 0) throw std::invalid_argument(\"negative\");\n    a.swap(b);\n}\nint main() {\n    std::vector<int> a{100, 101};\n    try { replace(a, {102, -1}); }\n    catch (const std::invalid_argument&) { std::cout << a[0] << ' ' << a[1] << '\\n'; }\n    replace(a, {102, 103});\n    std::cout << a[0] << ' ' << a[1] << '\\n';\n}",
+      "caption": "Complete C++20 program"
+    },
+    {
+      "type": "p",
+      "md": "The exact output is `100 101; 102 103`. Run the example before changing a parameter, then predict the direction of the change. The assertions encode the stated checks; a failed assertion means that the implementation and the claimed result disagree."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Check this misconception",
+      "md": "The strong guarantee is commit or rollback. Valid but changed state satisfies only the basic guarantee; catching an exception alone cannot undo partial mutation."
+    },
+    {
+      "type": "interactive",
+      "component": "MemoryLayout",
+      "params": {},
+      "caption": "Related concept lab. The lab illustrates the named building block; it is not a full implementation of every model in this lesson."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Reject a negative configuration value before commit. Success check: Invalid input preserves [5, 6].",
+    "hints": [
+      "Keep the active state separate.",
+      "Validate the entire candidate.",
+      "Assign only after the complete check."
+    ],
+    "solution": "\n```python\na = [5, 6]\nb = [7, -2]\nif all(x >= 0 for x in b):\n    a = b\nassert a == [5, 6]\nprint(a)\n```\nExpected output: `[5, 6]`.",
+    "successCheck": "Invalid input preserves [5, 6]."
+  },
+  "independentExercise": {
+    "prompt": "Test a valid transaction after a rejected candidate. Success check: The valid candidate replaces both active values.",
+    "hints": [
+      "Prepare a complete replacement.",
+      "Reject any negative number.",
+      "Assign the whole replacement after validation."
+    ],
+    "solution": "\n```python\na = [5, 6]\nb = [7, 8]\nassert all(x >= 0 for x in b)\na[:] = b\nassert a == [7, 8]\nprint(a)\n```\nExpected output: `[7, 8]`.",
+    "successCheck": "The valid candidate replaces both active values."
+  },
+  "commonMistakes": [
+    "The strong guarantee is commit or rollback. Valid but changed state satisfies only the basic guarantee; catching an exception alone cannot undo partial mutation.",
+    "An escaping exception violates noexcept and invokes std::terminate. The specifier does not install a catch handler or transform exceptions into error codes."
+  ],
+  "realWorldApplication": "Use the assumptions and checks above when reviewing exceptions, error codes and safety guarantees. Record inputs, state the failure conditions and compare the result with a simple independent calculation.",
+  "quantFinanceApplication": "For a trading or risk workflow, validate the model and timestamp conventions before using exceptions, error codes and safety guarantees. The worked result is conditional on its assumptions, not a return promise.",
+  "summary": [
+    "Explain propagation and destruction during stack unwinding",
+    "Distinguish basic, strong and nothrow guarantees",
+    "Choose explicit errors or exceptions at a service boundary"
+  ],
+  "quiz": [
+    {
+      "type": "mcq",
+      "prompt": "Which promise describes the strong exception guarantee?",
+      "options": [
+        "Failure leaves protected state unchanged",
+        "State remains valid but values may change",
+        "Every exception bypasses caller handlers",
+        "Every failure stops the entire process"
+      ],
+      "answerIndex": 0,
+      "explanation": "The strong guarantee is commit or rollback. Valid but changed state satisfies only the basic guarantee; catching an exception alone cannot undo partial mutation.",
+      "id": "q1",
+      "objective": 1
+    },
+    {
+      "type": "mcq",
+      "prompt": "What if an exception escapes a noexcept function?",
+      "options": [
+        "A default error code is returned",
+        "std::terminate is invoked",
+        "Every caller catches std::exception",
+        "The throwing branch is erased"
+      ],
+      "answerIndex": 1,
+      "explanation": "An escaping exception violates noexcept and invokes std::terminate. The specifier does not install a catch handler or transform exceptions into error codes.",
+      "id": "q2",
+      "objective": 0
+    },
+    {
+      "type": "numeric",
+      "prompt": "Validation of 3 candidate prices fails on price 2 before commit. Under the strong guarantee, how many active prices change?",
+      "answer": 0,
+      "tolerance": 1e-06,
+      "explanation": "No active price changes before commit. Updating one validated element at a time would break rollback when a later validation step failed.",
+      "id": "q3",
+      "objective": 1
+    },
+    {
+      "type": "code-output",
+      "prompt": "What does this rollback model print?",
+      "code": "a = [100, 101]\nb = [102, -1]\nif all(x >= 0 for x in b):\n    a = b\nprint(a)",
+      "language": "python",
+      "answer": "[100, 101]",
+      "explanation": "The negative candidate fails validation. Assignment never occurs, so the active list remains unchanged rather than containing the partially accepted replacement.",
+      "id": "q4",
+      "objective": 1
+    },
+    {
+      "type": "short",
+      "prompt": "Why must cleanup not throw during unwinding?",
+      "modelAnswer": "An exception escaping a destructor during unwinding invokes termination; use non-throwing cleanup and report failures explicitly.",
+      "keywords": [
+        "unwinding|unwind|propagate|propagation",
+        "terminate|termination",
+        "cleanup|destructor|release"
+      ],
+      "explanation": "Unwinding already carries an exception. Letting another escape cleanup invokes termination rather than delivering both failures to an ordinary catch block.",
+      "id": "q5",
+      "objective": 0
+    },
+    {
+      "type": "ms",
+      "prompt": "Which error-handling choices can fit a trading-system design?",
+      "options": [
+        "Use explicit status values where hot-path failure policy must be visible",
+        "Use exceptions at startup while retaining RAII cleanup",
+        "Assume every acknowledgement timeout means an order was rejected",
+        "Add noexcept to every allocating function to convert errors to zero"
+      ],
+      "answerIndices": [
+        0,
+        1
+      ],
+      "explanation": "Explicit status values and startup exceptions can both fit a documented design. A timeout leaves order status uncertain, and noexcept terminates on escaping exceptions rather than converting them into success-like values.",
+      "id": "q6",
+      "objective": 2
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "Which promise describes the strong exception guarantee?",
+      "back": "Failure leaves protected state unchanged"
+    },
+    {
+      "type": "concept",
+      "front": "What if an exception escapes a noexcept function?",
+      "back": "std::terminate is invoked"
+    },
+    {
+      "type": "concept",
+      "front": "Validation of 3 candidate prices fails on price 2 before commit. Under the strong guarantee, how many active prices change?",
+      "back": "The result is 0 under the stated inputs."
+    },
+    {
+      "type": "concept",
+      "front": "Why must cleanup not throw during unwinding?",
+      "back": "An exception escaping a destructor during unwinding invokes termination; use non-throwing cleanup and report failures explicitly."
+    },
+    {
+      "type": "concept",
+      "front": "Which choices support a strong-guarantee update?",
+      "back": "Prepare in temporary owned storage, Commit with a non-throwing swap"
+    }
+  ],
+  "references": [
+    {
+      "label": "cppreference: exceptions",
+      "url": "https://en.cppreference.com/w/cpp/language/exceptions"
+    },
+    {
+      "label": "cppreference: noexcept",
+      "url": "https://en.cppreference.com/w/cpp/language/noexcept_spec"
+    },
+    {
+      "label": "C++ Core Guidelines",
+      "url": "https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines"
+    }
+  ],
+  "skills": [
+    "cpp-memory"
+  ]
+}

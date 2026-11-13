@@ -270,7 +270,7 @@ export function LessonPlayer({
               exit={{ opacity: 0, x: -48 }}
               transition={{ duration: 0.22, ease: 'easeOut' }}
             >
-              <p className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-accent-deep dark:text-accent mb-1.5 flex items-center gap-1.5">
+              <p className="text-[12px] font-extrabold uppercase tracking-[0.14em] text-accent-deep dark:text-accent mb-1.5 flex items-center gap-1.5">
                 <Sparkles className="h-3.5 w-3.5" /> {cardLabel(card)}
                 {card.kind === 'quiz' && <span className="text-faint">· {card.index + 1} of {card.total}</span>}
               </p>
@@ -312,7 +312,7 @@ export function LessonPlayer({
                 )}>
                   {state.feedback[card.question.id]?.correct ? <Check className="h-5 w-5" /> : <X className="h-5 w-5" />}
                 </span>
-                <div className="text-sm">
+                <div className="text-[15px]">
                   <p className={cn('font-extrabold', state.feedback[card.question.id]?.correct ? 'text-accent-deep dark:text-accent' : 'text-danger-strong dark:text-danger')}>
                     {state.feedback[card.question.id]?.correct ? 'Correct!' : 'Not quite'}
                   </p>
@@ -368,7 +368,7 @@ export function LessonPlayer({
               onClick={e => e.stopPropagation()}
             >
               <h2 className="text-lg font-extrabold">Leave the lesson?</h2>
-              <p className="mt-1.5 text-sm text-muted">
+              <p className="mt-1.5 text-[15px] text-muted">
                 Your place and answers are saved, you can pick up right here later.
               </p>
               <div className="mt-5 grid grid-cols-2 gap-3">
@@ -413,7 +413,7 @@ function CardBody({
       return (
         <div>
           <InteractiveBlock component={card.block.component} params={card.block.params} caption={card.block.caption} />
-          <p className="mt-3 text-xs text-faint text-center">Play with the lab, then continue when the idea clicks.</p>
+          <p className="mt-3 text-[13px] text-faint text-center">Play with the lab, then continue when the idea clicks.</p>
         </div>
       );
     case 'exercise':
@@ -426,7 +426,7 @@ function CardBody({
           <h2 className="text-xl font-extrabold tracking-tight mb-3">Common mistakes</h2>
           <ul className="space-y-2.5">
             {card.items.map((m, i) => (
-              <li key={i} className="flex gap-3 rounded-2xl border-2 border-transparent bg-danger-soft px-4 py-3 text-sm anim-slide-up" style={{ animationDelay: `${i * 60}ms` }}>
+              <li key={i} className="flex gap-3 rounded-2xl border-2 border-transparent bg-danger-soft px-4 py-3 text-[15px] anim-slide-up" style={{ animationDelay: `${i * 60}ms` }}>
                 <AlertTriangle className="h-5 w-5 text-danger shrink-0 mt-0.5" />
                 <span><ClientMd text={m} /></span>
               </li>
@@ -440,13 +440,13 @@ function CardBody({
           <h2 className="text-xl font-extrabold tracking-tight mb-3">Where you will use this</h2>
           <div className="space-y-3">
             {card.realWorld && (
-              <div className="flex gap-3 rounded-2xl border-2 border-border bg-surface p-4 text-sm">
+              <div className="flex gap-3 rounded-2xl border-2 border-border bg-surface p-4 text-[15px]">
                 <Building2 className="h-5 w-5 text-info shrink-0 mt-0.5" />
                 <span><ClientMd text={card.realWorld} /></span>
               </div>
             )}
             {card.quant && (
-              <div className="flex gap-3 rounded-2xl border-2 border-transparent bg-accent-soft p-4 text-sm">
+              <div className="flex gap-3 rounded-2xl border-2 border-transparent bg-accent-soft p-4 text-[15px]">
                 <TrendingUp className="h-5 w-5 text-accent shrink-0 mt-0.5" />
                 <span><ClientMd text={card.quant} /></span>
               </div>
@@ -460,14 +460,14 @@ function CardBody({
           <h2 className="text-xl font-extrabold tracking-tight mb-3">Wrap-up</h2>
           <ul className="space-y-2">
             {card.items.map((s, i) => (
-              <li key={i} className="flex gap-2.5 items-start rounded-xl bg-surface-2 px-3.5 py-2.5 text-sm anim-slide-up" style={{ animationDelay: `${i * 60}ms` }}>
+              <li key={i} className="flex gap-2.5 items-start rounded-xl bg-surface-2 px-3.5 py-2.5 text-[15px] anim-slide-up" style={{ animationDelay: `${i * 60}ms` }}>
                 <Check className="h-4 w-4 text-accent shrink-0 mt-0.5" />
                 <span><ClientMd text={s} /></span>
               </li>
             ))}
           </ul>
           {card.flashcardCount > 0 && (
-            <div className="mt-4 rounded-2xl border-2 border-border bg-surface p-4 flex items-center gap-3 text-sm">
+            <div className="mt-4 rounded-2xl border-2 border-border bg-surface p-4 flex items-center gap-3 text-[15px]">
               <BookOpen className="h-5 w-5 text-violet shrink-0" />
               <span><strong>{card.flashcardCount} revision cards</strong> were scheduled into your spaced-repetition deck.</span>
             </div>
@@ -486,7 +486,7 @@ function IntroCard({ card, outline }: { card: Extract<PlayerCard, { kind: 'intro
           <GraduationCap className="h-7 w-7 text-accent" />
         </div>
         <div className="min-w-0">
-          <p className="text-[11px] font-bold text-faint uppercase tracking-[0.14em]">Lesson briefing</p>
+          <p className="text-[12px] font-bold text-faint uppercase tracking-[0.14em]">Lesson briefing</p>
           <h1 className="text-2xl sm:text-[1.7rem] font-black tracking-tight leading-tight">{card.title}</h1>
         </div>
       </div>
@@ -497,21 +497,21 @@ function IntroCard({ card, outline }: { card: Extract<PlayerCard, { kind: 'intro
       <div className="mt-4 grid gap-3 md:grid-cols-2 md:text-left">
         {/* both cards share one treatment (qf-card-flat, same padding) so the row has one rhythm */}
         <div className="text-left qf-card-flat p-4">
-          <p className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-wide text-faint mb-2">
+          <p className="flex items-center gap-2 text-[13px] font-extrabold uppercase tracking-wide text-faint mb-2">
             <span className="icon-tile-sm icon-tile-accent !h-7 !w-7"><Lightbulb className="!h-4 !w-4" /></span>
             Why this matters
           </p>
-          <p className="text-sm leading-relaxed font-semibold"><ClientMd text={card.motivation} /></p>
+          <p className="text-[15px] leading-relaxed font-semibold"><ClientMd text={card.motivation} /></p>
         </div>
         <div className="text-left qf-card-flat p-4">
-          <p className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-wide text-faint mb-2">
+          <p className="flex items-center gap-2 text-[13px] font-extrabold uppercase tracking-wide text-faint mb-2">
             <span className="icon-tile-sm icon-tile-info !h-7 !w-7"><Target className="!h-4 !w-4" /></span>
             By the end you can
           </p>
           <ul className="space-y-2">
             {card.objectives.map((o, i) => (
-              <li key={i} className="flex gap-2.5 items-start text-sm">
-                <span className="h-5 w-5 shrink-0 rounded-full bg-info-soft text-info-strong dark:text-info text-[10px] font-black flex items-center justify-center mt-0.5">{i + 1}</span>
+              <li key={i} className="flex gap-2.5 items-start text-[15px]">
+                <span className="h-5 w-5 shrink-0 rounded-full bg-info-soft text-info-strong dark:text-info text-[12px] font-black flex items-center justify-center mt-0.5">{i + 1}</span>
                 <span><ClientMd text={o} /></span>
               </li>
             ))}
@@ -526,20 +526,20 @@ function IntroCard({ card, outline }: { card: Extract<PlayerCard, { kind: 'intro
       {/* real lesson data fills the lower half of the briefing */}
       {outline && (
         <div className="mt-3 qf-card-flat p-4">
-          <p className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-wide text-faint mb-2.5">
+          <p className="flex items-center gap-2 text-[13px] font-extrabold uppercase tracking-wide text-faint mb-2.5">
             <span className="icon-tile-sm icon-tile-neutral !h-7 !w-7"><MapIcon className="!h-4 !w-4" /></span>
             Inside this lesson
           </p>
           {outline.headings.length > 0 && (
             <ol className="space-y-1.5 mb-3">
               {outline.headings.slice(0, 8).map((h, i) => (
-                <li key={i} className="flex items-center gap-2.5 text-sm font-semibold text-muted min-w-0">
-                  <span className="h-5 w-5 shrink-0 rounded-lg bg-surface-3 text-muted text-[10px] font-black tnum flex items-center justify-center">{i + 1}</span>
+                <li key={i} className="flex items-center gap-2.5 text-[15px] font-semibold text-muted min-w-0">
+                  <span className="h-5 w-5 shrink-0 rounded-lg bg-surface-3 text-muted text-[12px] font-black tnum flex items-center justify-center">{i + 1}</span>
                   <span className="truncate">{h}</span>
                 </li>
               ))}
               {outline.headings.length > 8 && (
-                <li className="text-xs font-semibold text-faint pl-8">+ {outline.headings.length - 8} more sections</li>
+                <li className="text-[13px] font-semibold text-faint pl-8">+ {outline.headings.length - 8} more sections</li>
               )}
             </ol>
           )}
@@ -567,15 +567,28 @@ function ExerciseCard({ card, done, onDone }: {
     <div>
       <h2 className="text-xl font-extrabold tracking-tight mb-3">{card.exKind === 'guided' ? 'Guided exercise' : 'Your turn'}</h2>
       <div className="rounded-2xl border-2 border-border bg-surface p-4">
-        <div className="flex gap-2.5 items-start text-sm leading-relaxed">
+        <div className="flex gap-2.5 items-start text-[15px] leading-relaxed">
           <Lightbulb className="h-5 w-5 text-warning shrink-0 mt-0.5" />
           <div className="prose-qf"><ClientMd text={card.prompt} /></div>
         </div>
+        {(card.file || card.snippet || (card.requires && card.requires.length > 0)) && (
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {card.file && <span className="chip font-mono">{card.file}</span>}
+            {card.snippet && <span className="chip">Snippet: fits into a larger program</span>}
+            {card.requires?.map(r => <span key={r} className="chip">Needs {r}</span>)}
+          </div>
+        )}
+        {card.successCheck && (
+          <div className="mt-3 text-[14px] font-semibold text-muted leading-relaxed">
+            <p className="font-black text-success">You are done when</p>
+            <div className="prose-qf"><ClientMd text={card.successCheck} /></div>
+          </div>
+        )}
       </div>
       {card.hints.length > 0 && (
         <div className="mt-3">
           {card.hints.slice(0, hintsOpen).map((h, i) => (
-            <div key={i} className="mt-2 rounded-2xl border-2 border-transparent bg-warning-soft px-4 py-3 text-sm anim-pop-in">
+            <div key={i} className="mt-2 rounded-2xl border-2 border-transparent bg-warning-soft px-4 py-3 text-[15px] anim-pop-in">
               <strong className="text-warning-strong dark:text-warning">Hint {i + 1}. </strong>
               <ClientMd text={h} />
             </div>
@@ -589,7 +602,7 @@ function ExerciseCard({ card, done, onDone }: {
       )}
       {solutionOpen ? (
         <div className="mt-3 rounded-2xl border-2 border-border bg-code-bg p-4 anim-pop-in">
-          <p className="text-xs font-extrabold uppercase tracking-wide text-faint mb-2">Worked solution</p>
+          <p className="text-[13px] font-extrabold uppercase tracking-wide text-faint mb-2">Worked solution</p>
           <pre className="code-block !bg-transparent !border-0 !p-0"><code>{card.solution}</code></pre>
         </div>
       ) : (
@@ -607,7 +620,7 @@ function ExerciseCard({ card, done, onDone }: {
           onChange={e => onDone(card.exKind, e.target.checked)}
           className="qf-check"
         />
-        <span className="text-sm font-bold">{done ? 'Exercise completed, nice work!' : 'I worked through this exercise (pen and paper or editor)'}</span>
+        <span className="text-[15px] font-bold">{done ? 'Exercise completed, nice work!' : 'I worked through this exercise (pen and paper or editor)'}</span>
       </label>
     </div>
   );
@@ -633,7 +646,7 @@ function QuizCard({ question, value, onAnswer, revealed }: {
             disabled={revealed}
             onClick={() => onAnswer(qid, String(i))}
             className={cn(
-              'w-full text-left flex items-center gap-3 rounded-2xl border-2 px-4 py-3 text-sm font-semibold transition-all press',
+              'w-full text-left flex items-center gap-3 rounded-2xl border-2 px-4 py-3 text-[15px] font-semibold transition-all press',
               value === String(i)
                 ? 'border-info bg-info-soft shadow-[0_3px_0_0_var(--border-strong)]'
                 : 'border-border bg-surface hover:bg-surface-2',
@@ -641,7 +654,7 @@ function QuizCard({ question, value, onAnswer, revealed }: {
             )}
           >
             <span className={cn(
-              'h-7 w-7 shrink-0 rounded-xl border-2 flex items-center justify-center text-xs font-black',
+              'h-7 w-7 shrink-0 rounded-xl border-2 flex items-center justify-center text-[13px] font-black',
               value === String(i) ? 'border-info bg-info text-white' : 'border-border-strong text-muted',
             )}>
               {String.fromCharCode(65 + i)}
@@ -659,7 +672,7 @@ function QuizCard({ question, value, onAnswer, revealed }: {
                 ? ((value as string[]) ?? []).filter(x => x !== String(i))
                 : [...((value as string[]) ?? []), String(i)])}
               className={cn(
-                'w-full text-left flex items-center gap-3 rounded-2xl border-2 px-4 py-3 text-sm font-semibold transition-all press',
+                'w-full text-left flex items-center gap-3 rounded-2xl border-2 px-4 py-3 text-[15px] font-semibold transition-all press',
                 sel ? 'border-info bg-info-soft' : 'border-border bg-surface hover:bg-surface-2',
               )}
             >
@@ -682,7 +695,7 @@ function QuizCard({ question, value, onAnswer, revealed }: {
               placeholder="Your answer"
               className="qf-input !h-14 w-44 !rounded-2xl text-lg font-bold tnum text-center"
             />
-            {question.unit && <span className="text-sm font-bold text-muted">{question.unit}</span>}
+            {question.unit && <span className="text-[15px] font-bold text-muted">{question.unit}</span>}
           </div>
         )}
         {question.type === 'code-output' && (
@@ -704,7 +717,7 @@ function QuizCard({ question, value, onAnswer, revealed }: {
           />
         )}
       </div>
-      <p className="mt-3 text-xs text-faint">Answer honestly, the point is finding your gaps, not the green tick.</p>
+      <p className="mt-3 text-[13px] text-faint">Answer honestly, the point is finding your gaps, not the green tick.</p>
     </div>
   );
 }
@@ -735,7 +748,7 @@ function FinishScreen({ result, quizCards, nextHref, nextTitle, referenceHref, t
           {master ? 'Mastered!' : passed ? 'Lesson passed!' : 'Keep going'}
         </motion.h1>
         <motion.p initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
-          className="mt-2 text-sm text-muted font-semibold">
+          className="mt-2 text-[15px] text-muted font-semibold">
           {master
             ? 'You retained this material across a later check, the strongest signal there is.'
             : passed
@@ -750,7 +763,7 @@ function FinishScreen({ result, quizCards, nextHref, nextTitle, referenceHref, t
           <div className="absolute inset-0 flex flex-col items-center justify-center">
             <span className="text-4xl font-black tnum">{result.pct}%</span>
             {result.correct !== undefined && (
-              <span className="text-xs font-bold text-muted">{result.correct}/{result.total} correct</span>
+              <span className="text-[13px] font-bold text-muted">{result.correct}/{result.total} correct</span>
             )}
           </div>
         </motion.div>
@@ -761,17 +774,17 @@ function FinishScreen({ result, quizCards, nextHref, nextTitle, referenceHref, t
           <div className="rounded-2xl border-2 border-border bg-surface p-3">
             <Zap className="h-5 w-5 mx-auto text-warning" />
             <p className="mt-1 text-xl font-black tnum">+{result.xpAwarded}</p>
-            <p className="text-[11px] font-bold text-muted">XP EARNED</p>
+            <p className="text-[12px] font-bold text-muted">XP EARNED</p>
           </div>
           <div className="rounded-2xl border-2 border-border bg-surface p-3">
             <Flame className={cn('h-5 w-5 mx-auto text-flame', result.streakCount ? 'anim-flame' : 'opacity-40')} />
             <p className="mt-1 text-xl font-black tnum">{result.streakCount ?? ', '}</p>
-            <p className="text-[11px] font-bold text-muted">DAY STREAK</p>
+            <p className="text-[12px] font-bold text-muted">DAY STREAK</p>
           </div>
           <div className="rounded-2xl border-2 border-border bg-surface p-3">
             <Star className={cn('h-5 w-5 mx-auto text-violet', master && 'anim-wiggle')} />
             <p className="mt-1 text-xl font-black">{master ? 'MASTERED' : passed ? 'PASSED' : 'RETRY'}</p>
-            <p className="text-[11px] font-bold text-muted">STATUS</p>
+            <p className="text-[12px] font-bold text-muted">STATUS</p>
           </div>
         </motion.div>
 
@@ -792,7 +805,7 @@ function FinishScreen({ result, quizCards, nextHref, nextTitle, referenceHref, t
           </div>
         </motion.div>
 
-        <p className="mt-6 text-xs text-faint">Quiz score is graded on the server, {quizCards} question{quizCards === 1 ? '' : 's'} in this lesson.</p>
+        <p className="mt-6 text-[13px] text-faint">Quiz score is graded on the server, {quizCards} question{quizCards === 1 ? '' : 's'} in this lesson.</p>
       </div>
     </div>
   );

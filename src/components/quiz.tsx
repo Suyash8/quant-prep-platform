@@ -125,7 +125,7 @@ export function Quiz({ endpoint, payload, questions, fullQuestions, onResult, on
     <div className={compact ? 'space-y-5' : 'space-y-6'}>
       {questions.map((q, idx) => (
         <div key={q.id} className="border rounded-xl p-4 bg-surface" data-testid={`question-${q.id}`}>
-          <p className="font-medium text-sm leading-relaxed">
+          <p className="font-medium text-[15px] leading-relaxed">
             <QMath text={q.prompt} />
           </p>
           {q.code && (
@@ -207,7 +207,7 @@ export function Quiz({ endpoint, payload, questions, fullQuestions, onResult, on
             )}
           </div>
           {shown && (
-            <div className={`mt-3 rounded-lg px-3 py-2.5 text-sm ${shown.perQuestion[q.id]?.correct ? 'bg-success-soft' : 'bg-warning-soft'}`}>
+            <div className={`mt-3 rounded-lg px-3 py-2.5 text-[15px] ${shown.perQuestion[q.id]?.correct ? 'bg-success-soft' : 'bg-warning-soft'}`}>
               <span className="font-semibold">{shown.perQuestion[q.id]?.correct ? 'Correct. ' : 'Not quite. '}</span>
               <QMath text={shown.perQuestion[q.id]?.explanation ?? ''} />
             </div>
@@ -219,23 +219,23 @@ export function Quiz({ endpoint, payload, questions, fullQuestions, onResult, on
         <div className="flex items-center gap-3">
           <button
             onClick={submit} disabled={busy || !allAnswered}
-            className="px-5 py-2.5 rounded-lg bg-accent text-accent-foreground font-medium text-sm hover:bg-accent-strong disabled:opacity-50"
+            className="px-5 py-2.5 rounded-lg bg-accent text-accent-foreground font-medium text-[15px] hover:bg-accent-strong disabled:opacity-50"
           >
-            {busy ? 'Scoring…' : shown ? 'Submit again' : 'Submit answers'}
+            {busy ? 'Scoring…' : shown ? 'Check again' : 'Check answers'}
           </button>
           {shown && (
-            <button onClick={reset} className="px-4 py-2.5 rounded-lg border text-sm hover:bg-surface-2 inline-flex items-center gap-1.5">
+            <button onClick={reset} className="px-4 py-2.5 rounded-lg border text-[15px] hover:bg-surface-2 inline-flex items-center gap-1.5">
               <RotateCcw className="h-3.5 w-3.5" /> Clear
             </button>
           )}
           {shown && (
-            <span className={`text-sm font-semibold ${shown.pct >= 80 ? 'text-success' : 'text-warning'}`}>
+            <span className={`text-[15px] font-semibold ${shown.pct >= 80 ? 'text-success' : 'text-warning'}`}>
               {shown.pct}% ({shown.correct}/{shown.total}){shown.status ? ` · ${shown.status.replace('_', ' ')}` : ''}
             </span>
           )}
         </div>
       )}
-      {(endpoint || localMode) && !allAnswered && !shown && <p className="text-xs text-faint">Answer every question to submit, no guessing through, wrong answers cost a retry.</p>}
+      {(endpoint || localMode) && !allAnswered && !shown && <p className="text-[13px] text-faint">Answer every question to submit, no guessing through, wrong answers cost a retry.</p>}
       
     </div>
   );

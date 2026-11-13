@@ -1,0 +1,259 @@
+{
+  "id": "mic-market-making",
+  "moduleId": "ph7-microstructure",
+  "title": "Inventory-Aware Market Making",
+  "estMinutes": 35,
+  "difficulty": "advanced",
+  "prereqs": [
+    "mic-execution-algos"
+  ],
+  "objectives": [
+    "Explain inventory risk and adverse selection in two-sided quoting",
+    "Compute a stylised inventory reservation-price skew",
+    "Separate quote placement from size and risk limits"
+  ],
+  "motivation": "A market maker posts bids and offers and may earn spread when trades arrive on both sides. The same fills create inventory and can arrive precisely when the quote is stale. A buyer who knows more than you may lift your ask just before the fair value rises. A seller may hit your bid just before it falls. This adverse selection means a high fill rate can be bad news. Evaluate marked-to-market profit, inventory and tail loss rather than spread capture alone. Fees, rebates, queue position and cancelled quotes all affect realised results and must be represented honestly.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "A spread is not a free return"
+    },
+    {
+      "type": "p",
+      "md": "A market maker posts bids and offers and may earn spread when trades arrive on both sides. The same fills create inventory and can arrive precisely when the quote is stale. A buyer who knows more than you may lift your ask just before the fair value rises. A seller may hit your bid just before it falls. This adverse selection means a high fill rate can be bad news. Evaluate marked-to-market profit, inventory and tail loss rather than spread capture alone. Fees, rebates, queue position and cancelled quotes all affect realised results and must be represented honestly."
+    },
+    {
+      "type": "h2",
+      "text": "Inventory links the next quote to earlier fills"
+    },
+    {
+      "type": "p",
+      "md": "Suppose you are long and wish to reduce risk. Lowering both bid and ask makes further buying less attractive and selling more attractive, relative to an unchanged midpoint. This is an inventory skew, not a forecast that the asset is worth less. Risk depends on units, price volatility, horizon and concentration. Correlated positions in other instruments can change the effective inventory exposure. An inventory limit should be an explicit hard control; it is not enough to hope that a soft price skew always attracts the desired offsetting order before a market move occurs."
+    },
+    {
+      "type": "h2",
+      "text": "A stylised reservation price"
+    },
+    {
+      "type": "p",
+      "md": "In an Avellaneda-Stoikov-style diffusion model, a common reservation-price form is r=s-q*gamma*sigma^2*tau. Here s is mid price, q is signed inventory, gamma is risk aversion, sigma is absolute-price volatility and tau is remaining time. Positive q shifts the reservation price down. The units must be compatible: using percentage volatility directly in a formula expecting currency volatility changes the scale dramatically. The expression is conditional on the model and chosen convention. It does not state that real venues will fill quotes according to the model's assumed arrival intensity or that a calculated quote is safe during a jump."
+    },
+    {
+      "type": "math",
+      "tex": "r=s-q\\gamma\\sigma^2\\tau",
+      "caption": "Formula under the assumptions stated in the surrounding explanation."
+    },
+    {
+      "type": "h2",
+      "text": "Worked example: a long inventory skew"
+    },
+    {
+      "type": "p",
+      "md": "Let s=100, q=10, gamma=0.1, sigma=2 price units per square-root time and tau=0.5. The adjustment is 10*0.1*4*0.5=2, so the reservation price is 98. If a separately chosen total spread is 1, quotes around that centre are 97.5 and 98.5 before tick rounding and market constraints. This is a deliberately large illustrative skew. A real quote rule must prevent crossing inappropriate venue limits and may cap or suspend quoting. If q=-10, the same formula gives 102, reversing the pressure. The example checks both signs explicitly."
+    },
+    {
+      "type": "h2",
+      "text": "Spread and size are separate controls"
+    },
+    {
+      "type": "p",
+      "md": "A simplified optimal-spread expression in the same model family contains gamma*sigma^2*tau plus 2/gamma*log(1+gamma/k), where k controls how assumed fill intensity decays with distance. Treat this as a model result under stated assumptions, not a universal spread rule. You may widen quotes when uncertainty or toxicity increases, reduce bid size when long, increase offer size only within allowed exposure, or stop quoting. Size limits and price skew solve related but different problems. Rounding bids down and asks up to ticks avoids accidentally tightening a desired spread through inconsistent rounding."
+    },
+    {
+      "type": "h2",
+      "text": "Worked example: markouts reveal selection"
+    },
+    {
+      "type": "p",
+      "md": "You sell one share at 100.02 while the current mid is 100.00. If the mid later rises to 100.10, the sale earns 0.02 versus the initial mid but loses 0.08 versus the later mark. A sequence of such negative markouts signals that spread capture alone is misleading. Choose markout horizons before comparing strategies and retain both favourable and adverse events. The later mid is a diagnostic benchmark, not information available when quoting. Use realistic timestamps so feed delay does not make a stale decision appear informed. Queue-aware fills and cancellation delays matter as much as a clean inventory formula."
+    },
+    {
+      "type": "h2",
+      "text": "Model limits and production response"
+    },
+    {
+      "type": "p",
+      "md": "The diffusion and arrival assumptions omit jumps, strategic counterparties, hidden orders and venue-specific matching rules. Calibrating k on a changing market can be unstable; measuring only filled quotes also creates selection effects. Store quote decisions, cancellations, fills, inventory and subsequent marks for analysis. Risk controls should handle stale data, disconnected feeds, position uncertainty and repeated one-sided flow. The order-book lab visualises depth, not a profitable live-making strategy. Before enabling a quote, check tick size, limits and current reconciled position. When uncertainty is too large, stepping aside can be safer than widening a formula that no longer describes the environment. For a fill replay, preserve the side sign explicitly. Buying below a later mid and selling above it are favourable markouts, so a shared arithmetic formula must reverse the sign for buy and sell events. Test both sides rather than extrapolating one example."
+    },
+    {
+      "type": "h2",
+      "text": "Worked example: run and check"
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "s,gamma,sigma,tau=100.0,0.1,2.0,0.5\ndef reservation(q):\n    return s-q*gamma*sigma*sigma*tau\nassert reservation(10)==98 and reservation(-10)==102\nprint(f\"{reservation(10):.2f} {reservation(-10):.2f}\")\nfill,later_mid=100.02,100.10\nprint(f\"{fill-later_mid:.2f}\")",
+      "caption": "Complete Python 3.11+ example"
+    },
+    {
+      "type": "p",
+      "md": "The exact output is `98.00 102.00; -0.08`. Run the example before changing a parameter, then predict the direction of the change. The assertions encode the stated checks; a failed assertion means that the implementation and the claimed result disagree."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Check this misconception",
+      "md": "Positive inventory subtracts q*gamma*sigma squared*tau from mid, moving the centre down. This encourages rebalancing but does not guarantee any counterparty will trade."
+    },
+    {
+      "type": "interactive",
+      "component": "OrderBookVisual",
+      "params": {},
+      "caption": "Related concept lab. The lab illustrates the named building block; it is not a full implementation of every model in this lesson."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Compute reservation centres for inventories +10 and -10 using the stated parameters. Success check: They are 98 and 102.",
+    "hints": [
+      "Compute sigma squared first.",
+      "Keep inventory signed.",
+      "Subtract the signed risk adjustment from mid."
+    ],
+    "solution": "\n```python\ndef r(q):\n    return 100-q*0.1*2**2*0.5\nassert (r(10),r(-10))==(98,102)\nprint(r(10),r(-10))\n```\nExpected output: `98.0 102.0`.",
+    "successCheck": "They are 98 and 102."
+  },
+  "independentExercise": {
+    "prompt": "Measure the sell markout at 100.02 against a later mid of 100.10. Success check: It is -0.08 per share.",
+    "hints": [
+      "For a sale, subtract later mid from fill.",
+      "Keep the sign.",
+      "Format the monetary difference to two places."
+    ],
+    "solution": "\n```python\nmarkout=100.02-100.10\nassert abs(markout+0.08)<1e-10\nprint(f\"{markout:.2f}\")\n```\nExpected output: `-0.08`.",
+    "successCheck": "It is -0.08 per share."
+  },
+  "commonMistakes": [
+    "Positive inventory subtracts q*gamma*sigma squared*tau from mid, moving the centre down. This encourages rebalancing but does not guarantee any counterparty will trade.",
+    "A later mid above the sale price makes that sale's markout negative. It can reveal adverse selection even when the execution initially appeared to capture half a spread."
+  ],
+  "realWorldApplication": "Use the assumptions and checks above when reviewing inventory-aware market making. Record inputs, state the failure conditions and compare the result with a simple independent calculation.",
+  "quantFinanceApplication": "For a trading or risk workflow, validate the model and timestamp conventions before using inventory-aware market making. The worked result is conditional on its assumptions, not a return promise.",
+  "summary": [
+    "Explain inventory risk and adverse selection in two-sided quoting",
+    "Compute a stylised inventory reservation-price skew",
+    "Separate quote placement from size and risk limits"
+  ],
+  "quiz": [
+    {
+      "type": "mcq",
+      "prompt": "For positive inventory in this reservation-price model, what happens to the centre?",
+      "options": [
+        "It shifts up to encourage more buying",
+        "It becomes independent of risk aversion",
+        "It shifts down to encourage selling",
+        "It guarantees the next fill is a sale"
+      ],
+      "answerIndex": 2,
+      "explanation": "Positive inventory subtracts q*gamma*sigma squared*tau from mid, moving the centre down. This encourages rebalancing but does not guarantee any counterparty will trade.",
+      "id": "q1",
+      "objective": 1
+    },
+    {
+      "type": "mcq",
+      "prompt": "What does a negative sell-side future markout suggest?",
+      "options": [
+        "The quoted spread was certainly negative",
+        "The fill could not involve adverse selection",
+        "The maker knew the later mid in advance",
+        "The asset rose after the market maker sold"
+      ],
+      "answerIndex": 3,
+      "explanation": "A later mid above the sale price makes that sale's markout negative. It can reveal adverse selection even when the execution initially appeared to capture half a spread.",
+      "id": "q2",
+      "objective": 0
+    },
+    {
+      "type": "numeric",
+      "prompt": "With s=100, q=10, gamma=0.1, sigma=2 and tau=0.5, what is the reservation price?",
+      "answer": 98,
+      "tolerance": 1e-06,
+      "explanation": "The adjustment is 10*0.1*4*0.5=2, which is subtracted from 100. Using sigma rather than sigma squared would misstate the specified model.",
+      "id": "q3",
+      "objective": 1
+    },
+    {
+      "type": "code-output",
+      "prompt": "What sell markout does this code print?",
+      "code": "print(f\"{100.02-100.10:.2f}\")",
+      "language": "python",
+      "answer": "-0.08",
+      "explanation": "The sale price is eight cents below the later mid. The earlier two-cent spread capture does not cancel this adverse movement in the diagnostic benchmark.",
+      "id": "q4",
+      "objective": 0
+    },
+    {
+      "type": "short",
+      "prompt": "Why are inventory limits needed in addition to quote skew?",
+      "modelAnswer": "A skew cannot guarantee offsetting fills; hard limits bound exposure when flow remains one-sided or the market jumps.",
+      "keywords": [
+        "limit|bound",
+        "inventory|exposure|position",
+        "fill|flow|jump"
+      ],
+      "explanation": "A price adjustment changes incentives but does not control counterparties. Explicit limits and suspension rules are needed when the hoped-for rebalancing flow never arrives.",
+      "id": "q5",
+      "objective": 2
+    },
+    {
+      "type": "ms",
+      "prompt": "Which diagnostics or controls are useful?",
+      "options": [
+        "Track inventory and future markouts",
+        "Suspend quoting on stale or uncertain data",
+        "Treat high fill rate as guaranteed success",
+        "Ignore cancellation latency in a backtest"
+      ],
+      "answerIndices": [
+        0,
+        1
+      ],
+      "explanation": "Inventory and markouts reveal risk hidden by spread capture, while stale-data controls stop uninformed quotes. Fill rate alone and instantaneous cancels can create misleading results.",
+      "id": "q6",
+      "objective": 2
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "For positive inventory in this reservation-price model, what happens to the centre?",
+      "back": "It shifts down to encourage selling"
+    },
+    {
+      "type": "concept",
+      "front": "What does a negative sell-side future markout suggest?",
+      "back": "The asset rose after the market maker sold"
+    },
+    {
+      "type": "concept",
+      "front": "With s=100, q=10, gamma=0.1, sigma=2 and tau=0.5, what is the reservation price?",
+      "back": "The result is 98 under the stated inputs."
+    },
+    {
+      "type": "concept",
+      "front": "Why are inventory limits needed in addition to quote skew?",
+      "back": "A skew cannot guarantee offsetting fills; hard limits bound exposure when flow remains one-sided or the market jumps."
+    },
+    {
+      "type": "concept",
+      "front": "Which diagnostics or controls are useful?",
+      "back": "Track inventory and future markouts, Suspend quoting on stale or uncertain data"
+    }
+  ],
+  "references": [
+    {
+      "label": "Avellaneda and Stoikov: market making",
+      "url": "https://www.math.nyu.edu/~avellane/HighFrequencyTrading.pdf"
+    },
+    {
+      "label": "SEC: market structure",
+      "url": "https://www.sec.gov/marketstructure"
+    },
+    {
+      "label": "Cboe: market statistics",
+      "url": "https://www.cboe.com/us/equities/market_statistics/"
+    }
+  ],
+  "skills": [
+    "microstructure"
+  ]
+}

@@ -158,7 +158,7 @@ export function ClosingCta({
           </span>
         ) : null}
         <h2 className="text-xl font-black tracking-tight">{title}</h2>
-        <p className="max-w-xl text-sm font-semibold text-muted">{sub}</p>
+        <p className="max-w-xl text-[15px] font-semibold text-muted">{sub}</p>
         <div className="mt-1 flex flex-wrap items-center justify-center gap-3">
           <Link href={href} className="btn3d btn3d-lg">{action}</Link>
           {ghost ? (
@@ -203,7 +203,7 @@ export function EmptyState({
         </span>
       ) : null}
       <p className="font-extrabold">{title}</p>
-      {sub ? <p className="mt-1 text-sm font-semibold text-muted">{sub}</p> : null}
+      {sub ? <p className="mt-1 text-[15px] font-semibold text-muted">{sub}</p> : null}
       {action && href ? (
         <Link href={href} className="btn3d btn3d-sm mt-3">{action}</Link>
       ) : null}

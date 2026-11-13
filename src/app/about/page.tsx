@@ -84,7 +84,7 @@ export default async function AboutPage() {
           <span className="icon-tile icon-tile-sm icon-tile-accent"><Target className="h-5 w-5" /></span>
           <h2 className="text-lg font-black tracking-tight">Why it exists</h2>
         </div>
-        <p className="mt-2.5 text-sm text-muted font-semibold leading-relaxed max-w-3xl">
+        <p className="mt-2.5 text-[15px] text-muted font-semibold leading-relaxed max-w-3xl">
           The path into quantitative development is genuinely hard and badly documented. These four promises are the
           whole curriculum in miniature, everything on the platform serves one of them.
         </p>
@@ -95,7 +95,7 @@ export default async function AboutPage() {
                 <span className={`icon-tile icon-tile-sm ${p.cls}`}><p.icon className="h-5 w-5" /></span>
                 <h3 className="font-black tracking-tight">{p.title}</h3>
               </div>
-              <p className="mt-3 text-sm text-muted font-semibold leading-relaxed">{p.text}</p>
+              <p className="mt-3 text-[15px] text-muted font-semibold leading-relaxed">{p.text}</p>
             </div>
           ))}
         </div>
@@ -115,14 +115,14 @@ export default async function AboutPage() {
               'A portfolio you can defend line by line',
               'Knowledge that is real and yours to prove',
             ].map(t => (
-              <li key={t} className="flex gap-2.5 text-sm font-semibold text-muted">
+              <li key={t} className="flex gap-2.5 text-[15px] font-semibold text-muted">
                 <CheckCircle2 className="h-5 w-5 text-accent-deep dark:text-accent shrink-0 mt-0.5" />
                 <span className="leading-relaxed">{t}</span>
               </li>
             ))}
           </ul>
-          <p className="mt-auto pt-4 text-xs font-bold text-faint bg-surface-2/70 rounded-xl px-3.5 py-2.5 leading-relaxed">
-            Every claim above is checkable inside the product — nothing asks you to trust a brochure.
+          <p className="mt-auto pt-4 text-[13px] font-bold text-faint bg-surface-2/70 rounded-xl px-3.5 py-2.5 leading-relaxed">
+            Every claim above is checkable inside the product, nothing asks you to trust a brochure.
           </p>
         </div>
         <div className="qf-card p-5 flex flex-col min-w-0">
@@ -137,13 +137,13 @@ export default async function AboutPage() {
               'Certificate theatre without understanding',
               'Anything you can’t verify yourself',
             ].map(t => (
-              <li key={t} className="flex gap-2.5 text-sm font-semibold text-muted">
+              <li key={t} className="flex gap-2.5 text-[15px] font-semibold text-muted">
                 <XCircle className="h-5 w-5 text-danger shrink-0 mt-0.5" />
                 <span className="leading-relaxed">{t}</span>
               </li>
             ))}
           </ul>
-          <p className="mt-auto pt-4 text-xs font-bold text-faint bg-surface-2/70 rounded-xl px-3.5 py-2.5 leading-relaxed">
+          <p className="mt-auto pt-4 text-[13px] font-bold text-faint bg-surface-2/70 rounded-xl px-3.5 py-2.5 leading-relaxed">
             Pass the checks, do the exercises, build the projects, the rest follows from the work.
           </p>
         </div>
@@ -160,9 +160,9 @@ export default async function AboutPage() {
             <div key={e.title} className={`qf-card-flat p-4 min-w-0 anim-slide-up ${i === 4 ? 'sm:col-span-2' : ''}`} style={{ animationDelay: `${i * 40}ms` }}>
               <div className="flex items-center gap-2.5">
                 <span className={`icon-tile icon-tile-sm ${e.cls}`}><e.icon className="h-4 w-4" /></span>
-                <div className="font-black text-sm tracking-tight">{e.title}</div>
+                <div className="font-black text-[15px] tracking-tight">{e.title}</div>
               </div>
-              <p className="mt-2 text-xs font-semibold text-muted leading-relaxed">{e.text}</p>
+              <p className="mt-2 text-[13px] font-semibold text-muted leading-relaxed">{e.text}</p>
             </div>
           ))}
         </div>
@@ -172,9 +172,9 @@ export default async function AboutPage() {
       <section className="mt-8 qf-card-flat p-5 !bg-surface-2/50">
         <div className="flex items-center gap-2.5">
           <Sparkles className="h-4 w-4 text-gold" />
-          <h2 className="text-xs font-black uppercase tracking-[0.12em] text-faint">Attribution &amp; originality</h2>
+          <h2 className="text-[13px] font-black uppercase tracking-[0.12em] text-faint">Attribution &amp; originality</h2>
         </div>
-        <div className="mt-2 max-w-3xl space-y-2 text-sm font-semibold leading-relaxed text-muted">
+        <div className="mt-2 max-w-3xl space-y-2 text-[15px] font-semibold leading-relaxed text-muted">
           <p>All teaching content is original exposition written for this platform.</p>
           <p>Conventions and formulas follow standard public references (cppreference, IEEE 754, OpenStax, Python/NumPy/SciPy documentation, PostgreSQL documentation). Company research cites official career pages with retrieval dates and marks inferences as such.</p>
           <p>Mathematical visualisations are computed live in your browser from the actual formulas, nothing is a canned image.</p>
@@ -185,7 +185,7 @@ export default async function AboutPage() {
       <section className="mt-10 qf-card p-8 text-center relative overflow-hidden bg-dots">
         <span className="relative mx-auto icon-tile icon-tile-gold anim-bob"><GraduationCap className="h-7 w-7" /></span>
         <h2 className="relative mt-4 text-xl font-black tracking-tight">The path is long. It is also walkable.</h2>
-        <p className="relative mt-2 text-sm font-semibold text-muted max-w-md mx-auto leading-relaxed">
+        <p className="relative mt-2 text-[15px] font-semibold text-muted max-w-md mx-auto leading-relaxed">
           {user ? 'Your streak, plan and next lesson are waiting where you left them.' : 'Start with the diagnostic, it places you on the path in about 20 minutes.'}
         </p>
         <div className="relative mt-5 flex gap-3 justify-center flex-wrap">

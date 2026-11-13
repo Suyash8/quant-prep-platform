@@ -2,7 +2,7 @@
   "id": "cpp-futures-async",
   "moduleId": "ph4-cpp-l7",
   "title": "Futures, Promises, Async and Thread Pools",
-  "estMinutes": 27,
+  "estMinutes": 35,
   "difficulty": "advanced",
   "prereqs": [
     "cpp-mutexes"
@@ -89,7 +89,7 @@
     {
       "type": "code",
       "lang": "cpp",
-      "code": "#include <condition_variable>\n#include <functional>\n#include <future>\n#include <memory>\n#include <mutex>\n#include <queue>\n#include <thread>\n#include <vector>\n\nclass ThreadPool {\n    std::vector<std::thread> workers_;\n    std::queue<std::function<void()>> tasks_;\n    std::mutex m_;\n    std::condition_variable cv_;\n    bool stop_ = false;\npublic:\n    explicit ThreadPool(unsigned n) {\n        for (unsigned i = 0; i < n; ++i)\n            workers_.emplace_back([this] {\n                for (;;) {\n                    std::function<void()> task;\n                    {\n                        std::unique_lock<std::mutex> lk(m_);\n                        cv_.wait(lk, [this] { return stop_ || !tasks_.empty(); });\n                        if (stop_ && tasks_.empty()) return;\n                        task = std::move(tasks_.front());\n                        tasks_.pop();\n                    }\n                    task();                          // run OUTSIDE the lock\n                }\n            });\n    }\n    ~ThreadPool() {\n        {   std::unique_lock<std::mutex> lk(m_);\n            stop_ = true;\n        }\n        cv_.notify_all();\n        for (auto& t : workers_) t.join();\n    }\n    template <class F>\n    auto submit(F f) -> std::future<decltype(f())> {\n        using R = decltype(f());\n        // packaged_task is move-only, but std::function requires copyable:\n        // wrap in shared_ptr so the lambda copied into the queue is copyable.\n        auto pt = std::make_shared<std::packaged_task<R()>>(std::move(f));\n        std::future<R> fut = pt->get_future();\n        {   std::unique_lock<std::mutex> lk(m_);\n            tasks_.emplace([pt] { (*pt)(); });\n        }\n        cv_.notify_one();\n        return fut;\n    }\n};\n\nint main() {\n    ThreadPool pool(4);\n    auto f = pool.submit([] { return 2 + 2; });\n    std::cout << f.get() << '\\n';                    // 4\n    return 0;\n}",
+      "code": "#include <iostream>\n#include <condition_variable>\n#include <functional>\n#include <future>\n#include <memory>\n#include <mutex>\n#include <queue>\n#include <thread>\n#include <vector>\n\nclass ThreadPool {\n    std::vector<std::thread> workers_;\n    std::queue<std::function<void()>> tasks_;\n    std::mutex m_;\n    std::condition_variable cv_;\n    bool stop_ = false;\npublic:\n    explicit ThreadPool(unsigned n) {\n        for (unsigned i = 0; i < n; ++i)\n            workers_.emplace_back([this] {\n                for (;;) {\n                    std::function<void()> task;\n                    {\n                        std::unique_lock<std::mutex> lk(m_);\n                        cv_.wait(lk, [this] { return stop_ || !tasks_.empty(); });\n                        if (stop_ && tasks_.empty()) return;\n                        task = std::move(tasks_.front());\n                        tasks_.pop();\n                    }\n                    task();                          // run OUTSIDE the lock\n                }\n            });\n    }\n    ~ThreadPool() {\n        {   std::unique_lock<std::mutex> lk(m_);\n            stop_ = true;\n        }\n        cv_.notify_all();\n        for (auto& t : workers_) t.join();\n    }\n    template <class F>\n    auto submit(F f) -> std::future<decltype(f())> {\n        using R = decltype(f());\n        // packaged_task is move-only, but std::function requires copyable:\n        // wrap in shared_ptr so the lambda copied into the queue is copyable.\n        auto pt = std::make_shared<std::packaged_task<R()>>(std::move(f));\n        std::future<R> fut = pt->get_future();\n        {   std::unique_lock<std::mutex> lk(m_);\n            tasks_.emplace([pt] { (*pt)(); });\n        }\n        cv_.notify_one();\n        return fut;\n    }\n};\n\nint main() {\n    ThreadPool pool(4);\n    auto f = pool.submit([] { return 2 + 2; });\n    std::cout << f.get() << '\\n';                    // 4\n    return 0;\n}",
       "caption": "Every piece is from lessons 1-2: RAII threads, a mutex protecting the queue, a while-pattern wait (via wait(lk, pred)), and packaged_task for the result channel. Note the task runs outside the lock."
     },
     {
@@ -151,7 +151,8 @@
       "futures are independent channels, get() on one does not touch another.",
       "A discarded future from submit() is harmless, but discipline matters when you switch to std::async, whose future blocks in its destructor."
     ],
-    "solution": "```cpp\n#include <vector>\n\ndouble fanout_pnl(const std::vector<double>& legs) {\n    ThreadPool pool(4);\n    std::vector<std::future<double>> futs;\n    futs.reserve(legs.size());\n    for (double leg : legs)\n        futs.push_back(pool.submit([leg] { return leg; }));\n    double total = 0;\n    for (auto& f : futs) total += f.get();   // blocks per leg until done\n    return total;\n}\n// fanout_pnl({120.50, -80.25, 15.75, -5.00}) == 51.00\n```\n**(a)** Each future is a private one-shot channel for one task; `get()` consumes only that channel, so order is irrelevant to correctness (only to when you block). **(b)** For `submit()` the future holds the packaged_task's shared state, discarding it loses the result silently. For `std::async(std::launch::async, ...)` the discarded future **blocks in its destructor** until the task finishes, silently serialising your code. The habit of keeping futures alive and getting them explicitly keeps both paths correct.\nArithmetic check: 120.50, 80.25 = 40.25; 40.25 + 15.75 = 56.00; 56.00, 5.00 = **51.00**."
+    "solution": "```cpp\n#include <vector>\n\ndouble fanout_pnl(const std::vector<double>& legs) {\n    ThreadPool pool(4);\n    std::vector<std::future<double>> futs;\n    futs.reserve(legs.size());\n    for (double leg : legs)\n        futs.push_back(pool.submit([leg] { return leg; }));\n    double total = 0;\n    for (auto& f : futs) total += f.get();   // blocks per leg until done\n    return total;\n}\n// fanout_pnl({120.50, -80.25, 15.75, -5.00}) == 51.00\n```\n**(a)** Each future is a private one-shot channel for one task; `get()` consumes only that channel, so order is irrelevant to correctness (only to when you block). **(b)** For `submit()` the future holds the packaged_task's shared state, discarding it loses the result silently. For `std::async(std::launch::async, ...)` the discarded future **blocks in its destructor** until the task finishes, silently serialising your code. The habit of keeping futures alive and getting them explicitly keeps both paths correct.\nArithmetic check: 120.50 - 80.25 = 40.25; 40.25 + 15.75 = 56.00; 56.00 - 5.00 = **51.00**.\nThis fragment belongs after the ThreadPool definition from the lesson; it is not a standalone file.",
+    "snippet": true
   },
   "independentExercise": {
     "prompt": "You must price 12 independent legs, each taking 10 ms of pure CPU, on a machine with 4 cores. (1) Using a 4-worker thread pool, compute the best-case makespan. (2) Compare with launching 12 `std::thread`s and with `std::async(std::launch::deferred, ...)` on all 12. (3) A colleague writes `auto f = std::async(price_leg, 1);` with no explicit policy and calls it 'parallel'. What is wrong with the claim, and what is the one-character-class fix?",
@@ -184,12 +185,12 @@
       "type": "mcq",
       "prompt": "With std::async(std::launch::deferred, f), when does f actually execute?",
       "options": [
-        "On a new thread, immediately when async is called",
-        "When get() or wait() is called, in the calling thread",
         "When the future is destroyed",
-        "It never executes unless get() throws"
+        "It never executes unless get() throws",
+        "When get() or wait() is called, in the calling thread",
+        "On a new thread, immediately when async is called"
       ],
-      "answerIndex": 1,
+      "answerIndex": 2,
       "explanation": "Deferred tasks are lazy: they run lazily at get()/wait() in the thread that calls it, useful for lazy evaluation, useless for parallelism."
     },
     {
@@ -206,9 +207,9 @@
       "type": "mcq",
       "prompt": "What is unusual about the future returned by std::async with the async policy?",
       "options": [
-        "It can be copied to share the result",
-        "Its destructor waits for the task to finish",
         "It ignores launch policies",
+        "Its destructor waits for the task to finish",
+        "It can be copied to share the result",
         "It throws if the task has not started"
       ],
       "answerIndex": 1,

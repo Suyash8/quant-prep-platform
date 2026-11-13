@@ -2,7 +2,7 @@
   "id": "calc2-improper-probability",
   "moduleId": "ph1-calculus2",
   "title": "Improper Integrals and Probability Densities",
-  "estMinutes": 26,
+  "estMinutes": 35,
   "difficulty": "core",
   "prereqs": [
     "calc2-numerical-integration"
@@ -14,7 +14,7 @@
     "Derive tail probabilities and means for the exponential distribution",
     "Work a heavy-tail-flavoured loss density end to end: total mass, tail probability and mean"
   ],
-  "motivation": "Losses have no natural upper bound, waiting times are unbounded, and the normal distribution stretches to infinity in both directions, yet all of these have total probability exactly 1. The calculus object that makes 'an infinite area with finite value' rigorous is the improper integral. It is not a curiosity: every tail probability, every expected loss, every VaR number on a risk report is an improper integral taken to infinity.",
+  "motivation": "Unbounded waiting times and loss models often need integrals over infinite domains. Improper integration defines these by limits and distinguishes finite total probability from finite moments. Not every loss model is unbounded, not every risk measure is an improper integral, and a valid density can still have infinite mean or variance. These distinctions matter before trusting a numerical risk report.",
   "blocks": [
     {
       "type": "h2",
@@ -56,7 +56,7 @@
       "type": "steps",
       "title": "Worked derivation: the exponential distribution",
       "items": [
-        "Model: waiting time until default/arrival with constant hazard rate $\\lambda$: density $f(x) = \\lambda e^{-\\lambda x}$ for $x \\ge 0$.",
+        "For constant hazard lambda>0, f(x)=lambda*exp(-lambda*x) for x>=0 and zero otherwise. Survival exp(-lambda*t) is stated for t>=0; for t<0 it is 1.",
         "Total mass: $\\int_0^\\infty \\lambda e^{-\\lambda x}dx = \\left[-e^{-\\lambda x}\\right]_0^\\infty = 0 - (-1) = 1$. Verified, a proper density.",
         "Tail probability: $P(X > t) = \\int_t^\\infty \\lambda e^{-\\lambda x}dx = e^{-\\lambda t}$ - the survival function.",
         "For $\\lambda = 0.1$ per year (mean waiting time $1/\\lambda = 10$ years): $P(X > 10) = e^{-1} \\approx 0.3679$, $P(X > 20) = e^{-2} \\approx 0.1353$.",
@@ -67,11 +67,11 @@
       "type": "code",
       "lang": "python",
       "code": "import math\nlam = 0.1\nfor t in [5, 10, 20]:\n    print(round(math.exp(-lam * t), 4))",
-      "caption": "Exponential survival probabilities: P(X>5)=0.6065, P(X>10)=0.3679, P(X>20)=0.1353, halving the hazard doubles the tail."
+      "caption": "For lambda=0.1, survival at 5,10,20 years is 0.6065,0.3679,0.1353. Halving the hazard takes the square root of a fixed-time survival probability, rather than doubling it."
     },
     {
       "type": "p",
-      "md": "An improper integral is the moment calculus stops being bookkeeping and starts making promises: the area under a curve over an *infinite* interval exists only if the tail decays fast enough. Probability leans on this constantly, every density must integrate to exactly 1 over $(-\\infty, \\infty)$, and every expectation, variance and tail probability is an improper integral wearing a statistics costume."
+      "md": "Two-sided improper integrals require each one-sided integral to converge separately. An odd function may have zero symmetric principal value even when its ordinary improper integral diverges. Likewise, a finite expectation of a signed variable requires integrability of the absolute value; canceling divergent positive and negative parts is not a mean. Nonnegative losses can have a well-defined extended expectation of positive infinity. For example, an integrable probability density need not have an integrable x-weighted density. Check total mass and each moment separately."
     },
     {
       "type": "steps",
@@ -84,13 +84,13 @@
     },
     {
       "type": "p",
-      "md": "Now the probability connection, with the exponential distribution as the honest example. Density $f(t) = \\lambda e^{-\\lambda t}$ for $t \\ge 0$: check normalisation, $\\int_0^\\infty \\lambda e^{-\\lambda t} dt = [-e^{-\\lambda t}]_0^\\infty = 1$ ✓. Mean: $\\int_0^\\infty t \\lambda e^{-\\lambda t} dt = 1/\\lambda$. Both are improper integrals, both converge because the exponential decays faster than any power, which is precisely why exponential tails make models tractable and power-law tails (Pareto, some return distributions) make risk models treacherous: moments of order $\\ge$ the tail index simply do not exist."
+      "md": "Keep density and survival exponents separate. If a nonnegative loss density behaves as c*x^(-p) in the far tail, its tail mass is finite only for p>1, its mean is finite only for p>2, and its second moment is finite only for p>3. More generally its k-th positive moment is finite only for p>k+1 under this power-law asymptotic. A survival tail behaving as x^(-alpha) instead has alpha=p-1; its positive k-th moment requires k<alpha. Always state which exponent is being quoted."
     },
     {
       "type": "callout",
       "variant": "quant",
-      "title": "Fat tails = divergent integrals in disguise",
-      "md": "When a risk manager says \"variance is infinite under a power law with index 3\", the precise statement is: $\\int x^2 f(x)\\,dx$ diverges. Sample variance from finite data still prints a number, it is estimating something that does not exist, and it under-estimates tail risk by construction. This is the mathematical heart of why 2008-style events keep \"surprising\" models built on thin-tailed assumptions."
+      "title": "A valid density can have infinite variance",
+      "md": "For f(x)=2/(1+x)^3 on x>=0, the survival tail is(1+x)^(-2). It has finite mean 1 but infinite second moment, since x^2*f(x) behaves as 2/x. Thus variance is infinite. A survival index 3 would instead give a finite second moment; saying only index 3 without defining density or survival exponent is ambiguous. Finite samples still return finite sample variances, but that does not establish a finite population variance or imply every sample estimate must understate every chosen tail-risk measure."
     },
     {
       "type": "interactive",
@@ -101,7 +101,7 @@
         "b": 20,
         "n": 20
       },
-      "caption": "The area under the exponential density over [0, 20] is 1, e^-2 = 0.865; the remaining 13.5% of probability lives beyond 20, out to infinity."
+      "caption": "On[0,20] the exponential density integrates to 1-exp(-2), about 0.864665. The remaining exp(-2), about 13.53%, lies beyond 20; a finite cutoff is not the whole probability mass."
     },
     {
       "type": "h2",
@@ -109,30 +109,34 @@
     },
     {
       "type": "p",
-      "md": "The bell curve $\\varphi(x) = \\frac{1}{\\sqrt{2\\pi}}e^{-x^2/2}$ is the most-used density in finance, and Lesson 9 explained why it must be *numerically* integrated: no elementary antiderivative exists. Its tails decay like $e^{-x^2/2}$ - faster than any power - so it converges easily, and $\\Phi(1) \\approx 0.8413$ of the mass lies within one standard deviation. But real loss data often shows **heavy tails**: tail mass decays like a power $x^{-p}$ instead of an exponential, and by the $p$-test only powers with $p > 1$ are even integrable. Heavy tails are exactly why a $p$-test habit matters to a risk desk: assuming thin tails where data has fat ones badly understates $P(\\text{huge loss})$."
+      "md": "For the standard normal density phi(x)=exp(-x^2/2)/sqrt(2*pi), Phi(1) is approximately 0.841345: that is the mass below+1, not the mass within one standard deviation. The central probability P(-1<=Z<=1)=Phi(1)-Phi(-1) is approximately 0.682689. The normal density decays faster than any inverse power and all polynomial moments are finite. Numerical quadrature or specialised normal-CDF routines can compute probabilities without an elementary antiderivative. Power-law models need separate checks for normalisation and moments, not just a comparison of visual tail thickness."
     },
     {
       "type": "callout",
       "variant": "quant",
       "title": "A complete loss model, by hand",
-      "md": "Loss severity $X \\ge 0$ with density $f(x) = \\frac{2}{(1+x)^3}$. Total mass: $\\int_0^\\infty 2(1+x)^{-3}dx = \\left[-(1+x)^{-2}\\right]_0^\\infty = 1$. Tail: $P(X > 1) = \\left[(1+x)^{-2}\\right]_1^\\infty = \\frac{1}{4}$ - a 25% chance of exceeding one unit. Mean: substituting $u = 1+x$, $\\mathbb{E}[X] = \\int_1^\\infty 2(u-1)u^{-3}du = \\int_1^\\infty (2u^{-2} - 2u^{-3})du = 2 - 1 = 1$. One integral each for mass, tail and mean, the entire risk profile of the model on one page."
+      "md": "For loss density f(x)=2/(1+x)^3 on x>=0 and zero otherwise, the antiderivative is-(1+x)^(-2). Total mass is 1, survival is(1+t)^(-2) for t>=0, and P(X>1)=1/4. Substitution u=1+x gives mean integral of 2u^(-2)-2u^(-3) over[1,infinity), equal to 2-1=1. The second moment diverges. These quantities describe selected aspects of the model, not an entire risk profile; specify thresholds, units and the required risk measure."
     }
   ],
   "guidedExercise": {
     "prompt": "An exponential model uses hazard $\\lambda = 0.25$ per year. (a) Verify the density integrates to 1. (b) Compute $P(X \\le 4)$ and $P(X > 4)$. (c) State $\\mathbb{E}[X]$ and check it against the survival probabilities.",
     "hints": [
       "Antiderivative of $\\lambda e^{-\\lambda x}$ is $-e^{-\\lambda x}$.",
-      "$\\mathbb{E}[X] = 1/\\lambda$ for the exponential, compare $\\lambda = 0.25$ with the Lesson 8 by-parts result."
+      "$\\mathbb{E}[X] = 1/\\lambda$ for the exponential, compare $\\lambda = 0.25$ with the Lesson 8 by-parts result.",
+      "Evaluate finite-endpoint integrals first, then take limits; compare density, survival and moment exponents separately."
     ],
-    "solution": "(a) $\\int_0^\\infty 0.25e^{-0.25x}dx = \\left[-e^{-0.25x}\\right]_0^\\infty = 0 - (-1) = \\mathbf{1}$. (b) $P(X > 4) = e^{-0.25 \\times 4} = e^{-1} = 0.3679$, so $P(X \\le 4) = 1 - 0.3679 = \\mathbf{0.6321}$. (c) $\\mathbb{E}[X] = 1/\\lambda = \\mathbf{4}$ years; indeed the survival function halves the picture consistently ($P(X>4) \\approx 0.37$ means 63% of the mass, the median region, lies within 4 years)."
+    "solution": "(a) $\\int_0^\\infty 0.25e^{-0.25x}dx = \\left[-e^{-0.25x}\\right]_0^\\infty = 0 - (-1) = \\mathbf{1}$. (b) $P(X > 4) = e^{-0.25 \\times 4} = e^{-1} = 0.3679$, so $P(X \\le 4) = 1 - 0.3679 = \\mathbf{0.6321}$. (c) $\\mathbb{E}[X] = 1/\\lambda = \\mathbf{4}$ years. The median is ln(2)/0.25, approximately 2.772589 years, not 4. At the mean 4 years the CDF is 1-exp(-1), about 0.632121, which is consistent with this right-skewed distribution.",
+    "successCheck": "Mass 1; survival at 4 is exp(-1), CDF 1-exp(-1), mean 4 years; median about 2.772589."
   },
   "independentExercise": {
     "prompt": "Loss severity has density $f(x) = \\dfrac{2}{(1+x)^3}$ for $x \\ge 0$. (a) Verify $\\int_0^\\infty f = 1$. (b) Compute $P(X > 1)$. (c) Compute $\\mathbb{E}[X]$ using the substitution $u = 1 + x$. (d) Compare the tail decay with the exponential $\\lambda = 1$ model's $e^{-t}$ - which model produces bigger extreme losses?",
     "hints": [
       "Antiderivative of $(1+x)^{-3}$ is $-(1+x)^{-2}/2$.",
-      "After substituting $u = 1+x$, split $2(u-1)u^{-3}$ into two standard $p$-integrals."
+      "After substituting $u = 1+x$, split $2(u-1)u^{-3}$ into two standard $p$-integrals.",
+      "Evaluate finite-endpoint integrals first, then take limits; compare density, survival and moment exponents separately."
     ],
-    "solution": "(a) $\\int_0^\\infty 2(1+x)^{-3}dx = \\left[-(1+x)^{-2}\\right]_0^\\infty = 1$. (b) $P(X>1) = \\left[-(1+x)^{-2}\\right]_1^\\infty = 1/4 = \\mathbf{0.25}$. (c) $\\mathbb{E}[X] = \\int_1^\\infty 2(u-1)u^{-3}du = \\int_1^\\infty (2u^{-2} - 2u^{-3})du = [2 \\cdot 1 - 2 \\cdot \\tfrac{1}{2}] = \\mathbf{1}$. (d) Power decay $(1+x)^{-3}$ beats exponential decay in the far tail: beyond large $t$, $e^{-t} \\ll t^{-3}$, so *this* power-law model assigns far larger probabilities to catastrophic losses, the heavy-tail warning."
+    "solution": "(a) $\\int_0^\\infty 2(1+x)^{-3}dx = \\left[-(1+x)^{-2}\\right]_0^\\infty = 1$. (b) $P(X>1) = \\left[-(1+x)^{-2}\\right]_1^\\infty = 1/4 = \\mathbf{0.25}$. (c) $\\mathbb{E}[X] = \\int_1^\\infty 2(u-1)u^{-3}du = \\int_1^\\infty (2u^{-2} - 2u^{-3})du = [2 \\cdot 1 - 2 \\cdot \\tfrac{1}{2}] = \\mathbf{1}$. (d) The loss survival is(1+t)^(-2), whereas the exponential survival is exp(-t). For sufficiently large t the power-law survival is larger. At t=1 it is 0.25, which is smaller than exp(-1), so do not claim it dominates at every threshold. Compare survival tails, not the density exponent 3 with an exceedance probability exponent. The two distributions have the same mean 1 but different far-tail and second-moment behaviour.",
+    "successCheck": "Mass 1, tail at 1=1/4, mean 1; survival(1+t)^(-2) is eventually heavier than exp(-t), not at every threshold."
   },
   "commonMistakes": [
     "Writing $\\int_1^\\infty \\frac{dx}{x} = \\ln(\\infty)$ as if it were a value, it diverges; say so explicitly.",
@@ -140,14 +144,14 @@
     "Computing $P(X = x)$ for a continuous variable, it is 0; only intervals have probability.",
     "Mixing the mean formula for discrete variables ($\\sum$) with the continuous one ($\\int x f(x)dx$)."
   ],
-  "realWorldApplication": "Reliability engineering (time-to-failure), queueing (inter-arrival times), and actuarial loss models all run on exponential and power-law densities; every 'probability that X exceeds a threshold' is an improper integral evaluated by limit.",
-  "quantFinanceApplication": "Survival probabilities $P(\\tau > t) = e^{-\\lambda t}$ underpin credit pricing; expected losses $\\int x f(x)dx$ and tail integrals define VaR and expected shortfall; and the p-test distinction between exponential and power-law tails is the mathematical core of fat-tail risk.",
+  "realWorldApplication": "Improper integrals help evaluate unbounded waiting-time and loss models. Bounded-support probabilities may use proper integrals, and discrete models use sums. Exponential arrivals require particular modelling assumptions; they are not a universal queueing law.",
+  "quantFinanceApplication": "Constant positive hazard gives exponential survival in a simple credit model. VaR is a quantile, found from a CDF or survival equation; it is not itself an expected-loss integral. Expected shortfall is a conditional-tail average under appropriate definitions and may be infinite even when a quantile is finite.",
   "summary": [
     "Improper integrals are limits: $\\int_1^\\infty f = \\lim_{b\\to\\infty}\\int_1^b f$; finite limit = converge, else diverge.",
     "$p$-test: $\\int_1^\\infty x^{-p}dx$ converges iff $p > 1$ ($1/x^2$ gives 1; $1/x$ diverges).",
     "A density satisfies $f \\ge 0$ and $\\int f = 1$; probabilities are range integrals and $P(X = x) = 0$.",
-    "Exponential model: $P(X>t) = e^{-\\lambda t}$, $\\mathbb{E}[X] = 1/\\lambda$ (by parts), for $\\lambda = 0.1$: $P(X>10) = 0.368$, mean 10 years.",
-    "Tail decay class matters: power-law tails (integrable only for $p > 1$) dwarf exponential tails at extremes, the heart of heavy-tail risk."
+    "For constant lambda>0 and t>=0, exponential survival is exp(-lambda*t) and mean1/lambda. At lambda=0.1 per year, survival past10 years is about0.367879 and mean10 years.",
+    "For density decay x^(-p), normalisation requires p>1, a finite mean p>2 and finite second moment p>3. A survival exponent alpha=p-1 uses different thresholds; specify the convention."
   ],
   "quiz": [
     {
@@ -156,12 +160,13 @@
       "prompt": "Which integral diverges?",
       "options": [
         "$\\int_1^\\infty \\frac{dx}{x^2}$",
-        "$\\int_1^\\infty \\frac{dx}{x^3}$",
         "$\\int_1^\\infty \\frac{dx}{x}$",
+        "$\\int_1^\\infty \\frac{dx}{x^3}$",
         "$\\int_0^1 \\frac{dx}{\\sqrt{x}}$"
       ],
-      "answerIndex": 2,
-      "explanation": "By the $p$-test, $\\int_1^\\infty x^{-p}dx$ converges only for $p > 1$; $1/x$ has $p = 1$ and accumulates to $\\ln b \\to \\infty$. The others converge ($1$ and $1/2$, and $2$ respectively)."
+      "answerIndex": 1,
+      "explanation": "By the $p$-test, $\\int_1^\\infty x^{-p}dx$ converges only for $p > 1$; $1/x$ has $p = 1$ and accumulates to $\\ln b \\to \\infty$. The others converge ($1$ and $1/2$, and $2$ respectively).",
+      "objective": 1
     },
     {
       "id": "q2",
@@ -169,14 +174,16 @@
       "prompt": "A default time follows an exponential model with hazard $\\lambda = 0.1$ per year. What is $P(\\text{survival past } t = 10)$, i.e. $P(X > 10)$? (4 decimal places)",
       "answer": 0.3679,
       "tolerance": 0.001,
-      "explanation": "$P(X > t) = e^{-\\lambda t} = e^{-1} \\approx 0.3679$."
+      "explanation": "With constant positive hazard 0.1 per year and t=10 years, survival is exp(-0.1*10)=exp(-1), approximately 0.367879. The complementary probability of default by 10 years is about 0.632121.",
+      "objective": 3
     },
     {
       "id": "q3",
       "type": "numeric",
       "prompt": "For the exponential model with $\\lambda = 0.25$, what is $\\mathbb{E}[X]$ in years?",
       "answer": 4,
-      "explanation": "The mean of an exponential is $1/\\lambda = 4$ years, derived via integration by parts on $\\int_0^\\infty x\\,\\lambda e^{-\\lambda x}dx$."
+      "explanation": "The mean of an exponential is $1/\\lambda = 4$ years, derived via integration by parts on $\\int_0^\\infty x\\,\\lambda e^{-\\lambda x}dx$.",
+      "objective": 3
     },
     {
       "id": "q4",
@@ -185,33 +192,54 @@
       "language": "python",
       "code": "import math\nlam = 0.1\nfor t in [5, 10, 20]:\n    print(round(math.exp(-lam * t), 4))",
       "answer": "0.6065\n0.3679\n0.1353",
-      "explanation": "Exponential survival probabilities $e^{-0.1t}$: halving the mean wait (hazard doubling) squares the tail probability."
+      "explanation": "Exponential survival probabilities $e^{-0.1t}$: halving the mean wait (hazard doubling) squares the tail probability.",
+      "objective": 3
     },
     {
       "id": "q5",
       "type": "mcq",
       "prompt": "Which set of properties makes $f$ a valid probability density on $[0, \\infty)$?",
       "options": [
-        "$f(x) \\ge 0$ and $\\int_0^\\infty f(x)\\,dx = 1$",
         "$f(x) > 1$ somewhere so probabilities are meaningful",
-        "$\\int_0^\\infty f(x)\\,dx = 1$ is sufficient on its own",
-        "$f(x) \\ge 0$ and $\\max f = 1$"
+        "$f(x) \\ge 0$ and $\\max f = 1$",
+        "$f(x) \\ge 0$ and $\\int_0^\\infty f(x)\\,dx = 1$",
+        "$\\int_0^\\infty f(x)\\,dx = 1$ is sufficient on its own"
       ],
-      "answerIndex": 0,
-      "explanation": "Non-negativity plus total mass 1 are exactly the two axioms; the maximum is irrelevant (densities can exceed 1 on narrow ranges), and non-negativity cannot be dropped since negative area would corrupt probabilities."
+      "answerIndex": 2,
+      "explanation": "Non-negativity plus total mass 1 are exactly the two axioms; the maximum is irrelevant (densities can exceed 1 on narrow ranges), and non-negativity cannot be dropped since negative area would corrupt probabilities.",
+      "objective": 2
     },
     {
       "id": "q6",
       "type": "short",
-      "prompt": "In risk terms, why does the $p$-test's threshold $p > 1$ matter when choosing a loss-severity model?",
-      "modelAnswer": "It shows which power-law tails are even integrable: tail mass decaying like x^-p needs p > 1 to have finite probability and mean, and models near that boundary carry extreme tail risk versus exponentially decaying tails.",
+      "prompt": "If a nonnegative loss density has tail f(x) proportional to x^(-p), what p thresholds give finite tail mass and finite mean? Distinguish the density exponent from the survival exponent.",
+      "modelAnswer": "For a power-law density tail, integrable tail mass needs p>1, but a finite mean needs p>2 because x*f(x) behaves as x^(1-p). The survival tail exponent is alpha=p-1, so finite mean requires alpha>1. A valid heavy-tail density can have infinite mean.",
       "keywords": [
-        "p > 1",
-        "tail",
-        "integrable",
-        "heavy"
+        "p>1|p > 1",
+        "p>2|p > 2",
+        "density",
+        "mean",
+        "survival"
       ],
-      "explanation": "Power-law tails with $p \\le 1$ carry infinite mass (impossible) and $p \\le 2$ infinite mean; and even valid heavy tails ($1 < p$) put far more mass at extremes than exponential tails, so tail-decay class drives VaR and expected shortfall."
+      "explanation": "Normalisation integrates f itself, whereas the mean integrates x*f. Their p-test thresholds differ by 1. A survival exponent is one less than the density exponent in this power-law setting; confusing them gives incorrect moment claims.",
+      "objective": 4
+    },
+    {
+      "id": "q7",
+      "type": "numeric",
+      "objective": 0,
+      "prompt": "Evaluate the convergent improper integral of x^(-2) from 1 to infinity by a finite-endpoint limit. What is its value?",
+      "answer": 1,
+      "explanation": "For finite b>1, the integral is[-1/x]_1^b=1-1/b. Taking b to infinity gives 1, a finite limit. Infinity is used as a limit, not substituted as an ordinary endpoint number."
+    },
+    {
+      "id": "q8",
+      "type": "numeric",
+      "objective": 4,
+      "prompt": "For f(x)=2/(1+x)^3 on x>=0, what is P(X>1)?",
+      "answer": 0.25,
+      "tolerance": 1e-06,
+      "explanation": "Integrate using -(1+x)^(-2) from 1 to a finite upper bound b, then let b grow:0-(-1/4)=1/4. The negative sign in the antiderivative is necessary for a positive probability."
     }
   ],
   "flashcards": [
@@ -233,18 +261,18 @@
     {
       "type": "formula",
       "front": "Exponential distribution",
-      "back": "f(x) = lambda e^(-lambda x); P(X>t) = e^(-lambda t); E[X] = 1/lambda (mean = 1/hazard)."
+      "back": "For lambda>0, f(x)=lambda*exp(-lambda*x) on x>=0 and 0 otherwise. For t>=0, survival=exp(-lambda*t); mean=1/lambda and median=ln(2)/lambda."
     },
     {
       "type": "probability",
       "front": "Loss density 2/(1+x)^3 on [0, inf): tail probability P(X > 1)?",
-      "back": "1/4 = 25%, evaluated as [(1+x)^(-2)] from 1 to infinity."
+      "back": "1/4=25%: use antiderivative -(1+x)^(-2), evaluated upper minus lower from 1 to infinity. Density exponent 3 gives survival exponent 2 and infinite second moment."
     }
   ],
   "references": [
     {
-      "label": "OpenStax Calculus Volume 2: Chapter 7: The p-Series / Improper Integrals",
-      "url": "https://openstax.org/details/books/calculus-volume-2"
+      "label": "OpenStax Calculus Volume 2: Improper Integrals, Section 3.7",
+      "url": "https://openstax.org/books/calculus-volume-2/pages/3-7-improper-integrals"
     },
     {
       "label": "OpenStax Introductory Statistics: Continuous Random Variables",

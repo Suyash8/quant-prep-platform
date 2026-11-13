@@ -151,12 +151,12 @@ export function RevisionClient() {
           <div className="absolute -right-12 -top-12 h-44 w-44 rounded-full bg-violet-soft anim-float-slow" aria-hidden />
           <div className="relative">
             <div className="text-6xl font-black leading-none">{dueCards.length}</div>
-            <p className="mt-1.5 text-sm font-bold text-muted">cards due</p>
+            <p className="mt-1.5 text-[15px] font-bold text-muted">cards due</p>
             <Link href="#review" className="btn3d btn3d-lg mt-5">
               Start review
               <ArrowRight className="h-5 w-5" />
             </Link>
-            <p className="mt-3 text-xs text-faint font-semibold">Reveal, recall, grade honestly, the SM-2 scheduler handles the spacing.</p>
+            <p className="mt-3 text-[13px] text-faint font-semibold">Reveal, recall, grade honestly, the SM-2 scheduler handles the spacing.</p>
           </div>
         </div>
       ) : (
@@ -165,7 +165,7 @@ export function RevisionClient() {
           <p className="mt-2 text-lg font-black">Nothing due, you&apos;re all caught up!</p>
           {allCards.length === 0 && (
             <>
-              <p className="mt-1 text-xs text-faint font-semibold">Complete your first lesson to start building the deck.</p>
+              <p className="mt-1 text-[13px] text-faint font-semibold">Complete your first lesson to start building the deck.</p>
               <Link href="/curriculum" className="btn3d btn3d-sm mt-4">
                 Open the curriculum
               </Link>
@@ -203,9 +203,9 @@ export function RevisionClient() {
         <div className="stat-tile min-w-0 anim-pop-in" style={popDelay(3)}>
           <span className="icon-tile icon-tile-sm icon-tile-neutral"><CircleCheck /></span>
           <div className="stat-body min-w-0">
-            <div className="stat-value tnum">{retentionPct === null ? '–' : retentionPct + '%'}</div>
+            <div className="stat-value tnum">{retentionPct === null ? 'None yet' : retentionPct + '%'}</div>
             <div className="stat-label">Retention</div>
-            <div className="stat-sub">{retentionPct === null ? 'no graded reviews yet' : 'recalled without lapse'}</div>
+            <div className="stat-sub">{retentionPct === null ? 'Not enough reviews yet' : 'recalled without lapse'}</div>
           </div>
         </div>
       </div>
@@ -230,7 +230,7 @@ export function RevisionClient() {
             {allCards.length === 0 ? (
               <div className="qf-empty">
                 <span className="empty-emoji">🗂️</span>
-                <p className="text-sm font-black">Empty, no cards yet</p>
+                <p className="text-[15px] font-black">Empty, no cards yet</p>
               </div>
             ) : (
               <>
@@ -242,7 +242,7 @@ export function RevisionClient() {
                       <li key={t.type}>
                         <div className="flex items-center gap-2.5 mb-1.5">
                           <span className={'icon-tile icon-tile-sm ' + t.tile}><Icon /></span>
-                          <span className="flex-1 min-w-0 text-sm font-semibold capitalize truncate">{cap(t.type.replace(/-/g, ' '))}</span>
+                          <span className="flex-1 min-w-0 text-[15px] font-semibold capitalize truncate">{cap(t.type.replace(/-/g, ' '))}</span>
                           <span className="chip tnum">{t.n}</span>
                           <span className="chip tnum">{pct}%</span>
                         </div>
@@ -254,7 +254,7 @@ export function RevisionClient() {
                   })}
                 </ul>
                 <div className="mt-auto pt-4 border-t-2">
-                  <div className="flex items-center justify-between text-[11px] font-black uppercase tracking-wider mb-1.5">
+                  <div className="flex items-center justify-between text-[12px] font-black uppercase tracking-wider mb-1.5">
                     <span className="text-faint">Practiced at least once</span>
                     <span className="tnum text-faint">{reviewedCards.length}/{allCards.length}</span>
                   </div>
@@ -263,7 +263,7 @@ export function RevisionClient() {
                       <div className="prog-fill" style={{ width: `${Math.min(100, Math.round((reviewedCards.length / allCards.length) * 100))}%` }} />
                     </div>
                   ) : (
-                    <p className="text-[11px] font-bold text-faint">Not started, grade your first review to begin coverage.</p>
+                    <p className="text-[12px] font-bold text-faint">Not started, grade your first review to begin coverage.</p>
                   )}
                 </div>
               </>
@@ -272,9 +272,9 @@ export function RevisionClient() {
           <div className="qf-card-flat p-4 min-w-0 anim-slide-up" style={slideDelay(2)}>
             <div className="flex items-center gap-2.5">
               <span className="icon-tile icon-tile-sm icon-tile-neutral"><Lightbulb /></span>
-              <div className="font-black text-sm tracking-tight">Works offline</div>
+              <div className="font-black text-[15px] tracking-tight">Works offline</div>
             </div>
-            <p className="mt-2 text-xs font-semibold text-muted leading-relaxed">
+            <p className="mt-2 text-[13px] font-semibold text-muted leading-relaxed">
               Reviews run entirely on this device and sync when you&apos;re online, so you can revise on a plane.
             </p>
           </div>
@@ -289,13 +289,13 @@ export function RevisionClient() {
           {upcoming.length === 0 ? (
             <div className="qf-empty">
               <span className="empty-emoji">🌙</span>
-              <p className="text-sm font-black">Nothing scheduled ahead</p>
+              <p className="text-[15px] font-black">Nothing scheduled ahead</p>
             </div>
           ) : (
             <ul className="space-y-2 max-h-96 overflow-y-auto thin-scroll">
               {upcoming.map(([key, c], i) => (
                 <li key={key} className="row-card anim-slide-up" style={slideDelay(i + 2)}>
-                  <p className="flex-1 min-w-0 text-sm font-semibold leading-snug line-clamp-2">{key.split(':').slice(0, -1).join(':').replace(/-/g, ' ')}</p>
+                  <p className="flex-1 min-w-0 text-[15px] font-semibold leading-snug line-clamp-2">{key.split(':').slice(0, -1).join(':').replace(/-/g, ' ')}</p>
                   <span className="chip shrink-0">
                     <Clock className="h-3.5 w-3.5" />
                     {formatDue(c.dueAt)}

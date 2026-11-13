@@ -1,0 +1,254 @@
+{
+  "id": "pe-containers-ci",
+  "moduleId": "ph10-production-engineering",
+  "title": "Containers, CI and Safe Releases",
+  "estMinutes": 35,
+  "difficulty": "advanced",
+  "prereqs": [
+    "pe-security-config"
+  ],
+  "objectives": [
+    "Distinguish container images from running containers and virtual machines",
+    "Design a test and build pipeline with pinned inputs",
+    "Explain canary rollout, rollback and migration compatibility"
+  ],
+  "motivation": "A service works on your laptop but fails after deployment because its runtime, dependency or configuration differs. A container image packages a filesystem and metadata so the same built artefact can run across compatible hosts. A running container adds process state, writable layers and host-kernel isolation. It is not a small virtual machine with its own independent kernel in the ordinary Linux model. Reproducibility requires controlling inputs, not merely adding a Dockerfile. Record source revision, dependency lockfiles, base-image digest, compiler and build options, and distinguish the built image from the configuration supplied when it runs.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "A release is a reproducible artefact"
+    },
+    {
+      "type": "p",
+      "md": "A service works on your laptop but fails after deployment because its runtime, dependency or configuration differs. A container image packages a filesystem and metadata so the same built artefact can run across compatible hosts. A running container adds process state, writable layers and host-kernel isolation. It is not a small virtual machine with its own independent kernel in the ordinary Linux model. Reproducibility requires controlling inputs, not merely adding a Dockerfile. Record source revision, dependency lockfiles, base-image digest, compiler and build options, and distinguish the built image from the configuration supplied when it runs."
+    },
+    {
+      "type": "h2",
+      "text": "Images and process boundaries"
+    },
+    {
+      "type": "p",
+      "md": "A Dockerfile describes build steps and layer dependencies. A digest identifies an immutable image object, while a mutable tag can later point somewhere else. Pin important base images by digest and retain the human-readable version for maintenance. Use multi-stage builds to separate compilers and test dependencies from the runtime image. Run as a non-root user where possible, expose only required interfaces and avoid privileged mode. A container is one layer of isolation, not a proof that untrusted native code is safe. Resource limits, network policy and host maintenance remain necessary, especially for a code runner."
+    },
+    {
+      "type": "h2",
+      "text": "Secrets are not build inputs to publish"
+    },
+    {
+      "type": "p",
+      "md": "Do not put passwords, API tokens or private keys in a Dockerfile, source tree or image layer. Deleting a file in a later layer does not reliably remove it from the image history. Supply secrets through the deployment platform's supported secret mechanism and keep them out of logs and provenance reports. Separate build-time package credentials from run-time service credentials. Configuration should be validated before the process declares readiness. A missing production session secret is a startup error, not a reason to silently fall back to a known development default that makes every deployment share an authentication key."
+    },
+    {
+      "type": "h2",
+      "text": "Continuous integration tests the change"
+    },
+    {
+      "type": "p",
+      "md": "A CI pipeline should install from the lockfile, check formatting and types, run unit and integration tests, execute content validators when relevant and build a versioned artefact. Cache dependencies only with keys that reflect inputs; an incorrectly reused cache can hide missing dependencies or stale generated files. Build once and promote the same tested artefact through environments. Tests must fail the pipeline on non-zero exit rather than disappear behind a successful pipe command. Verify migrations and compatibility in a disposable database. A green pipeline states which checks passed; it does not certify that every important behaviour has been tested."
+    },
+    {
+      "type": "h2",
+      "text": "Worked example: deterministic artefact identity"
+    },
+    {
+      "type": "p",
+      "md": "The program hashes identical payload bytes twice and checks that their digests match. Changing version=1 to version=2 changes the digest. This illustrates content addressing, not a complete reproducible container build: real builds may include timestamps, nondeterministic archives, downloaded packages and platform-specific outputs. A second example checks a simple deployment gate requiring tests, schema and health to pass. Replacing an AND condition with OR would allow a healthy process with failed tests to deploy. Record each gate separately so an operator can distinguish a test failure from an unavailable dependency instead of reading one ambiguous red status."
+    },
+    {
+      "type": "h2",
+      "text": "Canaries need a decision rule"
+    },
+    {
+      "type": "p",
+      "md": "A canary sends a limited fraction of traffic to the new release while monitoring defined metrics. Specify observation time, minimum traffic, error and latency thresholds and a rollback condition. A quiet canary with almost no requests is inconclusive, not healthy by proof. Readiness means the instance can receive traffic; liveness means it should be restarted if irrecoverably unhealthy. Confusing them can create restart loops during a temporary downstream outage. Compare like-for-like traffic and preserve a control group when possible. Financial services should also monitor domain invariants such as duplicate orders, stale books and reconciliation breaks, not just HTTP success rates."
+    },
+    {
+      "type": "h2",
+      "text": "Rollback is a compatibility contract"
+    },
+    {
+      "type": "p",
+      "md": "Keeping the previous image is necessary but insufficient. A new database migration may remove a column the old binary still needs, making an image rollback fail. Use expand-and-contract changes: add compatible structures, deploy code that can coexist, migrate data, then remove old structures only after the rollback window closes. Queue and event schemas need similar versioning. The pipeline lab illustrates staged processing, not a real CI provider integration. Exercise rollback in staging, retain artefact provenance and define who can stop a release. A reversible, observable deployment is more useful than an elaborate pipeline whose recovery path has never been tested."
+    },
+    {
+      "type": "h2",
+      "text": "Worked example: run and check"
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import hashlib\npayload=b'version=1'\na=hashlib.sha256(payload).hexdigest()\nb=hashlib.sha256(payload).hexdigest()\nc=hashlib.sha256(b'version=2').hexdigest()\nassert a==b and a!=c\nprint('same inputs, same digest')\ndef release(tests,schema,health):\n    return tests and schema and health\nassert release(True,True,True)\nassert not release(True,False,True)\nprint(release(True,False,True))",
+      "caption": "Complete Python 3.11+ example"
+    },
+    {
+      "type": "p",
+      "md": "The exact output is `same inputs, same digest; False`. Run the example before changing a parameter, then predict the direction of the change. The assertions encode the stated checks; a failed assertion means that the implementation and the claimed result disagree."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Check this misconception",
+      "md": "A digest identifies content, while a tag can move to another image. Artefact identity supports traceability but does not establish that its code or configuration is correct."
+    },
+    {
+      "type": "interactive",
+      "component": "PipePipeline",
+      "params": {},
+      "caption": "Related concept lab. The lab illustrates the named building block; it is not a full implementation of every model in this lesson."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Hash the same payload twice and a changed payload once. Success check: Identical input digests match and the changed payload differs.",
+    "hints": [
+      "Encode the payload as bytes.",
+      "Use a cryptographic content hash.",
+      "Compare digest equality rather than printing secrets."
+    ],
+    "solution": "\n```python\nimport hashlib\nh=lambda b:hashlib.sha256(b).hexdigest()\nassert h(b\"v1\")==h(b\"v1\")\nassert h(b\"v1\")!=h(b\"v2\")\nprint(\"identity checked\")\n```\nExpected output: `identity checked`.",
+    "successCheck": "Identical input digests match and the changed payload differs."
+  },
+  "independentExercise": {
+    "prompt": "Reject a release if any of tests, schema and health fail. Success check: All eight Boolean combinations accept only the all-true case.",
+    "hints": [
+      "Use conjunction.",
+      "Enumerate all Boolean triples.",
+      "Count accepted combinations."
+    ],
+    "solution": "\n```python\nimport itertools\naccepted=[x for x in itertools.product([False,True],repeat=3) if all(x)]\nassert accepted==[(True,True,True)]\nprint(len(accepted))\n```\nExpected output: `1`.",
+    "successCheck": "All eight Boolean combinations accept only the all-true case."
+  },
+  "commonMistakes": [
+    "A digest identifies content, while a tag can move to another image. Artefact identity supports traceability but does not establish that its code or configuration is correct.",
+    "The previous executable still expects its own data contract. Destructive schema changes can break that contract, which is why rollback needs compatible migration design."
+  ],
+  "realWorldApplication": "Use the assumptions and checks above when reviewing containers, ci and safe releases. Record inputs, state the failure conditions and compare the result with a simple independent calculation.",
+  "quantFinanceApplication": "For a trading or risk workflow, validate the model and timestamp conventions before using containers, ci and safe releases. The worked result is conditional on its assumptions, not a return promise.",
+  "summary": [
+    "Distinguish container images from running containers and virtual machines",
+    "Design a test and build pipeline with pinned inputs",
+    "Explain canary rollout, rollback and migration compatibility"
+  ],
+  "quiz": [
+    {
+      "type": "mcq",
+      "prompt": "What does an immutable image digest identify?",
+      "options": [
+        "A particular content-addressed image object",
+        "Any future image sharing the same tag",
+        "All secrets used by a running deployment",
+        "A complete proof of application correctness"
+      ],
+      "answerIndex": 0,
+      "explanation": "A digest identifies content, while a tag can move to another image. Artefact identity supports traceability but does not establish that its code or configuration is correct.",
+      "id": "q1",
+      "objective": 0
+    },
+    {
+      "type": "mcq",
+      "prompt": "Why can reverting an image fail after a database migration?",
+      "options": [
+        "Every image automatically restores the database",
+        "The old binary may require a removed schema field",
+        "A canary makes all schemas mutually compatible",
+        "Container layers prevent any schema modification"
+      ],
+      "answerIndex": 1,
+      "explanation": "The previous executable still expects its own data contract. Destructive schema changes can break that contract, which is why rollback needs compatible migration design.",
+      "id": "q2",
+      "objective": 2
+    },
+    {
+      "type": "numeric",
+      "prompt": "A canary receives 5% of 2,000 eligible requests. How many requests does it receive under this exact allocation?",
+      "answer": 100,
+      "tolerance": 1e-06,
+      "explanation": "Five percent is 0.05, and 0.05*2000=100. Actual probabilistic routing may vary, so the question explicitly assumes an exact allocation.",
+      "id": "q3",
+      "objective": 2
+    },
+    {
+      "type": "code-output",
+      "prompt": "What does this release gate print?",
+      "code": "tests,schema,health=True,False,True\nprint(tests and schema and health)",
+      "language": "python",
+      "answer": "False",
+      "explanation": "The schema gate fails, so the conjunction is false. Replacing AND with OR would incorrectly accept a release when just one check passed.",
+      "id": "q4",
+      "objective": 1
+    },
+    {
+      "type": "short",
+      "prompt": "What does expand-and-contract protect during deployment?",
+      "modelAnswer": "It preserves compatibility between old and new code while a schema change is introduced and data is migrated, keeping rollback possible.",
+      "keywords": [
+        "compatible|compatibility|old",
+        "schema|migrate|migration",
+        "rollback|new"
+      ],
+      "explanation": "Adding compatible structures before removing old ones lets both versions operate during the transition. Keeping an old image alone cannot undo an incompatible database change.",
+      "id": "q5",
+      "objective": 2
+    },
+    {
+      "type": "ms",
+      "prompt": "Which release practices are defensible?",
+      "options": [
+        "Promote the same tested artefact",
+        "Define canary thresholds and rollback rules",
+        "Bake production credentials into image layers",
+        "Treat zero-traffic canary silence as proof"
+      ],
+      "answerIndices": [
+        0,
+        1
+      ],
+      "explanation": "Artefact promotion and explicit canary decisions make releases auditable. Secrets in layers can persist, and no observed failures without traffic is weak evidence of health.",
+      "id": "q6",
+      "objective": 1
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "What does an immutable image digest identify?",
+      "back": "A particular content-addressed image object"
+    },
+    {
+      "type": "concept",
+      "front": "Why can reverting an image fail after a database migration?",
+      "back": "The old binary may require a removed schema field"
+    },
+    {
+      "type": "concept",
+      "front": "A canary receives 5% of 2,000 eligible requests. How many requests does it receive under this exact allocation?",
+      "back": "The result is 100 under the stated inputs."
+    },
+    {
+      "type": "concept",
+      "front": "What does expand-and-contract protect during deployment?",
+      "back": "It preserves compatibility between old and new code while a schema change is introduced and data is migrated, keeping rollback possible."
+    },
+    {
+      "type": "concept",
+      "front": "Which release practices are defensible?",
+      "back": "Promote the same tested artefact, Define canary thresholds and rollback rules"
+    }
+  ],
+  "references": [
+    {
+      "label": "Docker: building best practices",
+      "url": "https://docs.docker.com/build/building/best-practices/"
+    },
+    {
+      "label": "GitHub Actions: workflow syntax",
+      "url": "https://docs.github.com/en/actions/writing-workflows/workflow-syntax-for-github-actions"
+    },
+    {
+      "label": "Google SRE: canary releases",
+      "url": "https://sre.google/workbook/canarying-releases/"
+    }
+  ],
+  "skills": [
+    "production-engineering"
+  ]
+}

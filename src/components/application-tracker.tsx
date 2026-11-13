@@ -69,9 +69,9 @@ export function ApplicationTracker({ initial }: { initial: AppRow[] }) {
       <form onSubmit={add} className="qf-card-flat p-3.5 !bg-surface-2/50 flex flex-wrap gap-2.5 items-center">
         <div className="flex items-center gap-2 flex-1 min-w-44">
           <Building2 className="h-4 w-4 text-faint shrink-0" aria-hidden />
-          <input value={company} onChange={e => setCompany(e.target.value)} placeholder="Company (e.g. Optiver)" className="qf-input h-10 py-0 text-sm flex-1" aria-label="Company" />
+          <input value={company} onChange={e => setCompany(e.target.value)} placeholder="Company (e.g. Optiver)" className="qf-input h-10 py-0 text-[15px] flex-1" aria-label="Company" />
         </div>
-        <input value={role} onChange={e => setRole(e.target.value)} placeholder="Role (e.g. Graduate C++ Developer)" className="qf-input h-10 py-0 text-sm flex-1 min-w-52" aria-label="Role" />
+        <input value={role} onChange={e => setRole(e.target.value)} placeholder="Role (e.g. Graduate C++ Developer)" className="qf-input h-10 py-0 text-[15px] flex-1 min-w-52" aria-label="Role" />
         <button type="submit" className="btn3d btn3d-sm h-10">
           <Plus className="h-4 w-4" /> Track application
         </button>
@@ -82,7 +82,7 @@ export function ApplicationTracker({ initial }: { initial: AppRow[] }) {
         <div className="qf-empty">
           <span className="empty-emoji" role="img" aria-label="empty clipboard">🗒️</span>
           <p className="text-base font-extrabold">No applications tracked yet</p>
-          <p className="mx-auto mt-1 max-w-sm text-sm font-semibold text-muted">
+          <p className="mx-auto mt-1 max-w-sm text-[15px] font-semibold text-muted">
             Add the first one when you start applying, statuses update inline and stay private to your account.
           </p>
         </div>
@@ -91,22 +91,22 @@ export function ApplicationTracker({ initial }: { initial: AppRow[] }) {
           {rows.map(r => {
             const removeLabel = 'Remove ' + r.company + ' application';
             return (
-              <div key={r.id} className="py-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm anim-slide-up">
+              <div key={r.id} className="py-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-[15px] anim-slide-up">
                 <span className={`icon-tile icon-tile-sm ${tileFor(r.company)}`}>
-                  <span className="font-black text-sm tracking-tight">{monogram(r.company)}</span>
+                  <span className="font-black text-[15px] tracking-tight">{monogram(r.company)}</span>
                 </span>
                 <span className="min-w-36 flex-1">
                   <span className="block font-bold truncate">{r.company}</span>
-                  <span className="block text-xs text-muted font-semibold truncate">{r.role}</span>
+                  <span className="block text-[13px] text-muted font-semibold truncate">{r.role}</span>
                 </span>
-                <select value={r.status} onChange={e => update(r.id, { status: e.target.value })} className="qf-select-sm h-9 !py-0 text-xs font-bold shrink-0" aria-label={'Status for ' + r.company}>
+                <select value={r.status} onChange={e => update(r.id, { status: e.target.value })} className="qf-select-sm h-9 !py-0 text-[13px] font-bold shrink-0" aria-label={'Status for ' + r.company}>
                   {STATUSES.map(s => <option key={s} value={s}>{(STATUS_META[s] ?? { label: s }).label}</option>)}
                 </select>
                 <input
                   defaultValue={r.note}
                   onBlur={e => update(r.id, { note: e.target.value })}
                   placeholder="notes…"
-                  className="qf-input h-9 py-0 text-xs flex-1 min-w-[140px] max-w-[180px]"
+                  className="qf-input h-9 py-0 text-[13px] flex-1 min-w-[140px] max-w-[180px]"
                   aria-label="Notes"
                 />
                 <button onClick={() => remove(r.id)} className="text-faint hover:text-danger press shrink-0 pr-1" aria-label={removeLabel}>

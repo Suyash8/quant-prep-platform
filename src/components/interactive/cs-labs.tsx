@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Slider, LabFrame, fmt, INK, MUTED, FAINT, ACCENT } from './core';
+import { Slider, LabFrame, compileExpression, ExprNotice, fmt, INK, MUTED, FAINT, ACCENT } from './core';
 
 /* ---------------- MemoryLayout ---------------- */
 export function MemoryLayout({ params }: { params: Record<string, unknown> }) {
@@ -41,12 +41,12 @@ export function MemoryLayout({ params }: { params: Record<string, unknown> }) {
       <div className="flex flex-wrap gap-1.5 justify-center">
         {bytes.map((b, i) => (
           <div key={i} className="text-center">
-            <div className="w-14 border rounded-md py-1.5 tnum text-xs bg-accent-soft" title={`byte ${i}`}>{b.toString(16).padStart(2, '0')}</div>
-            <div className="text-[9px] text-faint mt-0.5">byte {i}</div>
+            <div className="w-14 border rounded-md py-1.5 tnum text-[13px] bg-accent-soft" title={`byte ${i}`}>{b.toString(16).padStart(2, '0')}</div>
+            <div className="text-[12px] text-faint mt-0.5">byte {i}</div>
           </div>
         ))}
       </div>
-      <p className="mt-3 text-xs text-muted text-center">
+      <p className="mt-3 text-[13px] text-muted text-center">
         {type === 'double' && 'A double = sign(1) + exponent(11) + mantissa(52) bits. The decimal 42.17 cannot be represented exactly, try 42.17 in the IEEE 754 lesson.'}
         {type === 'int' && 'Two\'s complement: the top bit contributes −2³¹, giving the symmetric signed range.'}
         {type.startsWith('int[') && 'Contiguous elements; address arithmetic A[i] = base + i × sizeof(element).'}
@@ -98,6 +98,7 @@ export function ComplexityCompare({ params }: { params: Record<string, unknown> 
   });
   return (
     <LabFrame title={`Growth comparison at n = ${n}`} caption={fns.map(({ e }, i) => `${e} = ${fmt(raw[i], raw[i] < 10 ? 3 : 0)} (${(normalized[i] * 100).toFixed(1)}% of max)`).join(' · ')}>
+      <ExprNotice exprs={exprs} />
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto">
         <line x1={P} y1={H - P} x2={W - P} y2={H - P} stroke={FAINT} />
         {curves.map((c, i) => (
@@ -112,7 +113,7 @@ export function ComplexityCompare({ params }: { params: Record<string, unknown> 
       </svg>
       <div className="mt-2 flex flex-wrap items-center gap-4">
         <div className="flex-1 min-w-48"><Slider label="n" value={n} min={1} max={nMax} step={1} onChange={setN} format={v => v.toFixed(0)} /></div>
-        <div className="flex gap-3 text-xs">
+        <div className="flex gap-3 text-[13px]">
           {curves.map((c, i) => (
             <span key={i} className="flex items-center gap-1.5"><span className="h-1.5 w-4 rounded-full inline-block" style={{ background: c.color }} />{c.e}</span>
           ))}
@@ -123,19 +124,8 @@ export function ComplexityCompare({ params }: { params: Record<string, unknown> 
 }
 
 function safe(expr: string): (n: number) => number {
-  // Replace log with Math.log, ^ with ** handled below via simple transforms
-
-
-  const js = expr.replace(/\^/g, '**').replace(/\blog\b/g, 'Math.log').replace(/\bexp\b/g, 'Math.exp')
-    .replace(/\bsqrt\b/g, 'Math.sqrt').replace(/\bn\b/g, 'x');
-  try {
-    const f = new Function('x', `"use strict"; return (${js});`) as (x: number) => number;
-    const test = f(2);
-    if (typeof test !== 'number') return () => NaN;
-    return f;
-  } catch {
-    return x => x;
-  }
+  // Same safe parser as the math labs (no eval). Unreadable input draws nothing and is reported by ExprNotice.
+  try { return compileExpression(expr); } catch { return () => NaN; }
 }
 
 /* ---------------- SortingVisual ---------------- */
@@ -218,19 +208,19 @@ export function SortingVisual({ params }: { params: Record<string, unknown> }) {
           <div key={a.id} className="flex flex-col items-center gap-1" style={{ width: `${Math.max(120 / arr.length, 4)}%` }}>
             <div className="w-full rounded-t-sm transition-all duration-200"
               style={{ height: `${(a.v / maxV) * 100}%`, background: sortedIdx[i] ? 'var(--success)' : ACCENT, opacity: 0.85 }} />
-            <span className="text-[9px] tnum text-faint">{a.v}</span>
+            <span className="text-[12px] tnum text-faint">{a.v}</span>
           </div>
         ))}
       </div>
       <div className="mt-3 flex justify-center gap-2">
         {['bubble', 'insertion', 'selection'].map(a => (
           <button key={a} onClick={() => { setAlgo(a); setArr(initial); setComparisons(0); if (timer.current) { clearInterval(timer.current); timer.current = null; setRunning(false); } }}
-            className={algo === a ? 'text-xs px-3 py-1.5 rounded-md bg-accent text-accent-foreground' : 'text-xs px-3 py-1.5 rounded-md border hover:bg-surface-2'}>
+            className={algo === a ? 'text-[13px] px-3 py-1.5 rounded-md bg-accent text-accent-foreground' : 'text-[13px] px-3 py-1.5 rounded-md border hover:bg-surface-2'}>
             {a}
           </button>
         ))}
-        <button onClick={toggle} className="text-xs px-3 py-1.5 rounded-md border hover:bg-surface-2">{running ? 'Pause' : 'Sort'}</button>
-        <button onClick={() => { setArr(initial); setComparisons(0); if (timer.current) { clearInterval(timer.current); timer.current = null; setRunning(false); } }} className="text-xs px-3 py-1.5 rounded-md border hover:bg-surface-2">Reset</button>
+        <button onClick={toggle} className="text-[13px] px-3 py-1.5 rounded-md border hover:bg-surface-2">{running ? 'Pause' : 'Sort'}</button>
+        <button onClick={() => { setArr(initial); setComparisons(0); if (timer.current) { clearInterval(timer.current); timer.current = null; setRunning(false); } }} className="text-[13px] px-3 py-1.5 rounded-md border hover:bg-surface-2">Reset</button>
       </div>
     </LabFrame>
   );
@@ -253,11 +243,11 @@ export function HashTableVisual({ params }: { params: Record<string, unknown> })
       <div className="grid gap-1.5 max-w-md mx-auto">
         {table.map((chain, i) => (
           <div key={i} className="flex items-center gap-2">
-            <div className="w-16 text-xs text-faint tnum">bucket {i}</div>
+            <div className="w-16 text-[13px] text-faint tnum">bucket {i}</div>
             <div className="flex gap-1 flex-wrap flex-1">
-              {chain.length === 0 && <span className="text-xs text-faint">empty</span>}
+              {chain.length === 0 && <span className="text-[13px] text-faint">empty</span>}
               {chain.map(k => (
-                <span key={k} className="text-[10px] px-1.5 py-0.5 rounded bg-accent-soft text-accent tnum">{k}</span>
+                <span key={k} className="text-[12px] px-1.5 py-0.5 rounded bg-accent-soft text-accent tnum">{k}</span>
               ))}
             </div>
           </div>
@@ -341,7 +331,7 @@ export function BSTVisual({ params }: { params: Record<string, unknown> }) {
               <circle cx={px(i)} cy={py(i)} r={16}
                 fill={n.v === target ? ACCENT : onPath ? 'var(--accent-soft)' : 'var(--surface)'}
                 stroke={ACCENT} strokeWidth={onPath ? 2 : 1} />
-              <text x={px(i)} y={py(i) + 4} textAnchor="middle" fontSize="11" fill={n.v === target ? '#fff' : INK}>{n.v}</text>
+              <text x={px(i)} y={py(i) + 4} textAnchor="middle" fontSize="12" fill={n.v === target ? '#fff' : INK}>{n.v}</text>
             </g>
           );
         })}

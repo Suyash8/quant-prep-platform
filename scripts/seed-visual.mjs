@@ -1,9 +1,9 @@
-// Seed visual@test.dev with realistic 3-weeks-in learner data so all pages render rich states.
+// Seed the demo account with realistic 3-weeks-in learner data so all pages render rich states.
 // Postgres/Prisma version. Usage: DATABASE_URL=... node scripts/seed-visual.mjs
 import { PrismaClient } from '@prisma/client';
 
 const db = new PrismaClient();
-const EMAIL = 'visual@test.dev';
+const EMAIL = (process.env.QF_DEMO_EMAIL || '');
 const now = Date.now();
 const iso = (ms) => new Date(ms).toISOString();
 const daysAgo = (d, h = 0) => new Date(now - d * 864e5 - h * 36e5);

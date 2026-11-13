@@ -2,7 +2,7 @@
   "id": "alg-graph-traversal",
   "moduleId": "ph5-algorithms",
   "title": "BFS, DFS and Topological Sorting",
-  "estMinutes": 27,
+  "estMinutes": 35,
   "difficulty": "core",
   "prereqs": [
     "alg-greedy-backtracking"
@@ -51,7 +51,7 @@
     },
     {
       "type": "p",
-      "md": "A **topological order** of a directed acyclic graph (DAG) lists vertices so every edge points forward, dependencies before dependents. It exists *if and only if* the graph has no directed cycle, which makes it the standard consistency check for build systems, ETL pipelines and settlement instructions. **Kahn's algorithm** computes it in $O(V+E)$: repeatedly output any vertex with indegree 0, then delete it, decrementing its dependents' indegrees. If the queue ever empties with vertices left over, they form a cycle."
+      "md": "A **topological order** of a directed acyclic graph (DAG) lists vertices so every edge points forward, dependencies before dependents. It exists *if and only if* the graph has no directed cycle, which makes it the standard consistency check for build systems, ETL pipelines and settlement instructions. **Kahn's algorithm** computes it in $O(V+E)$: repeatedly output any vertex with indegree 0, then delete it, decrementing its dependents' indegrees. If the queue ever empties with vertices left over, a cycle exists among them or blocks them."
     },
     {
       "type": "steps",
@@ -80,32 +80,58 @@
         ],
         "transitions": {
           "match": {
-            "confirm": 1.0
+            "confirm": 1
           },
           "confirm": {
-            "settle": 1.0
+            "settle": 1
           }
         },
         "steps": 10
       },
       "caption": "A settlement pipeline as a state graph: stages are nodes, hand-offs are edges, traversal order matters."
+    },
+    {
+      "type": "p",
+      "md": "Build the adjacency list with an entry for every vertex, including vertices that have no outgoing edges. Otherwise a traversal can reach a terminal node and fail when it tries to read that node's neighbours. The direction of an edge is part of the model: A to B means you can move from A to B, not necessarily the reverse. For an undirected graph, store each edge in both neighbour lists. The resulting constant factor does not change the linear time and space bounds."
+    },
+    {
+      "type": "p",
+      "md": "To reconstruct a shortest-hop path, store a parent when a vertex is first discovered. Suppose A reaches B and C, and both reach D. BFS first assigns distance one to B and C, then distance two to D. Whichever parent first discovers D gives a shortest-hop route. Marking D at enqueue time prevents the second parent from inserting another copy. Equal-length paths can produce different parent trees when neighbour order changes, so specify a tie-breaking rule only if your application requires one."
+    },
+    {
+      "type": "p",
+      "md": "The leftover vertices in Kahn's algorithm need not all lie on a cycle. Consider A to B, B to A and B to C. A and B form a cycle; C is merely downstream of it. None can be emitted because every remaining vertex has positive indegree. The leftover count proves that some cycle exists, but it does not identify the exact cyclic component. Use a strongly connected components algorithm when you need to distinguish the root cyclic dependency from tasks blocked behind it."
+    },
+    {
+      "type": "p",
+      "md": "Finally, a shortest path in hops is not automatically a fastest path in time. One direct network link might take 20 microseconds while two links through an intermediate node take 3 microseconds each. BFS prefers the direct one-edge route, but a weighted shortest-path algorithm prefers the two-edge route totalling 6. Use Dijkstra for non-negative latency weights rather than silently treating every edge as equal. For a trading pipeline, first decide whether the question concerns reachability, dependency order, hop count or accumulated latency; that choice determines the algorithm."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "from collections import deque\n\ndef hop_path(graph, source, target):\n    parent = {source: None}\n    queue = deque([source])\n    while queue:\n        u = queue.popleft()\n        if u == target:\n            path = []\n            while u is not None:\n                path.append(u)\n                u = parent[u]\n            return list(reversed(path))\n        for v in graph.get(u, []):\n            if v not in parent:\n                parent[v] = u\n                queue.append(v)\n    return None\n\ngraph = {'A': ['B', 'C'], 'B': ['D'], 'C': ['D'], 'D': []}\nassert hop_path(graph, 'A', 'D') == ['A', 'B', 'D']\nassert hop_path(graph, 'D', 'A') is None\nprint(hop_path(graph, 'A', 'D'))  # ['A', 'B', 'D']",
+      "caption": "Parent links reconstruct a shortest-hop path; a directed path need not exist in reverse."
     }
   ],
   "guidedExercise": {
     "prompt": "For the graph $1 \\to 2$, $1 \\to 3$, $2 \\to 4$, $3 \\to 4$, $3 \\to 5$, $4 \\to 5$: run BFS from node 1 and write down the queue contents at each step and the shortest-hop distance of every node from 1.",
     "hints": [
       "Enqueue neighbours in the order the adjacency dict lists them; mark each as seen when enqueued.",
-      "A node's distance is one more than the distance of the node that discovered it."
+      "A node's distance is one more than the distance of the node that discovered it.",
+      "The edge from 3 to 5 discovers node 5 at distance 2; do not enqueue it again from 4."
     ],
-    "solution": "Queue trace: $[1]$; pop 1, discover 2 and 3, queue $[2,3]$; pop 2, discover 4, queue $[3,4]$; pop 3, discover 5, queue $[4,5]$; pop 4 (5 already seen); pop 5. Order $1,2,3,4,5$. Distances: node 1: 0; nodes 2, 3: 1; nodes 4, 5: 2. BFS reaches each node in the fewest hops."
+    "solution": "Queue trace: $[1]$; pop 1, discover 2 and 3, queue $[2,3]$; pop 2, discover 4, queue $[3,4]$; pop 3, discover 5, queue $[4,5]$; pop 4 (5 already seen); pop 5. Order $1,2,3,4,5$. Distances: node 1: 0; nodes 2, 3: 1; nodes 4, 5: 2. BFS reaches each node in the fewest hops.",
+    "successCheck": "Distances from 1 are 0, 1, 1, 2, 2 for vertices 1 through 5."
   },
   "independentExercise": {
     "prompt": "A pipeline DAG has stages A, B, C, D, E with dependencies A→C, B→C, C→D, C→E, D→E. (a) Compute the indegrees and run Kahn's algorithm to produce one valid topological order. (b) How many distinct valid topological orders does this DAG have, and why?",
     "hints": [
       "A and B have no dependencies, so both start with indegree 0.",
-      "After C, which node must precede which?"
+      "After C, which node must precede which?",
+      "Only A and B can swap. C, D and E must stay in that order."
     ],
-    "solution": "(a) Indegrees: A: 0, B: 0, C: 2, D: 1, E: 2. Kahn emits A and B (either order), then C, then D, then E: e.g. $[A, B, C, D, E]$. (b) Only A and B are interchangeable; C must follow both, D must follow C, E must follow D. So exactly **2** orders: $[A,B,C,D,E]$ and $[B,A,C,D,E]$."
+    "solution": "(a) Indegrees: A: 0, B: 0, C: 2, D: 1, E: 2. Kahn emits A and B (either order), then C, then D, then E: e.g. $[A, B, C, D, E]$. (b) Only A and B are interchangeable; C must follow both, D must follow C, E must follow D. So exactly **2** orders: $[A,B,C,D,E]$ and $[B,A,C,D,E]$.",
+    "successCheck": "The only valid orders are ABCDE and BACDE."
   },
   "commonMistakes": [
     "Omitting the visited set, so any cycle traps the traversal forever.",
@@ -131,20 +157,22 @@
       "language": "python",
       "code": "from collections import deque\n\ng = {1: [2, 3], 2: [4], 3: [4], 4: []}\norder, q, seen = [], deque([1]), {1}\nwhile q:\n    u = q.popleft()\n    order.append(u)\n    for v in g[u]:\n        if v not in seen:\n            seen.add(v)\n            q.append(v)\nprint(order)",
       "answer": "[1, 2, 3, 4]",
-      "explanation": "BFS pops 1, enqueues 2 and 3, pops 2 (enqueues 4), pops 3, pops 4, level order [1, 2, 3, 4]."
+      "explanation": "BFS pops 1, enqueues 2 and 3, pops 2 (enqueues 4), pops 3, pops 4, level order [1, 2, 3, 4].",
+      "objective": 1
     },
     {
       "id": "q2",
       "type": "mcq",
       "prompt": "Which data structure does BFS use for its frontier, and which does DFS use?",
       "options": [
-        "BFS: stack; DFS: queue",
-        "BFS: queue; DFS: stack",
+        "Both use hash maps only",
         "Both use priority queues",
-        "Both use hash maps only"
+        "BFS: queue; DFS: stack",
+        "BFS: stack; DFS: queue"
       ],
-      "answerIndex": 1,
-      "explanation": "BFS's FIFO queue produces level order; DFS's LIFO stack (or recursion) dives deep first. Swapping the container swaps the traversal."
+      "answerIndex": 2,
+      "explanation": "BFS's FIFO queue produces level order; DFS's LIFO stack (or recursion) dives deep first. Swapping the container swaps the traversal.",
+      "objective": 1
     },
     {
       "id": "q3",
@@ -153,14 +181,16 @@
       "language": "python",
       "code": "g = {1: [2, 3], 2: [4], 3: [], 4: []}\norder, stack, seen = [], [1], set()\nwhile stack:\n    u = stack.pop()\n    if u in seen:\n        continue\n    seen.add(u)\n    order.append(u)\n    stack.extend(reversed(g[u]))\nprint(order)",
       "answer": "[1, 2, 4, 3]",
-      "explanation": "Pop 1, push reversed [2, 3] so the stack holds [3, 2] with 2 on top; pop 2, push 4; pop 4; then pop 3, order [1, 2, 4, 3]."
+      "explanation": "Pop 1, push reversed [2, 3] so the stack holds [3, 2] with 2 on top; pop 2, push 4; pop 4; then pop 3, order [1, 2, 4, 3].",
+      "objective": 1
     },
     {
       "id": "q4",
       "type": "numeric",
       "prompt": "How many distinct topological orders does the DAG with edges A→C, B→C, C→D, C→E, D→E have?",
       "answer": 2,
-      "explanation": "A and B may swap (both precede C); after C the chain C→D→E is forced. Total: 2 orders."
+      "explanation": "A and B may swap (both precede C); after C the chain C→D→E is forced. Total: 2 orders.",
+      "objective": 3
     },
     {
       "id": "q5",
@@ -168,28 +198,30 @@
       "prompt": "In Kahn's algorithm, how do you detect that the input graph contains a directed cycle?",
       "options": [
         "The indegree array contains a negative value",
+        "The queue never becomes empty",
         "The emitted order is not sorted alphabetically",
-        "Fewer vertices are emitted than the graph has, the leftovers form the cycle",
-        "The queue never becomes empty"
+        "Fewer vertices are emitted than the graph has, a cycle exists among the leftovers"
       ],
-      "answerIndex": 2,
-      "explanation": "If a cycle exists, no vertex on it ever reaches indegree 0, so Kahn's queue drains with those vertices unprocessed: len(order) < |V|."
+      "answerIndex": 3,
+      "explanation": "If a cycle exists, no vertex on it ever reaches indegree 0, so Kahn's queue drains with those vertices unprocessed: len(order) < |V|.",
+      "objective": 2
     },
     {
       "id": "q6",
       "type": "ms",
-      "prompt": "Which tasks is BFS the natural tool for?",
+      "prompt": "Which statements about an adjacency-list model of a settlement dependency graph are correct?",
       "options": [
-        "Shortest path (fewest edges) in an unweighted graph",
-        "Processing a graph level by level from a source",
-        "Producing a topological order of a DAG",
-        "Cycle detection via deep-first exploration"
+        "Store each vertex and its outgoing neighbours, using O(V+E) space",
+        "An edge from matching to confirmation records a direction of dependency",
+        "A sparse adjacency list needs O(V^2) space even with few edges",
+        "One outgoing edge means the reverse edge is automatically present"
       ],
       "answerIndices": [
         0,
         1
       ],
-      "explanation": "BFS's level order gives unweighted shortest paths and layered processing. Topological sorting and deep cycle detection are DFS/Kahn territory."
+      "explanation": "An adjacency list stores the vertices and their listed edges, so space is O(V+E). Directed settlement dependencies are not automatically reversible, and quadratic storage describes an adjacency matrix, not a sparse list.",
+      "objective": 0
     }
   ],
   "flashcards": [
@@ -211,7 +243,7 @@
     {
       "type": "code-output",
       "front": "Kahn's algorithm outputs only 3 of 5 vertices. What does that mean?",
-      "back": "The graph contains a directed cycle, the two unemitted vertices form (or lie on) it. A topological order exists iff the graph is a DAG."
+      "back": "The graph contains a directed cycle, the unemitted vertices lie on a cycle or are blocked downstream of one. A topological order exists iff the graph is a DAG."
     }
   ],
   "references": [

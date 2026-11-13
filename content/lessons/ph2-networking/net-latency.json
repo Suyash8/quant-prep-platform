@@ -2,18 +2,18 @@
   "id": "net-latency",
   "moduleId": "ph2-networking",
   "title": "Latency, Throughput, Jitter and Packet Loss",
-  "estMinutes": 24,
+  "estMinutes": 30,
   "difficulty": "core",
   "prereqs": [
     "net-sockets"
   ],
   "objectives": [
     "Define and distinguish latency, throughput, jitter and packet loss, and state which one a given symptom is",
-    "Compute serialization delay for a frame at a given line rate and the bandwidth-delay product of a path",
-    "Decompose an end-to-end latency budget into additive components and optimize the largest term first",
+    "Compute serialisation delay for a frame at a given line rate and the bandwidth-delay product of a path",
+    "Decompose an end-to-end latency budget into additive components and `optimize` the largest term first",
     "Explain why percentile latencies (p99), not means, are the operational target, and how loss rates convert into gap rates"
   ],
-  "motivation": "Two firms colocated in the same datacenter run identical strategies; one fills 40 µs after the tick, the other 400 µs, and loses the queue position that decides the trade. The gap is not bandwidth (both have 10 Gb/s) but latency arithmetic: serialization, hops, jitter tails and the occasional lost packet. This lesson gives you the four metrics, the formulas behind them, and the discipline of decomposing a budget instead of guessing.",
+  "motivation": "Two firms colocated in the same datacenter run identical strategies; one fills 40 µs after the tick, the other 400 µs, and loses the queue position that decides the trade. The gap is not bandwidth (both have 10 Gb/s) but latency arithmetic: serialisation, hops, jitter tails and the occasional lost packet. This lesson gives you the four metrics, the formulas behind them, and the discipline of decomposing a budget instead of guessing.",
   "blocks": [
     {
       "type": "h2",
@@ -21,30 +21,30 @@
     },
     {
       "type": "p",
-      "md": "**Latency** is the time one message takes from A to B (one-way) or A→B→A (round trip). **Throughput** is the data rate sustained over time, bits per second, and is a *rate*, not a time; a 10 Gb/s link is not 'fast at delivering one packet', it is wide at delivering many. **Jitter** is the variation of latency between packets: the p99 that ruins assumptions made on the mean. **Loss** is the fraction of datagrams the network drops. The four interact: near-capacity queues create jitter and loss; TCP turns loss into retransmission latency; and a strategy tuned for the mean latency gets destroyed by the tail. Measuring one-way latency also requires synchronized clocks (PTP in serious setups), which is why round-trip time (RTT), measurable with timestamps at one machine, is the everyday metric and one-way figures are derived carefully."
+      "md": "**Latency** is the time one message takes from A to B (one-way) or A→B→A (round trip). **Throughput** is the data rate sustained over time, bits per second, and is a *rate*, not a time; a 10 Gb/s link is not 'fast at delivering one packet', it is wide at delivering many. **Jitter** is the variation of latency between packets: the p99 that ruins assumptions made on the mean. **Loss** is the fraction of datagrams the network drops. The four interact: near-capacity queues create jitter and loss; TCP turns loss into retransmission latency; and a strategy tuned for the mean latency gets destroyed by the tail. Measuring one-way latency also requires synchronised clocks (PTP in serious setups), which is why round-trip time (RTT), measurable with timestamps at one machine, is the everyday metric and one-way figures are derived carefully."
     },
     {
       "type": "math",
       "tex": "T_{\\text{end-to-end}} = T_{\\text{NIC}} + T_{\\text{kernel}} + T_{\\text{strategy}} + T_{\\text{NIC,out}} + T_{\\text{wire}}",
-      "caption": "A tick-to-trade budget decomposes additively, optimize the largest term first, because halving a small term changes nothing."
+      "caption": "A tick-to-trade budget decomposes additively, `optimize` the largest term first, because halving a small term changes nothing."
     },
     {
       "type": "h2",
-      "text": "Serialization delay and the bandwidth-delay product"
+      "text": "Serialisation delay and the bandwidth-delay product"
     },
     {
       "type": "p",
-      "md": "The first unavoidable latency term is **serialization delay**: even an unloaded link needs time to clock a frame's bits onto the wire. It is frame size divided by line rate, so bigger frames cost more *time* on the same link, while higher line rates shrink the time. The mirror-image quantity is the **bandwidth-delay product (BDP)**: how many bits a link holds in flight when it is kept full. It equals bandwidth × RTT and tells you how much data (or how big a buffer) is needed to saturate a path, the reason fat, long links feel 'slow' for small, stop-and-wait request/response patterns no matter how wide they are."
+      "md": "The first unavoidable latency term is **serialisation delay**: even an unloaded link needs time to clock a frame's bits onto the wire. It is frame size divided by line rate, so bigger frames cost more *time* on the same link, while higher line rates shrink the time. The mirror-image quantity is the **bandwidth-delay product (BDP)**: how many bits a link holds in flight when it is kept full. It equals bandwidth × RTT and tells you how much data (or how big a buffer) is needed to saturate a path, the reason fat, long links feel 'slow' for small, stop-and-wait request/response patterns no matter how wide they are."
     },
     {
       "type": "steps",
       "title": "Worked example: 10 Gb/s arithmetic",
       "items": [
-        "A 1500-byte frame on a 10 Gb/s link: $1500 \\times 8 / 10^{10} = 12{,}000$ ns $= 1.2$ µs of serialization, the wire itself needs that long even with zero queueing.",
+        "A 1500-byte frame on a 10 Gb/s link: $1500 \\times 8 / 10^{10} = 12{,}000$ ns $= 1.2$ µs of serialisation, the wire itself needs that long even with zero queueing.",
         "A 64-byte heartbeat: $64 \\times 8 / 10^{10} = 51.2$ ns.",
         "Bandwidth-delay product with a 100 µs RTT: $10^{10} \\times 100 \\times 10^{-6} = 10^6$ bits $= 125{,}000$ bytes in flight to keep the path busy.",
         "Loss arithmetic: at 200,000 messages/s, a 0.01% loss rate is $200{,}000 \\times 0.0001 = 20$ gaps per second, each demanding a retransmission (TCP, costing ≥ 1 RTT) or a feed-level gap recovery.",
-        "A hypothetical tick-to-trade budget of 5 µs splits, say, 1 µs NIC-in, 0.5 µs kernel, 2 µs strategy, 1 µs NIC-out, 0.5 µs wire, and the 2 µs strategy term is the only one worth optimizing first."
+        "A hypothetical tick-to-trade budget of 5 µs splits, say, 1 µs NIC-in, 0.5 µs kernel, 2 µs strategy, 1 µs NIC-out, 0.5 µs wire, and the 2 µs strategy term is the only one worth optimising first."
       ]
     },
     {
@@ -53,7 +53,7 @@
     },
     {
       "type": "p",
-      "md": "Where does jitter come from? **Queueing**. A switch buffers bursts; buffer occupancy depends on what other traffic did microseconds earlier, so per-packet delay wanders, especially as utilization approaches capacity, where queues grow steeply and nonlinearly. At 90% utilization a link's queue behaves very differently from 50%. The operational consequence: report and optimize **percentiles**, not means. If 1,000 messages have a mean latency of 5 µs but p99 is 40 µs, one message in a hundred arrives eight times late, and a queue-position race is lost on the tail, not the average. Tail latency is why low-latency systems measure p99/p999 and why jitter (tail spread) often matters more than mean latency itself."
+      "md": "Where does jitter come from? **Queueing**. A switch buffers bursts; buffer occupancy depends on what other traffic did microseconds earlier, so per-packet delay wanders, especially as utilisation approaches capacity, where queues grow steeply and nonlinearly. At 90% utilisation a link's queue behaves very differently from 50%. The operational consequence: report and `optimize` **percentiles**, not means. If 1,000 messages have a mean latency of 5 µs but p99 is 40 µs, one message in a hundred arrives eight times late, and a queue-position race is lost on the tail, not the average. Tail latency is why low-latency systems measure p99/p999 and why jitter (tail spread) often matters more than mean latency itself."
     },
     {
       "type": "interactive",
@@ -76,16 +76,16 @@
       "type": "callout",
       "variant": "quant",
       "title": "Tick-to-trade as a budget review",
-      "md": "Production desks treat tick-to-trade as a table of additive terms owned by different teams (NIC, kernel bypass, strategy code, wire). The rule is Amdahl-flavoured: a 2x improvement on a 0.5 µs term buys 0.25 µs; the same effort on the 2 µs strategy term buys 1 µs. Measure each term with hardware timestamps, rank by size, and attack in order, never optimize the term that is merely the most interesting."
+      "md": "Production desks treat tick-to-trade as a table of additive terms owned by different teams (NIC, kernel bypass, strategy code, wire). The rule is Amdahl-flavoured: a 2x improvement on a 0.5 µs term buys 0.25 µs; the same effort on the 2 µs strategy term buys 1 µs. Measure each term with hardware timestamps, rank by size, and attack in order, never `optimize` the term that is merely the most interesting."
     }
   ],
   "guidedExercise": {
-    "prompt": "A 512-byte market-data message leaves a 10 Gb/s NIC, crosses one unloaded switch, and travels 300 ns of combined propagation and switching delay (store-and-forward at the switch is already included). (a) Compute the serialization delay in nanoseconds. (b) Compute the total one-way latency in nanoseconds. (c) If the strategy code adds 1.5 µs and outbound NIC processing 0.4 µs, what is the tick-to-decision time in µs?",
+    "prompt": "A 512-byte market-data message leaves a 10 Gb/s NIC, crosses one unloaded switch, and travels 300 ns of combined propagation and switching delay (store-and-forward at the switch is already included). (a) Compute the serialisation delay in nanoseconds. (b) Compute the total one-way latency in nanoseconds. (c) If the strategy code adds 1.5 µs and outbound NIC processing 0.4 µs, what is the tick-to-decision time in µs?",
     "hints": [
-      "Serialization = bits / line rate.",
+      "Serialisation = bits / line rate.",
       "Additive budgets: sum the terms, then convert units once at the end."
     ],
-    "solution": "(a) $512 \\times 8 = 4096$ bits; $4096 / 10^{10} = 409.6$ ns $\\approx 0.41$ µs. (b) $409.6 + 300 = 709.6$ ns $\\approx 0.71$ µs. (c) $0.71 + 1.5 + 0.4 = 2.61$ µs, and the strategy term dominates the budget, so that is where optimization pays."
+    "solution": "(a) $512 \\times 8 = 4096$ bits; $4096 / 10^{10} = 409.6$ ns $\\approx 0.41$ µs. (b) $409.6 + 300 = 709.6$ ns $\\approx 0.71$ µs. (c) $0.71 + 1.5 + 0.4 = 2.61$ µs, and the strategy term dominates the budget, so that is where optimisation pays."
   },
   "independentExercise": {
     "prompt": "A disaster-recovery link runs at 40 Gb/s with an 80 µs RTT. (a) Compute the bandwidth-delay product in kilobytes. (b) An application sends a request, waits for the full response, then sends the next (stop-and-wait). Explain, using the BDP, why the link cannot approach 40 Gb/s this way. (c) The feed across the same path delivers 400,000 messages/s; a 0.005% loss rate causes how many gaps per second? (d) If each TCP recovery costs 2 RTTs, what total time per second is spent in recovery (in ms)?",
@@ -94,27 +94,27 @@
       "Stop-and-wait sends one BDP-sized window's worth of nothing between packets.",
       "Loss rate × message rate = gap rate."
     ],
-    "solution": "(a) $40 \\times 10^9 \\times 80 \\times 10^{-6} = 3.2 \\times 10^6$ bits $= 400{,}000$ bytes $\\approx 390$ KB (in flight to keep the pipe full). (b) Stop-and-wait keeps at most one small message in flight against a 3.2 Mb pipe, so throughput is bounded by RTT × message count, not bandwidth, utilization is tiny no matter the line rate. (c) $400{,}000 \\times 0.00005 = 20$ gaps/s. (d) $20 \\times 2 \\times 80$ µs $= 3200$ µs $= 3.2$ ms per second spent recovering, small on average, but each gap delays one decision by 160 µs."
+    "solution": "(a) $40 \\times 10^9 \\times 80 \\times 10^{-6} = 3.2 \\times 10^6$ bits $= 400{,}000$ bytes $\\approx 390$ KB (in flight to keep the pipe full). (b) Stop-and-wait keeps at most one small message in flight against a 3.2 Mb pipe, so throughput is bounded by RTT × message count, not bandwidth, utilisation is tiny no matter the line rate. (c) $400{,}000 \\times 0.00005 = 20$ gaps/s. (d) $20 \\times 2 \\times 80$ µs $= 3200$ µs $= 3.2$ ms per second spent recovering, small on average, but each gap delays one decision by 160 µs."
   },
   "commonMistakes": [
     "Confusing throughput with latency, a wider link does not make one small packet arrive sooner; it makes many packets per second possible.",
-    "Optimizing the mean instead of the tail, queue-position races are decided by p99/p999, and means hide exactly the events that lose money.",
-    "Forgetting serialization delay on large frames and then blaming 'the switch' for the missing microseconds.",
+    "Optimising the mean instead of the tail, queue-position races are decided by p99/p999, and means hide exactly the events that lose money.",
+    "Forgetting serialisation delay on large frames and then blaming 'the switch' for the missing microseconds.",
     "Treating a 0.01% loss rate as negligible at high message rates, 200,000 msgs/s × 0.01% is 20 gaps every second, each costing an RTT to repair."
   ],
   "realWorldApplication": "CDN providers, HFT firms and cloud operators all publish percentile-based SLAs (p50/p99/p999) because averages are marketing; queueing theory's steep delay curve near capacity is why every network is provisioned with headroom.",
   "quantFinanceApplication": "Tick-to-trade budgets are decomposed and reviewed term by term (NIC, kernel, strategy, wire); a firm at 40 µs p50 but 400 µs p99 loses precisely the races that decide whether a hedge lands before the price moves.",
   "summary": [
     "Latency is time per message, throughput is bits per second, jitter is latency variation, loss is dropped datagrams; they interact through queues.",
-    "Serialization delay = frame bits / line rate (1500 B at 10 Gb/s = 1.2 µs); BDP = bandwidth × RTT (10 Gb/s × 100 µs = 125 KB in flight).",
-    "End-to-end budgets are additive: optimize the largest term first, and report p99 not the mean because queues make delay wander.",
+    "Serialisation delay = frame bits / line rate (1500 B at 10 Gb/s = 1.2 µs); BDP = bandwidth × RTT (10 Gb/s × 100 µs = 125 KB in flight).",
+    "End-to-end budgets are additive: `optimize` the largest term first, and report p99 not the mean because queues make delay wander.",
     "Loss converts to gap rate = loss rate × message rate (0.01% of 200k msgs/s = 20 gaps/s), each costing ~an RTT to repair, headroom on links is cheaper than tail latency."
   ],
   "quiz": [
     {
       "id": "q1",
       "type": "numeric",
-      "prompt": "What is the serialization delay of a 1500-byte frame on a 10 Gb/s link, in microseconds?",
+      "prompt": "What is the serialisation delay of a 1500-byte frame on a 10 Gb/s link, in microseconds?",
       "answer": 1.2,
       "tolerance": 0.05,
       "explanation": "$1500 \\times 8 / 10^{10} = 12{,}000$ ns $= 1.2$ µs, bits onto the wire, even with no queueing."
@@ -132,12 +132,12 @@
       "type": "mcq",
       "prompt": "Which statement best defines jitter?",
       "options": [
-        "The average one-way delay across a path",
         "The variation of latency from packet to packet",
         "The maximum sustainable bits per second",
-        "The fraction of datagrams the network discards"
+        "The fraction of datagrams the network discards",
+        "The average one-way delay across a path"
       ],
-      "answerIndex": 1,
+      "answerIndex": 0,
       "explanation": "Jitter is latency *variation*, usually caused by queueing behind bursts. The mean delay, throughput and loss rate are the other three metrics."
     },
     {
@@ -154,14 +154,14 @@
       "options": [
         "Percentiles (p99) are a better operational target than the mean for trading systems",
         "Throughput and latency are independent, you can always raise one without touching the other",
-        "Queueing delay rises sharply and nonlinearly as link utilization approaches 100%",
+        "Queueing delay rises sharply and nonlinearly as link utilisation approaches 100%",
         "Packet loss only matters to TCP connections, never to UDP feeds"
       ],
       "answerIndices": [
         0,
         2
       ],
-      "explanation": "Tails decide races and delay grows steeply near capacity, both true. The other two are wrong: at high utilization they are coupled, and UDP feed consumers detect loss as sequence gaps that cost recovery time."
+      "explanation": "Tails decide races and delay grows steeply near capacity, both true. The other two are wrong: at high utilisation they are coupled, and UDP feed consumers detect loss as sequence gaps that cost recovery time."
     },
     {
       "id": "q6",
@@ -169,8 +169,9 @@
       "prompt": "What is the industry term for the end-to-end time from observing a market data update to the corresponding order leaving the firm's network?",
       "modelAnswer": "Tick-to-trade time, the additive budget from market data arrival to outbound order, decomposed across NIC, kernel, strategy and wire.",
       "keywords": [
-        "tick-to-trade",
-        "tick to trade"
+        "tick-to-trade|tick to trade",
+        "market data|tick|arrival",
+        "order|outbound|send"
       ],
       "explanation": "Tick-to-trade is the standard headline metric, always quoted at percentiles and reviewed as an additive budget."
     }
@@ -183,7 +184,7 @@
     },
     {
       "type": "formula",
-      "front": "Serialization delay",
+      "front": "Serialisation delay",
       "back": "$T = \\text{bits} / \\text{line rate}$; 1500 B at 10 Gb/s = 1.2 µs, 64 B = 51.2 ns."
     },
     {

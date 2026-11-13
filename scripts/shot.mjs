@@ -22,8 +22,8 @@ const hOverflow = {};
 
 async function login() {
   await page.goto(`${BASE}/login`); await page.waitForTimeout(1500);
-  await page.fill('input[type=email]', 'visual@test.dev');
-  await page.fill('input[type=password]', 'visualtest12345');
+  await page.fill('input[type=email]', (process.env.QF_DEMO_EMAIL || ''));
+  await page.fill('input[type=password]', (process.env.QF_DEMO_PASSWORD || ''));
   await page.click('button[type=submit]'); await page.waitForTimeout(3000);
 }
 async function shot(name, route) {

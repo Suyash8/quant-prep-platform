@@ -65,7 +65,7 @@ export default async function ProjectsPage() {
           <p className="page-sub">Build portfolio-grade quant tools</p>
         </div>
       </header>
-      <p className="-mt-2.5 mb-6 max-w-3xl text-sm text-muted font-semibold leading-relaxed anim-slide-up">
+      <p className="-mt-2.5 mb-6 max-w-3xl text-[15px] text-muted font-semibold leading-relaxed anim-slide-up">
         Ten projects that progressively combine mathematics, programming, finance and systems. Each has requirements,
         milestones, design guidance, evaluation criteria and extension challenges, the finished portfolio is the
         demonstrable engineering experience employers ask about.
@@ -121,7 +121,7 @@ export default async function ProjectsPage() {
                   <span className="chip">Not started</span>
                 )}
               </div>
-              <p className="mt-3 text-[11px] font-black uppercase tracking-[0.14em] text-faint">
+              <p className="mt-3 text-[12px] font-black uppercase tracking-[0.14em] text-faint">
                 Project {p.order} · {p.language.replace('-', ' + ')}
               </p>
               <h2 className="mt-0.5 font-extrabold text-lg tracking-tight">{p.title}</h2>
@@ -129,10 +129,10 @@ export default async function ProjectsPage() {
                 {skills.map(s => <span key={s} className="chip">{s}</span>)}
                 <span className="chip tnum"><Clock className="h-3 w-3" /> ~{p.hours}h</span>
               </div>
-              <p className="mt-2.5 text-sm text-muted leading-relaxed line-clamp-2">{p.desc}</p>
+              <p className="mt-2.5 text-[15px] text-muted leading-relaxed line-clamp-2">{p.desc}</p>
               {prog && isInProgress && (
                 <div className="mt-3">
-                  <div className="flex items-center justify-between text-[11px] font-black uppercase tracking-wider mb-1.5">
+                  <div className="flex items-center justify-between text-[12px] font-black uppercase tracking-wider mb-1.5">
                     <span className="text-faint">Milestones</span>
                     <span className="tnum text-warning-strong dark:text-warning">{prog.milestonesDone}/{p.milestoneTotal || 0}</span>
                   </div>
@@ -141,7 +141,7 @@ export default async function ProjectsPage() {
                       <div className="prog-fill prog-fill-info" style={{ width: `${Math.min(100, Math.round((prog.milestonesDone / Math.max(p.milestoneTotal || 1, 1)) * 100))}%` }} />
                     </div>
                   ) : (
-                    <p className="text-[11px] font-bold text-faint">No milestones logged yet</p>
+                    <p className="text-[12px] font-bold text-faint">No milestones logged yet</p>
                   )}
                 </div>
               )}
@@ -162,7 +162,7 @@ export default async function ProjectsPage() {
             <span className="icon-tile bg-surface text-accent-deep dark:text-accent"><Rocket /></span>
             <div>
               <h2 className="font-extrabold text-lg tracking-tight">Projects are the portfolio, the curriculum is the engine</h2>
-              <p className="text-sm text-muted">Stuck on a spec? The phase-by-phase curriculum behind each prerequisite has you covered.</p>
+              <p className="text-[15px] text-muted">Stuck on a spec? The phase-by-phase curriculum behind each prerequisite has you covered.</p>
             </div>
           </div>
           <Link href="/curriculum" className="btn3d">

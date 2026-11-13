@@ -2,7 +2,7 @@
   "id": "la-eigen",
   "moduleId": "ph1-linear-algebra",
   "title": "Eigenvalues, Eigenvectors and Diagonalisation",
-  "estMinutes": 28,
+  "estMinutes": 35,
   "difficulty": "core",
   "prereqs": [
     "la-determinants-rank"
@@ -13,7 +13,7 @@
     "Compute matrix powers using the diagonal form",
     "Explain how the eigendecomposition of a covariance matrix produces principal components and variance shares"
   ],
-  "motivation": "Most matrix-vector products both stretch and rotate a vector, hard to reason about. But every matrix has a few special directions it cannot rotate: vectors that come out pointing the same way, only longer or shorter. These eigendirections are the natural coordinate system of a transformation, and in finance they are literally the risk factors: the eigenvectors of a covariance matrix are the independent directions of portfolio risk, and their eigenvalues are the variances along them. PCA, factor models and steady-state analysis are all this one idea.",
+  "motivation": "An eigendirection of a real matrix is a nonzero line mapped to itself: it can be stretched, reversed or collapsed. Not every real matrix has a real eigenvector; a90-degree planar rotation has none. Real symmetric covariance matrices do have an orthonormal eigenbasis, which makes their principal-component interpretation especially useful. Uncorrelated principal components are not automatically statistically independent.",
   "blocks": [
     {
       "type": "h2",
@@ -21,12 +21,16 @@
     },
     {
       "type": "p",
-      "md": "Apply a matrix to a typical vector and two things happen: it is stretched *and* rotated. An **eigenvector** of $A$ is the exception, a nonzero vector $v$ whose direction $A$ does not change: $Av = \\lambda v$ for some scalar $\\lambda$, the **eigenvalue**. The eigenvalue records the stretch factor: $\\lambda = 2$ doubles the length, $\\lambda = 0.5$ halves it, $\\lambda = 0$ collapses the vector to the origin (and note: $\\lambda = 0$ in the spectrum means $\\det(A) = 0$ - singular). Eigenvectors are defined only up to scale: $(1, -2)$ and $(2, -4)$ describe the same eigendirection, which is why libraries return arbitrary normalisations."
+      "md": "Apply a matrix to a typical vector and two things happen: it is stretched *and* rotated. An **eigenvector** of $A$ is the exception, a nonzero vector $v$ satisfying the algebraic relation below: $Av = \\lambda v$ for some scalar $\\lambda$, the **eigenvalue**. The eigenvalue records the stretch factor: $\\lambda = 2$ doubles the length, $\\lambda = 0.5$ halves it, $\\lambda = 0$ collapses the vector to the origin (and note: $\\lambda = 0$ in the spectrum means $\\det(A) = 0$ - singular). A negative real eigenvalue reverses the arrow, and a zero eigenvalue maps it to zero, where direction is undefined. Eigenvectors are defined only up to nonzero scale: $(1, -2)$ and $(2, -4)$ describe the same eigendirection, which is why libraries return arbitrary normalisations."
+    },
+    {
+      "type": "p",
+      "md": "The field matters: a90-degree real rotation has characteristic polynomial lambda^2+1 and eigenvalues+i,-i over the complex numbers, but no real eigendirection. A real symmetric matrix instead has real eigenvalues and can use a real orthonormal basis. Distinguish a real diagonalisation from a complex one before asserting existence."
     },
     {
       "type": "math",
-      "tex": "A v = \\lambda v \\quad\\Longleftrightarrow\\quad (A - \\lambda I)\\, v = 0 \\quad\\Longleftrightarrow\\quad \\det(A - \\lambda I) = 0",
-      "caption": "The chain of equivalences: nonzero v exists exactly when det(A, lambda*I) vanishes. That determinant, expanded, is the characteristic polynomial."
+      "tex": "Av=\\lambda v,\\quad v\\ne0;\\qquad \\exists v\\ne0:(A-\\lambda I)v=0\\quad\\Longleftrightarrow\\quad\\det(A-\\lambda I)=0",
+      "caption": "A nonzero null vector exists exactly when A-lambda*I is singular. The determinant condition establishes existence, not that every chosen v is an eigenvector."
     },
     {
       "type": "steps",
@@ -56,7 +60,7 @@
         ],
         "gridRange": 5
       },
-      "caption": "Drag a test point along the direction (1, 1): the output lands on the same line, stretched by 5. Every other direction gets bent off its own line."
+      "caption": "For A=[[4,1],[2,3]],(1,1) is scaled by5 and(1,-2) by2. Both eigendirections stay on their own lines; it is false that every other direction than(1,1) bends away. This static image has no draggable test-point control."
     },
     {
       "type": "h2",
@@ -81,13 +85,13 @@
     },
     {
       "type": "p",
-      "md": "A covariance matrix $C$ is symmetric, so it diagonalises with orthogonal eigenvectors: $C = Q \\Lambda Q^\\top$. Each eigenvector is a direction in asset space, a synthetic portfolio, and its eigenvalue is the variance of that portfolio. The eigenvector with the **largest eigenvalue** is the direction of greatest risk; the smallest is the calmest. Re-expressing returns in the eigen-basis converts correlated assets into uncorrelated factors whose variances are simply $\\lambda_i$, and the share of total risk carried by factor $i$ is $\\lambda_i / \\text{trace}(C)$. That is **Principal Component Analysis**, and the same logic makes eigenvectors the building blocks of factor models, stress tests (shock along the top eigenvector) and noise filtering (drop the smallest eigenvalues)."
+      "md": "A real covariance matrix is symmetric positive semidefinite and has an orthonormal eigenbasis:C=Q*Lambda*Q^T. For a unit eigenvector q_i, the projected return q_i^T*r has variance q_i^T*C*q_i=lambda_i. Without unit normalisation, scaling the weights also scales variance. The leading eigenvector maximises variance among unit-length directions, not among all arbitrarily leveraged portfolios. Principal-component projections are uncorrelated, not generally independent. When trace(C)>0, lambda_i/trace(C) is a share of total coordinate variance, not an individual portfolio contribution-to-risk formula. If all variance is zero the ratio is undefined."
     },
     {
       "type": "callout",
       "variant": "quant",
       "title": "Powers, Markov chains and steady states",
-      "md": "$A^k = P D^k P^{-1}$ explains long-run behaviour directly: the eigenvalue with largest modulus dominates as $k$ grows. For a transition matrix the dominant eigenvalue is 1, and its eigenvector (scaled to sum to 1) is the **steady state**, the regime distribution the chain settles into. Growth models work the same way: the largest eigenvalue is the long-run growth rate."
+      "md": "For a diagonalizable matrix, powers scale each eigencoordinate by lambda_i^k. A largest-modulus mode dominates only when it is excited and not tied or cancelled; defective matrices can introduce polynomial factors. A finite irreducible aperiodic stochastic matrix converges to a unique stationary distribution under its stated row/column convention. Eigenvalue 1 alone does not ensure convergence: the alternating transition[[0,1],[1,0]] cycles between states. For a column-stochastic matrix the stationary probability column satisfies M*pi=pi, is nonnegative and sums to1."
     },
     {
       "type": "code",
@@ -100,17 +104,21 @@
     "prompt": "Find the eigenvalues and one eigenvector for each eigenvalue of $A = \\begin{pmatrix} 1 & 2 \\\\ 2 & 1 \\end{pmatrix}$, and verify $Av = \\lambda v$ for both. (Check: trace $= 2$, det $= -3$.)",
     "hints": [
       "Characteristic polynomial: $(1-\\lambda)^2 - 4$.",
-      "For each lambda, solve $(A - \\lambda I) v = 0$; one eigenvalue is negative."
+      "For each lambda, solve $(A - \\lambda I) v = 0$; one eigenvalue is negative.",
+      "For the negative eigenvalue, the output arrow reverses direction but remains on the same line. Verify both coordinates, not only a norm."
     ],
-    "solution": "$\\det(A - \\lambda I) = (1-\\lambda)^2 - 4 = \\lambda^2 - 2\\lambda - 3 = (\\lambda - 3)(\\lambda + 1)$, so $\\lambda = 3$ and $\\lambda = -1$. Cross-check: sum $= 2 = $ trace ✓, product $= -3 = $ det ✓. For $\\lambda = 3$: $v = (1, 1)$, since $A(1,1) = (3, 3) = 3(1,1)$ ✓. For $\\lambda = -1$: $v = (1, -1)$, since $A(1,-1) = (1-2,\\ 2-1) = (-1, 1) = -1 \\times (1, -1)$ ✓. Note the two eigenvectors are orthogonal, as they always are for a symmetric matrix."
+    "solution": "$\\det(A - \\lambda I) = (1-\\lambda)^2 - 4 = \\lambda^2 - 2\\lambda - 3 = (\\lambda - 3)(\\lambda + 1)$, so $\\lambda = 3$ and $\\lambda = -1$. Cross-check: sum $= 2 = $ trace ✓, product $= -3 = $ det ✓. For $\\lambda = 3$: $v = (1, 1)$, since $A(1,1) = (3, 3) = 3(1,1)$ ✓. For $\\lambda = -1$: $v = (1, -1)$, since $A(1,-1) = (1-2,\\ 2-1) = (-1, 1) = -1 \\times (1, -1)$ ✓. Note the two eigenvectors are orthogonal, as they always are for a symmetric matrix.",
+    "successCheck": "Eigenpairs are 3 with(1,1) and-1 with(1,-1); both satisfy Av=lambda*v and eigenvalues sum to2, multiply to-3."
   },
   "independentExercise": {
     "prompt": "Let $A = \\begin{pmatrix} 2 & 1 \\\\ 1 & 2 \\end{pmatrix}$ (eigenvalues 3 and 1, eigenvectors $(1,1)$ and $(1,-1)$). (a) Compute $A^2$ directly by matrix multiplication. (b) Use the diagonal form with $P = \\begin{pmatrix} 1 & 1 \\\\ 1 & -1 \\end{pmatrix}$, $D = \\begin{pmatrix} 3 & 0 \\\\ 0 & 1 \\end{pmatrix}$, $P^{-1} = \\tfrac{1}{2}\\begin{pmatrix} 1 & 1 \\\\ 1 & -1 \\end{pmatrix}$ to compute $A^3 = P D^3 P^{-1}$ and confirm the direct product $A^3 = A^2 A$.",
     "hints": [
       "A^2: four dot products of rows with columns.",
-      "In the diagonal form, D^3 = diag(27, 1); carry the 1/2 from P^{-1} through."
+      "In the diagonal form, D^3 = diag(27, 1); carry the 1/2 from P^{-1} through.",
+      "Match each column of P to the eigenvalue in the same position in D and check P*P_inverse=I."
     ],
-    "solution": "(a) $A^2 = \\begin{pmatrix} 2 \\cdot 2 + 1 \\cdot 1 & 2 \\cdot 1 + 1 \\cdot 2 \\\\ 1 \\cdot 2 + 2 \\cdot 1 & 1 \\cdot 1 + 2 \\cdot 2 \\end{pmatrix} = \\begin{pmatrix} 5 & 4 \\\\ 4 & 5 \\end{pmatrix}$. Then $A^3 = A^2 A = \\begin{pmatrix} 5 \\cdot 2 + 4 \\cdot 1 & 5 \\cdot 1 + 4 \\cdot 2 \\\\ 4 \\cdot 2 + 5 \\cdot 1 & 4 \\cdot 1 + 5 \\cdot 2 \\end{pmatrix} = \\begin{pmatrix} 14 & 13 \\\\ 13 & 14 \\end{pmatrix}$. (b) $P D^3 = \\begin{pmatrix} 27 & 1 \\\\ 27 & -1 \\end{pmatrix}$, and $P D^3 P^{-1} = \\tfrac{1}{2}\\begin{pmatrix} 27 + 1 & 27 - 1 \\\\ 27 - 1 & 27 + 1 \\end{pmatrix} = \\tfrac{1}{2}\\begin{pmatrix} 28 & 26 \\\\ 26 & 28 \\end{pmatrix} = \\begin{pmatrix} 14 & 13 \\\\ 13 & 14 \\end{pmatrix}$ ✓, identical to the direct product, with far less arithmetic."
+    "solution": "(a) $A^2 = \\begin{pmatrix} 2 \\cdot 2 + 1 \\cdot 1 & 2 \\cdot 1 + 1 \\cdot 2 \\\\ 1 \\cdot 2 + 2 \\cdot 1 & 1 \\cdot 1 + 2 \\cdot 2 \\end{pmatrix} = \\begin{pmatrix} 5 & 4 \\\\ 4 & 5 \\end{pmatrix}$. Then $A^3 = A^2 A = \\begin{pmatrix} 5 \\cdot 2 + 4 \\cdot 1 & 5 \\cdot 1 + 4 \\cdot 2 \\\\ 4 \\cdot 2 + 5 \\cdot 1 & 4 \\cdot 1 + 5 \\cdot 2 \\end{pmatrix} = \\begin{pmatrix} 14 & 13 \\\\ 13 & 14 \\end{pmatrix}$. (b) $P D^3 = \\begin{pmatrix} 27 & 1 \\\\ 27 & -1 \\end{pmatrix}$, and $P D^3 P^{-1} = \\tfrac{1}{2}\\begin{pmatrix} 27 + 1 & 27 - 1 \\\\ 27 - 1 & 27 + 1 \\end{pmatrix} = \\tfrac{1}{2}\\begin{pmatrix} 28 & 26 \\\\ 26 & 28 \\end{pmatrix} = \\begin{pmatrix} 14 & 13 \\\\ 13 & 14 \\end{pmatrix}$ ✓, identical to the direct product, with far less arithmetic.",
+    "successCheck": "A^2=[[5,4],[4,5]], A^3=[[14,13],[13,14]]; direct multiplication agrees with P*D^3*P_inverse."
   },
   "commonMistakes": [
     "Dividing by zero when solving $(A - \\lambda I)v = 0$ - eigenvectors are found by *solving* the singular system, not by inverting.",
@@ -118,13 +126,13 @@
     "Writing $A = P^{-1} D P$ instead of $A = P D P^{-1}$ - columns of $P$ must be eigenvectors of $A$, in the same order as the diagonal of $D$.",
     "Assuming every matrix is diagonalisable, defective matrices (too few independent eigenvectors) need Jordan/Schur forms instead."
   ],
-  "realWorldApplication": "PageRank ranks web pages by the dominant eigenvector of a link matrix; vibration analysis finds structures' resonant frequencies as eigenvalues; facial recognition historically used eigenvectors of a covariance of images ('eigenfaces').",
-  "quantFinanceApplication": "PCA on a yield curve's covariance matrix typically finds that the top eigenvector (level, a near-parallel shift) explains the large majority of variance, with the next two being slope and curvature. Risk decomposition and scenario design along eigendirections is standard desk practice.",
+  "realWorldApplication": "Damped PageRank uses a stationary eigenvector of a transition model. In a simple mass-stiffness vibration model, generalised eigenvalues are squared angular frequencies, not raw frequencies. Eigenfaces use eigenvectors of image covariance for a reduced coordinate representation.",
+  "quantFinanceApplication": "PCA on yield-change covariance can reveal level-like, slope-like and curvature-like modes, but shapes and explained shares depend on the sample, scaling and instruments. Inspect empirical results rather than assuming a fixed variance share or universally parallel leading mode.",
   "summary": [
-    "$Av = \\lambda v$ picks out directions a matrix cannot turn; eigenvalues come from $\\det(A - \\lambda I) = 0$.",
+    "An eigenvector is nonzero and satisfies Av=lambda*v. Its line is invariant, though a negative eigenvalue reverses the arrow and zero collapses it; eigenvalues satisfy det(A-lambda*I)=0.",
     "Quick checks: eigenvalues sum to the trace and multiply to the determinant.",
     "With $n$ independent eigenvectors, $A = PDP^{-1}$ turns powers into $P D^k P^{-1}$ and long-run analysis into reading the dominant eigenvalue.",
-    "For a symmetric covariance matrix $C = Q \\Lambda Q^\\top$: eigenvectors are uncorrelated synthetic portfolios, eigenvalues their variances, that is PCA."
+    "A covariance matrix has orthonormal eigenvectors and nonnegative eigenvalues. Unit projections have those variances and are uncorrelated; independence needs more assumptions."
   ],
   "quiz": [
     {
@@ -132,40 +140,44 @@
       "type": "mcq",
       "prompt": "By definition, $v$ is an eigenvector of $A$ with eigenvalue $\\lambda$ when:",
       "options": [
-        "$Av = \\lambda v$ with $v \\neq 0$",
-        "$A v = 0$",
         "$\\lambda v = 0$ with $\\lambda \\neq 0$",
-        "$A$ and $v$ have the same dimension"
+        "$A$ and $v$ have the same dimension",
+        "$Av = \\lambda v$ with $v \\neq 0$",
+        "$A v = 0$"
       ],
-      "answerIndex": 0,
-      "explanation": "The defining property is that $A$ only stretches $v$, never rotates it: $Av = \\lambda v$ for a nonzero $v$. The zero vector is excluded because $A0 = \\lambda 0$ holds trivially for every $\\lambda$."
+      "answerIndex": 2,
+      "explanation": "An eigenvector is nonzero and satisfies Av=lambda*v. Positive lambda stretches without reversing, negative lambda reverses the arrow and zero maps it to the origin. The zero vector is excluded because it would satisfy the equation for every scalar and identify no eigendirection.",
+      "objective": 0
     },
     {
       "id": "q2",
       "type": "numeric",
       "prompt": "Without computing eigenvectors: the eigenvalues of $A = \\begin{pmatrix} 4 & 1 \\\\ 2 & 3 \\end{pmatrix}$ sum to what number? (Hint: trace.)",
       "answer": 7,
-      "explanation": "Eigenvalues always sum to the trace: $4 + 3 = 7$. (Indeed $2 + 5 = 7$.) Their product equals the determinant: $2 \\times 5 = 10 = 12 - 2$ ✓."
+      "explanation": "Eigenvalues always sum to the trace: $4 + 3 = 7$. (Indeed $2 + 5 = 7$.) Their product equals the determinant: $2 \\times 5 = 10 = 12 - 2$ ✓.",
+      "objective": 0
     },
     {
       "id": "q3",
       "type": "mcq",
       "prompt": "The matrix $\\begin{pmatrix} 2 & 1 \\\\ 1 & 2 \\end{pmatrix}$ has eigenvalues 3 and 1. Which pair of vectors is a pair of eigenvectors?",
       "options": [
-        "$(1, 0)$ and $(0, 1)$",
-        "$(1, 1)$ and $(1, -1)$",
         "$(2, 1)$ and $(1, 2)$",
+        "$(1, 1)$ and $(1, -1)$",
+        "$(1, 0)$ and $(0, 1)$",
         "$(1, 2)$ and $(2, 1)$"
       ],
       "answerIndex": 1,
-      "explanation": "$\\begin{pmatrix} 2 & 1 \\\\ 1 & 2 \\end{pmatrix}(1,1) = (3,3) = 3(1,1)$ and $\\begin{pmatrix} 2 & 1 \\\\ 1 & 2 \\end{pmatrix}(1,-1) = (1,-1) = 1(1,-1)$. For a symmetric matrix with distinct eigenvalues, the eigenvectors are orthogonal, and $(1,1) \\cdot (1,-1) = 0$ ✓."
+      "explanation": "$\\begin{pmatrix} 2 & 1 \\\\ 1 & 2 \\end{pmatrix}(1,1) = (3,3) = 3(1,1)$ and $\\begin{pmatrix} 2 & 1 \\\\ 1 & 2 \\end{pmatrix}(1,-1) = (1,-1) = 1(1,-1)$. For a symmetric matrix with distinct eigenvalues, the eigenvectors are orthogonal, and $(1,1) \\cdot (1,-1) = 0$ ✓.",
+      "objective": 0
     },
     {
       "id": "q4",
       "type": "numeric",
       "prompt": "$A = \\begin{pmatrix} 1 & 2 \\\\ 2 & 1 \\end{pmatrix}$ has eigenvalues 3 and $\\mu$. What is $\\mu$? (Hint: product of eigenvalues = determinant.)",
       "answer": -1,
-      "explanation": "The product of eigenvalues is $\\det(A) = 1 - 4 = -3$, so $\\mu = -3/3 = -1$. (Check via the trace: $3 + (-1) = 2$ ✓.)"
+      "explanation": "The product of eigenvalues is $\\det(A) = 1 - 4 = -3$, so $\\mu = -3/3 = -1$. (Check via the trace: $3 + (-1) = 2$ ✓.)",
+      "objective": 0
     },
     {
       "id": "q5",
@@ -174,27 +186,54 @@
       "language": "python",
       "code": "import numpy as np\nA = np.array([[2, 1], [1, 2]])\nprint(np.linalg.eigvalsh(A))\nprint(np.linalg.matrix_power(A, 2))",
       "answer": "[1. 3.]\n[[5 4]\n [4 5]]",
-      "explanation": "eigvalsh returns the eigenvalues of a symmetric matrix in ascending order: 1 then 3. The square: $A^2$ entries are $2 \\cdot 2 + 1 \\cdot 1 = 5$, $2 \\cdot 1 + 1 \\cdot 2 = 4$, giving [[5, 4], [4, 5]]."
+      "explanation": "eigvalsh returns the eigenvalues of a symmetric matrix in ascending order: 1 then 3. The square: $A^2$ entries are $2 \\cdot 2 + 1 \\cdot 1 = 5$, $2 \\cdot 1 + 1 \\cdot 2 = 4$, giving [[5, 4], [4, 5]].",
+      "objective": 2
     },
     {
       "id": "q6",
       "type": "short",
       "prompt": "In PCA on a covariance matrix, what does the eigenvector with the largest eigenvalue represent, and what does the eigenvalue itself measure?",
-      "modelAnswer": "The eigenvector is the direction (synthetic portfolio) of greatest variance/risk in the data, and the eigenvalue is the variance along that direction; its share lambda_i / trace gives the fraction of total risk it explains.",
+      "modelAnswer": "For unit-normalised weights, the leading eigenvector gives the direction of greatest variance among unit-length directions, and its eigenvalue is that variance. With positive trace, its eigenvalue divided by trace is its share of total variance, not a general portfolio risk contribution.",
       "keywords": [
         "variance",
         "direction",
         "risk",
         "largest"
       ],
-      "explanation": "Eigenvectors of $C$ are the principal axes of the risk cloud; the leading one carries the most variance, and $\\lambda_i / \\text{trace}(C)$ is its share of total variance, the numbers quoted in every PCA risk report."
+      "explanation": "With unit eigenvectors, projected variance is the corresponding eigenvalue. The leading direction maximises variance under a unit-length constraint; lambda/trace is a share only when trace is positive. Scaling the weights changes variance, and uncorrelated projections need not be independent.",
+      "objective": 3
+    },
+    {
+      "id": "q7",
+      "type": "ms",
+      "objective": 1,
+      "prompt": "Which diagonalisation statements are correct over the real numbers?",
+      "options": [
+        "If columns of invertible P are eigenvectors matching diagonal D, A=P*D*P^(-1)",
+        "Every real 2-by-2 matrix has two independent real eigenvectors",
+        "A real symmetric matrix has an orthonormal eigenbasis",
+        "Repeated eigenvalues always prevent diagonalisation"
+      ],
+      "answerIndices": [
+        0,
+        2
+      ],
+      "explanation": "Diagonalisation needs a complete independent eigenbasis in the chosen field. Real symmetric matrices have one. A real planar rotation can lack real eigenvectors, while the identity has repeated eigenvalues and is already diagonal. Repetition alone neither guarantees nor rules out diagonalisation."
+    },
+    {
+      "id": "q8",
+      "type": "numeric",
+      "objective": 2,
+      "prompt": "A=P*diag(3,1)*P^(-1), with P=[[1,1],[1,-1]]. What is the top-left entry of A^3?",
+      "answer": 14,
+      "explanation": "Cube only the diagonal eigenvalues: D^3=diag(27,1). Multiplying P*D^3*P_inverse gives one-half of[[28,26],[26,28]], so the top-left entry is14. Cubing each entry of A separately would not compute a matrix power."
     }
   ],
   "flashcards": [
     {
       "type": "definition",
       "front": "Eigenvector and eigenvalue",
-      "back": "$Av = \\lambda v$ with $v \\neq 0$: a direction the matrix only stretches (by $\\lambda$), never turns."
+      "back": "Av=lambda*v with v!=0. Positive lambda stretches, negative lambda reverses the arrow, zero collapses it. Real eigenvectors need not exist for an arbitrary real matrix."
     },
     {
       "type": "formula",
@@ -219,7 +258,7 @@
   ],
   "references": [
     {
-      "label": "3Blue1Brown: Essence of Linear Algebra: eigenvectors and eigenvalues (Chapter 14)",
+      "label": "3Blue 1Brown: Essence of Linear Algebra: eigenvectors and eigenvalues (Chapter 14)",
       "url": "https://www.3blue1brown.com/topics/linear-algebra"
     },
     {

@@ -83,7 +83,7 @@ export function ClientMathFigure({ tex, caption }: { tex: string; caption?: stri
       <div className="overflow-x-auto thin-scroll py-1">
         <MathSpan tex={tex} display />
       </div>
-      {caption && <figcaption className="mt-1 text-xs text-faint text-center"><ClientMd text={caption} /></figcaption>}
+      {caption && <figcaption className="mt-1 text-[13px] text-faint text-center"><ClientMd text={caption} /></figcaption>}
     </figure>
   );
 }

@@ -2,7 +2,7 @@
   "id": "calc1-taylor",
   "moduleId": "ph1-calculus1",
   "title": "Taylor Approximation",
-  "estMinutes": 26,
+  "estMinutes": 35,
   "difficulty": "core",
   "prereqs": [
     "calc1-optimisation"
@@ -14,7 +14,7 @@
     "Use Taylor expansions of $e^x$, $\\ln x$, $\\sqrt{x}$ and $\\sin x$ at strategic points",
     "Judge when a low-order Taylor approximation is safe and when it fails"
   ],
-  "motivation": "Repricing a book by running the full pricing engine for every scenario is expensive; traders instead revalue *locally*: 'we are at today's spot and rate, what does the book do if spot moves 1%?'. The tool for that is Taylor expansion: rebuild a function near a known point from nothing but its derivatives there. Duration is the first Taylor term of a bond price, convexity the second, gamma the second term of an option value. Taylor is the algebraic spine of risk management.",
+  "motivation": "Taylor polynomials approximate a smooth value function near a known state using derivatives at that state. In bond risk, modified duration and normalised convexity encode scaled first and second price derivatives; in option risk, delta and gamma encode spot derivatives. These are local approximations, so scenario size and remainder checks matter as much as computing the coefficients.",
   "blocks": [
     {
       "type": "h2",
@@ -22,7 +22,7 @@
     },
     {
       "type": "p",
-      "md": "Suppose you know $f$, and all its derivatives, at one point $a$, but you need values near $a$. Zeroth guess: $f(x) \\approx f(a)$ (flat). First correction: add the slope - $f(x) \\approx f(a) + f'(a)(x-a)$, the tangent line from Lesson 2. Second correction: add curvature so the approximation bends like the function: $+ \\tfrac{f''(a)}{2}(x-a)^2$. Each derivative supplies one more layer of local shape, and the error shrinks by an order of magnitude per layer:"
+      "md": "Suppose you know $f$, and all its derivatives, at one point $a$, but you need values near $a$. Zeroth guess: $f(x) \\approx f(a)$ (flat). First correction: add the slope - $f(x) \\approx f(a) + f'(a)(x-a)$, the tangent line from Lesson 2. Second correction: add curvature so the approximation bends like the function: $+ \\tfrac{f''(a)}{2}(x-a)^2$. Each derivative supplies one more layer of local shape, and under suitable smoothness, the remainder has a higher power of the displacement; no fixed decimal improvement per added term is guaranteed:"
     },
     {
       "type": "math",
@@ -31,7 +31,7 @@
     },
     {
       "type": "p",
-      "md": "Why $k!$ in the denominator? Because the $k$-th derivative of $x^k$ is $k!$, so dividing by $k!$ makes the $k$-th coefficient exactly $f^{(k)}(a)/k!$ after differentiating $k$ times, the polynomial matches *all* derivatives up to order $k$ at $a$. That is the design principle: match as much local behaviour as the order allows."
+      "md": "Why $k!$ in the denominator? Because the $k$-th derivative of $x^k$ is $k!$, so dividing by $k!$ makes the kth derivative of that term at a equal to f^(k)(a), the polynomial matches *all* derivatives up to order $k$ at $a$. That is the design principle: match as much local behaviour as the order allows."
     },
     {
       "type": "steps",
@@ -40,7 +40,7 @@
         "Values at $a = 4$: $f = \\sqrt{4} = 2$; $f' = \\frac{1}{2\\sqrt{x}} = \\frac{1}{4}$; $f'' = -\\frac{1}{4x^{3/2}} = -\\frac{1}{32} = -0.03125$.",
         "First order: $2 + 0.25 \\times 0.1 = 2.025$.",
         "Second order: add $\\frac{-0.03125}{2}(0.1)^2 = -0.00015625$, giving $2.02484375$.",
-        "Exact: $\\sqrt{4.1} = 2.02484567\\ldots$ - first-order error $\\approx 2.5 \\times 10^{-4}$, second-order error $\\approx 1.9 \\times 10^{-6}$.",
+        "Exact: $\\sqrt{4.1} = 2.02484567\\ldots$ - first-order error $\\approx 1.54 \\times 10^{-4}$, second-order error $\\approx 1.9 \\times 10^{-6}$.",
         "One extra derivative bought roughly two more correct decimal digits."
       ]
     },
@@ -58,7 +58,7 @@
       "items": [
         "$e^{0.2}$, third order: $1 + 0.2 + 0.02 + \\frac{0.008}{6} = 1.221333$; exact $1.221403$; error $\\approx 7 \\times 10^{-5}$.",
         "$\\ln 1.2$ via $\\ln(1+u)$, $u = 0.2$, second order: $0.2 - 0.02 = 0.180$; third order: $+ \\frac{0.008}{3} = 0.182667$; exact $0.182322$.",
-        "$\\sin 0.3$, second order: $0.3 - \\frac{0.027}{6} = 0.2955$; exact $0.295520$; error $\\approx 2 \\times 10^{-5}$.",
+        "$\\sin 0.3$, third-degree polynomial: $0.3 - \\frac{0.027}{6} = 0.2955$; exact $0.295520$; error $\\approx 2 \\times 10^{-5}$.",
         "Pattern: error scales like the first *omitted* term, here of order $0.2^4/24 \\approx 7\\times 10^{-5}$ for $e^{0.2}$."
       ]
     },
@@ -66,7 +66,7 @@
       "type": "code",
       "lang": "python",
       "code": "import math\nx = 0.3\napprox = x - x**3/6\nprint(round(approx, 6), round(math.sin(x), 6))",
-      "caption": "sin(0.3) by two-term Taylor vs the library value: 0.2955 vs 0.29552, five-decimal accuracy from two terms."
+      "caption": "The third-degree two-term sine polynomial gives 0.2955, while sin(0.3) is about 0.29552021. Absolute error is about 2.02e-5; to five decimals they round differently(0.29550 versus 0.29552)."
     },
     {
       "type": "interactive",
@@ -96,49 +96,57 @@
         "Second order (add convexity): $+\\tfrac{1}{2}(1727.675)(0.01)^2 = +0.086$, giving $943.397$.",
         "Exact: $P(0.06) = 1000/1.06 = 943.396$.",
         "First-order error: $0.0856$; second-order error: $0.0008$ - convexity repairs ~99% of the duration error.",
-        "Desk language: duration is the linear Taylor coefficient; convexity is the quadratic one. A book with positive convexity loses less than duration predicts when yields rise and gains more when they fall."
+        "Desk language: modified duration is-P_prime/P and normalised convexity is P_second/P; the raw Taylor coefficients are P_prime and P_second/2. A book with positive convexity loses less than duration predicts when yields rise and gains more when they fall."
       ]
     },
     {
       "type": "callout",
       "variant": "quant",
       "title": "Delta-gamma PnL, in one line",
-      "md": "For any smooth book value $V(S)$, Taylor about today's spot $S_0$ gives $\\Delta V \\approx \\Delta \\cdot \\Delta S + \\tfrac{1}{2}\\Gamma \\cdot (\\Delta S)^2$. For $V(S) = 1000 + 50(S-100) + (S-100)^2 + 0.1(S-100)^3$ with $\\Delta S = 0.5$: full value $V(100.5) = 1025.2625$; second-order Taylor gives $1025.25$ - the missing $0.0125$ is the third-order term $0.1(0.5)^3$. For a quadratic book Taylor is *exact*; error lives in the first term you throw away."
+      "md": "For any smooth book value $V(S)$, Taylor about today's spot $S_0$ gives $\\Delta V \\approx \\Delta \\cdot \\Delta S + \\tfrac{1}{2}\\Gamma \\cdot (\\Delta S)^2$. For $V(S) = 1000 + 50(S-100) + (S-100)^2 + 0.1(S-100)^3$ with $\\Delta S = 0.5$: full value $V(100.5) = 1025.2625$; second-order Taylor gives $1025.25$ - the missing $0.0125$ is the third-order term $0.1(0.5)^3$. For a quadratic book Taylor is *exact*; for this cubic example the remainder is exactly the cubic term; in general an error bound must account for the full remainder."
     },
     {
       "type": "p",
-      "md": "When does Taylor fail? When $x$ is far from $a$ (the omitted terms no longer shrink - $\\ln(1+u)$ diverges for $u > 1$), when derivatives at $a$ do not exist (corners, jumps, e.g. a digital payoff), or when the function is violently curved relative to your step. The discipline: pick the centre at today's state, keep the step small, and always have an error estimate."
+      "md": "Taylor remainder example: if the fourth derivative is bounded by M on the segment from 0 to x, a third-degree polynomial has absolute error at most M*|x|^4/24. For exp(x) at x=0.2, exp(t)<=exp(0.2) on that segment, so the error is bounded by exp(0.2)*(0.2)^4/24, about 0.00008143. The actual error is about 0.00006942, inside the bound. Evaluating just the fourth derivative at the centre gives a useful leading-term estimate, but it is not by itself this interval-wide guarantee."
+    },
+    {
+      "type": "p",
+      "md": "A finite Taylor polynomial needs the stated derivatives, and an error guarantee needs control of a remainder over the interval, not only derivatives at its centre. Even an infinitely differentiable function need not equal its infinite Taylor series. For ln(1+u), the real function needs u>-1 and the Maclaurin series converges for-1<u<=1; at u=1 it converges slowly, and for u>1 it diverges. Nonsmooth points and large moves need separate checks or full revaluation. More terms are not a universal substitute for an error bound."
     }
   ],
   "guidedExercise": {
-    "prompt": "Build the second-order Taylor approximation of $f(x) = \\sqrt{x}$ about $a = 4$ and use it to estimate $\\sqrt{4.1}$. Then improve to third order by computing $f'''(x) = \\frac{3}{8}x^{-5/2}$ and adding the cubic term. Compare both with the exact value $2.02484567$.",
+    "prompt": "Build the second-order Taylor approximation of $f(x) = \\sqrt{x}$ about $a = 4$ and use it to estimate $\\sqrt{4.1}$. Then improve to third order by computing $f'''(x) = \\frac{3}{8}x^{-5/2}$ and adding the cubic term. Compare both with the high-precision reference sqrt(4.1), approximately2.0248456731.",
     "hints": [
       "You already have $f = 2$, $f' = 0.25$, $f'' = -0.03125$ at $a = 4$.",
-      "The cubic term is $\\frac{f'''(a)}{6}(x-a)^3$ with $f'''(4) = \\frac{3}{8 \\cdot 32}$."
+      "The cubic term is $\\frac{f'''(a)}{6}(x-a)^3$ with $f'''(4) = \\frac{3}{8 \\cdot 32}$.",
+      "Keep f_third(4)/6=0.001953125 unrounded until multiplying by0.1^3. Compare against a high-precision square root, not only its truncated display."
     ],
-    "solution": "$f'''(4) = 3/(8 \\times 32) = 0.01171875$. Second order: $2.02484375$ (error $1.9 \\times 10^{-6}$). Third order adds $\\frac{0.01171875}{6}(0.1)^3 = +0.00000195$, giving $2.02484570$ - error $\\approx 3 \\times 10^{-8}$, two more decimal digits from one more derivative."
+    "solution": "$f'''(4) = 3/(8 \\times 32) = 0.01171875$. Second order: $2.02484375$ (error $1.9 \\times 10^{-6}$). Third order adds $\\frac{0.01171875}{6}(0.1)^3 = +0.00000195$, giving $2.02484570$ - error $\\approx 3 \\times 10^{-8}$, two more decimal digits from one more derivative.",
+    "successCheck": "The quadratic value is2.02484375 and cubic 2.024845703125. Against sqrt(4.1), their absolute errors are about 1.9231e-6 and 2.9993e-8."
   },
   "independentExercise": {
     "prompt": "A book has value $V(S) = 1000 + 50(S - 100) + (S - 100)^2 + 0.1(S-100)^3$ dollars. (a) Compute $\\Delta = V'(100)$ and $\\Gamma = V''(100)$. (b) Give the second-order Taylor estimate of $V(100.5)$. (c) Compute the exact $V(100.5)$ and attribute the difference to the correct Taylor term.",
     "hints": [
       "Differentiate term by term at $S = 100$; the $(S-100)$ structure makes derivatives trivial there.",
-      "The exact-versus-Taylor gap equals $0.1(S-100)^3$ exactly."
+      "The exact-versus-Taylor gap equals $0.1(S-100)^3$ exactly.",
+      "The second derivative at100 is2, so the quadratic Taylor coefficient is gamma/2=1, not gamma itself."
     ],
-    "solution": "(a) $V'(S) = 50 + 2(S-100) + 0.3(S-100)^2$, so $\\Delta = 50$; $V''(S) = 2 + 0.6(S-100)$, so $\\Gamma = 2$. (b) $V(100) + \\Delta(0.5) + \\tfrac{1}{2}\\Gamma(0.25) = 1000 + 25 + 0.25 = 1025.25$. (c) Exact $= 1000 + 25 + 0.25 + 0.1(0.125) = \\mathbf{1025.2625}$; the $0.0125$ gap is exactly the third-order term $\\frac{V'''(100)}{6}(\\Delta S)^3 = 0.1 \\times 0.125$."
+    "solution": "(a) $V'(S) = 50 + 2(S-100) + 0.3(S-100)^2$, so $\\Delta = 50$; $V''(S) = 2 + 0.6(S-100)$, so $\\Gamma = 2$. (b) $V(100) + \\Delta(0.5) + \\tfrac{1}{2}\\Gamma(0.25) = 1000 + 25 + 0.25 = 1025.25$. (c) Exact $= 1000 + 25 + 0.25 + 0.1(0.125) = \\mathbf{1025.2625}$; the $0.0125$ gap is exactly the third-order term $\\frac{V'''(100)}{6}(\\Delta S)^3 = 0.1 \\times 0.125$.",
+    "successCheck": "Delta 50, gamma 2, quadratic estimate 1025.25 and exact value 1025.2625. The difference 0.0125 is the cubic remainder for this polynomial."
   },
   "commonMistakes": [
     "Forgetting the $k!$ denominators, e.g. writing curvature as $f''(a)(x-a)^2$ without the $2$.",
     "Evaluating the derivative at $x$ instead of at the centre $a$ - all coefficients freeze at $a$.",
     "Trusting a second-order expansion for large moves or at jumps (digitals, barriers).",
-    "Confusing duration (first-order, $P'$) with convexity (second-order, $P''$) in risk reports."
+    "Confusing raw Taylor coefficients P_prime and P_second/2 with modified duration-P_prime/P and normalised convexity P_second/P."
   ],
-  "realWorldApplication": "Every 'what-if' engine that answers in microseconds, spreadsheet sensitivities, risk dashboards, autopilot gain schedulers, is a Taylor expansion wearing a UI. Full revaluation is the fallback, not the default, precisely because low-order Taylor is fast and usually accurate enough.",
+  "realWorldApplication": "Local sensitivity and what-if systems can use Taylor approximations to reduce revaluation cost. Whether a given approximation is accurate enough depends on the scenario, smoothness and error budget; full revaluation remains a check or fallback rather than being universally unnecessary.",
   "quantFinanceApplication": "Duration/convexity bond repricing and delta-gamma option PnL are Taylor expansions in production use: the coefficients are literally named on trading desks, and the truncation error is monitored as 'higher-order risk'.",
   "summary": [
     "Taylor rebuilds $f$ near $a$ from derivatives at $a$; term $k$ is $\\frac{f^{(k)}(a)}{k!}(x-a)^k$.",
-    "Errors shrink like the first omitted term: $\\sqrt{4.1}$ went from error $2.5\\times10^{-4}$ (1st order) to $1.9\\times10^{-6}$ (2nd) to $3\\times10^{-8}$ (3rd).",
+    "Remainder size needs a bound or a checked comparison, not a fixed decimal-improvement rule. The sqrt(4.1) example has errors about 1.54e-4,1.92e-6 and 3.00e-8 at orders 1,2,3.",
     "Maclaurin workhorses: $e^x = 1 + x + x^2/2 + x^3/6 + \\cdots$; $\\sin x = x - x^3/6 + \\cdots$; $\\ln(1+u) = u - u^2/2 + u^3/3 - \\cdots$.",
-    "Duration = first Taylor term of $P(y)$; convexity = second: for $\\Delta y = 0.01$ they predicted $943.397$ vs exact $943.396$.",
+    "For bonds, modified duration=-P_prime/P and normalised convexity=P_second/P. Their relative Taylor change is-D*Delta y+(C/2)*(Delta y)^2.",
     "Taylor is exact for polynomials up to their degree and fails far from centre, at corners, or across jumps."
   ],
   "quiz": [
@@ -147,29 +155,32 @@
       "type": "mcq",
       "prompt": "The first-order Taylor approximation of $f$ about $a$ is which object from Lesson 2?",
       "options": [
-        "The secant line through $a$ and $a+h$",
         "The tangent line to $f$ at $a$",
+        "The average of $f(a)$ and $f(x)$",
         "The derivative $f'(a)$ alone",
-        "The average of $f(a)$ and $f(x)$"
+        "The secant line through $a$ and $a+h$"
       ],
-      "answerIndex": 1,
-      "explanation": "$f(a) + f'(a)(x-a)$ is exactly the tangent line. Taylor's first order is the Lesson 2 derivative dressed for duty."
+      "answerIndex": 0,
+      "explanation": "$f(a) + f'(a)(x-a)$ is exactly the tangent line. Taylor's first order is the Lesson 2 derivative dressed for duty.",
+      "objective": 0
     },
     {
       "id": "q2",
       "type": "numeric",
-      "prompt": "Using the second-order Taylor expansion of $\\sqrt{x}$ about $a = 4$, estimate $\\sqrt{4.1}$ (5 decimal places).",
+      "prompt": "Using the quadratic Taylor polynomial of sqrt(x) at4, estimate sqrt(4.1), rounded to five decimals. Absolute tolerance 0.000005.",
       "answer": 2.02484,
-      "tolerance": 0.0005,
-      "explanation": "$2 + 0.25(0.1) - 0.015625(0.01) = 2.02484375$, i.e. $2.02484$; exact is $2.02484567$."
+      "tolerance": 5e-06,
+      "explanation": "$2 + 0.25(0.1) - 0.015625(0.01) = 2.02484375$, i.e. $2.02484$; exact is $2.02484567$.",
+      "objective": 3
     },
     {
       "id": "q3",
       "type": "numeric",
-      "prompt": "The third-order Maclaurin approximation of $e^{0.2}$ is $1 + 0.2 + 0.02 + 0.001333\\ldots$. What is its value (4 decimal places)?",
+      "prompt": "Evaluate the cubic Maclaurin polynomial 1+x+x^2/2+x^3/6 at x=0.2, rounded to four decimals. Absolute tolerance 0.00005.",
       "answer": 1.2213,
-      "tolerance": 0.001,
-      "explanation": "$1.221333$ vs exact $e^{0.2} = 1.221403$ - error about $7 \\times 10^{-5}$, the size of the first omitted term $0.2^4/24$."
+      "tolerance": 5e-05,
+      "explanation": "$1.221333$ vs exact $e^{0.2} = 1.221403$ - error about $7 \\times 10^{-5}$, the size of the first omitted term $0.2^4/24$.",
+      "objective": 3
     },
     {
       "id": "q4",
@@ -178,20 +189,22 @@
       "language": "python",
       "code": "import math\nx = 0.3\napprox = x - x**3/6\nprint(round(approx, 6), round(math.sin(x), 6))",
       "answer": "0.2955 0.29552",
-      "explanation": "The two-term Taylor $x - x^3/6$ gives $0.295500$; the true $\\sin(0.3) = 0.295520$ - error about $2 \\times 10^{-5}$."
+      "explanation": "The two-term Taylor $x - x^3/6$ gives $0.295500$; the true $\\sin(0.3) = 0.295520$ - error about $2 \\times 10^{-5}$.",
+      "objective": 3
     },
     {
       "id": "q5",
       "type": "mcq",
-      "prompt": "In bond repricing, duration and convexity correspond to which Taylor coefficients?",
+      "prompt": "Using modified duration D=-P_prime/P and normalised convexity C=P_second/P, which bond repricing formula is correct?",
       "options": [
-        "Duration: constant term; convexity: linear term",
-        "Duration: linear term ($P'$); convexity: quadratic term ($P''/2$)",
-        "Both are third-order terms",
-        "Duration is Taylor; convexity is not related to Taylor at all"
+        "Delta P is approximately D+C with no yield move",
+        "Delta P/P is approximately+D*Delta y+C*Delta y",
+        "Delta P/P is approximately-D*Delta y+(C/2)*(Delta y)^2",
+        "Delta P/P is approximately-D*(Delta y)^2+C*Delta y"
       ],
-      "answerIndex": 1,
-      "explanation": "$\\Delta P \\approx P'\\Delta y + \\tfrac{1}{2}P''(\\Delta y)^2$: duration is the linear coefficient, convexity the quadratic, and in our example convexity cut the repricing error from $0.0856$ to $0.0008$."
+      "answerIndex": 2,
+      "explanation": "Divide the raw Taylor change P_prime*Delta y+(P_second/2)*(Delta y)^2 by P. Substituting D=-P_prime/P and C=P_second/P gives-D*Delta y+(C/2)*(Delta y)^2. The definitions include both normalisation and the duration sign; convexity is not simply the raw quadratic coefficient.",
+      "objective": 2
     },
     {
       "id": "q6",
@@ -204,7 +217,31 @@
         "corner",
         "centre"
       ],
-      "explanation": "The expansion relies on omitted terms being small: that fails for large $|x - a|$ (e.g. $\\ln(1+u)$ for $u > 1$) and at non-smooth points where derivatives at the centre do not capture the behaviour."
+      "explanation": "The expansion relies on omitted terms being small: that fails for large $|x - a|$ (e.g. $\\ln(1+u)$ for $u > 1$) and at non-smooth points where derivatives at the centre do not capture the behaviour.",
+      "objective": 4
+    },
+    {
+      "id": "q7",
+      "type": "numeric",
+      "objective": 1,
+      "prompt": "A Taylor estimate is0.2955 and the supplied reference value is0.2955202. What is the absolute error? Absolute tolerance 0.00000001.",
+      "answer": 2.02e-05,
+      "tolerance": 1e-08,
+      "explanation": "Absolute error is|estimate-reference|=|0.2955-0.2955202|=0.0000202. It is not the relative error, which would divide by the reference magnitude. The estimate is below the reference, but absolute error discards that sign."
+    },
+    {
+      "id": "q8",
+      "type": "mcq",
+      "objective": 0,
+      "prompt": "At a=2, f(a)=3, f_prime(a)=4 and f_second(a)=6. Which is its quadratic Taylor polynomial?",
+      "options": [
+        "3+4x+6x^2",
+        "3+4(x-2)+3(x-2)^2",
+        "3+4(x-2)+6(x-2)^2",
+        "3+4(x-2)-3(x-2)^2"
+      ],
+      "answerIndex": 1,
+      "explanation": "Taylor freezes derivatives at the centre and uses displacements x-a. The quadratic coefficient is f_second(a)/2=3, so the result is3+4(x-2)+3(x-2)^2. Omitting the factorial doubles the curvature term; using x instead of x-2 shifts the centre incorrectly."
     }
   ],
   "flashcards": [
@@ -216,22 +253,22 @@
     {
       "type": "formula",
       "front": "Maclaurin series for e^x and sin x",
-      "back": "e^x = 1 + x + x^2/2 + x^3/6 + ...; sin x = x, x^3/6 + x^5/120, ..."
+      "back": "exp(x)=1+x+x^2/2+x^3/6+...; sin(x)=x-x^3/6+x^5/120-... . These converge for every real x."
     },
     {
       "type": "concept",
       "front": "Duration and convexity as Taylor terms",
-      "back": "dP ~ P'(y0) dy + (1/2) P''(y0) dy^2: duration is linear, convexity quadratic; convexity repairs most of the duration error."
+      "back": "Raw change is approximately P_prime*dy+(P_second/2)*dy^2. Modified duration=-P_prime/P and normalised convexity=P_second/P, so divide by P to express relative change."
     },
     {
       "type": "concept",
       "front": "Size of Taylor truncation error",
-      "back": "Order of the first omitted term, e.g. after 3rd order, error ~ |f''''(a)|/24 * |x-a|^4."
+      "back": "With|f^(n+1)|<=M across the segment, the Lagrange remainder after degree n is bounded by M*|x-a|^(n+1)/(n+1)!. The derivative at a alone is not a guaranteed bound."
     },
     {
       "type": "code-output",
-      "front": "What does x: x**3/6 with x = 0.3 estimate, and how well?",
-      "back": "sin(0.3): 0.2955 vs true 0.29552, about 5 decimal digits from two terms."
+      "front": "What does x-x**3/6 estimate at x=0.3, and what is its absolute error?",
+      "back": "The cubic sine polynomial gives 0.2955 versus sin(0.3)=0.2955202067..., absolute error about 2.02e-5. Two terms do not give five-decimal-place agreement here."
     }
   ],
   "references": [
@@ -242,6 +279,10 @@
     {
       "label": "Khan Academy: Taylor and Maclaurin polynomials",
       "url": "https://www.khanacademy.org/math/ap-calculus-bc/bc-series-new/bc-10-1/v/maclaurin-and-taylor-series-intuition"
+    },
+    {
+      "label": "OpenStax: Taylor theorem and remainder bound",
+      "url": "https://openstax.org/books/calculus-volume-2/pages/6-3-taylor-and-maclaurin-series"
     }
   ],
   "skills": [

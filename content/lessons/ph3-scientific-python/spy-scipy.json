@@ -2,17 +2,17 @@
   "id": "spy-scipy",
   "moduleId": "ph3-scientific-python",
   "title": "SciPy: Optimisation, Integration and Statistics",
-  "estMinutes": 26,
+  "estMinutes": 30,
   "difficulty": "core",
   "prereqs": [
     "spy-pandas"
   ],
   "objectives": [
-    "Formulate and solve a constrained portfolio problem with scipy.optimize.minimize (SLSQP): objective, equality constraints, bounds, x0",
+    "Formulate and solve a constrained portfolio problem with scipy.`optimize`.`minimize` (SLSQP): objective, equality constraints, bounds, x0",
     "Verify optimiser output analytically on small problems and interpret result.x, result.fun and result.success",
     "Compute present values and expected payoffs with scipy.integrate.quad and check them against closed-form integrals",
     "Use scipy.stats.norm (cdf, sf, ppf) for tail probabilities and distribution functions, preferring sf in far tails",
-    "Know the SciPy subpackage map (optimize, integrate, stats, linalg, interpolate) well enough to search it before hand-rolling maths"
+    "Know the SciPy subpackage map (`optimize`, integrate, stats, linalg, interpolate) well enough to search it before hand-rolling maths"
   ],
   "motivation": "Markowitz needs a constrained optimiser; bond analytics needs numerical integration; strategy evaluation needs distribution functions far into the tail. SciPy is the algorithms layer over NumPy: production-quality implementations you should never hand-roll. This lesson works the three workhorse subpackages through the problems a desk actually poses, minimum-variance weights, present value of a cash-flow stream, and the probability of a bad day.",
   "blocks": [
@@ -67,13 +67,13 @@
     },
     {
       "type": "p",
-      "md": "`scipy.integrate.quad(f, a, b)` uses adaptive Gauss-Kronrod quadrature and returns `(value, error_estimate)` - near machine precision for smooth integrands, with an honest error bound. Typical uses: present value of a continuous cash-flow stream, expected payoffs under a density."
+      "md": "`scipy.integrate.quad(f, a, b)` uses adaptive Gauss-Kronrod quadrature and returns `(value, error_estimate)` - near machine precision for smooth integrands, with an estimated numerical error. Typical uses: present value of a continuous cash-flow stream, expected payoffs under a density."
     },
     {
       "type": "code",
       "lang": "python",
       "code": "import numpy as np\nfrom scipy.integrate import quad\n\npv, err = quad(lambda t: 100 * np.exp(-0.05 * t), 0, 5)\nprint(round(pv, 3), err < 1e-8)      # 442.398 True",
-      "caption": "PV of \\$100/year continuous for 5 years at r = 5%: analytic answer is 100(1, e^-0.25)/0.05 = 442.398, quad matches, with error estimate far below a cent."
+      "caption": "PV of \\$100/year continuous for 5 years at r = 5%: analytic answer is 100(1 - e^-0.25)/0.05 = 442.398, quad matches, with error estimate far below a cent."
     },
     {
       "type": "h2",
@@ -86,8 +86,8 @@
     {
       "type": "code",
       "lang": "python",
-      "code": "from scipy.stats import norm\n\np = norm.sf(0.02, loc=0.0002, scale=0.01)   # P(return < -2%)\nprint(round(float(p), 4))            # 0.0239\nprint(round(float(norm.cdf(0.35)), 4))  # 0.6368  -> N(d1) in BS",
-      "caption": "z = (0.02, 0.0002)/0.01 = 1.98; sf gives 0.023852 -> 0.0239. About one bad day in 42."
+      "code": "from scipy.stats import norm\n\np = norm.cdf(-0.02, loc=0.0002, scale=0.01)   # P(return < -2%)\nprint(round(float(p), 4))            # 0.0217\nprint(round(float(norm.cdf(0.35)), 4))  # 0.6368  -> N(d1) in BS",
+      "caption": "z = (-0.02 - 0.0002)/0.01 = -2.02; cdf gives about 0.021692, or 0.0217 to four decimals."
     },
     {
       "type": "callout",
@@ -104,42 +104,66 @@
         "Hand answer: $\\tfrac12 \\times 10 \\times 0.5 = 2.5$.",
         "`quad(lambda s: (s - 100) / 20, 100, 110)` returns 2.5 to six decimals, numeric and analytic agree."
       ]
+    },
+    {
+      "type": "p",
+      "md": "Treat an optimiser result as a candidate answer with diagnostics, not as proof that your financial model is correct. Check success and message first, then independently calculate every constraint residual. Full investment means the weights sum to one within a stated tolerance; the target-return residual should also be near zero. Recalculate the objective from the returned weights rather than assuming that a plausible array means convergence. A solver can converge perfectly to the wrong objective if you passed annualised returns alongside a daily covariance matrix."
+    },
+    {
+      "type": "p",
+      "md": "Separate modelling error from numerical error. The error estimate returned by quad describes the numerical integration under the supplied integrand and assumptions. It is not a bound on wrong cash flows, an incorrect discount rate or omitted default risk. Even as a numerical estimate it is not a mathematical guarantee for every function. Discontinuities, singularities and highly oscillatory integrands need extra care, explicit break points or a different method. For the smooth exponential example, compare directly with the analytic expression before reporting a monetary amount."
+    },
+    {
+      "type": "p",
+      "md": "For a lower-tail return event, write the inequality before choosing a distribution method. If a daily return has mean 0.0002 and standard deviation 0.01, a return below -0.02 has standardised threshold (-0.02 - 0.0002) / 0.01 = -2.02. Its probability is cdf(-2.02), about 0.0217. By symmetry this also equals sf(2.02) for a standard normal. In contrast, sf(0.02, loc=0.0002, scale=0.01) measures an upward move above positive 2 percent, a different event."
+    },
+    {
+      "type": "p",
+      "md": "Use the independent checks below as small regression tests. A two-asset allocation has only two unknowns, so the two equality constraints determine the answer before a numerical solver runs. The uniform-call example is an area calculation, so its answer does not depend on SciPy either. Keep these simple cases when you extend to more assets or a different payoff. They cannot prove that every large problem is right, but they catch sign errors, wrong integration limits and changes in units early."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "from math import exp, erfc, sqrt\nfrom scipy.integrate import quad\nfrom scipy.stats import norm\n\nanalytic_pv = 100 * (1 - exp(-0.25)) / 0.05\nnumeric_pv, error = quad(lambda t: 100 * exp(-0.05*t), 0, 5)\nassert abs(numeric_pv - analytic_pv) < 1e-9\npayoff, _ = quad(lambda price: (price - 100) / 20, 100, 110)\nassert abs(payoff - 2.5) < 1e-12\nlower_tail = 0.5 * erfc(2.02 / sqrt(2))\nassert abs(norm.cdf(-0.02, loc=0.0002, scale=0.01) - lower_tail) < 1e-14\nprint(f\"{numeric_pv:.3f} {payoff:.1f} {lower_tail:.4f}\")  # 442.398 2.5 0.0217",
+      "caption": "Analytic cash-flow integration, a triangle-area payoff and the erfc identity independently check three numerical calculations."
     }
   ],
   "guidedExercise": {
     "prompt": "For the lesson's optimisation: $\\Sigma = \\text{diag}(0.01, 0.04)$, $\\mu = (0.08, 0.12)$, constraints $w_1 + w_2 = 1$ and $w^{\\top}\\mu = 0.09$.\n\n(a) Derive $w_2$ and $w_1$ algebraically from the two constraints.\n(b) Compute the portfolio variance by hand and confirm it matches `result.fun = 0.008125`.\n(c) What would change if the bounds allowed negative weights (use/shorting), and would the solution differ here?",
     "hints": [
-      "Substitute w1 = 1, w2 into the return constraint.",
+      "Substitute w1 = 1 - w2 into the return constraint.",
       "Variance = w1^2 x 0.01 + w2^2 x 0.04.",
       "With two assets the equalities already fix the weights, think about when bounds bind."
     ],
-    "solution": "(a) $0.08(1 - w_2) + 0.12 w_2 = 0.09 \\Rightarrow 0.08 + 0.04 w_2 = 0.09 \\Rightarrow w_2 = 0.25$, $w_1 = 0.75$. (b) $0.5625 \\times 0.01 + 0.0625 \\times 0.04 = 0.008125$ - matches the optimiser exactly. (c) The bounds $(0, 1)$ forbid shorting; here they do not bind since both weights are interior and the equalities already determine the allocation, bounds matter when the unconstrained-with-equalities solution would go negative (e.g. a target return above the max $\\mu$)."
+    "solution": "(a) $0.08(1 - w_2) + 0.12 w_2 = 0.09 \\Rightarrow 0.08 + 0.04 w_2 = 0.09 \\Rightarrow w_2 = 0.25$, $w_1 = 0.75$. (b) $0.5625 \\times 0.01 + 0.0625 \\times 0.04 = 0.008125$ - matches the optimiser exactly. (c) The bounds $(0, 1)$ forbid shorting; here they do not bind since both weights are interior and the equalities already determine the allocation, bounds matter when the unconstrained-with-equalities solution would go negative (e.g. a target return above the max $\\mu$).",
+    "successCheck": "Weights are 0.75 and 0.25; variance is 0.008125."
   },
   "independentExercise": {
     "prompt": "A bond pays a continuous coupon stream of \\$100 per year for 5 years, discounted continuously at $r = 5\\%$.\n\n(a) Write the present value as an integral and compute it by hand using $\\int_0^T e^{-rt} dt = (1 - e^{-rT})/r$.\n(b) Confirm with `quad`.\n(c) Then compute the expected payoff of a call with strike 100 when $S_T \\sim U[90, 110]$, both by hand (triangle area) and with quad.\n(d) Report the quad error estimates, what do they tell you?",
     "hints": [
       "PV = integral of 100 e^{-0.05 t} from 0 to 5.",
-      "The call integrand is (S, 100)/20 on [100, 110] and zero elsewhere.",
+      "The call integrand is (S - 100)/20 on [100, 110] and zero elsewhere.",
       "quad returns (value, estimated absolute error)."
     ],
-    "solution": "(a) $PV = \\int_0^5 100 e^{-0.05t} dt = 100 \\cdot (1 - e^{-0.25})/0.05 = 100 \\times 4.42398 = 442.398$. (b) `quad(lambda t: 100*np.exp(-0.05*t), 0, 5)` returns 442.398 (error estimate < 1e-8). (c) Triangle: $\\tfrac12 \\times 10 \\times 0.5 = 2.5$; `quad(lambda s: (s-100)/20, 100, 110)` returns 2.5. (d) The error estimates ($\\sim 10^{-10}$) say the quadrature is converged to far below a cent, the numbers can be quoted as exact for practical purposes, which is what makes quad trustworthy as a reference implementation."
+    "solution": "(a) $PV = \\int_0^5 100 e^{-0.05t} dt = 100 \\cdot (1 - e^{-0.25})/0.05 = 100 \\times 4.42398 = 442.398$. (b) `quad(lambda t: 100*np.exp(-0.05*t), 0, 5)` returns 442.398 (error estimate < 1e-8). (c) Triangle: $\\tfrac12 \\times 10 \\times 0.5 = 2.5$; `quad(lambda s: (s-100)/20, 100, 110)` returns 2.5. (d) The error estimates ($\\sim 10^{-10}$) say the quadrature is converged to far below a cent, the numerical approximation is much more precise than a cent in this smooth example, which is what makes quad trustworthy as a reference implementation.",
+    "successCheck": "The integral is 442.398 to three decimals and the expected call payoff is 2.5."
   },
   "commonMistakes": [
-    "Forgetting x0 (minimize requires a starting point) or choosing one far outside the bounds.",
+    "Forgetting x0 (`minimize` requires a starting point) or choosing one far outside the bounds.",
     "Writing constraints with the wrong sign convention: 'eq' functions must equal zero at feasibility, 'ineq' must be >= 0.",
     "Reading result.fun as the weights, result.x is the solution vector, result.fun is the objective value at it.",
-    "Computing far-tail probabilities as 1, norm.cdf(large) instead of norm.sf, catastrophic cancellation loses the digits you care about.",
+    "Computing far-tail probabilities as 1 - norm.cdf(large) instead of norm.sf, catastrophic cancellation loses the digits you care about.",
     "Trusting an optimiser on a big problem without verifying it on a small case where the algebra is checkable.",
     "Hand-rolling integration with fixed-step rectangle rules when quad's adaptive error control is one import away."
   ],
   "realWorldApplication": "Constrained optimisation (SLSQP) is the engine behind portfolio construction, calibration and resource allocation; quad underlies pricing and valuation; scipy.stats underlies A/B testing and risk reporting across industries.",
-  "quantFinanceApplication": "Mean-variance weights via minimize, PV of bond cash flows via quad, and P(loss > x) via norm.sf are three calls every desk makes daily, the same SciPy functions also power calibration (least_squares) and PDE grid valuation in production libraries.",
+  "quantFinanceApplication": "Mean-variance weights via `minimize`, PV of bond cash flows via quad, and P(loss > x) via norm.sf are three calls every desk makes daily, the same SciPy functions also power calibration (least_squares) and PDE grid valuation in production libraries.",
   "summary": [
-    "scipy.optimize.minimize with SLSQP: objective function, constraints as eq/ineq dict functions, per-variable bounds, x0 start; read result.x (weights), result.fun (objective), result.success.",
+    "scipy.`optimize`.`minimize` with SLSQP: objective function, constraints as eq/ineq dict functions, per-variable bounds, x0 start; read result.x (weights), result.fun (objective), result.success.",
     "Always verify an optimiser on a case you can solve by hand: the two-asset constrained problem pins w = (0.75, 0.25) with variance 0.008125.",
     "scipy.integrate.quad returns (value, error_estimate) with adaptive error control: PV = 442.398 for \\$100/yr for 5 years at 5%.",
-    "scipy.stats: norm.sf for right-tail probabilities (accurate in far tails), norm.cdf for N(d1), norm.ppf for quantiles; z = (x, mu)/sigma.",
-    "Search SciPy before writing maths yourself, optimize, integrate, stats, linalg, interpolate cover the desk's numerical needs."
+    "scipy.stats: norm.sf for right-tail probabilities (accurate in far tails), norm.cdf for N(d1), norm.ppf for quantiles; z = (x - mu)/sigma.",
+    "Search SciPy before writing maths yourself, `optimize`, integrate, stats, linalg, interpolate cover the desk's numerical needs."
   ],
   "quiz": [
     {
@@ -148,7 +172,8 @@
       "prompt": "Using quad, the present value of \\$100 per year paid continuously for 5 years at a continuous rate of 5% is how many dollars (to 3 dp)?",
       "answer": 442.398,
       "tolerance": 0.01,
-      "explanation": "$\\int_0^5 100 e^{-0.05t} dt = 100(1 - e^{-0.25})/0.05 = 442.398$. quad reproduces the analytic value to machine precision."
+      "explanation": "$\\int_0^5 100 e^{-0.05t} dt = 100(1 - e^{-0.25})/0.05 = 442.398$. quad reproduces the analytic value to machine precision.",
+      "objective": 2
     },
     {
       "id": "q2",
@@ -157,34 +182,37 @@
       "language": "python",
       "code": "import numpy as np\nfrom scipy.optimize import minimize\n\nS = np.array([[0.01, 0.0], [0.0, 0.04]])\nmu = np.array([0.08, 0.12])\n\ndef variance(w):\n    return w @ S @ w\n\ncons = [{\"type\": \"eq\", \"fun\": lambda w: w.sum() - 1.0},\n        {\"type\": \"eq\", \"fun\": lambda w: w @ mu - 0.09}]\nres = minimize(variance, x0=np.array([0.5, 0.5]), constraints=cons,\n               bounds=[(0.0, 1.0), (0.0, 1.0)], method=\"SLSQP\")\nprint(res.success, res.x.round(4), round(res.fun, 6))",
       "answer": "True [0.75 0.25] 0.008125",
-      "explanation": "The equality constraints pin the two weights (w2 = 0.25, w1 = 0.75) and the variance there is 0.5625x0.01 + 0.0625x0.04 = 0.008125. SLSQP converges to exactly the algebraic solution."
+      "explanation": "The equality constraints pin the two weights (w2 = 0.25, w1 = 0.75) and the variance there is 0.5625x0.01 + 0.0625x0.04 = 0.008125. SLSQP converges to exactly the algebraic solution.",
+      "objective": 0
     },
     {
       "id": "q3",
       "type": "code-output",
-      "prompt": "What does this print?",
+      "prompt": "What probability of a return below negative 2 percent does this calculation print?",
       "language": "python",
-      "code": "from scipy.stats import norm\np = norm.sf(0.02, loc=0.0002, scale=0.01)\nprint(round(float(p), 4))",
-      "answer": "0.0239",
-      "explanation": "The z-score of -2% against mean 0.0002 and sigma 0.01 is (0.02-0.0002)/0.01 = 1.98; the upper tail P(Z > 1.98) = 0.023852 -> 0.0239."
+      "code": "from scipy.stats import norm\np = norm.cdf(-0.02, loc=0.0002, scale=0.01)\nprint(round(float(p), 4))",
+      "answer": "0.0217",
+      "explanation": "The lower-tail threshold is (-0.02 - 0.0002)/0.01 = -2.02. The normal CDF is about 0.021692, which rounds to 0.0217. Using sf at positive 2 percent measures an upper-tail gain instead.",
+      "objective": 3
     },
     {
       "id": "q4",
       "type": "mcq",
       "prompt": "Which SciPy subpackage would you use for a Welch t-test comparing two strategy return samples?",
       "options": [
-        "scipy.optimize",
-        "scipy.integrate",
         "scipy.stats",
+        "scipy.integrate",
+        "scipy.`optimize`",
         "scipy.interpolate"
       ],
-      "answerIndex": 2,
-      "explanation": "Hypothesis tests, distributions and descriptive statistics live in scipy.stats (e.g. stats.ttest_ind). optimize minimises functions; integrate computes areas; interpolate fits curves."
+      "answerIndex": 0,
+      "explanation": "Hypothesis tests, distributions and descriptive statistics live in scipy.stats (e.g. stats.ttest_ind). `optimize` minimises functions; integrate computes areas; interpolate fits curves.",
+      "objective": 4
     },
     {
       "id": "q5",
       "type": "ms",
-      "prompt": "Which statements about scipy.optimize.minimize with SLSQP are true? Select all that apply.",
+      "prompt": "Which statements about scipy.`optimize`.`minimize` with SLSQP are true? Select all that apply.",
       "options": [
         "Constraints are passed as dicts with a 'type' ('eq' or 'ineq') and a 'fun'",
         "x0 (the starting point) is a required argument",
@@ -196,7 +224,8 @@
         1,
         2
       ],
-      "explanation": "Bounds are a sequence of (low, high) pairs, one per variable, option 4 is false. The other three are the working contract of minimize."
+      "explanation": "Bounds are a sequence of (low, high) pairs, one per variable, option 4 is false. The other three are the working contract of `minimize`.",
+      "objective": 1
     },
     {
       "id": "q6",
@@ -210,34 +239,35 @@
         "precision",
         "step"
       ],
-      "explanation": "Adaptive quadrature controls truncation error automatically and reports it, you know how much to trust the number, which a naive rectangle rule never tells you."
+      "explanation": "Adaptive quadrature controls truncation error automatically and reports it, you know how much to trust the number, which a naive rectangle rule never tells you.",
+      "objective": 2
     }
   ],
   "flashcards": [
     {
       "type": "formula",
       "front": "Mean-variance optimisation formulation",
-      "back": "min w^T Sigma w s.t. sum(w)=1, w^T mu = target, bounds 0 <= w_i <= 1. Solved with scipy.optimize.minimize(..., method='SLSQP', constraints=[...], bounds=[...])."
+      "back": "min w^T Sigma w s.t. sum(w)=1, w^T mu = target, bounds 0 <= w_i <= 1. Solved with scipy.`optimize`.`minimize`(..., method='SLSQP', constraints=[...], bounds=[...])."
     },
     {
       "type": "code-output",
       "front": "quad(lambda t: 100*np.exp(-0.05*t), 0, 5) returns what (3 dp)?",
-      "back": "442.398. PV of \\$100/yr continuous for 5 years at 5%: 100(1, e^-0.25)/0.05."
+      "back": "442.398. PV of \\$100/yr continuous for 5 years at 5%: 100(1 - e^-0.25)/0.05."
     },
     {
       "type": "definition",
       "front": "norm.sf vs norm.cdf",
-      "back": "sf(x) = P(Z > x) is the survival function, the right-tail area computed accurately even far out; cdf(x) = P(Z <= x). Use sf for tail probabilities instead of 1, cdf (catastrophic cancellation)."
+      "back": "sf(x) = P(Z > x) is the survival function, the right-tail area computed accurately even far out; cdf(x) = P(Z <= x). Use sf for tail probabilities instead of 1 - cdf (catastrophic cancellation)."
     },
     {
       "type": "concept",
-      "front": "Reading a minimize result",
+      "front": "Reading a `minimize` result",
       "back": "result.x = solution vector (weights), result.fun = objective value at x, result.success = convergence flag, result.message = diagnostics. Always check success."
     },
     {
       "type": "concept",
       "front": "Constraint sign conventions in SLSQP",
-      "back": "'eq' functions must equal 0 at feasible points (e.g. w.sum(), 1); 'ineq' functions must be >= 0 (e.g. w @ mu, target)."
+      "back": "'eq' functions must equal 0 at feasible points (e.g. w.sum() - 1); 'ineq' functions must be >= 0 (e.g. w @ mu - target)."
     }
   ],
   "references": [

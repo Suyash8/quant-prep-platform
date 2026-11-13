@@ -1,104 +1,68 @@
-# QuantFoundry — Setup & Run Guide
+# QuantFoundry setup
 
-QuantFoundry is a Duolingo-style quant-finance learning platform: 283 bite-sized
-lessons across 11 phases, judged coding problems, timed drills, spaced-repetition
-revision, interactive labs, assessments, career mapping and a study planner —
-wrapped in a gamified XP/streak/quest system.
+Everything here is taken from the current package files (`package.json`, `prisma/schema.prisma`,
+`.env.example`, `src/lib/auth.ts`, `src/lib/runner-client.ts`). If something here disagrees with those files,
+the files win.
 
 ## Requirements
+- Node.js 20 or newer (the checkpoint was built and tested on Node 22).
+- PostgreSQL. SQLite is not supported (`prisma/schema.prisma` uses the `postgresql` provider).
+- Bun on your PATH. The app starts the code-runner service with `bun mini-services/code-runner/index.ts`
+  (`src/lib/runner-client.ts`), and `npm start` uses `bun` as well. `package.json` does not declare Bun,
+  so install it yourself.
+- For running submitted code: `python3` and `/usr/bin/g++` on the machine that runs the runner
+  (`mini-services/code-runner/index.ts`). Without them, code submission fails and everything else works.
+  The problem checks were run on Python 3.12 and GCC 12.4, so use those or newer.
 
-| Tool | Version | Notes |
+## Environment variables (`.env.example`)
+| Variable | Required | Meaning |
 |---|---|---|
-| Node.js | ≥ 20.9 (22+ recommended) | runtime for Next.js 16 |
-| Bun | ≥ 1.1 | package manager + script runner (`curl -fsSL https://bun.sh/install | bash`) |
-| SQLite | bundled via Prisma | no server needed |
+| `DATABASE_URL` | yes | PostgreSQL connection string. |
+| `SESSION_SECRET` | yes in production | Signs session cookies. Generate one with `openssl rand -hex 32`. In production the app refuses to start without it; only non-production runs fall back to a built-in development value. |
+| `CODE_RUNNER_URL` | no | URL of an external runner. Default is the local runner on `127.0.0.1:3010`. |
 
-The code runner (in-browser C++/Python execution) resolves `g++` and `python3`
-from your PATH at startup. Without them, coding problems fall back to a
-client-side simulator — everything else works.
+Do not commit `.env`. The package does not ship one.
 
-## Quick start (dev mode)
-
+## Install and run
 ```bash
-# 1. install dependencies (postinstall runs `prisma generate` automatically)
-bun install
-
-# 2. create + sync the SQLite database
-bun run db:push
-
-# 3. start the dev server on http://localhost:3000
-bun run dev
+npm install                 # also runs `prisma generate`
+cp .env.example .env        # then edit DATABASE_URL and SESSION_SECRET
+npm run db:push             # applies prisma/schema.prisma to the database (see warning below)
+node scripts/validate-content.mjs --registry   # regenerates content/registry.json; also prints content errors
+npm run dev                 # http://localhost:3000
 ```
+`npm run db:push` runs `prisma db push --accept-data-loss`. It can drop data in an existing database,
+so point it only at a database you are happy to change.
 
-Open **http://localhost:3000**, click **Register**, create your account —
-**the first account you register becomes the admin** (sees the `/admin`
-content-validation panel).
-
-## Production mode
-
+Production build and start:
 ```bash
-bun run build          # next build + assemble standalone output
-bun run start          # serves on http://localhost:3000 (uses .next/standalone)
+npm run build               # builds content packs, runs next build, then copies assets into .next/standalone
+NODE_ENV=production PORT=3000 node .next/standalone/server.js     # or: npm start (uses bun)
 ```
+Load `.env` into the environment first (for example `set -a; . ./.env; set +a`); the standalone server
+does not read it for you.
 
-`bun run start` expects the env vars below (see `.env.example`); set
-`DATABASE_URL` to an absolute path when running from the standalone folder:
+The first account registered becomes the administrator (`src/app/api/auth/register/route.ts`).
 
-```bash
-DATABASE_URL="file:/absolute/path/to/db/custom.db" bun run start
-```
+## Content checks
+`node scripts/validate-content.mjs` is the strict validator. In this checkpoint it is **red** (roughly 2,700
+errors, mostly quiz questions without objective mappings). That is a known content gap, not a setup problem.
+Counts of lessons, problems and assessments come from `content/registry.json`, not from this file.
 
-## Code runner mini-service (optional, for judged problems)
+## Verification scripts
+Scripts that sign in need an account you created: set `QF_DEMO_EMAIL` and `QF_DEMO_PASSWORD` in your shell.
+No credentials are shipped.
 
-Started automatically on first use (port **3010**), or manually:
-
-```bash
-cd mini-services/code-runner && bun install && bun run dev
-```
-
-## Environment
-
-Copy `.env.example` to `.env` (a working `.env` ships with the project):
-
-```
-DATABASE_URL=file:../db/custom.db   # relative to prisma/schema.prisma
-# SESSION_SECRET=change-me-in-production   # optional; has a dev fallback
-```
-
-## Scripts reference
-
-| Command | What it does |
+| Command | What it checks |
 |---|---|
-| `bun run dev` | Next dev server on :3000 |
-| `bun run build` | production build (standalone output) |
-| `bun run start` | run the production build |
-| `bun run db:generate` | regenerate the Prisma client |
-| `bun run db:push` | sync `prisma/schema.prisma` to SQLite |
-| `node scripts/validate-content.mjs` | validate all 283 lesson JSON files |
-| `node --test scripts/unit-tests.mjs` | run the 25 unit tests |
-| `python3 scripts/seed-visual.py` | reseed the demo account with realistic progress |
-| `bash scripts/audit-all.sh /tmp/audit http://localhost:3000` | screenshot every page for visual QA |
+| `node --test scripts/unit-tests.mjs` | unit tests (grading, mastery, gamification) |
+| `npx tsc --noEmit` / `npm run lint` | types / lint |
+| `node scripts/offline-check.mjs` | real-browser offline test (needs a running server and Playwright) |
+| `node scripts/verify-sync-*.mjs`, `verify-security-fixes.mjs`, `verify-runner-epipe.mjs` | sync and server regressions |
+| `node scripts/verify-hidden-all.mjs` | hidden test output never reaches the browser (paced to respect the rate limit) |
+| `npm run check:expressions`, `check:taylor`, `check:matrix` | lab math regressions |
+| `node scripts/check-lab-params.mjs` | lists lesson lab params a lab does not read (static scan, candidates only) |
+| `node scripts/seed-visual.mjs` | seeds learner progress for the account in `QF_DEMO_EMAIL` (register it first; needs `DATABASE_URL`) |
 
-## Content model
-
-All curriculum lives as schema-validated JSON under `content/`:
-`lessons/` (11 phases), `problems/` (28 judged), `assessments/`,
-`projects/`, `companies/`, `map/`, `registry.json`. Adding lessons requires
-no frontend changes — validate with the script above or the `/admin` panel.
-
-## Test accounts (shipped database)
-
-| Email | Password | Purpose |
-|---|---|---|
-| `e2e@test.dev` | `e2etest12345` | progress-rich learner (11,408 XP) |
-| `visual@test.dev` | `visualtest12345` | demo learner — 3 weeks of realistic progress (1,480 XP, 7-day streak), also admin |
-
-For a clean start, delete `db/custom.db` and run `bun run db:push` again.
-
-## Troubleshooting
-
-- **Port 3000 busy** → `pkill -f "next dev"` then retry, or `PORT=3001 bun run dev`.
-- **`prisma generate` skipped by npm** → npm 10+ may skip postinstall scripts;
-  run `bun install` (recommended) or `npx prisma generate` manually.
-- **Design tokens look off** → hard-refresh; the PWA service worker bumps on
-  each release (`public/sw.js`, current cache `qf-v4`).
+The older `scripts/*-v3.sh`, `audit-all.sh` and `mini-audit.sh` belong to the original project's harness and
+were not re-verified for this checkpoint.

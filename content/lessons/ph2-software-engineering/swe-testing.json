@@ -2,7 +2,7 @@
   "id": "swe-testing",
   "moduleId": "ph2-software-engineering",
   "title": "Testing: Unit, Integration and TDD",
-  "estMinutes": 26,
+  "estMinutes": 30,
   "difficulty": "core",
   "prereqs": [
     "swe-git"
@@ -26,8 +26,11 @@
     {
       "type": "code",
       "lang": "python",
-      "code": "# pricing.py\nfrom decimal import Decimal, ROUND_HALF_UP\n\ndef notional(price: Decimal, qty: int) -> Decimal:\n    \"\"\"Gross notional of a fill, rounded to cents, half up.\"\"\"\n    if qty < 0:\n        raise ValueError(\"quantity must be non-negative\")\n    return (price * qty).quantize(Decimal(\"0.01\"), rounding=ROUND_HALF_UP)\n\n# test_pricing.py\nimport pytest\nfrom decimal import Decimal\nfrom pricing import notional\n\ndef test_typical_fill():\n    assert notional(Decimal(\"42.17\"), 300) == Decimal(\"12651.00\")\n\ndef test_rounding_boundary_half_up():\n    assert notional(Decimal(\"10.125\"), 1) == Decimal(\"10.13\")\n\ndef test_zero_quantity():\n    assert notional(Decimal(\"42.17\"), 0) == Decimal(\"0.00\")\n\ndef test_negative_quantity_rejected():\n    with pytest.raises(ValueError):\n        notional(Decimal(\"42.17\"), -100)",
-      "caption": "Four tests, four behaviours: the normal case, the rounding boundary, zero, and the error path, run with `pytest` and they finish in milliseconds."
+      "code": "# pricing.py\nfrom decimal import Decimal, ROUND_HALF_UP\n\ndef notional(price: Decimal, qty: int) -> Decimal:\n    \"\"\"Gross notional of a fill, rounded to cents, half up.\"\"\"\n    if qty < 0:\n        raise ValueError(\"quantity must be non-negative\")\n    return (price * qty).quantize(Decimal(\"0.01\"), rounding=ROUND_HALF_UP)\n\n# test_pricing.py\nimport pytest\nfrom decimal import Decimal\n\ndef test_typical_fill():\n    assert notional(Decimal(\"42.17\"), 300) == Decimal(\"12651.00\")\n\ndef test_rounding_boundary_half_up():\n    assert notional(Decimal(\"10.125\"), 1) == Decimal(\"10.13\")\n\ndef test_zero_quantity():\n    assert notional(Decimal(\"42.17\"), 0) == Decimal(\"0.00\")\n\ndef test_negative_quantity_rejected():\n    with pytest.raises(ValueError):\n        notional(Decimal(\"42.17\"), -100)",
+      "caption": "A self-contained module: run it with pytest to execute all four tests. The implementation would normally live in pricing.py.",
+      "requires": [
+        "pytest"
+      ]
     },
     {
       "type": "interactive",
@@ -123,7 +126,10 @@
       "pytest.raises captures the error path.",
       "Signed zero: -0 == 0 for ints, but the test documents that the function is total over its domain."
     ],
-    "solution": "```python\nimport pytest\nfrom positions import signed_qty\n\ndef test_buy_is_positive():\n    assert signed_qty(\"BUY\", 300) == 300\n\ndef test_sell_is_negative():\n    assert signed_qty(\"SELL\", 300) == -300\n\ndef test_zero_quantity_is_zero():\n    assert signed_qty(\"BUY\", 0) == 0\n\ndef test_unknown_side_raises():\n    with pytest.raises(ValueError):\n        signed_qty(\"SHORT\", 100)\n```\n\nArrange-Act-Assert in each function, one behaviour each. Note `\"Short\"` vs `\"SHORT\"`-style case bugs are caught by adding a case-variant error test once the spec says sides are uppercase."
+    "solution": "```python\nimport pytest\ndef signed_qty(side, qty):\n    if side not in (\"BUY\", \"SELL\"):\n        raise ValueError(\"unknown side\")\n    return qty if side == \"BUY\" else -qty\n\ndef test_buy_is_positive():\n    assert signed_qty(\"BUY\", 300) == 300\n\ndef test_sell_is_negative():\n    assert signed_qty(\"SELL\", 300) == -300\n\ndef test_zero_quantity_is_zero():\n    assert signed_qty(\"BUY\", 0) == 0\n\ndef test_unknown_side_raises():\n    with pytest.raises(ValueError):\n        signed_qty(\"SHORT\", 100)\n```\n\nArrange-Act-Assert in each function, one behaviour each. Note `\"Short\"` vs `\"SHORT\"`-style case bugs are caught by adding a case-variant error test once the spec says sides are uppercase.",
+    "requires": [
+      "pytest"
+    ]
   },
   "independentExercise": {
     "prompt": "Apply TDD to build `wavg(fills)` (weighted average price) where `fills` is a list of `(price, qty)` pairs. Write the test list FIRST (empty input raises ValueError; `[(42.10, 100), (42.20, 300)]` yields 42.175; a zero-qty pair does not change the average), then implement, then verify the arithmetic by hand.",
@@ -132,7 +138,10 @@
       "VWAP = sum(price * qty) / sum(qty) over all pairs.",
       "Check: 42.10x100 + 42.20x300 = 16,870; 16,870 / 400 = 42.175."
     ],
-    "solution": "```python\n# test_wavg.py (written first)\nimport pytest\nfrom pricing import wavg\n\ndef test_empty_raises():\n    with pytest.raises(ValueError):\n        wavg([])\n\ndef test_two_fills():\n    assert wavg([(42.10, 100), (42.20, 300)]) == pytest.approx(42.175)\n\ndef test_zero_qty_pair_is_ignored_in_weight():\n    # 42.10x100 + 42.20x0 = 4,210 over 100 shares -> still 42.10\n    assert wavg([(42.10, 100), (42.20, 0)]) == pytest.approx(42.10)\n\n# pricing.py (written second)\nfrom decimal import Decimal\ndef wavg(fills):\n    if not fills:\n        raise ValueError(\"no fills\")\n    total_notional = sum(Decimal(str(p)) * q for p, q in fills)\n    total_qty = sum(q for _, q in fills)\n    if total_qty == 0:\n        raise ValueError(\"total quantity is zero\")\n    return total_notional / total_qty\n```\n\nHand check: 42.10x100 + 42.20x300 = 4,210 + 12,660 = 16,870 over 400 shares = 42.175, as asserted. The zero-qty pair contributes nothing to either sum, so the average stays at the other fill's price - and the total-qty-zero guard closes the divide-by-zero hole the tests exposed."
+    "solution": "```python\n# test_wavg.py (written first)\nimport pytest\n\ndef test_empty_raises():\n    with pytest.raises(ValueError):\n        wavg([])\n\ndef test_two_fills():\n    assert wavg([(42.10, 100), (42.20, 300)]) == pytest.approx(Decimal(\"42.175\"))\n\ndef test_zero_qty_pair_is_ignored_in_weight():\n    # 42.10x100 + 42.20x0 = 4,210 over 100 shares -> still 42.10\n    assert wavg([(42.10, 100), (42.20, 0)]) == pytest.approx(Decimal(\"42.10\"))\n\n# pricing.py (written second)\nfrom decimal import Decimal\ndef wavg(fills):\n    if not fills:\n        raise ValueError(\"no fills\")\n    total_notional = sum(Decimal(str(p)) * q for p, q in fills)\n    total_qty = sum(q for _, q in fills)\n    if total_qty == 0:\n        raise ValueError(\"total quantity is zero\")\n    return total_notional / total_qty\n```\n\nHand check: 42.10x100 + 42.20x300 = 4,210 + 12,660 = 16,870 over 400 shares = 42.175, as asserted. The zero-qty pair contributes nothing to either sum, so the average stays at the other fill's price - and the total-qty-zero guard closes the divide-by-zero hole the tests exposed.",
+    "requires": [
+      "pytest"
+    ]
   },
   "commonMistakes": [
     "Comparing computed floats with == in assertions; use Decimal for money or a tolerance.",
@@ -208,11 +217,11 @@
       "prompt": "A test double that records how it was called ('assert the ledger write happened exactly once') is a:",
       "options": [
         "Stub",
+        "Fixture",
         "Fake",
-        "Mock",
-        "Fixture"
+        "Mock"
       ],
-      "answerIndex": 2,
+      "answerIndex": 3,
       "explanation": "Stubs return canned answers, fakes are lightweight working implementations, and mocks verify interactions, here, that the collaboration happened exactly once. A fixture is the setup data/environment, not a double."
     },
     {
@@ -220,10 +229,10 @@
       "type": "mcq",
       "prompt": "A module shows 100% line coverage. Which conclusion is justified?",
       "options": [
-        "The module cannot contain bugs",
+        "The module does not need boundary tests",
         "Every line ran during tests, but nothing is known about assertion quality or boundary coverage",
         "The tests are high quality",
-        "The module does not need boundary tests"
+        "The module cannot contain bugs"
       ],
       "answerIndex": 1,
       "explanation": "Coverage measures execution, not verification. Lines can be 'covered' with weak or missing assertions, and boundary combinations can still be untested. Coverage finds gaps; it does not certify quality."

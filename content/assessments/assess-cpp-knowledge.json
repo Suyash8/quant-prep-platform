@@ -13,87 +13,108 @@
           "type": "mcq",
           "prompt": "What does RAII stand for, and what is the core idea?",
           "options": [
-            "Resource Allocation Is Initialization, acquire resources in constructors and release them in destructors, so cleanup happens automatically when objects leave scope",
-            "Runtime Algorithm and Interface Inheritance, resources are managed by a central runtime allocator",
+            "Resource Access In Iterators, resources are freed whenever an iterator is invalidated",
             "Resource Abstraction via Indirect Internals, all resources must be wrapped in virtual interfaces",
-            "Resource Access In Iterators, resources are freed whenever an iterator is invalidated"
+            "Resource Acquisition Is Initialisation: constructors acquire resources and destructors release them at scope exit.",
+            "Runtime Algorithm and Interface Inheritance, resources are managed by a central runtime allocator"
           ],
-          "answerIndex": 0,
-          "explanation": "RAII ties a resource's lifetime (heap memory, file handles, locks, sockets) to an object's lifetime: the constructor acquires, the destructor releases. Because destructors run deterministically on scope exit, including during stack unwinding when an exception fires. RAII makes leaks and dangling handles structurally impossible without try/catch sprinkled everywhere. It is the single most important C++ idiom."
+          "answerIndex": 2,
+          "explanation": "RAII ties a resource's lifetime (heap memory, file handles, locks, sockets) to an object's lifetime: the constructor acquires, the destructor releases. Because destructors run deterministically on scope exit, including during stack unwinding when an exception fires. RAII makes leaks and dangling handles structurally impossible without try/catch sprinkled everywhere. It is the single most important C++ idiom.",
+          "lessonId": "cpp-raii",
+          "lessonUrl": "/learn/cpp-raii",
+          "objective": 0
         },
         {
           "id": "cpp-q2",
           "type": "mcq",
           "prompt": "Which statement about automatic (stack) storage duration is TRUE?",
           "options": [
-            "Automatic objects live on the heap and are freed by a garbage collector",
-            "Their memory is reclaimed deterministically when the enclosing scope exits; allocation is typically just a decrement of the stack pointer",
-            "They persist until explicitly deleted, even after their scope has exited",
-            "Each one requires a matching pair of new and delete expressions"
+            "Automatic objects require a paired new expression on every path",
+            "Automatic objects persist until explicit delete after their scope",
+            "Automatic objects end their lifetimes when their scope exits",
+            "Automatic objects are always garbage-collected after their last use"
           ],
-          "answerIndex": 1,
-          "explanation": "Automatic objects are created on entry to their scope and destroyed, in reverse construction order, on exit. There is no allocator call in the malloc sense: on most ABIs the 'allocation' is bumping the stack pointer, which is why stack allocation is essentially free compared to heap allocation, a key reason latency-sensitive code avoids unnecessary dynamic allocation."
+          "answerIndex": 2,
+          "explanation": "Automatic storage duration ties lifetime to scope exit, including exception unwinding for fully constructed objects. The standard does not require a specific stack-pointer instruction or garbage collector.",
+          "lessonId": "cpp-storage-duration",
+          "lessonUrl": "/learn/cpp-storage-duration",
+          "objective": 1
         },
         {
           "id": "cpp-q3",
           "type": "mcq",
           "prompt": "What does shared_ptr add over unique_ptr, and at what cost?",
           "options": [
+            "Copy semantics only: copies share the same deleter but each pointer keeps its own private count",
+            "Shared ownership uses a control block and reference counting; the object dies when its last owning shared_ptr is released.",
             "Nothing, they are interchangeable, shared_ptr is merely the older API",
-            "Shared ownership via an atomic reference count and a control block: copies cost atomic increments, and the managed object is destroyed when the last owner goes away",
-            "Shared ownership via a per-object spinlock: the object is destroyed when the FIRST owner goes away",
-            "Copy semantics only: copies share the same deleter but each pointer keeps its own private count"
+            "Shared ownership via a per-object spinlock: the object is destroyed when the FIRST owner goes away"
           ],
           "answerIndex": 1,
-          "explanation": "shared_ptr stores a pointer to a control block holding strong and weak counts. Copying atomically increments the strong count; destroying decrements it, and the object dies when the strong count hits zero (the block itself dies when the weak count also hits zero). Costs versus unique_ptr: one extra allocation, atomic reference-count traffic on copies, and a fatter object. unique_ptr is move-only, zero-overhead, and should be the default until you genuinely need multiple simultaneous owners."
+          "explanation": "shared_ptr tracks shared ownership through a control block, with reference-counting overhead. Implementations support the required thread-safety of separate shared_ptr objects, but the pointee is not thereby made thread-safe. unique_ptr instead expresses exclusive ownership.",
+          "lessonId": "cpp-shared-weak-ptr",
+          "lessonUrl": "/learn/cpp-shared-weak-ptr",
+          "objective": 2
         },
         {
           "id": "cpp-q4",
           "type": "code-output",
-          "prompt": "What does this C++17 program print?",
+          "prompt": "C++ Knowledge Assessment: trace cpp-q4 and give the exact printed output.",
           "language": "cpp",
           "code": "#include <iostream>\n#include <utility>\n\nstruct S {\n    S() { std::cout << \"ctor\\n\"; }\n    S(const S&) { std::cout << \"copy\\n\"; }\n    S(S&&) noexcept { std::cout << \"move\\n\"; }\n};\n\nvoid take(S) {}\n\nint main() {\n    S s;\n    take(s);\n    take(std::move(s));\n    return 0;\n}",
           "answer": "ctor\ncopy\nmove",
-          "explanation": "Constructing s prints ctor. take(s) passes an lvalue by value, so the copy constructor builds the parameter. take(std::move(s)) casts s to an rvalue reference, so overload resolution selects the move constructor. The key insight: std::move moves nothing, it is just a static_cast to rvalue that changes which constructor is chosen."
+          "explanation": "Constructing s prints ctor. take(s) passes an lvalue by value, so the copy constructor builds the parameter. take(std::move(s)) casts s to an rvalue reference, so overload resolution selects the move constructor. The key insight: std::move moves nothing, it is just a static_cast to rvalue that changes which constructor is chosen.",
+          "lessonId": "cpp-move-semantics",
+          "lessonUrl": "/learn/cpp-move-semantics",
+          "objective": 3
         },
         {
           "id": "cpp-q5",
           "type": "mcq",
           "prompt": "Which statement about iterator invalidation is correct?",
           "options": [
-            "push_back on a vector never invalidates iterators",
-            "Any vector reallocation invalidates all iterators, pointers and references into it; erasing from a std::list invalidates only iterators to the erased node, and inserting into a std::map invalidates no iterators",
-            "Erasing from a std::list invalidates ALL iterators of that list",
-            "Inserting into a std::map (red-black tree) invalidates existing iterators because of rebalancing"
+            "Vector reallocation invalidates references, pointers and iterators",
+            "Map insertion invalidates all old iterators because nodes rebalance",
+            "Vector reallocation preserves iterators but invalidates only values",
+            "List erasure invalidates all iterators even to surviving elements"
           ],
-          "answerIndex": 1,
-          "explanation": "A vector's elements live in one contiguous array: growth beyond capacity reallocates and moves everything, and even a non-growing erase shifts elements down, so positions at or after the erase point go stale. Node-based containers behave differently: std::list and std::map allocate stable nodes, so their iterators survive insertions and erasures of other elements. This distinction drives data-structure choice in hot loops."
+          "answerIndex": 0,
+          "explanation": "Vector reallocation moves elements into new storage and invalidates pointers, references and iterators. List erasure invalidates those to erased elements, while map insertion does not invalidate existing iterators.",
+          "lessonId": "cpp-stl-iterators-algorithms",
+          "lessonUrl": "/learn/cpp-stl-iterators-algorithms",
+          "objective": 4
         },
         {
           "id": "cpp-q6",
           "type": "mcq",
           "prompt": "What is the main recurring cost of a virtual function call compared to a direct (non-virtual) call?",
           "options": [
-            "A system call into the OS scheduler",
-            "An extra heap allocation on every call",
-            "A vtable indirection (load the vptr, load the function pointer, indirect call) which also blocks inlining, and the indirect branch can mispredict",
-            "A mandatory lock acquisition on the vtable"
+            "Every virtual call allocates a new object on the dynamic heap",
+            "An unresolved virtual target adds indirect dispatch and may limit inlining",
+            "Every virtual call locks a shared table before invoking the function",
+            "A system call schedules another thread for each virtual dispatch"
           ],
-          "answerIndex": 2,
-          "explanation": "The call itself is cheap: load the object's vptr, index the vtable, call indirectly, two dependent loads plus an indirect branch. The real cost is what it prevents: the compiler cannot inline the callee (except when it can devirtualize), so all the optimisations inlining unlocks disappear, and the indirect branch may mispredict on polymorphic call sites. The vtable is read-only shared data, no locking involved."
+          "answerIndex": 1,
+          "explanation": "An indirect virtual call can add dispatch and branch-prediction costs, but the optimiser may prove the target and devirtualise it. Neither a universal fixed cost nor permanent inability to inline is a C++ language guarantee.",
+          "lessonId": "cpp-polymorphism",
+          "lessonUrl": "/learn/cpp-polymorphism",
+          "objective": 5
         },
         {
           "id": "cpp-q7",
           "type": "mcq",
           "prompt": "What does memory_order_relaxed on an atomic fetch_add guarantee?",
           "options": [
-            "Nothing at all, it behaves exactly like a plain int++",
-            "Atomicity and a single modification order for that one variable, but no ordering or synchronisation of surrounding memory operations",
-            "Full sequential consistency across all threads",
-            "That the compiler cannot reorder it, though the CPU still can"
+            "Atomicity for that variable without ordering surrounding operations",
+            "Automatic release-acquire synchronisation with all other variables",
+            "Plain non-atomic increment with only a compiler optimisation barrier",
+            "Full sequential consistency for every memory access in every thread"
           ],
-          "answerIndex": 1,
-          "explanation": "relaxed keeps the two things atomics always provide: indivisibility of the read-modify-write and coherence (all threads agree on the sequence of values that one atomic variable took). What it drops is any happens-before edge, so it cannot publish or acquire other data. It is the right choice for pure statistics counters; using it for a flag guarding non-atomic payload data is a data race."
+          "answerIndex": 0,
+          "explanation": "Relaxed operations preserve atomicity and the atomic object's modification order. They do not create release-acquire ordering for unrelated surrounding accesses; confusing those guarantees can introduce data races.",
+          "lessonId": "cpp-atomics",
+          "lessonUrl": "/learn/cpp-atomics",
+          "objective": 6
         },
         {
           "id": "cpp-q8",
@@ -110,57 +131,107 @@
             2,
             3
           ],
-          "explanation": "Unsigned arithmetic is defined: it computes modulo $2^n$ and wraps. Signed overflow, out-of-bounds access, and reading an indeterminate value are all UB, the standard places no constraints on behaviour, so the compiler may assume they never happen and optimise accordingly (which is why UB can produce bizarre, delayed, or 'impossible' symptoms far from the bug)."
+          "explanation": "Unsigned arithmetic is defined: it computes modulo $2^n$ and wraps. Signed overflow, out-of-bounds access, and reading an indeterminate value are all UB, the standard places no constraints on behaviour, so the compiler may assume they never happen and optimise accordingly (which is why UB can produce bizarre, delayed, or 'impossible' symptoms far from the bug).",
+          "lessonId": "cpp-types-variables",
+          "lessonUrl": "/learn/cpp-types-variables",
+          "objective": 7
         },
         {
           "id": "cpp-q9",
           "type": "short",
-          "prompt": "How many vtable pointers does each object of a polymorphic class carry, and to what does a single vtable belong?",
-          "modelAnswer": "Each object carries exactly one vptr (a hidden pointer stored inside the object, typically in its first bytes), pointing to that class's vtable. The vtable belongs to the class, not to any object: all instances of the same class share one vtable, which holds the addresses of that class's virtual function implementations (plus RTTI and offset-to-top information for multiple inheritance).",
+          "prompt": "In a common C++ ABI, what do a vptr and vtable do, and why is exactly one vptr per polymorphic object not a portable rule?",
+          "modelAnswer": "A vptr is an implementation mechanism pointing to virtual-dispatch metadata. Multiple inheritance can require multiple vptrs or tables in common ABIs, and the C++ standard does not mandate either representation.",
           "keywords": [
-            "one",
-            "per object",
-            "per class",
-            "vptr",
-            "shared"
+            "virtual|dispatch",
+            "abi|implementation|representation",
+            "multiple|inheritance",
+            "standard|mandate|mandated|portable"
           ],
-          "explanation": "The vptr is per object (that is what makes dispatch work on 'this'), but the table itself is per class, one copy in read-only memory shared by every instance. A class with 30 virtual functions still stores only one pointer per object; the 30 function pointers live once in the class's vtable. This is why adding virtual functions costs object size nothing, but adding a second base class with virtuals adds a second vptr."
+          "explanation": "The C++ language specifies virtual dispatch behaviour, not a required vtable layout. Common ABIs often use one vptr in simple single inheritance, while multiple inheritance can add more. Exactly one per object is therefore not a portable claim.",
+          "lessonId": "cpp-internals-vtable-layout",
+          "lessonUrl": "/learn/cpp-internals-vtable-layout",
+          "objective": 8
         },
         {
           "id": "cpp-q10",
           "type": "mcq",
           "prompt": "Which pairing of lookup complexity is correct?",
           "options": [
-            "std::map: average O(1); std::unordered_map: guaranteed O(log n)",
-            "std::unordered_map: average O(1), worst case O(n) under collisions; std::map: guaranteed O(log n) via its red-black tree",
-            "Both are O(1) on average and neither has a worse case",
-            "std::vector: guaranteed O(1) lookup by key; std::map: O(n) insert"
+            "unordered_map: average O(n); map: always O(1)",
+            "unordered_map: average O(1), worst O(n); map: O(log n)",
+            "unordered_map: worst O(1) always; map: average O(1)",
+            "unordered_map: always O(log n); map: always O(n)"
           ],
           "answerIndex": 1,
-          "explanation": "unordered_map hashes to a bucket: average O(1) if the hash is good and load factor is controlled, degrading to O(n) when many keys collide into one bucket. map is a balanced red-black tree: every insert/find/erase is O(log n) guaranteed, worst case included, plus it keeps keys in sorted order, which unordered_map cannot. Knowing which guarantee you need (bounded worst case vs speed) matters in latency-sensitive paths."
+          "explanation": "The standard specifies complexity contracts rather than requiring a red-black-tree implementation. Hash lookup can degrade under collisions, whereas map has logarithmic lookup complexity.",
+          "lessonId": "cpp-stl-associative",
+          "lessonUrl": "/learn/cpp-stl-associative",
+          "objective": 9
         },
         {
           "id": "cpp-q11",
           "type": "code-output",
-          "prompt": "What does this C++17 program print?",
+          "prompt": "C++ Knowledge Assessment: trace cpp-q11 and give the exact printed output.",
           "language": "cpp",
           "code": "#include <iostream>\n\ntemplate <typename T>\nT twice(T v) { return v + v; }\n\nint main() {\n    std::cout << twice(5) << ' ' << twice(2.5) << '\\n';\n    return 0;\n}",
           "answer": "10 5",
-          "explanation": "The compiler instantiates the template twice from the same source: twice<int> returns $5 + 5 = 10$, and twice<double> returns $5.0$, which streams as '5'. Templates are a compile-time code generator, one definition, one machine-code body per set of template arguments, which is why template code lives in headers and why type errors surface at instantiation time."
+          "explanation": "The compiler instantiates the template twice from the same source: twice<int> returns $5 + 5 = 10$, and twice<double> returns $5.0$, which streams as '5'. Templates are a compile-time code generator, one definition, one machine-code body per set of template arguments, which is why template code lives in headers and why type errors surface at instantiation time.",
+          "lessonId": "cpp-rule-of-five",
+          "lessonUrl": "/learn/cpp-rule-of-five",
+          "objective": 10
         },
         {
           "id": "cpp-q12",
           "type": "mcq",
           "prompt": "Given `int x = 3;`, which of these expressions is an rvalue?",
           "options": [
+            "++x",
             "x",
             "x + 1",
-            "x = 5 (the assignment expression itself)",
-            "++x"
+            "x = 5 (the assignment expression itself)"
           ],
-          "answerIndex": 1,
-          "explanation": "x names a stored object, so it is an lvalue, and so are the other two traps: built-in assignment yields the assigned-to object ($x = 5$ is an lvalue referring to x), and pre-increment ++x also yields x as an lvalue. Only $x + 1$ produces a temporary value with no identity: a prvalue, which is an rvalue. (Post-increment x++ is also a prvalue, it yields a copy of the old value.) Value categories decide what std::move, perfect forwarding and overload resolution do, so this vocabulary is not academic."
+          "answerIndex": 2,
+          "explanation": "x names a stored object, so it is an lvalue, and so are the other two traps: built-in assignment yields the assigned-to object ($x = 5$ is an lvalue referring to x), and pre-increment ++x also yields x as an lvalue. Only $x + 1$ produces a temporary value with no identity: a prvalue, which is an rvalue. (Post-increment x++ is also a prvalue, it yields a copy of the old value.) Value categories decide what std::move, perfect forwarding and overload resolution do, so this vocabulary is not academic.",
+          "lessonId": "cpp-value-categories",
+          "lessonUrl": "/learn/cpp-value-categories",
+          "objective": 11
         }
+      ]
+    }
+  ],
+  "passMark": 80,
+  "passMarkPercent": 80,
+  "scoreBands": [
+    {
+      "minPercent": 0,
+      "maxPercent": 49,
+      "title": "Rebuild the foundations",
+      "text": "Review the linked lessons for missed questions, then retry without a timer.",
+      "lessonIds": [
+        "cpp-raii",
+        "cpp-storage-duration",
+        "cpp-shared-weak-ptr"
+      ]
+    },
+    {
+      "minPercent": 50,
+      "maxPercent": 79,
+      "title": "Practise the weak areas",
+      "text": "Rework missed examples and explain the mechanism before another timed attempt.",
+      "lessonIds": [
+        "cpp-move-semantics",
+        "cpp-stl-iterators-algorithms",
+        "cpp-polymorphism"
+      ]
+    },
+    {
+      "minPercent": 80,
+      "maxPercent": 100,
+      "title": "Ready for a harder check",
+      "text": "You passed this practice threshold. Review any remaining misses; this is not a hiring prediction.",
+      "lessonIds": [
+        "cpp-rule-of-five",
+        "cpp-value-categories"
       ]
     }
   ]

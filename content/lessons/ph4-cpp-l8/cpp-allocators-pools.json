@@ -2,7 +2,7 @@
   "id": "cpp-allocators-pools",
   "moduleId": "ph4-cpp-l8",
   "title": "Memory Pools, Custom Allocators and Alignment",
-  "estMinutes": 27,
+  "estMinutes": 30,
   "difficulty": "specialist",
   "prereqs": [
     "cpp-cache-locality"
@@ -69,7 +69,7 @@
     {
       "type": "code",
       "lang": "cpp",
-      "code": "#include <cstddef>\n#include <iostream>\n\nstruct alignas(64) PaddedSlot {   // force one object per cache line\n    double v[8];                  // 64 bytes of payload\n};\n\nstruct BadOrder  { char c; double d; std::int32_t i; };  // 1 +7pad +8 +4 = 20 -> 24\nstruct GoodOrder { double d; std::int32_t i; char c; };  // 8 +4 +1 +3pad = 16\n\nint main() {\n    std::cout << sizeof(PaddedSlot) << ' ' << alignof(PaddedSlot) << '\\n';\n    std::cout << sizeof(BadOrder) << ' ' << sizeof(GoodOrder) << '\\n';\n}\n// Prints: 64 64\n//         24 16",
+      "code": "#include <cstdint>\n#include <cstddef>\n#include <iostream>\n\nstruct alignas(64) PaddedSlot {   // force one object per cache line\n    double v[8];                  // 64 bytes of payload\n};\n\nstruct BadOrder  { char c; double d; std::int32_t i; };  // 1 +7pad +8 +4 = 20 -> 24\nstruct GoodOrder { double d; std::int32_t i; char c; };  // 8 +4 +1 +3pad = 16\n\nint main() {\n    std::cout << sizeof(PaddedSlot) << ' ' << alignof(PaddedSlot) << '\\n';\n    std::cout << sizeof(BadOrder) << ' ' << sizeof(GoodOrder) << '\\n';\n}\n// Prints: 64 64\n//         24 16",
       "caption": "Same members, different order: 24 vs 16 bytes, one third less memory traffic for free."
     },
     {
@@ -133,12 +133,12 @@
       "type": "mcq",
       "prompt": "What does `std::pmr::monotonic_buffer_resource` do when you call deallocate on one of its blocks?",
       "options": [
+        "Coalesces the block with adjacent free blocks",
         "Returns the block to the OS immediately",
         "Nothing, the resource only reclaims everything when it is destroyed (monotonic bump allocation)",
-        "Coalesces the block with adjacent free blocks",
         "Throws std::bad_alloc"
       ],
-      "answerIndex": 1,
+      "answerIndex": 2,
       "explanation": "Monotonic resources allocate by bumping a pointer and never reuse individual freed blocks; the whole buffer is released when the resource dies. For recycling objects, use a pool instead."
     },
     {
@@ -153,12 +153,12 @@
       "type": "mcq",
       "prompt": "Why does allocation from the *global* heap become slower as thread count rises, even when threads allocate unrelated objects?",
       "options": [
-        "Each thread gets its own heap, so slowdown is imaginary",
-        "The shared allocator's internal state (free lists) is protected by a lock, so threads contend",
         "The OS pages out freed memory immediately",
-        "Heap allocation is always O(n) in the number of live objects"
+        "Heap allocation is always O(n) in the number of live objects",
+        "Each thread gets its own heap, so slowdown is imaginary",
+        "The shared allocator's internal state (free lists) is protected by a lock, so threads contend"
       ],
-      "answerIndex": 1,
+      "answerIndex": 3,
       "explanation": "A general-purpose allocator is shared mutable state; its free lists need synchronisation, so concurrent allocators serialise on that lock. Per-thread pools eliminate the contention."
     },
     {
@@ -166,9 +166,9 @@
       "type": "mcq",
       "prompt": "You need 32-byte-aligned storage to use aligned AVX2 loads on `double v[4]`. Which declaration guarantees it?",
       "options": [
-        "struct QuoteVec { double v[4]; }; // plain struct",
-        "struct alignas(32) QuoteVec { double v[4]; };",
         "static double v[4]; // static storage is always aligned enough",
+        "struct alignas(32) QuoteVec { double v[4]; };",
+        "struct QuoteVec { double v[4]; }; // plain struct",
         "double* v = new double[4]; // heap is always aligned enough"
       ],
       "answerIndex": 1,
@@ -177,9 +177,9 @@
     {
       "id": "q6",
       "type": "code-output",
-      "prompt": "What does this program print?",
+      "prompt": "On the documented x86-64 Linux GCC ABI (8-byte double alignment), what does this program print?",
       "language": "cpp",
-      "code": "#include <cstddef>\n#include <iostream>\n\nstruct alignas(64) PaddedSlot {\n    double v[8];\n};\n\nstruct BadOrder  { char c; double d; std::int32_t i; };\nstruct GoodOrder { double d; std::int32_t i; char c; };\n\nint main() {\n    std::cout << sizeof(PaddedSlot) << ' ' << alignof(PaddedSlot) << '\\n';\n    std::cout << sizeof(BadOrder) << ' ' << sizeof(GoodOrder) << '\\n';\n}",
+      "code": "#include <cstdint>\n#include <cstddef>\n#include <iostream>\n\nstruct alignas(64) PaddedSlot {\n    double v[8];\n};\n\nstruct BadOrder  { char c; double d; std::int32_t i; };\nstruct GoodOrder { double d; std::int32_t i; char c; };\n\nint main() {\n    std::cout << sizeof(PaddedSlot) << ' ' << alignof(PaddedSlot) << '\\n';\n    std::cout << sizeof(BadOrder) << ' ' << sizeof(GoodOrder) << '\\n';\n}",
       "answer": "64 64\n24 16",
       "explanation": "alignas(64) forces size 64 and alignment 64 (one object per cache line). BadOrder pads char->double (7 bytes) and trails 4 bytes to 24; GoodOrder ordered largest-first is 13 bytes rounded up to 16."
     }

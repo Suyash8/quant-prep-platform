@@ -60,7 +60,7 @@ export default async function MethodologyPage() {
         actual engineering work.
       </p>
 
-      {/* evidence band — canonical horizontal stat tiles, two hues + neutral */}
+      {/* evidence band, canonical horizontal stat tiles, two hues + neutral */}
       <div className="mt-6 grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
           { icon: BookCheck, tile: 'icon-tile-accent', value: String(reg.lessons.length), label: 'Authored lessons' },
@@ -92,9 +92,9 @@ export default async function MethodologyPage() {
                 <div className="min-w-0">
                   <h2 className="text-lg font-black tracking-tight flex items-center gap-2">
                     {hero.title}
-                    <span className="text-[10px] font-black text-faint tnum">01</span>
+                    <span className="text-[12px] font-black text-faint tnum">01</span>
                   </h2>
-                  <p className="mt-1.5 text-sm text-muted leading-relaxed font-semibold">{hero.desc}</p>
+                  <p className="mt-1.5 text-[15px] text-muted leading-relaxed font-semibold">{hero.desc}</p>
                 </div>
               </div>
             );
@@ -107,9 +107,9 @@ export default async function MethodologyPage() {
               <div className="min-w-0">
                 <h2 className="font-extrabold tracking-tight flex items-center gap-2">
                   {p.title}
-                  <span className="text-[10px] font-black text-faint tnum">0{i + 2}</span>
+                  <span className="text-[12px] font-black text-faint tnum">0{i + 2}</span>
                 </h2>
-                <p className="mt-1 text-sm text-muted leading-relaxed font-semibold">{p.desc}</p>
+                <p className="mt-1 text-[15px] text-muted leading-relaxed font-semibold">{p.desc}</p>
               </div>
             </div>
           ))}
@@ -121,7 +121,7 @@ export default async function MethodologyPage() {
           <span className="icon-tile icon-tile-sm icon-tile-accent"><ListChecks className="h-5 w-5" /></span>
           <div>
             <h2 className="text-lg font-black tracking-tight">How a lesson works</h2>
-            <p className="text-xs font-bold text-muted">Every lesson follows the same 20-part structure so you always know where you are</p>
+            <p className="text-[13px] font-bold text-muted">Every lesson follows the same 20-part structure so you always know where you are</p>
           </div>
         </div>
         {/* the 20 parts are ONE numbered sequence: phase legend + a single flowing list,
@@ -133,7 +133,7 @@ export default async function MethodologyPage() {
               <span key={ph.title} className="chip !py-1">
                 <span className={`icon-tile icon-tile-sm !h-5 !w-5 !rounded-md ${ph.tile}`}><PhIcon className="!h-3 !w-3" /></span>
                 {ph.title}
-                <span className="text-muted tnum">{ph.from + 1}–{ph.to}</span>
+                <span className="text-muted tnum">{ph.from + 1} to {ph.to}</span>
               </span>
             );
           })}
@@ -143,7 +143,7 @@ export default async function MethodologyPage() {
             const ph = partPhases.find(p => i >= p.from && i < p.to) ?? partPhases[0];
             return (
               <li key={t} className="flex items-center gap-2.5 rounded-xl bg-surface-2/50 border border-border/60 px-2.5 py-1.5 text-[13px] font-bold min-w-0">
-                <span className={`h-5 w-5 shrink-0 rounded-lg ${ph.numCls} text-white text-[10px] font-black tnum flex items-center justify-center`}>{i + 1}</span>
+                <span className={`h-5 w-5 shrink-0 rounded-lg ${ph.numCls} text-white text-[12px] font-black tnum flex items-center justify-center`}>{i + 1}</span>
                 <span className="min-w-0 truncate">{t}</span>
               </li>
             );
@@ -156,7 +156,7 @@ export default async function MethodologyPage() {
           <span className="icon-tile icon-tile-sm icon-tile-warning"><ClipboardCheck className="h-5 w-5" /></span>
           <div>
             <h2 className="text-lg font-black tracking-tight">Assessment types</h2>
-            <p className="text-xs font-bold text-muted">Nine ways you prove it, none of them guessable</p>
+            <p className="text-[13px] font-bold text-muted">Nine ways you prove it, none of them guessable</p>
           </div>
         </div>
         <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
@@ -164,7 +164,7 @@ export default async function MethodologyPage() {
             <span key={a.t} className={`${a.chip} justify-center`}>{a.t}</span>
           ))}
         </div>
-        <p className="mt-4 text-sm text-muted font-semibold qf-card-flat p-4 !bg-surface-2/50">
+        <p className="mt-4 text-[15px] text-muted font-semibold qf-card-flat p-4 !bg-surface-2/50">
           The bar is deliberately strict: you can’t guess your way through, and time-on-page counts for nothing.
           That can feel harsh. It beats the alternative.
         </p>
@@ -186,13 +186,13 @@ export default async function MethodologyPage() {
               'References prefer primary sources, cppreference, OpenStax, Python/NumPy, PostgreSQL, Linux docs',
               'References never substitute for the lesson itself',
             ].map(t => (
-              <li key={t} className="flex items-start gap-2.5 rounded-xl bg-surface-2/50 border border-border/60 px-3 py-2.5 text-sm font-semibold text-muted">
+              <li key={t} className="flex items-start gap-2.5 rounded-xl bg-surface-2/50 border border-border/60 px-3 py-2.5 text-[15px] font-semibold text-muted">
                 <BookCheck className="h-4 w-4 text-info shrink-0 mt-0.5" />
                 <span className="leading-relaxed">{t}</span>
               </li>
             ))}
           </ul>
-          <p className="mt-4 text-sm text-muted leading-relaxed font-semibold max-w-2xl">
+          <p className="mt-4 text-[15px] text-muted leading-relaxed font-semibold max-w-2xl">
             The gate currently covers {reg.lessons.length} lessons across {map.phases.reduce((n, p) => n + p.modules.length, 0)} modules, and every one of them passed it.
           </p>
           <div className="mt-5 flex flex-wrap gap-3">

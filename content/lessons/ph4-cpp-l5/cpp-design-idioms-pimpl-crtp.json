@@ -1,0 +1,254 @@
+{
+  "id": "cpp-design-idioms-pimpl-crtp",
+  "moduleId": "ph4-cpp-l5",
+  "title": "PIMPL, CRTP and Policy-Based Design",
+  "estMinutes": 35,
+  "difficulty": "advanced",
+  "prereqs": [
+    "cpp-span-string-view-expected"
+  ],
+  "objectives": [
+    "Explain the ownership and build boundary of PIMPL",
+    "Compare CRTP static dispatch and virtual dispatch",
+    "Choose policy classes or tag dispatch with explicit constraints"
+  ],
+  "motivation": "A pricing library changes often, while applications including its public headers should rebuild only when the interface changes. A market-data loop has another concern: a chosen strategy must be called repeatedly with little overhead. PIMPL and CRTP address different boundaries. PIMPL hides representation behind an owning pointer; CRTP describes a compile-time relationship between a base template and a derived type. Policies and tag dispatch put selection into types or overloads. None is automatically right. First ask what must vary, who selects it and whether selection happens during compilation or while the process is running.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Choose the boundary first"
+    },
+    {
+      "type": "p",
+      "md": "A pricing library changes often, while applications including its public headers should rebuild only when the interface changes. A market-data loop has another concern: a chosen strategy must be called repeatedly with little overhead. PIMPL and CRTP address different boundaries. PIMPL hides representation behind an owning pointer; CRTP describes a compile-time relationship between a base template and a derived type. Policies and tag dispatch put selection into types or overloads. None is automatically right. First ask what must vary, who selects it and whether selection happens during compilation or while the process is running."
+    },
+    {
+      "type": "h2",
+      "text": "PIMPL and completeness"
+    },
+    {
+      "type": "p",
+      "md": "A public class declares a private implementation type and owns it through unique_ptr. Define its destructor where the implementation is complete, normally in the source file. Disable copying or implement a deliberate deep copy; movement also needs a documented moved-from state. Changing private members then need not expose their headers to clients. This reduces recompilation and can help maintain a binary boundary, but ABI compatibility still depends on public signatures, layout and toolchain conventions. PIMPL adds allocation, pointer indirection and another lifetime. Do not hide every tiny value type behind an allocation merely because a large library benefits from the pattern."
+    },
+    {
+      "type": "h2",
+      "text": "Worked example: an implementation handle"
+    },
+    {
+      "type": "p",
+      "md": "The complete program stores a quote inside Impl and exposes a read-only price function. Constructing Quote(7) allocates an implementation holding 7; the accessor returns 7. In a library, put the class declaration in the header and the Impl definition in the source. Keeping both together here makes the example runnable. Clients cannot reach into the representation and depend on its fields. A production version must decide whether copies share identity or hold independent snapshots, and whether querying a moved-from object is permitted. The implementation boundary must not erase the value and lifetime semantics promised by the public interface."
+    },
+    {
+      "type": "h2",
+      "text": "CRTP dispatch is static"
+    },
+    {
+      "type": "p",
+      "md": "In the curiously recurring template pattern, Derived inherits from Base<Derived>. The base can call a derived operation through static_cast<const Derived*>(this) when the object really has that derived type. The pattern does not require virtual dispatch, and the compiler may inline the call. Inlining is an opportunity, not a language guarantee about machine code. Do not construct a standalone base and cast it to a derived type that does not exist. Static polymorphism also cannot put arbitrary unrelated concrete types into one vector<Base> and choose implementations dynamically without another form of type erasure or dispatch."
+    },
+    {
+      "type": "h2",
+      "text": "Worked example: a quote policy"
+    },
+    {
+      "type": "p",
+      "md": "The Twice CRTP implementation maps 7 to 14. A separate OneTick policy maps 7 to 8, and PolicyEngine<OneTick> calls that policy without storing a run-time policy pointer. Another tick rule creates another template instantiation. Tag dispatch selects overloads using small tag types: for example a contiguous-storage tag can choose an algorithm that genuinely relies on contiguous memory. A tag must describe a true capability, not a performance wish. Policies may hold state, but then their ownership and thread-safety matter too. Static selection does not make a mutable policy safe to share across threads."
+    },
+    {
+      "type": "h2",
+      "text": "Costs move between boundaries"
+    },
+    {
+      "type": "p",
+      "md": "Templates can increase build time and binary size through repeated instantiation. Virtual interfaces support run-time plug-ins, but an indirect call may limit optimisation when its target cannot be proved. Link-time optimisation can sometimes devirtualise calls; saying that every virtual call is permanently uninlinable is wrong. PIMPL reduces header coupling while adding indirection. Measure code size, build time and latency distributions on representative workloads. A constant-input microbenchmark whose result is discarded may measure nothing useful because the compiler can remove the entire operation. Keep correctness tests independent of benchmark machinery so a faster implementation cannot quietly alter results."
+    },
+    {
+      "type": "h2",
+      "text": "Use the right contract in production"
+    },
+    {
+      "type": "p",
+      "md": "Choose PIMPL for a stable facade with changing dependencies, policies for compile-time-selected behaviour, and virtual interfaces when callers need dynamic implementations. Combining them is reasonable: a public PIMPL facade may hide an internal templated engine. Avoid exposing private template details for a speculative saving on a cold path. Record lifetime, plug-in needs, rebuild impact, ownership and measured hot calls in the design note. Verify matching behaviour across implementations, including rejection and shutdown paths. A quoting engine must preserve risk limits when policies change; an interface technique is not a replacement for those checks. Review the design whenever the selection time or ownership assumptions change."
+    },
+    {
+      "type": "h2",
+      "text": "Worked example: run and check"
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <iostream>\n#include <memory>\nclass Quote {\n    struct Impl;\n    std::unique_ptr<Impl> p;\npublic:\n    explicit Quote(int);\n    ~Quote();\n    int price() const;\n};\nstruct Quote::Impl { int value; };\nQuote::Quote(int x): p(std::make_unique<Impl>(Impl{x})) {}\nQuote::~Quote() = default;\nint Quote::price() const { return p->value; }\ntemplate<class D> struct Base {\n    int run(int x) const { return static_cast<const D*>(this)->apply(x); }\n};\nstruct Twice: Base<Twice> { int apply(int x) const { return 2*x; } };\nstruct OneTick { static int apply(int x) { return x+1; } };\ntemplate<class Policy> struct Engine { int run(int x) const { return Policy::apply(x); } };\nint main() {\n    std::cout << Quote(7).price() << '\\n';\n    std::cout << Twice{}.run(7) << '\\n';\n    std::cout << Engine<OneTick>{}.run(7) << '\\n';\n}",
+      "caption": "Complete C++20 program"
+    },
+    {
+      "type": "p",
+      "md": "The exact output is `7; 14; 8`. Run the example before changing a parameter, then predict the direction of the change. The assertions encode the stated checks; a failed assertion means that the implementation and the claimed result disagree."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Check this misconception",
+      "md": "PIMPL hides representation behind an implementation pointer. Public signatures remain visible and relevant to compatibility, while allocation and indirection are real costs."
+    },
+    {
+      "type": "interactive",
+      "component": "MemoryLayout",
+      "params": {},
+      "caption": "Related concept lab. The lab illustrates the named building block; it is not a full implementation of every model in this lesson."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Implement two policies with the same price-input interface. Success check: The policies produce 8 and 9 for input 7.",
+    "hints": [
+      "Give both functions one argument.",
+      "Add one tick and two ticks respectively.",
+      "Assert outputs before considering performance."
+    ],
+    "solution": "\n```python\ndef one(x):\n    return x+1\ndef two(x):\n    return x+2\nassert [f(7) for f in (one,two)] == [8,9]\nprint(8,9)\n```\nExpected output: `8 9`.",
+    "successCheck": "The policies produce 8 and 9 for input 7."
+  },
+  "independentExercise": {
+    "prompt": "Check that a refactored quote formula preserves its contract. Success check: Both forms agree on every integer from -5 to 5.",
+    "hints": [
+      "Use a direct and a decomposed expression.",
+      "Include zero and negative inputs.",
+      "Assert equality for the full small domain."
+    ],
+    "solution": "\n```python\ndef old(x):\n    return 2*x+1\ndef new(x):\n    return x+x+1\nassert all(old(x)==new(x) for x in range(-5,6))\nprint(\"preserved\")\n```\nExpected output: `preserved`.",
+    "successCheck": "Both forms agree on every integer from -5 to 5."
+  },
+  "commonMistakes": [
+    "PIMPL hides representation behind an implementation pointer. Public signatures remain visible and relevant to compatibility, while allocation and indirection are real costs.",
+    "The derived type is a template argument, fixed at instantiation. This gives static selection rather than arbitrary run-time replacement of an implementation."
+  ],
+  "realWorldApplication": "Use the assumptions and checks above when reviewing pimpl, crtp and policy-based design. Record inputs, state the failure conditions and compare the result with a simple independent calculation.",
+  "quantFinanceApplication": "For a trading or risk workflow, validate the model and timestamp conventions before using pimpl, crtp and policy-based design. The worked result is conditional on its assumptions, not a return promise.",
+  "summary": [
+    "Explain the ownership and build boundary of PIMPL",
+    "Compare CRTP static dispatch and virtual dispatch",
+    "Choose policy classes or tag dispatch with explicit constraints"
+  ],
+  "quiz": [
+    {
+      "type": "mcq",
+      "prompt": "What does PIMPL primarily hide from a public header?",
+      "options": [
+        "Private representation and dependencies",
+        "All public function signatures",
+        "Every possible run-time allocation",
+        "The process's entire ownership graph"
+      ],
+      "answerIndex": 0,
+      "explanation": "PIMPL hides representation behind an implementation pointer. Public signatures remain visible and relevant to compatibility, while allocation and indirection are real costs.",
+      "id": "q1",
+      "objective": 0
+    },
+    {
+      "type": "mcq",
+      "prompt": "When is the derived type in CRTP normally selected?",
+      "options": [
+        "At the first packet arrival in production",
+        "At template instantiation during compilation",
+        "By replacing a virtual table at run time",
+        "By inspecting each object with dynamic_cast"
+      ],
+      "answerIndex": 1,
+      "explanation": "The derived type is a template argument, fixed at instantiation. This gives static selection rather than arbitrary run-time replacement of an implementation.",
+      "id": "q2",
+      "objective": 1
+    },
+    {
+      "type": "numeric",
+      "prompt": "A selected policy returns 2*x + 1. What is its output at x = 7?",
+      "answer": 15,
+      "tolerance": 1e-06,
+      "explanation": "Multiplication precedes addition: 2 times 7 plus 1 gives 15. The dispatch mechanism does not change the arithmetic defined by the chosen policy.",
+      "id": "q3",
+      "objective": 2
+    },
+    {
+      "type": "code-output",
+      "prompt": "What does the one-tick policy print?",
+      "code": "def one_tick(x):\n    return x + 1\nprint(one_tick(7))",
+      "language": "python",
+      "answer": "8",
+      "explanation": "The policy adds one unit to 7, giving 8. This simple result tests the observable contract rather than making an unsupported claim about dispatch speed.",
+      "id": "q4",
+      "objective": 2
+    },
+    {
+      "type": "short",
+      "prompt": "Why define the PIMPL destructor after Impl is complete?",
+      "modelAnswer": "Destruction through unique_ptr needs the complete implementation type where deletion is instantiated.",
+      "keywords": [
+        "complete|defined",
+        "destructor|destroy|delete|deletion",
+        "implementation|impl|type"
+      ],
+      "explanation": "The header may forward-declare Impl, but deletion requires its definition. Defining destruction in the source preserves the representation boundary without an incomplete-type error.",
+      "id": "q5",
+      "objective": 0
+    },
+    {
+      "type": "ms",
+      "prompt": "Which costs or limits are genuine?",
+      "options": [
+        "PIMPL can add allocation and indirection",
+        "Templates can add build and code-size costs",
+        "CRTP guarantees faster machine code always",
+        "Virtual calls can never be devirtualised"
+      ],
+      "answerIndices": [
+        0,
+        1
+      ],
+      "explanation": "Both PIMPL and templates move costs rather than erasing them. Static dispatch does not guarantee speed, and a compiler can sometimes prove and devirtualise a virtual target.",
+      "id": "q6",
+      "objective": 2
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "What does PIMPL primarily hide from a public header?",
+      "back": "Private representation and dependencies"
+    },
+    {
+      "type": "concept",
+      "front": "When is the derived type in CRTP normally selected?",
+      "back": "At template instantiation during compilation"
+    },
+    {
+      "type": "concept",
+      "front": "A selected policy returns 2*x + 1. What is its output at x = 7?",
+      "back": "The result is 15 under the stated inputs."
+    },
+    {
+      "type": "concept",
+      "front": "Why define the PIMPL destructor after Impl is complete?",
+      "back": "Destruction through unique_ptr needs the complete implementation type where deletion is instantiated."
+    },
+    {
+      "type": "concept",
+      "front": "Which costs or limits are genuine?",
+      "back": "PIMPL can add allocation and indirection, Templates can add build and code-size costs"
+    }
+  ],
+  "references": [
+    {
+      "label": "C++ Core Guidelines",
+      "url": "https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines"
+    },
+    {
+      "label": "cppreference: CRTP",
+      "url": "https://en.cppreference.com/w/cpp/language/crtp"
+    },
+    {
+      "label": "cppreference: unique_ptr",
+      "url": "https://en.cppreference.com/w/cpp/memory/unique_ptr"
+    }
+  ],
+  "skills": [
+    "cpp-advanced"
+  ]
+}

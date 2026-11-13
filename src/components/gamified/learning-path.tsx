@@ -214,16 +214,16 @@ export function LearningPath({
                     <Icon className="h-7 w-7" />
                   </span>
                   <div className="min-w-[240px] flex-1 basis-[300px]">
-                    <p className="text-[11px] font-black uppercase tracking-[0.16em] text-white/85">Phase {phase.order} · ~{Math.round(phaseMin / 60)}h · {PHASE_FAMILY[phase.color] ?? 'Core'}</p>
+                    <p className="text-[12px] font-black uppercase tracking-[0.16em] text-white/85">Phase {phase.order} · ~{Math.round(phaseMin / 60)}h · {PHASE_FAMILY[phase.color] ?? 'Core'}</p>
                     <h2 className="text-xl sm:text-2xl font-black tracking-tight mt-0.5 leading-tight [text-wrap:balance]">{phase.title}</h2>
-                    <p className="text-sm text-white/90 font-bold max-w-xl mt-1">{phase.summary}</p>
+                    <p className="text-[15px] text-white/90 font-bold max-w-xl mt-1">{phase.summary}</p>
                   </div>
                   {/* progress lockup: one bordered unit, % big, count under, no floating parts */}
                   <div className="flex flex-col items-stretch gap-1.5 min-w-[132px] shrink-0 rounded-2xl bg-black/20 border border-white/20 px-3.5 py-2.5">
-                    <span className="text-[10px] font-black uppercase tracking-[0.14em] text-white/80">Progress</span>
+                    <span className="text-[12px] font-black uppercase tracking-[0.14em] text-white/80">Progress</span>
                     <div className="flex items-baseline gap-1.5">
-                      <span className="text-2xl font-black tnum leading-none">{phasePct}</span><span className="text-xs font-black text-white/80">%</span>
-                      <span className="ml-auto text-[11px] font-black tnum text-white/90">{phaseDone}/{phaseLessons.length}</span>
+                      <span className="text-2xl font-black tnum leading-none">{phasePct}</span><span className="text-[13px] font-black text-white/80">%</span>
+                      <span className="ml-auto text-[12px] font-black tnum text-white/90">{phaseDone}/{phaseLessons.length}</span>
                     </div>
                     <div className="h-2.5 rounded-full bg-black/25 overflow-hidden">
                       <div className="h-full rounded-full bg-white/95 transition-all duration-700" style={{ width: `${phasePct}%` }} />
@@ -259,20 +259,20 @@ export function LearningPath({
             <div className="qf-card p-5 relative overflow-hidden">
               <div className="absolute -right-8 -top-8 h-28 w-28 rounded-full bg-accent-soft" aria-hidden />
               <div className="relative">
-                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-faint flex items-center gap-1.5">
+                <p className="text-[12px] font-black uppercase tracking-[0.14em] text-faint flex items-center gap-1.5">
                   <Target className="h-3.5 w-3.5 text-accent-deep dark:text-accent" /> Your progress
                 </p>
                 <div className="mt-3 flex items-end gap-2">
                   <span className="text-4xl font-black tnum leading-none">{pct}</span>
                   <span className="text-base font-black text-muted mb-0.5">%</span>
                 </div>
-                <p className="mt-1 text-xs font-bold text-muted tnum">
+                <p className="mt-1 text-[13px] font-bold text-muted tnum">
                   {totalDone} of {totalLessons} lessons · ~{Math.round((totalMin * (1 - pct / 100)) / 60)}h to go
                 </p>
                 <div className="mt-3 h-3.5 rounded-full bg-surface-3 overflow-hidden border border-border">
                   <div className="h-full rounded-full bg-[linear-gradient(90deg,var(--accent),var(--accent-deep))] transition-all duration-700" style={{ width: `${pct}%` }} />
                 </div>
-                <Link href="/curriculum?view=list" className="btn3d btn3d-sm w-full mt-4 !text-xs">
+                <Link href="/curriculum?view=list" className="btn3d btn3d-sm w-full mt-4 !text-[13px]">
                   Browse as list <BookOpen className="h-3.5 w-3.5" />
                 </Link>
               </div>
@@ -286,23 +286,23 @@ export function LearningPath({
               if (!lesson || !phaseOf) return null;
               return (
                 <div className="qf-card p-4">
-                  <p className="text-[11px] font-black uppercase tracking-[0.14em] text-faint flex items-center gap-1.5">
+                  <p className="text-[12px] font-black uppercase tracking-[0.14em] text-faint flex items-center gap-1.5">
                     <Play className="h-3.5 w-3.5" /> Next up
                   </p>
-                  <p className="mt-2 text-sm font-black tracking-tight leading-snug">{lesson.title}</p>
-                  <p className="mt-0.5 text-[11px] font-bold text-faint">
+                  <p className="mt-2 text-[15px] font-black tracking-tight leading-snug">{lesson.title}</p>
+                  <p className="mt-0.5 text-[12px] font-bold text-faint">
                     Phase {phaseOf.order} · {phaseOf.title}
                   </p>
                   <div className="mt-2.5 flex items-center justify-between">
                     <span className="chip tnum"><Clock className="h-3 w-3" /> {lesson.estMinutes} min</span>
-                    <Link href={`/learn/${lesson.id}`} className="btn3d btn3d-sm !text-xs">Continue <ArrowRight className="h-3 w-3" /></Link>
+                    <Link href={`/learn/${lesson.id}`} className="btn3d btn3d-sm !text-[13px]">Continue <ArrowRight className="h-3 w-3" /></Link>
                   </div>
                 </div>
               );
             })()}
 
             <div className="qf-card-flat p-4">
-              <p className="text-[11px] font-black uppercase tracking-[0.14em] text-faint mb-3">Jump to phase</p>
+              <p className="text-[12px] font-black uppercase tracking-[0.14em] text-faint mb-3">Jump to phase</p>
               <ol className="space-y-1">
                 {visiblePhases.map(ph => {
                   const c = resolvePhaseColor(ph.color);
@@ -317,12 +317,12 @@ export function LearningPath({
                       >
                         <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: c }} />
                         <span className="flex-1 min-w-0">
-                          <span className="block text-xs font-extrabold truncate group-hover:text-accent transition-colors">{ph.title}</span>
+                          <span className="block text-[13px] font-extrabold truncate group-hover:text-accent transition-colors">{ph.title}</span>
                           <span className="mt-1 block h-1.5 rounded-full bg-surface-3 overflow-hidden">
                             <span className="block h-full rounded-full" style={{ width: `${p}%`, background: c }} />
                           </span>
                         </span>
-                        <span className="text-[10px] font-black text-faint tnum">{p}%</span>
+                        <span className="text-[12px] font-black text-faint tnum">{p}%</span>
                       </a>
                     </li>
                   );
@@ -331,12 +331,12 @@ export function LearningPath({
             </div>
 
             <div className="qf-card-flat p-4 !bg-surface-2/50">
-              <p className="text-[11px] font-black uppercase tracking-[0.14em] text-faint flex items-center gap-1.5">
+              <p className="text-[12px] font-black uppercase tracking-[0.14em] text-faint flex items-center gap-1.5">
                 <Clock className="h-3.5 w-3.5" /> Total effort
               </p>
               <p className="mt-2 text-lg font-black tnum">~{Math.round(totalMin / 60)} hours</p>
-              <p className="text-[11px] font-semibold text-muted mt-0.5">of fully authored lessons, labs and checks, at your pace.</p>
-              <p className="mt-3 pt-3 border-t border-border text-[10px] font-bold text-faint leading-relaxed">
+              <p className="text-[12px] font-semibold text-muted mt-0.5">of fully authored lessons, labs and checks, at your pace.</p>
+              <p className="mt-3 pt-3 border-t border-border text-[12px] font-bold text-faint leading-relaxed">
                 Banner colour encodes the discipline: slate onboarding · green mathematics · violet computer science · blue programming · red markets · teal engineering.
               </p>
             </div>
@@ -370,10 +370,10 @@ function PhasePreview({
           <Lock className="h-5 w-5" style={{ color }} />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-black tracking-tight">
+          <p className="text-[15px] font-black tracking-tight">
             {plural(phase.modules.length, 'module')} · {plural(lessons, 'lesson')} · ~{Math.round(phaseMin / 60)}h
           </p>
-          <p className="mt-0.5 text-xs font-semibold text-muted truncate">
+          <p className="mt-0.5 text-[13px] font-semibold text-muted truncate">
             Starts with <span className="font-extrabold text-foreground">{lead?.title}</span>
             {rest > 0 && <> and {plural(rest, 'more module')}</>}, unlocks in path order
           </p>
@@ -385,8 +385,8 @@ function PhasePreview({
           <li key={mod.id} className="rounded-xl bg-surface-2/50 border border-border/60 px-3.5 py-2.5 flex items-center gap-2.5">
             <span className="h-2 w-2 rounded-full shrink-0" style={{ background: color }} />
             <span className="min-w-0 flex-1">
-              <span className="block text-xs font-extrabold truncate">{mod.title}</span>
-              <span className="block text-[11px] font-bold text-faint tnum">{plural(mod.lessons.length, 'lesson')} · {mod.difficulty}</span>
+              <span className="block text-[13px] font-extrabold truncate">{mod.title}</span>
+              <span className="block text-[12px] font-bold text-faint tnum">{plural(mod.lessons.length, 'lesson')} · {mod.difficulty}</span>
             </span>
             <Icon className="h-3.5 w-3.5 shrink-0" style={{ color }} />
           </li>
@@ -460,8 +460,8 @@ function ModuleList({
               <Layers className="h-5 w-5" style={{ color }} />
             </span>
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-black tracking-tight">{rest.length} more modules in this phase</p>
-              <p className="mt-0.5 text-xs font-semibold text-muted tnum">{restLessons} lessons · ~{Math.round(restMin / 60)}h, they unlock in order as you progress</p>
+              <p className="text-[15px] font-black tracking-tight">{rest.length} more modules in this phase</p>
+              <p className="mt-0.5 text-[13px] font-semibold text-muted tnum">{restLessons} lessons · ~{Math.round(restMin / 60)}h, they unlock in order as you progress</p>
             </div>
             <ChevronDown className="h-4 w-4 text-faint shrink-0 transition-transform group-open:rotate-180" />
           </summary>
@@ -470,8 +470,8 @@ function ModuleList({
               <li key={mod.id} className="rounded-xl bg-surface-2/50 border border-border/60 px-3.5 py-2.5 flex items-center gap-2.5">
                 <span className="h-2 w-2 rounded-full shrink-0" style={{ background: color }} />
                 <span className="min-w-0 flex-1">
-                  <span className="block text-xs font-extrabold truncate">{mod.title}</span>
-                  <span className="block text-[11px] font-bold text-faint tnum">{mod.lessons.length} lessons · {mod.difficulty}</span>
+                  <span className="block text-[13px] font-extrabold truncate">{mod.title}</span>
+                  <span className="block text-[12px] font-bold text-faint tnum">{mod.lessons.length} lessons · {mod.difficulty}</span>
                 </span>
               </li>
             ))}
@@ -519,7 +519,7 @@ function ModuleTrail({
             <Star className="h-5 w-5 text-warning" />
           </span>
           {header}
-          <span className="ml-auto flex items-center gap-2 text-xs font-black text-faint tnum">
+          <span className="ml-auto flex items-center gap-2 text-[13px] font-black text-faint tnum">
             {modDone}/{mod.lessons.length}
             <ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
           </span>
@@ -548,7 +548,7 @@ function ModuleTrail({
           </span>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap">{header}</div>
-            <p className="mt-1 text-xs font-semibold text-muted tnum">
+            <p className="mt-1 text-[13px] font-semibold text-muted tnum">
               {mod.lessons.length} lessons · ~{Math.round(modMinutes / 60 * 10) / 10}h · unlocks as you clear the path
             </p>
           </div>
@@ -684,7 +684,7 @@ function PathNode({
       >
         {title}
       </span>
-      <span className="relative z-10 text-[11px] font-bold text-faint tnum bg-background px-1.5 rounded">{minutes} min</span>
+      <span className="relative z-10 text-[12px] font-bold text-faint tnum bg-background px-1.5 rounded">{minutes} min</span>
     </span>
   );
 

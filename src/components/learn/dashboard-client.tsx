@@ -23,7 +23,7 @@ export function DashboardClient({ name }: { name: string }) {
   const [map, setMap] = React.useState<CurriculumMap | null>(null);
   const [registryLessons, setRegistryLessons] = React.useState<RegistryEntry[]>([]);
   const [, setTick] = React.useState(0);
-  const [problemCount, setProblemCount] = React.useState(28);
+  const [problemCount, setProblemCount] = React.useState(0);
   const [projectCount, setProjectCount] = React.useState(12);
 
   React.useEffect(() => {
@@ -97,7 +97,7 @@ export function DashboardClient({ name }: { name: string }) {
             <h1 className="text-2xl sm:text-3xl font-black tracking-tight">
               Hey {name.split(' ')[0]} {passedSet.size === 0 && '👋'}
             </h1>
-            <p className="mt-1 text-sm font-semibold text-muted">
+            <p className="mt-1 text-[15px] font-semibold text-muted">
               {nextLesson
                 ? 'One focused session at a time. Your path is ready below.'
                 : passedSet.size === 0
@@ -124,7 +124,7 @@ export function DashboardClient({ name }: { name: string }) {
                   <Play className="h-8 w-8 fill-white" />
                 </span>
                 <div className="flex-1 min-w-0">
-                  <p className="text-[11px] font-black uppercase tracking-[0.14em] text-accent-deep dark:text-accent">Pick up where you left off</p>
+                  <p className="text-[12px] font-black uppercase tracking-[0.14em] text-accent-deep dark:text-accent">Pick up where you left off</p>
                   <h2 className="mt-0.5 text-lg font-black tracking-tight">{nextLesson.title}</h2>
                   <div className="mt-1.5 flex flex-wrap gap-2">
                     <span className="chip chip-info">{nextLesson.moduleTitle}</span>
@@ -148,7 +148,7 @@ export function DashboardClient({ name }: { name: string }) {
                   <Trophy className="h-8 w-8" />
                 </span>
                 <h2 className="mt-4 text-xl font-black tracking-tight">You have cleared every unlocked lesson</h2>
-                <p className="mt-1.5 text-sm font-semibold text-muted max-w-md mx-auto">
+                <p className="mt-1.5 text-[15px] font-semibold text-muted max-w-md mx-auto">
                   Keep the edge sharp: assess yourself under exam conditions, clear revision cards before they expire, or build a portfolio project.
                 </p>
                 <div className="mt-5 flex flex-wrap justify-center gap-3">
@@ -163,7 +163,7 @@ export function DashboardClient({ name }: { name: string }) {
 
         {/* quests */}
         <section className="mt-6" aria-label="Daily quests">
-          <h2 className="text-sm font-black uppercase tracking-[0.12em] text-faint mb-3 flex items-center gap-1.5">
+          <h2 className="text-[15px] font-black uppercase tracking-[0.12em] text-faint mb-3 flex items-center gap-1.5">
             <Sparkles className="h-4 w-4 text-warning" /> Daily quests
           </h2>
           <div className="grid sm:grid-cols-3 gap-3">
@@ -176,16 +176,16 @@ export function DashboardClient({ name }: { name: string }) {
                     {done ? <CheckCircle2 /> : <q.icon />}
                   </span>
                   <span className="flex-1 min-w-0">
-                    <span className="block text-sm font-extrabold truncate">{q.label}</span>
+                    <span className="block text-[15px] font-extrabold truncate">{q.label}</span>
                     {started ? (
                       <span className="block mt-1.5 h-2.5 gauge-track">
                         <span className={`gauge-fill ${done ? 'bg-accent' : 'bg-warning'}`} style={{ width: `${Math.min(100, (q.have / q.need) * 100)}%` }} />
                       </span>
                     ) : (
-                      <span className="block mt-1 text-xs font-bold text-faint">Not started</span>
+                      <span className="block mt-1 text-[13px] font-bold text-faint">Not started</span>
                     )}
                   </span>
-                  <span className="flex-none text-xs font-black tnum text-muted">{Math.min(q.have, q.need)}/{q.need}</span>
+                  <span className="flex-none text-[13px] font-black tnum text-muted">{Math.min(q.have, q.need)}/{q.need}</span>
                 </Link>
               );
             })}
@@ -214,14 +214,14 @@ export function DashboardClient({ name }: { name: string }) {
         {/* Needs revision */}
         {needsRevision.length > 0 && (
           <section className="mt-8 qf-card-flat p-4 !border-danger/40 bg-danger-soft/60">
-            <h2 className="text-sm font-black text-danger flex items-center gap-2"><CircleDot className="h-4 w-4" /> Needs revision ({needsRevision.length})</h2>
-            <ul className="mt-2 space-y-1.5 text-sm font-semibold">
+            <h2 className="text-[15px] font-black text-danger flex items-center gap-2"><CircleDot className="h-4 w-4" /> Needs revision ({needsRevision.length})</h2>
+            <ul className="mt-2 space-y-1.5 text-[15px] font-semibold">
               {needsRevision.slice(0, 5).map(([lessonId, r]) => {
                 const node = graph.byId.get(lessonId);
                 return node ? (
                   <li key={lessonId} className="flex items-center justify-between gap-2">
                     <Link href={`/learn/${lessonId}`} className="text-accent-deep dark:text-accent hover:underline">{node.title}</Link>
-                    <span className="text-xs text-faint tnum">best {Math.round(r.kcBestPct)}%</span>
+                    <span className="text-[13px] text-faint tnum">best {Math.round(r.kcBestPct)}%</span>
                   </li>
                 ) : null;
               })}
@@ -233,7 +233,7 @@ export function DashboardClient({ name }: { name: string }) {
         <section className="mt-10" aria-label="Your learning path">
           <div className="flex items-baseline justify-between mb-4 flex-wrap gap-2">
             <h2 className="text-lg font-black tracking-tight">Your path</h2>
-            <Link href="/curriculum" className="text-sm font-extrabold text-info hover:underline flex items-center gap-1">
+            <Link href="/curriculum" className="text-[15px] font-extrabold text-info hover:underline flex items-center gap-1">
               See the full curriculum <ArrowRight className="h-3.5 w-3.5" />
             </Link>
           </div>
@@ -251,8 +251,8 @@ export function DashboardClient({ name }: { name: string }) {
                 <Link href="/curriculum" className="qf-card-flat px-5 py-3.5 flex items-center gap-3.5 press hover:border-info transition-colors mt-6 group">
                   <span className="icon-tile icon-tile-sm icon-tile-info"><FolderKanban className="h-5 w-5" /></span>
                   <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-extrabold">The path continues, {map.phases.length} phases, {map.phases.reduce((n, p) => n + p.modules.length, 0)} modules</span>
-                    <span className="block text-xs font-semibold text-muted">Open the full curriculum to see every module, phase and where you stand.</span>
+                    <span className="block text-[15px] font-extrabold">The path continues, {map.phases.length} phases, {map.phases.reduce((n, p) => n + p.modules.length, 0)} modules</span>
+                    <span className="block text-[13px] font-semibold text-muted">Open the full curriculum to see every module, phase and where you stand.</span>
                   </span>
                   <ArrowRight className="h-5 w-5 text-faint group-hover:text-info transition-colors shrink-0" />
                 </Link>
@@ -266,7 +266,7 @@ export function DashboardClient({ name }: { name: string }) {
                     <div className="qf-card p-5 relative overflow-hidden">
                       <div className="absolute -right-8 -top-8 h-28 w-28 rounded-full bg-accent-soft" aria-hidden />
                       <div className="relative">
-                        <p className="text-[11px] font-black uppercase tracking-[0.14em] text-faint">Current module</p>
+                        <p className="text-[12px] font-black uppercase tracking-[0.14em] text-faint">Current module</p>
                         <p className="mt-1.5 text-base font-black tracking-tight leading-snug">{focusMod.title}</p>
                         <div className="mt-3 flex flex-wrap gap-1.5">
                           <span className="chip">{focusMod.difficulty}</span>
@@ -285,16 +285,16 @@ export function DashboardClient({ name }: { name: string }) {
                     <span className="icon-tile icon-tile-sm icon-tile-violet"><Undo2 className="h-5 w-5" /></span>
                     <ArrowRight className="h-4 w-4 text-faint group-hover:text-info transition-colors" />
                   </div>
-                  <p className="mt-2.5 text-sm font-extrabold">{dueCount > 0 ? `${dueCount} cards due for review` : 'Nothing due right now'}</p>
-                  <p className="mt-0.5 text-xs font-semibold text-muted">Spaced repetition keeps passed lessons mastered.</p>
+                  <p className="mt-2.5 text-[15px] font-extrabold">{dueCount > 0 ? `${dueCount} cards due for review` : 'Nothing due right now'}</p>
+                  <p className="mt-0.5 text-[13px] font-semibold text-muted">Spaced repetition keeps passed lessons mastered.</p>
                 </Link>
                 <Link href="/planner" className="qf-card-flat p-5 block press hover:border-info transition-colors group">
                   <div className="flex items-center justify-between">
                     <span className="icon-tile icon-tile-sm icon-tile-warning"><Timer className="h-5 w-5" /></span>
                     <ArrowRight className="h-4 w-4 text-faint group-hover:text-info transition-colors" />
                   </div>
-                  <p className="mt-2.5 text-sm font-extrabold">Plan the week</p>
-                  <p className="mt-0.5 text-xs font-semibold text-muted">A realistic schedule from your constraints.</p>
+                  <p className="mt-2.5 text-[15px] font-extrabold">Plan the week</p>
+                  <p className="mt-0.5 text-[13px] font-semibold text-muted">A realistic schedule from your constraints.</p>
                 </Link>
               </aside>
             </div>
@@ -305,7 +305,7 @@ export function DashboardClient({ name }: { name: string }) {
 
         {/* Quick actions grid */}
         <section className="mt-10">
-          <h2 className="text-sm font-black uppercase tracking-[0.12em] text-faint mb-3">More to do</h2>
+          <h2 className="text-[15px] font-black uppercase tracking-[0.12em] text-faint mb-3">More to do</h2>
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
             <ActionCard href="/diagnostic" title="Diagnostic assessment" desc="Baseline across 7 areas; finds gaps and recommends your starting point." icon={BookOpenCheck} />
             <ActionCard href="/practice" title="Code practice" desc={`${problemCount} judged problems. Genuine C++ compilation and Python execution.`} icon={Code2} />
@@ -318,10 +318,10 @@ export function DashboardClient({ name }: { name: string }) {
 
         {/* recent lessons (local) */}
         <section className="mt-10">
-          <h2 className="text-sm font-black uppercase tracking-[0.12em] text-faint mb-3">Recent activity</h2>
+          <h2 className="text-[15px] font-black uppercase tracking-[0.12em] text-faint mb-3">Recent activity</h2>
           <div className="qf-card-flat divide-y">
             {recentLessons.length === 0 && (
-              <div className="px-4 py-3 text-sm text-muted">Nothing yet. Your lesson and practice activity shows up here.</div>
+              <div className="px-4 py-3 text-[15px] text-muted">Nothing yet. Your lesson and practice activity shows up here.</div>
             )}
             {recentLessons.map(([lessonId, l]) => {
               const node = graph.byId.get(lessonId);
@@ -329,9 +329,9 @@ export function DashboardClient({ name }: { name: string }) {
                 <Link key={lessonId} href={`/learn/${lessonId}`} className="px-4 py-2 flex items-center gap-3 hover:bg-surface-2/50 transition-colors">
                   <span className="flex items-center gap-3 min-w-0 flex-1">
                     <span className="icon-tile icon-tile-sm icon-tile-accent shrink-0"><BookOpenCheck /></span>
-                    <span className="truncate text-sm font-semibold">{node?.title ?? lessonId}</span>
+                    <span className="truncate text-[15px] font-semibold">{node?.title ?? lessonId}</span>
                   </span>
-                  <span className="text-xs font-bold text-faint tnum shrink-0">{dayLabel(l.updatedAt)}</span>
+                  <span className="text-[13px] font-bold text-faint tnum shrink-0">{dayLabel(l.updatedAt)}</span>
                   <span className={`chip tnum shrink-0 ${l.status === 'mastered' || l.status === 'passed' ? 'chip-success' : l.status === 'needs_revision' ? 'chip-danger' : 'chip-warning'}`}>
                     {l.status.replace(/_/g, ' ')} · {Math.round(l.kcBestPct)}%
                   </span>
@@ -386,8 +386,8 @@ function ActionCard({ href, title, desc, icon: Icon, badge }: { href: string; ti
           <ArrowRight className="h-4 w-4 text-faint group-hover:text-info transition-colors shrink-0" />
         </span>
       </div>
-      <h3 className="mt-2.5 font-extrabold text-sm">{title}</h3>
-      <p className="mt-1 text-xs font-semibold text-muted leading-relaxed">{desc}</p>
+      <h3 className="mt-2.5 font-extrabold text-[15px]">{title}</h3>
+      <p className="mt-1 text-[13px] font-semibold text-muted leading-relaxed">{desc}</p>
     </Link>
   );
 }

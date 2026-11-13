@@ -2,7 +2,7 @@
   "id": "la-determinants-rank",
   "moduleId": "ph1-linear-algebra",
   "title": "Determinants, Rank and Linear Independence",
-  "estMinutes": 26,
+  "estMinutes": 35,
   "difficulty": "core",
   "prereqs": [
     "la-linear-systems"
@@ -13,7 +13,7 @@
     "Compute the inverse of a 2x2 matrix using the adjugate formula",
     "Determine the rank of a matrix and connect rank, independence and determinant to system solvability"
   ],
-  "motivation": "Before you invert a covariance matrix, which portfolio optimisation does constantly, you need to know whether the inversion is even legitimate. A near-zero determinant is the warning light: it says some asset (or factor) is a redundant combination of the others, and the optimiser is about to amplify noise. Determinants and rank are the two compact diagnostics that tell you whether a matrix carries full information or is quietly degenerate.",
+  "motivation": "Singularity means a square matrix cannot be inverted, but the absolute size of a determinant is not a scale-invariant numerical warning. Multiplying every variable by a small unit conversion can make a perfectly conditioned determinant tiny. Rank, singular values and condition number distinguish exact redundancy from sensitivity; numerical portfolio models need these distinctions before any solve or inverse.",
   "blocks": [
     {
       "type": "h2",
@@ -21,7 +21,7 @@
     },
     {
       "type": "p",
-      "md": "Every square matrix $A$ has a single number attached, its **determinant** $\\det(A)$ (also written $|A|$). For a $2 \\times 2$ matrix it is one subtraction of two products. Geometrically, $\\det(A)$ is the **scale factor by which $A$ multiplies areas** (in 2D) or volumes (in 3D): a matrix with determinant 3 triples areas; a determinant of 0 means the map **collapses space** onto a line or a point, crushing some nonzero direction to nothing. That collapse is exactly what makes a matrix non-invertible, information is destroyed and no inverse can reconstruct it."
+      "md": "Every square matrix $A$ has a single number attached, its **determinant** $\\det(A)$ (also written $|A|$). For a $2 \\times 2$ matrix it is one subtraction of two products. Geometrically, the absolute value $|\\det(A)|$ is the **scale factor by which $A$ multiplies areas** (in 2D) or volumes (in 3D): a matrix with determinant 3 triples areas; a negative determinant additionally reverses orientation; a determinant of 0 means the map **collapses space** onto a line or a point, crushing some nonzero direction to nothing. That collapse is exactly what makes a matrix non-invertible, information is destroyed and no inverse can reconstruct it."
     },
     {
       "type": "math",
@@ -35,7 +35,7 @@
         "Let $A = \\begin{pmatrix} 4 & 2 \\\\ 3 & 5 \\end{pmatrix}$. Then $\\det(A) = 4 \\times 5 - 2 \\times 3 = 20 - 6 = 14 \\neq 0$, so $A$ is invertible.",
         "Swap the diagonal entries and negate the off-diagonals: $\\begin{pmatrix} 5 & -2 \\\\ -3 & 4 \\end{pmatrix}$.",
         "Divide by the determinant: $A^{-1} = \\tfrac{1}{14} \\begin{pmatrix} 5 & -2 \\\\ -3 & 4 \\end{pmatrix}$.",
-        "Verify one entry of $AA^{-1}$: row $(4, 2)$ · column $(5, -3) = 20 - 6 = 14$, which becomes 1 after dividing by 14 ✓. The off-diagonal check: $(4,2) \\cdot (-2, 4) = -8 + 8 = 0$ ✓. The product is the identity."
+        "Check all entries: A*adj(A)=[[14,0],[0,14]], since 4*5+2*(-3)=14,4*(-2)+2*4=0,3*5+5*(-3)=0 and 3*(-2)+5*4=14. Dividing by14 gives the full identity matrix, not merely a one-entry check."
       ]
     },
     {
@@ -54,7 +54,7 @@
         ],
         "gridRange": 4
       },
-      "caption": "This matrix has determinant 1x4, 2x2 = 0. Watch it squash the entire plane onto a single line: that collapse is what a zero determinant means."
+      "caption": "For A=[[1,2],[2,4]], det(A)=1*4-2*2=0 and the second row is twice the first. Every output lies on y=2x. The static image illustrates loss of dimension; it is not an animated or draggable experiment."
     },
     {
       "type": "h2",
@@ -85,13 +85,17 @@
     },
     {
       "type": "p",
-      "md": "Rank also settles rectangular questions. A $3 \\times 5$ matrix can have rank at most 3, with only three rows, no more than three columns can be independent, so five columns must contain redundancy. In regression, if the design matrix has rank less than its number of columns, two predictors carry the same information and no unique coefficient vector exists: that is **multicollinearity**, and the fix is to drop or combine the redundant columns."
+      "md": "A3-by-5 matrix has rank at most 3. Rank deficiency in a regression design means some nontrivial linear combination of columns vanishes, not necessarily that a pair of predictors is identical or proportional. Ordinary least-squares coefficients are then nonunique, though fitted values can remain unique. Dropping/combining columns or regularisation can help. In floating-point arithmetic, numerical rank depends on tolerance and data scaling, so a software rank result is not a symbolic proof of exact dependence."
     },
     {
       "type": "callout",
       "variant": "quant",
       "title": "Why this matters for finance",
-      "md": "The determinant of a covariance matrix is called the **generalised variance**, it is the squared volume of the risk cloud. A determinant near zero signals that some asset or factor is nearly a combination of the others: the covariance matrix is near-singular, its inverse explodes, and mean-variance optimisers respond by producing absurd portfolios. Practitioners repair this by removing redundant assets or by **shrinkage**: using $C + \\lambda I$, which adds $\\lambda$ to every eigenvalue and lifts the determinant away from zero."
+      "md": "Covariance determinant is called generalised variance; for a fixed ellipsoid level its square root is proportional to ellipsoid volume. Its absolute size also depends on units and dimension, so near-zero determinant alone does not establish poor conditioning. For positive-semidefinite C, adding lambda*I with lambda>0 is diagonal loading or ridge regularisation and shifts every eigenvalue by lambda. A common covariance shrinkage form is(1-alpha)*C+alpha*tau*I. Both change the model and need a justified strength; neither is a free accuracy guarantee."
+    },
+    {
+      "type": "p",
+      "md": "Scale check: A=0.000001*I has determinant 1e-12 in two dimensions but 2-norm condition number 1, the best possible. B=diag(1e12,1e-12) has determinant 1 yet condition number 1e24. Therefore neither a small determinant alone proves instability nor a moderate determinant guarantees safety. Unit changes can alter these diagnostics differently. Use exact determinant/rank identities for symbolic invertibility and singular values or a condition estimate for numerical sensitivity."
     },
     {
       "type": "code",
@@ -104,17 +108,21 @@
     "prompt": "Let $A = \\begin{pmatrix} 6 & 4 \\\\ 3 & 2 \\end{pmatrix}$. Compute $\\det(A)$, decide whether $A^{-1}$ exists, and find the rank of $A$ by exhibiting an explicit dependence between the rows.",
     "hints": [
       "Apply $ad - bc$ and see what happens.",
-      "Look for a scalar $c$ with row 2 = c x row 1."
+      "Look for a scalar $c$ with row 2 = c x row 1.",
+      "The first row is nonzero, so dependence shows rank at most 1 and nonzero entries show rank at least 1."
     ],
-    "solution": "$\\det(A) = 6 \\times 2 - 4 \\times 3 = 12 - 12 = \\textbf{0}$. The inverse does **not** exist (the adjugate formula would divide by 0). Row 2 is exactly $\\tfrac{1}{2}$ of row 1: $\\tfrac{1}{2}(6, 4) = (3, 2)$, so the two rows are dependent and the **rank is 1**, the matrix collapses the plane onto one line."
+    "solution": "$\\det(A) = 6 \\times 2 - 4 \\times 3 = 12 - 12 = \\textbf{0}$. The inverse does **not** exist (the adjugate formula would divide by 0). Row 2 is exactly $\\tfrac{1}{2}$ of row 1: $\\tfrac{1}{2}(6, 4) = (3, 2)$, so the two rows are dependent and the **rank is 1**, the matrix collapses the plane onto one line.",
+    "successCheck": "Determinant 0, no inverse, rank 1; the nonzero second row equals one-half the first."
   },
   "independentExercise": {
     "prompt": "Compute the determinant of $M = \\begin{pmatrix} 2 & 1 & 1 \\\\ 1 & 3 & 2 \\\\ 1 & 1 & 1 \\end{pmatrix}$ by cofactor expansion along the first row. Is $M$ invertible? What can you conclude about the columns of $M$?",
     "hints": [
       "Signs alternate: $+ - +$ across the top row.",
-      "Each minor is the 2x2 determinant left after deleting the entry's row and column."
+      "Each minor is the 2x2 determinant left after deleting the entry's row and column.",
+      "Retain the middle minus sign even when the corresponding minor is negative; subtracting-1 adds 1."
     ],
-    "solution": "Expand along row 1: $+2 \\times \\det\\begin{pmatrix} 3 & 2 \\\\ 1 & 1 \\end{pmatrix} - 1 \\times \\det\\begin{pmatrix} 1 & 2 \\\\ 1 & 1 \\end{pmatrix} + 1 \\times \\det\\begin{pmatrix} 1 & 3 \\\\ 1 & 1 \\end{pmatrix}$. The minors: $3 - 2 = 1$; $1 - 2 = -1$; $1 - 3 = -2$. Total: $2(1) - 1(-1) + 1(-2) = 2 + 1 - 2 = \\textbf{1}$. Since $\\det(M) = 1 \\neq 0$, $M$ is **invertible**, its **rank is 3**, and its columns are linearly independent."
+    "solution": "Expand along row 1: $+2 \\times \\det\\begin{pmatrix} 3 & 2 \\\\ 1 & 1 \\end{pmatrix} - 1 \\times \\det\\begin{pmatrix} 1 & 2 \\\\ 1 & 1 \\end{pmatrix} + 1 \\times \\det\\begin{pmatrix} 1 & 3 \\\\ 1 & 1 \\end{pmatrix}$. The minors: $3 - 2 = 1$; $1 - 2 = -1$; $1 - 3 = -2$. Total: $2(1) - 1(-1) + 1(-2) = 2 + 1 - 2 = \\textbf{1}$. Since $\\det(M) = 1 \\neq 0$, $M$ is **invertible**, its **rank is 3**, and its columns are linearly independent.",
+    "successCheck": "Cofactor sum 2+1-2=1, so M is invertible, has rank 3 and independent columns."
   },
   "commonMistakes": [
     "Computing $ad + bc$ instead of $ad - bc$ - the sign flip is the whole formula.",
@@ -123,7 +131,7 @@
     "Assuming rank counts non-zero entries rather than independent rows/columns."
   ],
   "realWorldApplication": "Rank-revealing computations decide whether sensor arrays, recommendation matrices or survey data actually contain enough independent measurements to reconstruct what they claim to, engineers test rank before trusting any inversion.",
-  "quantFinanceApplication": "Portfolio optimisation inverts covariance matrices; a near-zero determinant (near-collinear assets) makes the inverse explode. Risk teams monitor determinant/eigenvalue spectra and use shrinkage $C + \\lambda I$ to restore full rank.",
+  "quantFinanceApplication": "Covariance-based optimisation often solves linear systems rather than explicitly constructing an inverse. Inspect scale-aware conditioning and singular values; a tiny determinant can simply reflect units. Regularisation stabilises some computations by changing the risk estimate and should be checked against the intended model.",
   "summary": [
     "$\\det\\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix} = ad - bc$; geometrically the area scale factor of the transformation.",
     "A zero determinant means collapse: dependent columns, rank $< n$, no inverse, no unique solution to $Ax = b$.",
@@ -136,7 +144,8 @@
       "type": "numeric",
       "prompt": "Compute the determinant of $\\begin{pmatrix} 5 & 2 \\\\ 4 & 3 \\end{pmatrix}$.",
       "answer": 7,
-      "explanation": "$5 \\times 3 - 2 \\times 4 = 15 - 8 = 7$. Nonzero, so the matrix is invertible."
+      "explanation": "The 2-by-2 rule subtracts the cross product:5*3-2*4=15-8=7. Nonzero determinant proves algebraic invertibility. Its numerical magnitude alone does not establish good conditioning; changing coordinate scale can change determinant size without changing relative sensitivity.",
+      "objective": 0
     },
     {
       "id": "q2",
@@ -152,14 +161,16 @@
         1,
         3
       ],
-      "explanation": "A zero determinant collapses space: columns are dependent, rank is below full, and uniqueness fails (zero or infinitely many solutions depending on $b$). Invertibility is precisely what fails."
+      "explanation": "A zero determinant collapses space: columns are dependent, rank is below full, and uniqueness fails (zero or infinitely many solutions depending on $b$). Invertibility is precisely what fails.",
+      "objective": 1
     },
     {
       "id": "q3",
       "type": "numeric",
       "prompt": "What is the rank of $\\begin{pmatrix} 1 & 2 \\\\ 2 & 4 \\end{pmatrix}$?",
       "answer": 1,
-      "explanation": "Row 2 is twice row 1 ($2 \\times (1,2) = (2,4)$), so only one independent row: rank 1. Consistently, $\\det = 1 \\times 4 - 2 \\times 2 = 0$."
+      "explanation": "Row 2 is twice row 1 ($2 \\times (1,2) = (2,4)$), so only one independent row: rank 1. Consistently, $\\det = 1 \\times 4 - 2 \\times 2 = 0$.",
+      "objective": 3
     },
     {
       "id": "q4",
@@ -168,33 +179,53 @@
       "language": "python",
       "code": "import numpy as np\nA = np.array([[4.0, 2.0], [3.0, 5.0]])\nprint(round(np.linalg.det(A), 6))\nB = np.array([[2.0, 0.0, 1.0],\n              [1.0, 3.0, 2.0],\n              [1.0, 1.0, 1.0]])\nprint(np.linalg.matrix_rank(B))",
       "answer": "14.0\n2",
-      "explanation": "$\\det(A) = 20 - 6 = 14$. For $B$, the third row equals one third of the sum of the first two rows, so the rank is 2 (and the determinant is 0)."
+      "explanation": "$\\det(A) = 20 - 6 = 14$. For $B$, the third row equals one third of the sum of the first two rows, so the rank is 2 (and the determinant is 0).",
+      "objective": 0
     },
     {
       "id": "q5",
       "type": "short",
       "prompt": "In one sentence, what does the determinant of a matrix measure geometrically?",
-      "modelAnswer": "The factor by which the transformation scales areas (2D) or volumes (3D); a determinant of 0 means space is collapsed onto a lower-dimensional object.",
+      "modelAnswer": "The absolute determinant is the area or volume scale factor; its sign records orientation. A zero determinant collapses full-dimensional volume to zero and makes the square transformation noninvertible.",
       "keywords": [
         "area",
         "volume",
         "scale",
         "collapse"
       ],
-      "explanation": "Determinants are area/volume scale factors: det = 2 doubles areas, det = 0 flattens the space, which is why det = 0 destroys invertibility."
+      "explanation": "Absolute determinant measures unsigned area/volume scaling. Negative determinant reverses orientation as well; zero collapses at least one nonzero direction and destroys invertibility. The sign is geometric information, not a negative physical area.",
+      "objective": 1
     },
     {
       "id": "q6",
       "type": "mcq",
       "prompt": "A $3 \\times 5$ matrix (3 rows, 5 columns), what is the largest possible rank it can have?",
       "options": [
-        "5",
         "3",
+        "5",
         "8",
         "15"
       ],
-      "answerIndex": 1,
-      "explanation": "Rank cannot exceed the smaller dimension: with only 3 rows, at most 3 columns can be independent, so 2 of the 5 columns are necessarily redundant."
+      "answerIndex": 0,
+      "explanation": "Rank cannot exceed the smaller dimension: with only 3 rows, at most 3 columns can be independent, so 2 of the 5 columns are necessarily redundant.",
+      "objective": 3
+    },
+    {
+      "id": "q7",
+      "type": "numeric",
+      "objective": 0,
+      "prompt": "Use first-row cofactor expansion to find det([[2,1,1],[1,3,2],[1,1,1]]).",
+      "answer": 1,
+      "explanation": "The signed first-row expansion is2*(3*1-2*1)-1*(1*1-2*1)+1*(1*1-3*1)=2-(-1)-2=1. The middle minor is negative and has a negative cofactor sign, so its contribution is positive. Nonzero determinant means full rank."
+    },
+    {
+      "id": "q8",
+      "type": "numeric",
+      "objective": 2,
+      "prompt": "For A=[[4,2],[3,5]], what is the top-left entry of A^(-1)? Absolute tolerance 0.000001.",
+      "answer": 0.35714285714285715,
+      "tolerance": 1e-06,
+      "explanation": "The determinant is4*5-2*3=14. Swapping diagonal entries and negating off-diagonals gives adj(A)=[[5,-2],[-3,4]], then divide by14. The requested entry is5/14=0.357142857..., not 1/4; matrix inversion is not entrywise reciprocation."
     }
   ],
   "flashcards": [
@@ -216,7 +247,7 @@
     {
       "type": "concept",
       "front": "Generalised variance and why quants watch it",
-      "back": "The determinant of a covariance matrix: the squared volume of the risk cloud. Near zero = redundant assets = exploding inverse = unstable optimisation; fix with shrinkage C + lambda*I."
+      "back": "Covariance determinant is generalised variance. Its size depends on units and dimension; it is not a stand-alone conditioning test. Diagonal loading C+lambda*I shifts eigenvalues, but changes the model."
     },
     {
       "type": "code-output",
@@ -230,7 +261,7 @@
       "url": "https://ocw.mit.edu/courses/18-06-linear-algebra-spring-2010/"
     },
     {
-      "label": "3Blue1Brown: Essence of Linear Algebra: the determinant (Chapter 6)",
+      "label": "3Blue 1Brown: Essence of Linear Algebra: the determinant (Chapter 6)",
       "url": "https://www.3blue1brown.com/topics/linear-algebra"
     }
   ],

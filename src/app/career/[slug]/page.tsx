@@ -102,7 +102,7 @@ export default async function CompanyPage({ params }: { params: Promise<{ slug: 
 
   const body = (
     <div className="max-w-4xl mx-auto px-4 lg:px-6 py-8">
-      <nav className="text-xs text-faint mb-3 font-semibold">
+      <nav className="text-[13px] text-faint mb-3 font-semibold">
         <Link href="/career" className="hover:text-muted">Career explorer</Link> › {company.name}
       </nav>
 
@@ -114,11 +114,13 @@ export default async function CompanyPage({ params }: { params: Promise<{ slug: 
           </span>
           <div className="flex-1 min-w-0">
             <h1 className="text-2xl sm:text-3xl font-black tracking-tight">{company.name}</h1>
-            <p className="mt-0.5 text-sm text-muted font-semibold">
+            <p className="mt-0.5 text-[15px] text-muted font-semibold">
               {CATEGORY_DESC[company.category] ?? CATEGORY_LABEL[company.category] ?? 'Quantitative hiring preparation profile.'}
             </p>
             <div className="mt-3 flex flex-wrap gap-1.5 items-center">
               <span className="chip">{CATEGORY_LABEL[company.category] ?? company.category}</span>
+            {company.verificationStatus === 'unverified-recent' && <span className="chip chip-warning">Verify on the company site</span>}
+            {company.asOf && <span className="chip">As of {company.asOf}</span>}
               <span className="chip tnum"><Briefcase className="h-3 w-3" /> {company.roles.length} mapped roles</span>
               {trackSet.length > 0 && <span className="chip">Tracks: {trackSet.join(' · ')}</span>}
             </div>
@@ -129,7 +131,7 @@ export default async function CompanyPage({ params }: { params: Promise<{ slug: 
       {/* posting note */}
       <div className="mt-4 qf-card-flat p-4 flex items-start gap-3 anim-slide-up">
         <span className="icon-tile icon-tile-sm icon-tile-neutral"><Info /></span>
-        <p className="text-sm text-muted italic leading-relaxed">
+        <p className="text-[15px] text-muted italic leading-relaxed">
           Full posting not imported, mapping inferred from track data.
         </p>
       </div>
@@ -155,7 +157,7 @@ export default async function CompanyPage({ params }: { params: Promise<{ slug: 
                   <span className="chip">{seniorityOf(r.title)}</span>
                   <span className={`chip ${TRACK_CHIP[r.track] ?? 'chip-accent'}`}>Track {r.track}</span>
                 </div>
-                <p className="mt-1.5 text-sm text-muted leading-relaxed">{highlightSkills(r.notes)}</p>
+                <p className="mt-1.5 text-[15px] text-muted leading-relaxed">{highlightSkills(r.notes)}</p>
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {(TRACK_SKILLS[r.track] ?? []).slice(0, 5).map(s => (
                     <span key={s} className="chip">{s}</span>
@@ -181,7 +183,7 @@ export default async function CompanyPage({ params }: { params: Promise<{ slug: 
               className="qf-card-flat p-4 anim-slide-up hover:-translate-y-0.5 hover:shadow-md transition-all"
               style={{ animationDelay: SLIDE_DELAYS[i % SLIDE_DELAYS.length] }}
             >
-              <div className="flex items-center gap-2 flex-wrap text-xs">
+              <div className="flex items-center gap-2 flex-wrap text-[13px]">
                 <span className={`chip ${e.confidence === 'sourced' ? 'chip-success' : 'chip-warning'}`}>
                   {e.confidence === 'sourced' ? 'Sourced' : 'Inferred'}
                 </span>
@@ -196,7 +198,7 @@ export default async function CompanyPage({ params }: { params: Promise<{ slug: 
                 <span className="text-faint font-semibold ml-auto tnum">retrieved {e.retrievedAt}</span>
               </div>
               <blockquote
-                className={`mt-2.5 border-l-4 pl-3.5 text-sm leading-relaxed font-semibold text-foreground ${e.confidence === 'sourced' ? 'border-accent/60' : 'border-warning/60'}`}
+                className={`mt-2.5 border-l-4 pl-3.5 text-[15px] leading-relaxed font-semibold text-foreground ${e.confidence === 'sourced' ? 'border-accent/60' : 'border-warning/60'}`}
               >
                 {highlightSkills(e.claim)}
               </blockquote>
@@ -219,15 +221,15 @@ export default async function CompanyPage({ params }: { params: Promise<{ slug: 
             .map(([name, areas]) => (
               <div key={name}>
                 <div className="flex items-center gap-2 mb-2">
-                  <h3 className="text-xs font-black uppercase tracking-[0.12em] text-muted">{name}</h3>
-                  <span className="text-[11px] font-black text-faint tnum">{areas.length}</span>
+                  <h3 className="text-[13px] font-black uppercase tracking-[0.12em] text-muted">{name}</h3>
+                  <span className="text-[12px] font-black text-faint tnum">{areas.length}</span>
                   <span className="flex-1 h-0.5 rounded-full bg-border" />
                 </div>
                 <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                   {areas.map(a => (
                     <li key={a} className="flex items-center gap-2.5 rounded-xl bg-surface-2/60 border border-border/60 px-3 py-2">
                       <Check className="h-3.5 w-3.5 shrink-0 text-accent" strokeWidth={3} />
-                      <span className="text-sm font-bold leading-tight">{areaLabel(a)}</span>
+                      <span className="text-[15px] font-bold leading-tight">{areaLabel(a)}</span>
                     </li>
                   ))}
                 </ul>
@@ -247,14 +249,14 @@ export default async function CompanyPage({ params }: { params: Promise<{ slug: 
             {prepAssessments.map(a => (
               <Link key={a.id} href={`/assessments/${a.id}`} className="row-card">
                 <span className="icon-tile icon-tile-sm icon-tile-accent"><ClipboardList /></span>
-                <span className="flex-1 min-w-0 font-semibold text-sm leading-tight truncate">{a.title}</span>
+                <span className="flex-1 min-w-0 font-semibold text-[15px] leading-tight truncate">{a.title}</span>
                 <span className="chip tnum shrink-0">{a.questionCount}q · {a.timeLimitMinutes}m</span>
                 <ChevronRight className="h-4 w-4 text-faint shrink-0" />
               </Link>
             ))}
           </div>
         ) : (
-          <p className="text-sm text-muted leading-relaxed">
+          <p className="text-[15px] text-muted leading-relaxed">
             No assessments mapped yet, the curriculum modules below cover the same ground.
           </p>
         )}
@@ -278,8 +280,8 @@ export default async function CompanyPage({ params }: { params: Promise<{ slug: 
               >
                 <span className="icon-tile icon-tile-sm icon-tile-info"><BookOpen /></span>
                 <div className="flex-1 min-w-0">
-                  <span className="block font-bold text-sm">{m.title}</span>
-                  <span className="block text-xs text-muted mt-0.5">{m.summary}</span>
+                  <span className="block font-bold text-[15px]">{m.title}</span>
+                  <span className="block text-[13px] text-muted mt-0.5">{m.summary}</span>
                 </div>
                 <ChevronRight className="h-4 w-4 text-faint shrink-0" />
               </Link>
@@ -295,7 +297,7 @@ export default async function CompanyPage({ params }: { params: Promise<{ slug: 
             <span className="icon-tile bg-surface text-accent-deep dark:text-accent"><Route /></span>
             <div>
               <h2 className="font-extrabold text-lg tracking-tight">See how these roles map to your learning path</h2>
-              <p className="text-sm text-muted">Every track above is backed by a phase-by-phase curriculum with lessons, drills and assessments.</p>
+              <p className="text-[15px] text-muted">Every track above is backed by a phase-by-phase curriculum with lessons, drills and assessments.</p>
             </div>
           </div>
           <Link href="/curriculum" className="btn3d">

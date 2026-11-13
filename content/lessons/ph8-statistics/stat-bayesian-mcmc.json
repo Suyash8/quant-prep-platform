@@ -1,0 +1,259 @@
+{
+  "id": "stat-bayesian-mcmc",
+  "moduleId": "ph8-statistics",
+  "title": "Bayesian Updating and Metropolis-Hastings",
+  "estMinutes": 35,
+  "difficulty": "advanced",
+  "prereqs": [
+    "stat-bootstrap-permutation"
+  ],
+  "objectives": [
+    "Update a beta prior with Bernoulli observations",
+    "Distinguish posterior parameters from posterior predictions",
+    "Construct and diagnose a Metropolis-Hastings transition"
+  ],
+  "motivation": "You observe a strategy win rate from only ten trades. Treating six wins as proof of a stable sixty-percent probability ignores sampling uncertainty. Bayesian inference describes uncertainty about a parameter using a probability distribution, then updates that distribution with observed data. Write the sampling model before selecting a prior: what counts as a trial, are observations independent and is the probability constant? A mathematical posterior can be computed perfectly for a poor model. In markets, changing conditions and correlated trades often matter more than the difference between two numerical algorithms for an otherwise misspecified stationary model.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Uncertainty belongs in the estimate"
+    },
+    {
+      "type": "p",
+      "md": "You observe a strategy win rate from only ten trades. Treating six wins as proof of a stable sixty-percent probability ignores sampling uncertainty. Bayesian inference describes uncertainty about a parameter using a probability distribution, then updates that distribution with observed data. Write the sampling model before selecting a prior: what counts as a trial, are observations independent and is the probability constant? A mathematical posterior can be computed perfectly for a poor model. In markets, changing conditions and correlated trades often matter more than the difference between two numerical algorithms for an otherwise misspecified stationary model."
+    },
+    {
+      "type": "h2",
+      "text": "Prior times likelihood"
+    },
+    {
+      "type": "p",
+      "md": "For parameter theta and observations y, the posterior density is proportional to likelihood times prior. The normalising constant integrates that product over all allowed parameter values. A prior is not extra data unless an explicit interpretation justifies that analogy; it expresses assumptions before this data set. For Bernoulli trials, a Beta(a,b) prior is conjugate: after s successes and f failures the posterior is Beta(a+s,b+f). Its mean is (a+s)/(a+b+s+f). The likelihood omits a binomial coefficient when it is constant in theta, but constants involving theta cannot be discarded. Always check the parameter support."
+    },
+    {
+      "type": "h2",
+      "text": "Worked example: six wins"
+    },
+    {
+      "type": "p",
+      "md": "Start with Beta(2,2), a symmetric prior centred on one half. Six successes and four failures produce Beta(8,6), whose mean is 8/14, or about 0.571429. This differs from the raw fraction 0.6 because the prior contributes information. The predictive probability that the next Bernoulli trial succeeds is also 8/14 after integrating over theta. That is not the probability that the next ten observations contain exactly six successes; the latter is a beta-binomial predictive event. A plug-in binomial with theta fixed at its posterior mean understates parameter uncertainty in such multi-trial predictions."
+    },
+    {
+      "type": "math",
+      "tex": "p(\\theta\\mid y)\\propto p(y\\mid\\theta)p(\\theta),\\qquad \\alpha(x,y)=\\min\\left(1,\\frac{\\pi(y)q(x\\mid y)}{\\pi(x)q(y\\mid x)}\\right)",
+      "caption": "Formula under the assumptions stated in the surrounding explanation."
+    },
+    {
+      "type": "h2",
+      "text": "When direct integration is hard"
+    },
+    {
+      "type": "p",
+      "md": "A posterior with many correlated parameters may lack a closed form. Markov chain Monte Carlo constructs a chain whose invariant distribution is the target posterior. Samples are dependent, so ten thousand stored states are not ten thousand independent observations. In Metropolis-Hastings, propose y from q(y|x) and accept with probability min(1, pi(y)q(x|y)/(pi(x)q(y|x))). Symmetric random-walk proposals cancel the q terms. Use log densities to avoid underflow. A proposal outside support can receive zero target density and be rejected. Rejection means retaining the old state, not deleting that iteration from the chain."
+    },
+    {
+      "type": "h2",
+      "text": "Worked example: a coded sampler"
+    },
+    {
+      "type": "p",
+      "md": "The program samples a standard normal target with a symmetric uniform random-walk proposal. Moving from x=0 to y=1 has target-density ratio exp(-0.5), about 0.606531, so it is accepted with that probability. Moving from 1 back to 0 is always accepted. The fixed pseudorandom seed makes the demonstration repeatable, while an assertion checks only the chain length and finite values, not a fragile exact estimate. Sampling a known distribution is a useful implementation test before using a complicated posterior. Its empirical mean should approach zero over long well-mixing runs, but a single short run is not guaranteed to be close."
+    },
+    {
+      "type": "h2",
+      "text": "Diagnostics are part of inference"
+    },
+    {
+      "type": "p",
+      "md": "Discarding an initial warm-up segment can reduce initialisation effects, but it does not prove convergence. Run dispersed chains, examine trace plots, effective sample sizes and between-chain diagnostics. An acceptance rate alone says little: tiny proposals can be accepted almost always while exploring extremely slowly. Large proposals can be rejected almost always. Multimodal targets may trap a chain in one mode, producing a falsely stable-looking trace. Compare posterior predictive quantities with observed data and examine sensitivity to reasonable priors. Diagnostics reveal failures; no finite collection of routine plots can certify every unknown target was completely explored."
+    },
+    {
+      "type": "h2",
+      "text": "Use the posterior without promising returns"
+    },
+    {
+      "type": "p",
+      "md": "A Bayesian risk estimate can carry parameter uncertainty into a sizing or forecasting decision. Separate posterior uncertainty from uncertainty about model structure and future regime changes. Do not optimise a prior after seeing the same test period and then describe the evaluation as untouched. Keep data availability times, priors and sampling settings in the model record. The distribution lab illustrates how density shape changes, not a full MCMC diagnostic suite. In a production research pipeline, store seeds, chain summaries and posterior predictive checks, and compare with a simple conjugate case whenever possible. A precise posterior is still conditional on its assumptions."
+    },
+    {
+      "type": "h2",
+      "text": "Worked example: run and check"
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import math\nimport random\na, b, successes, failures = 2, 2, 6, 4\nmean = (a+successes)/(a+b+successes+failures)\nassert abs(mean-4/7) < 1e-12\nprint(f\"{mean:.6f}\")\nrng = random.Random(17)\nx = 0.0\nchain = []\nfor _ in range(4000):\n    y = x + rng.uniform(-1, 1)\n    if math.log(max(rng.random(), 1e-300)) < min(0.0, (x*x-y*y)/2):\n        x = y\n    chain.append(x)\nassert len(chain) == 4000 and all(math.isfinite(v) for v in chain)\nprint(f\"{math.exp(-0.5):.6f}\")",
+      "caption": "Complete Python 3.11+ example"
+    },
+    {
+      "type": "p",
+      "md": "The exact output is `0.571429; 0.606531`. Run the example before changing a parameter, then predict the direction of the change. The assertions encode the stated checks; a failed assertion means that the implementation and the claimed result disagree."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Check this misconception",
+      "md": "Beta-Bernoulli conjugacy adds successes to the first parameter and failures to the second. Dropping the prior or reversing the counts changes the stated model."
+    },
+    {
+      "type": "interactive",
+      "component": "DistributionViewer",
+      "params": {},
+      "caption": "Related concept lab. The lab illustrates the named building block; it is not a full implementation of every model in this lesson."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Update Beta(1,1) with 3 successes and 1 failure. Success check: The posterior mean is 2/3.",
+    "hints": [
+      "Add counts to prior parameters.",
+      "The posterior is Beta(4,2).",
+      "Divide its first parameter by their sum."
+    ],
+    "solution": "\n```python\na,b = 1+3,1+1\nassert (a,b)==(4,2)\nprint(f\"{a/(a+b):.6f}\")\n```\nExpected output: `0.666667`.",
+    "successCheck": "The posterior mean is 2/3."
+  },
+  "independentExercise": {
+    "prompt": "Compute the symmetric-proposal acceptance ratio from 0 to 1 under a standard normal target. Success check: It equals exp(-0.5), not 1.",
+    "hints": [
+      "Write the unnormalised log density.",
+      "Subtract the current log density.",
+      "Exponentiate and cap at one."
+    ],
+    "solution": "\n```python\nimport math\nx,y=0.0,1.0\nalpha=min(1.0,math.exp((x*x-y*y)/2))\nassert 0 < alpha < 1\nprint(f\"{alpha:.6f}\")\n```\nExpected output: `0.606531`.",
+    "successCheck": "It equals exp(-0.5), not 1."
+  },
+  "commonMistakes": [
+    "Beta-Bernoulli conjugacy adds successes to the first parameter and failures to the second. Dropping the prior or reversing the counts changes the stated model.",
+    "The transition retains the current state on rejection. Dropping repeated states changes the chain's occupation frequencies and generally biases the target distribution."
+  ],
+  "realWorldApplication": "Use the assumptions and checks above when reviewing bayesian updating and metropolis-hastings. Record inputs, state the failure conditions and compare the result with a simple independent calculation.",
+  "quantFinanceApplication": "For a trading or risk workflow, validate the model and timestamp conventions before using bayesian updating and metropolis-hastings. The worked result is conditional on its assumptions, not a return promise.",
+  "summary": [
+    "Update a beta prior with Bernoulli observations",
+    "Distinguish posterior parameters from posterior predictions",
+    "Construct and diagnose a Metropolis-Hastings transition"
+  ],
+  "quiz": [
+    {
+      "type": "mcq",
+      "prompt": "Which posterior follows Beta(2,2) and 6 wins with 4 losses?",
+      "options": [
+        "Beta(6,4) after ignoring the prior",
+        "Beta(2,12) after adding all failures",
+        "Beta(8,6) after adding both counts",
+        "Beta(4,6) after reversing the counts"
+      ],
+      "answerIndex": 2,
+      "explanation": "Beta-Bernoulli conjugacy adds successes to the first parameter and failures to the second. Dropping the prior or reversing the counts changes the stated model.",
+      "id": "q1",
+      "objective": 0
+    },
+    {
+      "type": "mcq",
+      "prompt": "For a rejected Metropolis-Hastings proposal, what is stored next?",
+      "options": [
+        "No sample; the iteration is discarded",
+        "The proposal is accepted at half weight",
+        "A fresh independent posterior draw",
+        "The previous state is stored again"
+      ],
+      "answerIndex": 3,
+      "explanation": "The transition retains the current state on rejection. Dropping repeated states changes the chain's occupation frequencies and generally biases the target distribution.",
+      "id": "q2",
+      "objective": 2
+    },
+    {
+      "type": "numeric",
+      "prompt": "What is the predictive success probability after Beta(2,2), 6 wins and 4 losses? Give a decimal to 6 places.",
+      "answer": 0.5714285714285714,
+      "tolerance": 1e-06,
+      "explanation": "Integrating a Bernoulli probability over Beta(8,6) gives its mean 8/14. The raw 6/10 rate omits the stated prior.",
+      "id": "q3",
+      "objective": 1
+    },
+    {
+      "type": "code-output",
+      "prompt": "What does this posterior-mean calculation print?",
+      "code": "print(f\"{(2+6)/(2+2+6+4):.6f}\")",
+      "language": "python",
+      "answer": "0.571429",
+      "explanation": "The denominator contains both prior parameters and all ten trials. Using only observed wins and losses would give a different estimate of 0.6.",
+      "id": "q4",
+      "objective": 0
+    },
+    {
+      "type": "short",
+      "prompt": "Why can ten thousand MCMC states contain less information than ten thousand independent draws?",
+      "modelAnswer": "Serial correlation reduces effective sample size; slow mixing means nearby states repeat similar information.",
+      "keywords": [
+        "correlation|correlated|dependent|dependence",
+        "effective|information",
+        "mixing|mix|repeat|serial"
+      ],
+      "explanation": "MCMC states are dependent. Effective sample size accounts for serial correlation; reporting the raw chain length alone can overstate the precision of estimates.",
+      "id": "q5",
+      "objective": 2
+    },
+    {
+      "type": "ms",
+      "prompt": "Which checks help diagnose an MCMC fit?",
+      "options": [
+        "Compare multiple dispersed chain traces",
+        "Inspect effective sample size and predictions",
+        "Use acceptance rate as a proof of convergence",
+        "Delete rejected states before averaging"
+      ],
+      "answerIndices": [
+        0,
+        1
+      ],
+      "explanation": "Chains and effective sample size reveal mixing problems, while predictive checks examine model fit. Acceptance alone proves neither; deleting rejections changes the chain.",
+      "id": "q6",
+      "objective": 2
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "Which posterior follows Beta(2,2) and 6 wins with 4 losses?",
+      "back": "Beta(8,6) after adding both counts"
+    },
+    {
+      "type": "concept",
+      "front": "For a rejected Metropolis-Hastings proposal, what is stored next?",
+      "back": "The previous state is stored again"
+    },
+    {
+      "type": "concept",
+      "front": "What is the predictive success probability after Beta(2,2), 6 wins and 4 losses? Give a decimal to 6 places.",
+      "back": "0.5714285714285714"
+    },
+    {
+      "type": "concept",
+      "front": "Why can ten thousand MCMC states contain less information than ten thousand independent draws?",
+      "back": "Serial correlation reduces effective sample size; slow mixing means nearby states repeat similar information."
+    },
+    {
+      "type": "concept",
+      "front": "Which checks help diagnose an MCMC fit?",
+      "back": "Compare multiple dispersed chain traces, Inspect effective sample size and predictions"
+    }
+  ],
+  "references": [
+    {
+      "label": "Stan reference manual: MCMC",
+      "url": "https://mc-stan.org/docs/reference-manual/mcmc.html"
+    },
+    {
+      "label": "Stan: posterior predictive checks",
+      "url": "https://mc-stan.org/docs/stan-users-guide/posterior-predictive-checks.html"
+    },
+    {
+      "label": "SciPy beta distribution",
+      "url": "https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.beta.html"
+    }
+  ],
+  "skills": [
+    "statistics"
+  ]
+}

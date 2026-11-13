@@ -2,7 +2,7 @@
   "id": "cpp-lambdas-optional-variant",
   "moduleId": "ph4-cpp-l5",
   "title": "Lambdas, std::optional, std::variant and std::tuple",
-  "estMinutes": 27,
+  "estMinutes": 30,
   "difficulty": "advanced",
   "prereqs": [
     "cpp-concepts-traits"
@@ -125,7 +125,7 @@
       "The generic lambda's parameter `const auto& alt` binds once per alternative; `std::decay_t<decltype(alt)>` names the alternative type.",
       "std::visit calls the callable exactly once, with the active alternative bound."
     ],
-    "solution": "```cpp\n// C++17\nvoid report(const Quote& q) {\n    std::visit([](const auto& alt) {\n        using T = std::decay_t<decltype(alt)>;\n        if constexpr (std::is_same_v<T, Price>) std::cout << \"px \" << alt.value << \"\\n\";\n        else                                    std::cout << \"miss \" << alt.why << \"\\n\";\n    }, q);\n}\n```\n\nExact output for the stream:\n\n```\npx 100.25\nmiss halt\npx 101.5\n```\n\n`std::visit` dispatches to the same generic lambda with `alt` bound to `const Price&` for quotes 1 and 3 and `const Missing&` for quote 2; `if constexpr` compiles a different branch per alternative, so the variant's state, not a flag, decides the line printed."
+    "solution": "```cpp\n#include <variant>\n#include <string>\n#include <iostream>\n#include <type_traits>\nstruct Price { double value; };\nstruct Missing { std::string why; };\nusing Quote = std::variant<Price, Missing>;\nvoid report(const Quote& q) {\n    std::visit([](const auto& alt) {\n        using T = std::decay_t<decltype(alt)>;\n        if constexpr (std::is_same_v<T, Price>) std::cout << \"px \" << alt.value << \"\\n\";\n        else                                    std::cout << \"miss \" << alt.why << \"\\n\";\n    }, q);\n}\n```\n\nExact output for the stream:\n\n```\npx 100.25\nmiss halt\npx 101.5\n```\n\n`std::visit` dispatches to the same generic lambda with `alt` bound to `const Price&` for quotes 1 and 3 and `const Missing&` for quote 2; `if constexpr` compiles a different branch per alternative, so the variant's state, not a flag, decides the line printed."
   },
   "commonMistakes": [
     "Returning a lambda that captured locals by reference, the closure outlives the variables and calling it is undefined behaviour; capture by value or move resources in with an init-capture.",
@@ -147,7 +147,7 @@
     {
       "id": "q1",
       "type": "code-output",
-      "prompt": "What does this C++17 program print?",
+      "prompt": "What does this value and reference captures example print?",
       "language": "cpp",
       "code": "#include <iostream>\nint main() {\n    int x = 10;\n    auto byVal = [x]() { return x + 1; };    // copy made here\n    auto byRef = [&x]() { x += 5; return x; };\n    byVal();\n    int r = byRef();\n    std::cout << r << \" \" << x << \" \" << byVal();\n}",
       "answer": "15 15 11",
@@ -156,7 +156,7 @@
     {
       "id": "q2",
       "type": "code-output",
-      "prompt": "What does this C++17 program print?",
+      "prompt": "What does this variant alternative indices example print?",
       "language": "cpp",
       "code": "#include <iostream>\n#include <variant>\nint main() {\n    std::variant<int, double> v = 3;     // alternative 0\n    std::cout << v.index();\n    v = 2.5;                             // switches alternative\n    std::cout << \" \" << v.index() << \" \" << std::get<double>(v);\n}",
       "answer": "0 1 2.5",
@@ -165,7 +165,7 @@
     {
       "id": "q3",
       "type": "code-output",
-      "prompt": "What does this C++17 program print?",
+      "prompt": "What does this optional value_or example print?",
       "language": "cpp",
       "code": "#include <iostream>\n#include <optional>\nint main() {\n    std::optional<int> qty;\n    std::cout << qty.value_or(-1) << \" \";\n    qty = 200;\n    std::cout << qty.value_or(-1) << \" \" << *qty;\n}",
       "answer": "-1 200 200",
@@ -176,12 +176,12 @@
       "type": "mcq",
       "prompt": "A factory function returns a lambda that captured a local variable by reference. What is the risk?",
       "options": [
-        "None: by-reference capture copies the variable into the closure",
         "The closure outlives the local, so calling it reads a dead object, undefined behaviour",
+        "It merely leaks memory",
         "The lambda cannot be returned from a function at all",
-        "It merely leaks memory"
+        "None: by-reference capture copies the variable into the closure"
       ],
-      "answerIndex": 1,
+      "answerIndex": 0,
       "explanation": "By-reference capture stores an alias, not a copy. Once the factory's frame is gone the reference dangles; invoking the closure is undefined behaviour. Capture by value or init-capture a moved-in owner."
     },
     {
@@ -189,12 +189,12 @@
       "type": "mcq",
       "prompt": "v is a std::variant<int, double> currently holding 2.5. What does std::get<int>(v) do?",
       "options": [
-        "Converts 2.5 to int and returns 2",
-        "Throws std::bad_variant_access",
+        "Undefined behaviour",
         "Returns 0",
-        "Undefined behaviour"
+        "Throws std::bad_variant_access",
+        "Converts 2.5 to int and returns 2"
       ],
-      "answerIndex": 1,
+      "answerIndex": 2,
       "explanation": "std::get<T> requires the variant to currently hold T; otherwise it throws std::bad_variant_access. Branch with std::holds_alternative, std::get_if or std::visit instead."
     },
     {
@@ -205,15 +205,14 @@
         "A by-value capture is copied when the lambda is created, not when it is called",
         "A by-reference capture can dangle if the closure outlives the variable",
         "The init-capture [p = std::move(buf)] lets a closure take ownership of a moved-in resource",
-        "Every lambda expression has a unique compiler-generated type"
+        "Two lambda expressions with identical bodies always have the same type"
       ],
       "answerIndices": [
         0,
         1,
-        2,
-        3
+        2
       ],
-      "explanation": "All four are true: copies happen at creation (C++14 init-capture is the general form for expressions); references must not outlive their variable; each lambda expression is a distinct class, which is why two identical lambdas have different types."
+      "explanation": "Value captures are copied at creation; reference captures can dangle; an init-capture can take ownership of a moved value. The final claim is false because each lambda expression has its own distinct closure type, even when two bodies look identical."
     }
   ],
   "flashcards": [

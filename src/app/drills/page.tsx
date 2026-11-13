@@ -102,8 +102,8 @@ export default async function DrillsPage() {
               {sessionsLogged === 0 ? (
                 <div className="qf-empty">
                   <span className="empty-emoji">⚡</span>
-                  <p className="text-sm font-black">No sessions yet</p>
-                  <p className="mt-1 text-xs text-faint font-semibold">Finish a timed drill and it lands here.</p>
+                  <p className="text-[15px] font-black">No sessions yet</p>
+                  <p className="mt-1 text-[13px] text-faint font-semibold">Finish a timed drill and it lands here.</p>
                 </div>
               ) : (
                 <div className="grid sm:grid-cols-2 gap-x-6 gap-y-2.5">
@@ -121,11 +121,11 @@ export default async function DrillsPage() {
                         </span>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
-                            <p className="text-sm font-bold truncate">{cap(h.mode)} · L{h.level}</p>
+                            <p className="text-[15px] font-bold truncate">{cap(h.mode)} · L{h.level}</p>
                             <span className={chipCls + ' shrink-0 ml-auto'}>{h.correct}/{h.total}</span>
                           </div>
                           <div className="mt-1 flex items-center gap-2">
-                            <p className="text-xs text-muted font-semibold tnum shrink-0">{dateLabel} · {Math.round(h.avgMs)}ms</p>
+                            <p className="text-[13px] text-muted font-semibold tnum shrink-0">{dateLabel} · {Math.round(h.avgMs)}ms</p>
                             <div className="prog-track h-1.5 flex-1 min-w-0">
                               <div className={'prog-fill ' + bar.cls} style={{ width: bar.width + '%' }} />
                             </div>
@@ -152,8 +152,8 @@ export default async function DrillsPage() {
               {weak.length === 0 ? (
                 <div className="qf-empty !py-8">
                   <span className="icon-tile icon-tile-sm icon-tile-warning mb-2 mx-auto flex"><Dumbbell className="h-4 w-4" /></span>
-                  <p className="text-sm font-black">Drill more to reveal your weak spots</p>
-                  <p className="mt-1 text-xs text-faint font-semibold">After 10+ answers in a mode, accuracy tracking kicks in.</p>
+                  <p className="text-[15px] font-black">Drill more to reveal your weak spots</p>
+                  <p className="mt-1 text-[13px] text-faint font-semibold">After 10+ answers in a mode, accuracy tracking kicks in.</p>
                 </div>
               ) : (
                 <ul className="space-y-3.5">
@@ -164,7 +164,7 @@ export default async function DrillsPage() {
                     return (
                       <li key={mode}>
                         <div className="flex items-center justify-between gap-2 mb-1.5">
-                          <span className="font-semibold text-sm">{cap(mode)}</span>
+                          <span className="font-semibold text-[15px]">{cap(mode)}</span>
                           <span className={chipCls}>{pct}%</span>
                         </div>
                         <div className="prog-track h-2.5">
@@ -190,9 +190,9 @@ export default async function DrillsPage() {
                   <Zap className="h-3.5 w-3.5" />
                   XP
                 </span>
-                <p className="text-sm font-black leading-snug">+5 XP per session · +2 per correct · daily cap 15</p>
+                <p className="text-[15px] font-black leading-snug">+5 XP per session · +2 per correct · daily cap 15</p>
               </div>
-              <p className="mt-3 text-xs text-muted font-semibold leading-relaxed">
+              <p className="mt-3 text-[13px] text-muted font-semibold leading-relaxed">
                 Every saved session counts toward your daily goal and level, short consistent reps beat marathon cramming.
               </p>
             </section>
@@ -211,7 +211,7 @@ export default async function DrillsPage() {
                     <span className={'icon-tile icon-tile-sm !h-6 !w-6 !rounded-lg shrink-0 ' + MODE_TILES[i % MODE_TILES.length]}>
                       <Lightbulb className="!h-3.5 !w-3.5" />
                     </span>
-                    <span className="text-xs text-muted font-semibold leading-relaxed">{t}</span>
+                    <span className="text-[13px] text-muted font-semibold leading-relaxed">{t}</span>
                   </li>
                 ))}
               </ul>

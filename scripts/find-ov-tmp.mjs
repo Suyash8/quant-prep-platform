@@ -4,8 +4,8 @@ const routes = process.argv.slice(2);
 const browser = await chromium.launch();
 const page = await (await browser.newContext({ viewport: { width: 390, height: 844 } })).newPage();
 await page.goto(`${BASE}/login`); await page.waitForTimeout(1200);
-await page.fill('input[type=email]', 'visual@test.dev');
-await page.fill('input[type=password]', 'visualtest12345');
+await page.fill('input[type=email]', (process.env.QF_DEMO_EMAIL || ''));
+await page.fill('input[type=password]', (process.env.QF_DEMO_PASSWORD || ''));
 await page.click('button[type=submit]'); await page.waitForTimeout(2500);
 for (const r of routes) {
   await page.goto(`${BASE}${r}`, { waitUntil: 'load' }); await page.waitForTimeout(2500);

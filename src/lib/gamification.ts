@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client';
 import 'server-only';
 import { db } from '@/lib/db';
 import {
@@ -24,27 +25,28 @@ export async function awardXp(
   amount: number,
   source: string,
   detail?: string,
+  tx?: Prisma.TransactionClient,
 ): Promise<{ xp: number; streakCount: number; amount: number; level: number; leveledUp: boolean } | null> {
   if (amount <= 0) return null;
-  const user = await db.user.findUnique({ where: { id: userId }, select: { xp: true, streakCount: true, longestStreak: true, lastStudyDate: true } });
+  const c = tx ?? db;
+  const user = await c.user.findUnique({ where: { id: userId }, select: { xp: true, streakCount: true, longestStreak: true, lastStudyDate: true } });
   if (!user) return null;
 
   const beforeLevel = levelForXp(user.xp);
   const streak = nextStreak({ streakCount: user.streakCount, longestStreak: user.longestStreak, lastStudyDate: user.lastStudyDate ? dayKey(user.lastStudyDate) : null });
   const newXp = user.xp + amount;
 
-  await db.$transaction([
-    db.user.update({
-      where: { id: userId },
-      data: {
-        xp: newXp,
-        streakCount: streak.streakCount,
-        longestStreak: streak.longestStreak,
-        lastStudyDate: new Date(),
-      },
-    }),
-    db.xpEvent.create({ data: { userId, amount, source, detail: detail ?? null } }),
-  ]);
+  const userUpdate = {
+    where: { id: userId },
+    data: { xp: newXp, streakCount: streak.streakCount, longestStreak: streak.longestStreak, lastStudyDate: new Date() },
+  };
+  const xpRow = { data: { userId, amount, source, detail: detail ?? null } };
+  if (tx) {
+    await tx.user.update(userUpdate);
+    await tx.xpEvent.create(xpRow);
+  } else {
+    await db.$transaction([db.user.update(userUpdate), db.xpEvent.create(xpRow)]);
+  }
 
   const afterLevel = levelForXp(newXp);
   return { xp: newXp, streakCount: streak.streakCount, amount, level: afterLevel, leveledUp: afterLevel > beforeLevel };

@@ -2,7 +2,7 @@
   "id": "pf-functions-scope",
   "moduleId": "ph3-programming-fundamentals",
   "title": "Functions, Parameters and Scope",
-  "estMinutes": 24,
+  "estMinutes": 35,
   "difficulty": "foundation",
   "prereqs": [
     "pf-control-flow"
@@ -59,7 +59,7 @@
     },
     {
       "type": "p",
-      "md": "Names created **inside** a function are **local**: they exist only while that call runs, then vanish. Names created at the top level are **global**. A function may *read* globals freely, but assigning to a name inside a function creates a brand-new local that merely **shadows** the global of the same name, the global is untouched. The professional habit: never move data through globals. Pass it in as parameters and hand it back with return. Such functions are predictable, same arguments, same result, no side effects."
+      "md": "Ordinary names created **inside** a function are **local** bindings for that call; the objects they refer to may outlive it. Names created at the top level are **global**. A function may *read* globals freely, but assigning to a name inside a function creates a brand-new local that merely **shadows** the global of the same name, the global is untouched. The professional habit: never move data through globals. Pass it in as parameters and hand it back with return. Such functions are predictable, same arguments, same result, no side effects."
     },
     {
       "type": "code",
@@ -71,7 +71,7 @@
       "type": "interactive",
       "component": "FunctionPlotter",
       "params": {
-        "expression": "100 * (x, 42)",
+        "expression": "100 * (x - 42)",
         "xmin": 38,
         "xmax": 46,
         "ymin": -450,
@@ -91,23 +91,49 @@
       "type": "code",
       "lang": "python",
       "code": "def pnl(cost, proceeds, fee=0):\n    return proceeds - cost - fee\n\nprint(pnl(1000, 1050))           # 50 - default fee 0 applies\nprint(pnl(1000, 1050, 12))       # 38 - explicit fee overrides"
+    },
+    {
+      "type": "p",
+      "md": "Trace a call in two stages. First evaluate the argument expressions in the caller. Then bind the resulting objects to the parameter names in a new function call. When the body executes return, control goes back to the waiting caller with the returned object. In half(half(8)), the inner call returns 4.0 before the outer call starts with that value. It is not two functions running at the same time. A tiny trace table with arguments, local values and return value often explains a bug faster than extra print statements."
+    },
+    {
+      "type": "p",
+      "md": "Returning a value does not guarantee that a function has no side effects. A function can mutate a list passed by its caller, write a file or read a global before returning. Python passes object references by assignment: rebinding a local parameter does not rebind the caller's variable, while mutating a shared list can change what the caller observes. Prefer a function with an explicit input and returned result for the arithmetic in this lesson. Document intentional mutation when your API needs it."
+    },
+    {
+      "type": "p",
+      "md": "Default arguments are evaluated when the function is defined, not each time it is called. Numbers such as the default rate of 20 basis points are safe immutable defaults. A mutable default list can unexpectedly retain data across calls. Use None as the default when you need a new list on each call, then construct that list inside the function. This is the same shared-state concern that later appears with class attributes, but here it arises from a function definition rather than a class."
+    },
+    {
+      "type": "p",
+      "md": "Check units before combining the returned values. A basis point is one ten-thousandth, so a rate expressed in basis points must be divided by 10,000 exactly once. On a notional of 50,000, a 20-basis-point fee is 100. On 25,000 it is 50, making total fees 150. Passing the decimal rate 0.002 into a parameter named rate_bps applies the conversion twice and understates the fee. Clear parameter names make that mistake easier to notice, but tests at known values are still necessary."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "def add_tag(tag, tags=None):\n    if tags is None:\n        tags = []\n    tags.append(tag)\n    return tags\n\nfirst = add_tag('risk')\nsecond = add_tag('pricing')\nassert first == ['risk']\nassert second == ['pricing']\nprint(first, second)  # ['risk'] ['pricing']\n\ndef half(x):\n    return x / 2\nassert half(half(8)) == 2.0",
+      "caption": "A fresh list is created for each omitted argument; the nested numerical call returns 2.0."
     }
   ],
   "guidedExercise": {
     "prompt": "Define a function `gross_pnl(qty, entry, exit_price)` that returns `qty * (exit_price - entry)`. Then trace these two calls by hand, stating what each parameter is bound to and what each call returns:\n\n```python\na = gross_pnl(100, 42.0, 43.5)\nb = gross_pnl(100, 43.5, 42.0)\nprint(a, b)\n```",
     "hints": [
       "Substitute each argument into the body exactly, in order.",
-      "A long position gains when exit > entry; with the arguments reversed, the same formula returns a negative number."
+      "A long position gains when exit > entry; with the arguments reversed, the same formula returns a negative number.",
+      "The two results have equal magnitude 150.0 and opposite signs."
     ],
-    "solution": "First call: `qty = 100`, `entry = 42.0`, `exit_price = 43.5`, so the return is $100 \\times (43.5 - 42.0) = 150.0$. Second call: the same parameter names bound to different arguments, return $100 \\times (42.0 - 43.5) = -150.0$. The program prints **`150.0 -150.0`**. One definition serves both directions of the trade, that is what parameters are for."
+    "solution": "First call: `qty = 100`, `entry = 42.0`, `exit_price = 43.5`, so the return is $100 \\times (43.5 - 42.0) = 150.0$. Second call: the same parameter names bound to different arguments, return $100 \\times (42.0 - 43.5) = -150.0$. The program prints **`150.0 -150.0`**. One definition serves both directions of the trade, that is what parameters are for.",
+    "successCheck": "The two calls print 150.0 -150.0."
   },
   "independentExercise": {
     "prompt": "A desk charges commission in basis points: define `commission(amount, rate_bps=20)` that returns `amount * rate_bps / 10000`. Call it for notionals of 50000 and 25000 using the default rate, then print the two commissions and their total.",
     "hints": [
       "20 basis points = 20 / 10000 = 0.002 = 0.2%.",
-      "With the default in place, calls pass only the amount."
+      "With the default in place, calls pass only the amount.",
+      "Store both returned fees, then add them at the call site; the total is 150.0."
     ],
-    "solution": "```python\ndef commission(amount, rate_bps=20):\n    return amount * rate_bps / 10000\n\nc1 = commission(50000)     # 100.0\nc2 = commission(25000)     # 50.0\nprint(c1, c2, c1 + c2)\n```\n\nPrints **`100.0 50.0 150.0`**: $50000 \\times 20 / 10000 = 100.0$ and $25000 \\times 20 / 10000 = 50.0$."
+    "solution": "```python\ndef commission(amount, rate_bps=20):\n    return amount * rate_bps / 10000\n\nc1 = commission(50000)     # 100.0\nc2 = commission(25000)     # 50.0\nprint(c1, c2, c1 + c2)\n```\n\nPrints **`100.0 50.0 150.0`**: $50000 \\times 20 / 10000 = 100.0$ and $25000 \\times 20 / 10000 = 50.0$.",
+    "successCheck": "The printed fees and total are 100.0 50.0 150.0."
   },
   "commonMistakes": [
     "Printing inside a function instead of returning, then wondering why the captured result is None.",
@@ -120,7 +146,7 @@
   "summary": [
     "def defines a function once; calls supply arguments for its parameters; return hands the result back and ends the call.",
     "print shows output; return produces a value for the caller, a function without return yields None.",
-    "Names assigned inside a function are local and vanish when the call ends; assigning to a global's name inside creates a shadowing local.",
+    "Ordinary local bindings belong to that call; returned objects and captured values can outlive it; assigning to a global's name inside creates a shadowing local.",
     "Default parameters cover the common case; callers override them explicitly when needed.",
     "Prefer small single-purpose functions that take data in as parameters and return results, same inputs, same outputs, easy to test."
   ],
@@ -128,60 +154,65 @@
     {
       "id": "q1",
       "type": "code-output",
-      "prompt": "What does this print?",
+      "prompt": "What does this returned value reused in a nested calculation example print?",
       "language": "python",
       "code": "def double(x):\n    return x * 2\n\na = double(3)\nb = double(a) + 1\nprint(a, b)",
       "answer": "6 13",
-      "explanation": "`a = double(3) = 6`; then `b = double(6) + 1 = 13`. The return value feeds straight into the next call."
+      "explanation": "`a = double(3) = 6`; then `b = double(6) + 1 = 13`. The return value feeds straight into the next call.",
+      "objective": 0
     },
     {
       "id": "q2",
       "type": "code-output",
-      "prompt": "What does this print?",
+      "prompt": "What does this printing versus an implicit None return example print?",
       "language": "python",
       "code": "def show(x):\n    print(x * 2)\n\nresult = show(5)\nprint(result)",
       "answer": "10\nNone",
-      "explanation": "`show` prints 10 when called, but it returns nothing, so `result` is None, the second print makes that visible."
+      "explanation": "`show` prints 10 when called, but it returns nothing, so `result` is None, the second print makes that visible.",
+      "objective": 1
     },
     {
       "id": "q3",
       "type": "code-output",
-      "prompt": "What does this print?",
+      "prompt": "What does this default fee overridden at a call example print?",
       "language": "python",
       "code": "def pnl(cost, proceeds, fee=0):\n    return proceeds - cost - fee\n\nprint(pnl(1000, 1050))\nprint(pnl(1000, 1050, 12))",
       "answer": "50\n38",
-      "explanation": "The first call omits `fee`, so the default 0 applies: 1050, 1000 = 50. The second overrides it: 50, 12 = 38."
+      "explanation": "The first call omits `fee`, so the default 0 applies: 1050 - 1000 = 50. The second overrides it: 50 - 12 = 38.",
+      "objective": 2
     },
     {
       "id": "q4",
       "type": "code-output",
-      "prompt": "What does this print?",
+      "prompt": "What does this local name shadowing a global example print?",
       "language": "python",
       "code": "total = 10\n\ndef add_five():\n    total = 15\n\nadd_five()\nprint(total)",
       "answer": "10",
-      "explanation": "The assignment inside the function creates a local `total` that shadows the global; the global is never touched, so 10 prints."
+      "explanation": "The assignment inside the function creates a local `total` that shadows the global; the global is never touched, so 10 prints.",
+      "objective": 3
     },
     {
       "id": "q5",
       "type": "mcq",
       "prompt": "What does calling a Python function that finishes without executing a return statement produce?",
       "options": [
-        "None",
         "0",
+        "None",
         "An empty string",
         "A syntax error"
       ],
-      "answerIndex": 0,
-      "explanation": "Every function call evaluates to a value; with no explicit return, that value is None."
+      "answerIndex": 1,
+      "explanation": "Every function call evaluates to a value; with no explicit return, that value is None.",
+      "objective": 1
     },
     {
       "id": "q6",
-      "type": "code-output",
-      "prompt": "What does this print?",
-      "language": "python",
-      "code": "def half(x):\n    return x / 2\n\nprint(half(half(8)))",
-      "answer": "2.0",
-      "explanation": "Calls evaluate inside-out: half(8) = 4.0 (true division gives a float), then half(4.0) = 2.0."
+      "type": "numeric",
+      "prompt": "If half(x) returns x / 2, what numeric value does half(half(8)) return?",
+      "answer": 2,
+      "tolerance": 1e-09,
+      "explanation": "The inner half(8) returns 4.0, which becomes the outer argument. half(4.0) returns 2.0, rather than 4.0 because the function is applied twice.",
+      "objective": 0
     }
   ],
   "flashcards": [
@@ -198,7 +229,7 @@
     {
       "type": "concept",
       "front": "Local vs global scope",
-      "back": "Names assigned inside a function are local and vanish when the call ends. Assigning inside a function to a global's name creates a shadowing local; the global is untouched."
+      "back": "Ordinary local bindings belong to that call; returned objects and captured values can outlive it. Assigning inside a function to a global's name creates a shadowing local; the global is untouched."
     },
     {
       "type": "concept",

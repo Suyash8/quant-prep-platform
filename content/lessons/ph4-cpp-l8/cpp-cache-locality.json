@@ -2,7 +2,7 @@
   "id": "cpp-cache-locality",
   "moduleId": "ph4-cpp-l8",
   "title": "Cache Locality and Data-Oriented Design",
-  "estMinutes": 28,
+  "estMinutes": 30,
   "difficulty": "specialist",
   "prereqs": [
     "arch-cache-hierarchy"
@@ -77,7 +77,7 @@
     {
       "type": "code",
       "lang": "cpp",
-      "code": "#include <new>   // std::hardware_destructive_interference_size (C++17)\n\nstruct alignas(64) ThreadCounters {   // one counter set per cache line\n    std::uint64_t fills = 0;\n    std::uint64_t rejects = 0;\n    // padding to 64 bytes happens implicitly via alignas(64)\n};\n// Two threads writing counters[0].fills and counters[1].fills now touch\n// different lines - no coherence traffic, no false sharing.",
+      "code": "#include <cstdint>\n#include <new>   // std::hardware_destructive_interference_size (C++17)\n\nstruct alignas(64) ThreadCounters {   // one counter set per cache line\n    std::uint64_t fills = 0;\n    std::uint64_t rejects = 0;\n    // padding to 64 bytes happens implicitly via alignas(64)\n};\n// Two threads writing counters[0].fills and counters[1].fills now touch\n// different lines - no coherence traffic, no false sharing.",
       "caption": "alignas(64) makes each counters element occupy its own cache line."
     },
     {
@@ -138,12 +138,12 @@
       "type": "mcq",
       "prompt": "A spread-scan loop reads only `bid` and `ask` from the 24-byte `Quote` struct above, stored as a big AoS vector. Roughly what fraction of the cache-line bytes it fetches is useful?",
       "options": [
+        "~75%: 3 of 4 fields are read per quote",
         "~50%: each 64-byte line holds 2 whole quotes (48 bytes) but only their bid+ask bytes (32) are read",
-        "~100%: the prefetcher removes all waste",
         "~67%: 16 of 24 bytes are useful",
-        "~75%: 3 of 4 fields are read per quote"
+        "~100%: the prefetcher removes all waste"
       ],
-      "answerIndex": 0,
+      "answerIndex": 1,
       "explanation": "24 does not divide 64: each line carries 2 whole quotes = 48 bytes (16 bytes of the line idle), and the loop reads only bid+ask = 32 bytes of those 48. Useful/total = 32/64 = 50%."
     },
     {
@@ -152,11 +152,11 @@
       "prompt": "Two worker threads each increment a different `uint64_t` counter, but the counters sit 8 bytes apart in one array. Profiling shows huge time in 'coherence stalls'. What is this, and the standard fix?",
       "options": [
         "Deadlock; fix with a mutex",
-        "False sharing; fix by padding/aligning so each thread's data occupies its own cache line",
+        "A mispredicted branch; fix by restructuring the loop",
         "Cache aliasing; fix by changing the allocator",
-        "A mispredicted branch; fix by restructuring the loop"
+        "False sharing; fix by padding/aligning so each thread's data occupies its own cache line"
       ],
-      "answerIndex": 1,
+      "answerIndex": 3,
       "explanation": "The counters are distinct, but they share one 64-byte cache line, so the coherence protocol ping-pongs the line between cores on every write. alignas(64) or padding separates them onto different lines."
     },
     {
@@ -164,12 +164,12 @@
       "type": "mcq",
       "prompt": "Which change most directly improves spatial locality for a hot scan loop over market records?",
       "options": [
-        "Replacing contiguous arrays with a linked list of heap-allocated record objects",
-        "Splitting the record into SoA arrays so the loop's fields are contiguous and nothing cold is interleaved",
         "Adding virtual methods to the record class for extensibility",
-        "Increasing the struct size so records are 'rounder'"
+        "Increasing the struct size so records are 'rounder'",
+        "Splitting the record into SoA arrays so the loop's fields are contiguous and nothing cold is interleaved",
+        "Replacing contiguous arrays with a linked list of heap-allocated record objects"
       ],
-      "answerIndex": 1,
+      "answerIndex": 2,
       "explanation": "SoA makes the touched fields one sequential stream, every fetched line is fully used and prefetchable. Pointer chasing kills prefetching; virtual calls obscure layout; bigger structs waste bandwidth."
     },
     {

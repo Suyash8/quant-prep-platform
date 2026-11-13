@@ -176,8 +176,8 @@ export function DrillTrainer({ history }: { history: { mode: string; level: numb
   const accuracy = total ? Math.round((correct / total) * 100) : null;
   const avgMs = times.length ? Math.round(times.reduce((a, b) => a + b, 0) / times.length) : null;
   const feedbackCls = feedback?.ok
-    ? 'anim-pop-in mt-4 px-4 py-2 rounded-2xl text-sm font-extrabold bg-accent-soft text-accent-deep dark:text-accent'
-    : 'anim-shake mt-4 px-4 py-2 rounded-2xl text-sm font-extrabold bg-danger-soft text-danger';
+    ? 'anim-pop-in mt-4 px-4 py-2 rounded-2xl text-[15px] font-extrabold bg-accent-soft text-accent-deep dark:text-accent'
+    : 'anim-shake mt-4 px-4 py-2 rounded-2xl text-[15px] font-extrabold bg-danger-soft text-danger';
 
   return (
     <div className="qf-card overflow-hidden">
@@ -186,7 +186,7 @@ export function DrillTrainer({ history }: { history: { mode: string; level: numb
           {running ? (
             <>
               <span className="tnum text-2xl font-black">{String(Math.floor(left / 60)).padStart(2, '0')}:{String(left % 60).padStart(2, '0')}</span>
-              <span className="text-sm text-muted tnum font-bold">{correct}/{total} answered</span>
+              <span className="text-[15px] text-muted tnum font-bold">{correct}/{total} answered</span>
               {accuracy !== null && (
                 <span className={accuracy >= 80 ? 'chip chip-success tnum' : 'chip chip-warning tnum'}>{accuracy}% accuracy</span>
               )}
@@ -200,24 +200,24 @@ export function DrillTrainer({ history }: { history: { mode: string; level: numb
             <>
               <div className="flex flex-wrap items-end gap-x-5 gap-y-3">
                 <label className="flex flex-col gap-1.5">
-                  <span className="text-[10px] font-black uppercase tracking-[0.1em] text-faint">Mode</span>
+                  <span className="text-[12px] font-black uppercase tracking-[0.1em] text-faint">Mode</span>
                   <select value={mode} onChange={e => setMode(e.target.value as Mode)} className="qf-select-sm h-9" aria-label="Drill mode">
                     {MODES.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
                   </select>
                 </label>
                 <label className="flex flex-col gap-1.5">
-                  <span className="text-[10px] font-black uppercase tracking-[0.1em] text-faint">Level · <span className="text-accent-deep dark:text-accent">{level}</span></span>
+                  <span className="text-[12px] font-black uppercase tracking-[0.1em] text-faint">Level · <span className="text-accent-deep dark:text-accent">{level}</span></span>
                   <span className="flex items-center gap-2.5 h-9">
                     <input type="range" min={1} max={10} value={level} onChange={e => setLevel(parseInt(e.target.value))} className="qf-range w-32" aria-label="Difficulty level" style={{ '--fill': `${((level - 1) / 9) * 100}%` } as React.CSSProperties} />
-                    <span className="text-[10px] font-bold text-faint tnum">1-10</span>
+                    <span className="text-[12px] font-bold text-faint tnum">1-10</span>
                   </span>
                 </label>
                 <div className="flex flex-col gap-1.5">
-                  <span className="text-[10px] font-black uppercase tracking-[0.1em] text-faint">Duration</span>
+                  <span className="text-[12px] font-black uppercase tracking-[0.1em] text-faint">Duration</span>
                   <div className="flex gap-1.5 h-9 items-center">
                     {DURATIONS.map(d => (
                       <button key={d} onClick={() => setDuration(d)}
-                        className={duration === d ? 'text-xs px-3 h-full rounded-xl bg-accent text-accent-foreground font-black press' : 'text-xs px-3 h-full rounded-xl border-2 border-border bg-surface text-muted font-bold hover:bg-surface-2 press'}>
+                        className={duration === d ? 'text-[13px] px-3 h-full rounded-xl bg-accent text-accent-foreground font-black press' : 'text-[13px] px-3 h-full rounded-xl border-2 border-border bg-surface text-muted font-bold hover:bg-surface-2 press'}>
                         {d < 60 ? `${d}s` : `${d / 60}m`}
                       </button>
                     ))}
@@ -262,7 +262,7 @@ export function DrillTrainer({ history }: { history: { mode: string; level: numb
                 </span>
                 <div className="text-left">
                   <p className="text-lg font-black tracking-tight">{MODES.find(m => m.id === mode)?.label} · level {level}</p>
-                  <p className="text-xs font-bold text-muted tnum">{duration < 60 ? `${duration} seconds` : `${duration / 60} minute`} · answers typed, ↵ submits</p>
+                  <p className="text-[13px] font-bold text-muted tnum">{duration < 60 ? `${duration} seconds` : `${duration / 60} minute`} · answers typed, ↵ submits</p>
                 </div>
               </div>
               <div className="mt-5 grid grid-cols-3 gap-2.5 text-center">
@@ -273,11 +273,11 @@ export function DrillTrainer({ history }: { history: { mode: string; level: numb
                 ].map((s, i) => (
                   <div key={i} className="rounded-2xl border-2 border-border bg-surface-2/50 px-3 py-3 flex flex-col items-center gap-2">
                     <p className="text-base font-black tnum leading-tight">{s.sample.text}</p>
-                    <span className={'chip !text-[10px] !px-2 !py-0.5 ' + s.tagCls}>{s.tag}</span>
+                    <span className={'chip !text-[12px] !px-2 !py-0.5 ' + s.tagCls}>{s.tag}</span>
                   </div>
                 ))}
               </div>
-              <p className="mt-5 text-sm font-semibold text-muted leading-relaxed text-center">
+              <p className="mt-5 text-[15px] font-semibold text-muted leading-relaxed text-center">
                 Accuracy and speed both count, the goal is genuine numerical fluency, the kind trading-firm screens
                 and production debugging both demand. Sessions are saved to your analytics.
               </p>

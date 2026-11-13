@@ -1,4 +1,4 @@
-# QuantFoundry — Architecture & Curriculum Documentation
+# QuantFoundry, Architecture & Curriculum Documentation
 
 ## 1. Overview
 
@@ -8,10 +8,10 @@ coding-practice environment with real code execution, an assessment/mastery engi
 revision, project-based learning and a research-grounded career centre.
 
 - **Framework:** Next.js 16 (App Router) + TypeScript 5 + Tailwind CSS 4
-- **Database:** Prisma ORM (SQLite datasource, PostgreSQL-compatible schema)
+- **Database:** Prisma ORM with a PostgreSQL datasource (SQLite is not supported)
 - **Editor:** Monaco (bundled locally, graceful textarea fallback)
 - **Mathematics:** KaTeX (server-rendered in lessons, client-rendered in quizzes)
-- **Execution:** dedicated sandboxed runner mini-service (Bun) — genuine g++ compilation and Python 3
+- **Execution:** dedicated sandboxed runner mini-service (Bun), genuine g++ compilation and Python 3
 
 ## 2. Content architecture
 
@@ -19,8 +19,8 @@ All curriculum content lives under `content/` as JSON, validated by `scripts/val
 
 ```
 content/
-├── map/curriculum.json      # the full programme: 11 phases, 65 modules, 283 planned lessons,
-│                            # skills vocabulary, track mapping (A–E)
+├── map/curriculum.json      # the full programme: 11 phases and 65 modules (lesson counts: content/registry.json),
+│                            # skills vocabulary, track mapping (A to E)
 ├── lessons/<moduleId>/<lessonId>.json   # one file per lesson
 ├── problems/<slug>.json     # judged coding problems (tests, editorial, reference solutions)
 ├── assessments/<id>.json    # diagnostic + timed assessments + screening simulation
@@ -34,14 +34,14 @@ content/
 Every lesson carries: stable `id` (matches the map), `moduleId`, title, estimated minutes,
 difficulty (foundation/core/advanced/specialist), explicit prerequisites, objectives, motivation,
 content `blocks`, guided + independent exercises with worked solutions, common mistakes, real-world
-and quant-finance applications, summary, a 4–6 question knowledge check with answers + explanations,
+and quant-finance applications, summary, a 4 to 6 question knowledge check with answers + explanations,
 flashcards, references and skill tags. Block types: `p, h2, h3, math, code, callout, list, table,
 steps, interactive, ref`. Question types: `mcq, ms, numeric, short, code-output`.
 
 Content conventions:
 - Inline math uses `$...$` (KaTeX); currency is escaped as `\$` so it is never parsed as math;
   math spans may contain `\$` for amounts (e.g. `$F = \$104$`).
-- Interactive blocks reference components registered in `src/components/interactive/registry.tsx` —
+- Interactive blocks reference components registered in `src/components/interactive/registry.tsx` :
   the validator rejects unregistered names, so lessons can never embed a broken lab.
 - Every numeric worked example is hand-verified; quiz `code-output` answers are exact stdout strings.
 
@@ -54,7 +54,7 @@ KaTeX delimiter balance, table row widths, problem test counts and reference sol
 evaluation-weight sums (must equal 100), and assessment section integrity. Coverage against the
 map is reported per phase. `--registry` regenerates `content/registry.json`.
 
-Adding content = add JSON files + run the validator. No application code changes are required —
+Adding content = add JSON files + run the validator. No application code changes are required :
 the admin panel (`/admin`, admin role) also validates on demand and accepts bulk JSON imports.
 
 ## 3. Application architecture
@@ -96,7 +96,7 @@ Learner state only (curriculum lives in files):
 
 ### Spaced repetition (`sm2` in mastery.ts)
 
-Standard SM-2: grade 0–5, ease floor 1.3, intervals 1 → 6 → interval × ease (capped at 365d),
+Standard SM-2: grade 0 to 5, ease floor 1.3, intervals 1 → 6 → interval × ease (capped at 365d),
 lapses reset repetitions. Quiz-miss cards graduate (are removed) after two consecutive grades ≥ 4.
 
 ### Prerequisite graph (`getCurriculumGraph`)
@@ -107,20 +107,20 @@ this order; the dashboard recommends the first unlocked, unpassed lessons.
 
 ## 4. Code execution service
 
-`mini-services/code-runner/index.ts` — Bun HTTP service bound to `127.0.0.1:3010`:
+`mini-services/code-runner/index.ts`, Bun HTTP service bound to `127.0.0.1:3010`:
 
-- `POST /submit` — compile (C++17/20: `g++ -O2 -pipe -DONLINE_JUDGE`) then run each test:
+- `POST /submit`, compile (C++17/20: `g++ -O2 -pipe -DONLINE_JUDGE`) then run each test:
   stdin supplied per test, stdout compared line-aware (trailing whitespace trimmed, trailing
   blank lines ignored); returns per-test verdicts, timings, stderr, expected/actual diffs.
-- `POST /run` — single execution against custom stdin (used by the workspace Console).
-- `GET /health` — liveness.
+- `POST /run`, single execution against custom stdin (used by the workspace Console).
+- `GET /health`, liveness.
 
 Isolation measures: separate process from the web tier; ephemeral `mkdtemp` workspace removed
 after the job; `env -i` clean environment; `ulimit` address space (memory limit per problem),
 CPU time, file size and process count; wall-clock timeout with SIGKILL; 256 KB stdout cap;
 1 MB stdin cap; 128 KB code cap; max 2 concurrent jobs with FIFO queueing. The Next.js tier
 (`src/lib/runner-client.ts`) health-checks and auto-spawns the service, rate-limits submissions
-and never trusts client input for tests — expected outputs come from validated content files.
+and never trusts client input for tests, expected outputs come from validated content files.
 
 **Production note:** containerise the runner (Docker/gVisor, no network namespace) for
 container-grade isolation; the HTTP contract is unchanged.
@@ -154,6 +154,6 @@ No purple gradients, glassmorphism, sparkle icons or AI-marketing language anywh
 
 Retrieval practice (knowledge checks before solutions; reveal-after-recall flashcards),
 spaced repetition (SM-2), interleaving (practice bank by topic filters), progressive difficulty
-(foundation → specialist levels, drill levels 1–10), immediate corrective feedback (every quiz
+(foundation → specialist levels, drill levels 1 to 10), immediate corrective feedback (every quiz
 answer carries an explanation shown after submission), desirable difficulty (mastery thresholds),
 and cumulative assessment (subject assessments mark passed lessons retrieval-verified).

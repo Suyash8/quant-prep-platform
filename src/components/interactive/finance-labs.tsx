@@ -58,11 +58,11 @@ export function BlackScholesLab({ params }: { params: Record<string, unknown> })
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto">
         <line x1={P} y1={mapY(0)} x2={W - P} y2={mapY(0)} stroke={FAINT} />
         <line x1={mapX(K, Smin, Smax)} y1={P} x2={mapX(K, Smin, Smax)} y2={H - P} stroke={FAINT} strokeDasharray="3 3" />
-        <text x={mapX(K, Smin, Smax)} y={P + 10} textAnchor="middle" fontSize="10" fill={MUTED}>K={K}</text>
+        <text x={mapX(K, Smin, Smax)} y={P + 10} textAnchor="middle" fontSize="12" fill={MUTED}>K={K}</text>
         <polyline fill="none" stroke={MUTED} strokeDasharray="4 3" points={payCurve.join(' ')} />
         <polyline fill="none" stroke={ACCENT} strokeWidth={2} points={curve.join(' ')} />
         <circle cx={mapX(S, Smin, Smax)} cy={mapY(bs.price)} r={4.5} fill={ACCENT} />
-        <text x={mapX(S, Smin, Smax) + 6} y={mapY(bs.price) - 6} fontSize="11" fill={ACCENT}>{fmt(bs.price, 3)}</text>
+        <text x={mapX(S, Smin, Smax) + 6} y={mapY(bs.price) - 6} fontSize="12" fill={ACCENT}>{fmt(bs.price, 3)}</text>
       </svg>
       <div className="mt-2 grid sm:grid-cols-2 gap-3">
         <Slider label="spot S" value={S} min={K * 0.4} max={K * 1.6} step={0.5} onChange={setS} />
@@ -107,13 +107,13 @@ export function PayoffDiagram({ params }: { params: Record<string, unknown> }) {
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto">
         <line x1={P} y1={H / 2} x2={W - P} y2={H / 2} stroke={FAINT} />
         <line x1={mapX(strike)} y1={P} x2={mapX(strike)} y2={H - P} stroke={FAINT} strokeDasharray="3 3" />
-        <text x={mapX(strike)} y={P + 10} textAnchor="middle" fontSize="10" fill={MUTED}>K={strike}</text>
+        <text x={mapX(strike)} y={P + 10} textAnchor="middle" fontSize="12" fill={MUTED}>K={strike}</text>
         <polyline fill="none" stroke={ACCENT} strokeWidth={2} points={pts.join(' ')} />
       </svg>
       <div className="mt-2 grid sm:grid-cols-3 gap-3">
         <Slider label="strike" value={strike} min={minSpot} max={maxSpot} step={1} onChange={setStrike} format={v => v.toFixed(0)} />
         <Slider label="premium" value={premium} min={0} max={15} step={0.25} onChange={setPremium} />
-        <div className="flex gap-2 text-xs items-center">
+        <div className="flex gap-2 text-[13px] items-center">
           {['long', 'short'].map(s => (
             <button key={s} onClick={() => setSide(s)}
               className={side === s ? 'px-3 py-1.5 rounded-md bg-accent text-accent-foreground' : 'px-3 py-1.5 rounded-md border hover:bg-surface-2'}>
@@ -146,7 +146,7 @@ export function GreeksLab({ params }: { params: Record<string, unknown> }) {
       <div className="grid sm:grid-cols-5 gap-2 mb-3">
         {grid.map(g => (
           <div key={g.label} className="border rounded-lg p-2.5 text-center" title={g.desc}>
-            <div className="text-[10px] text-faint">{g.label}</div>
+            <div className="text-[12px] text-faint">{g.label}</div>
             <div className="tnum font-semibold">{fmt(g.value, 4)}</div>
           </div>
         ))}
@@ -181,8 +181,8 @@ export function YieldCurveLab({ params }: { params: Record<string, unknown> }) {
             {i < tenors.length - 1 && (
               <line x1={toX(t)} y1={toY(adj[i])} x2={toX(tenors[i + 1])} y2={toY(adj[i + 1])} stroke={ACCENT} strokeWidth={1.5} />
             )}
-            <text x={toX(t)} y={H - P + 14} textAnchor="middle" fontSize="9" fill={MUTED}>{t < 1 ? `${t * 12}m` : `${t}y`}</text>
-            <text x={toX(t)} y={toY(adj[i]) - 9} textAnchor="middle" fontSize="9" fill={INK}>{(adj[i] * 100).toFixed(2)}%</text>
+            <text x={toX(t)} y={H - P + 14} textAnchor="middle" fontSize="12" fill={MUTED}>{t < 1 ? `${t * 12}m` : `${t}y`}</text>
+            <text x={toX(t)} y={toY(adj[i]) - 9} textAnchor="middle" fontSize="12" fill={INK}>{(adj[i] * 100).toFixed(2)}%</text>
           </g>
         ))}
       </svg>
@@ -190,11 +190,11 @@ export function YieldCurveLab({ params }: { params: Record<string, unknown> }) {
         <Slider label="parallel shift" value={shift} min={-0.02} max={0.02} step={0.001} onChange={setShift} format={v => `${(v * 100).toFixed(2)}pp`} />
         <button
           onClick={() => setYields(y => [...y].reverse())}
-          className="text-xs px-3 py-1.5 border rounded-md hover:bg-surface-2 w-fit self-center"
+          className="text-[13px] px-3 py-1.5 border rounded-md hover:bg-surface-2 w-fit self-center"
         >Invert curve</button>
         <button
           onClick={() => setYields((params.yields as number[]) ?? [0.042, 0.0415, 0.041, 0.0395, 0.0385, 0.039, 0.0405])}
-          className="text-xs px-3 py-1.5 border rounded-md hover:bg-surface-2 w-fit self-center"
+          className="text-[13px] px-3 py-1.5 border rounded-md hover:bg-surface-2 w-fit self-center"
         >Reset</button>
       </div>
     </LabFrame>
@@ -232,9 +232,9 @@ export function EfficientFrontier({ params }: { params: Record<string, unknown> 
         })}
         <circle cx={mapX(cur.v)} cy={mapY(cur.r)} r={6} fill={ACCENT} />
         <circle cx={mapX(sigmaA)} cy={mapY(rA)} r={4} fill="var(--warning)" />
-        <text x={mapX(sigmaA) + 6} y={mapY(rA) + 4} fontSize="10" fill="var(--warning)">A alone</text>
+        <text x={mapX(sigmaA) + 6} y={mapY(rA) + 4} fontSize="12" fill="var(--warning)">A alone</text>
         <circle cx={mapX(sigmaB)} cy={mapY(rB)} r={4} fill="var(--success)" />
-        <text x={mapX(sigmaB) + 6} y={mapY(rB) + 4} fontSize="10" fill="var(--success)">B alone</text>
+        <text x={mapX(sigmaB) + 6} y={mapY(rB) + 4} fontSize="12" fill="var(--success)">B alone</text>
       </svg>
       <div className="mt-2 grid sm:grid-cols-2 gap-3">
         <Slider label="weight in A" value={wA} min={0} max={1} step={0.01} onChange={setWA} format={v => `${(v * 100).toFixed(0)}%`} />
@@ -334,8 +334,8 @@ export function VolatilitySmile({ params }: { params: Record<string, unknown> })
         {strikes.map((k, i) => (
           <g key={k}>
             <circle cx={toX(k)} cy={toY(vols[i])} r={4.5} fill={ACCENT} />
-            <text x={toX(k)} y={H - P + 13} textAnchor="middle" fontSize="9" fill={MUTED}>{k}</text>
-            <text x={toX(k)} y={toY(vols[i]) - 9} textAnchor="middle" fontSize="9" fill={INK}>{(vols[i] * 100).toFixed(1)}%</text>
+            <text x={toX(k)} y={H - P + 13} textAnchor="middle" fontSize="12" fill={MUTED}>{k}</text>
+            <text x={toX(k)} y={toY(vols[i]) - 9} textAnchor="middle" fontSize="12" fill={INK}>{(vols[i] * 100).toFixed(1)}%</text>
           </g>
         ))}
       </svg>
@@ -361,7 +361,7 @@ export function OrderBookVisual({ params }: { params: Record<string, unknown> })
   const rowH = 26;
   return (
     <LabFrame title="Limit order book (Level 2 depth)" caption={`Best bid ${fmt(bestBid)} × ${fmt(bids[0]?.[1] ?? 0, 0)}, best ask ${fmt(bestAsk)} × ${fmt(asks[0]?.[1] ?? 0, 0)}. Spread ${fmt(spread)}, mid ${fmt(mid)}.`}>
-      <div className="grid grid-cols-2 gap-4 max-w-md mx-auto text-xs">
+      <div className="grid grid-cols-2 gap-4 max-w-md mx-auto text-[13px]">
         <div>
           <div className="text-center font-medium mb-1 text-success">Bids</div>
           {bids.map(([p, q], i) => (
@@ -389,7 +389,7 @@ export function OrderBookVisual({ params }: { params: Record<string, unknown> })
           ))}
         </div>
       </div>
-      <div className="mt-3 flex justify-center gap-2 text-xs">
+      <div className="mt-3 flex justify-center gap-2 text-[13px]">
         <button
           onClick={() => { setBids(b => b.map(([p, q], i) => i === 0 ? [p, Math.max(q - 300, 0)] : [p, q]).filter(([, q]) => q > 0) as number[][]); }}
           className="px-3 py-1.5 border rounded-md hover:bg-surface-2"
@@ -417,7 +417,7 @@ export function MatchingSim({ params }: { params: Record<string, unknown> }) {
   const shown = result.slice(0, step);
   return (
     <LabFrame title="Price-time priority matching" caption={`Step ${step}/${orders.length}. Trades printed so far: ${shown.filter(r => r.trade).length}. Step through and verify the matching rules yourself.`}>
-      <div className="space-y-1.5 text-xs max-w-lg mx-auto">
+      <div className="space-y-1.5 text-[13px] max-w-lg mx-auto">
         {orders.map((o, i) => {
           const r = result[i];
           const active = i < step;
@@ -432,9 +432,9 @@ export function MatchingSim({ params }: { params: Record<string, unknown> }) {
         })}
       </div>
       <div className="mt-3 flex justify-center gap-2">
-        <button onClick={() => setStep(s => Math.max(0, s - 1))} className="text-xs px-3 py-1.5 border rounded-md hover:bg-surface-2">Back</button>
-        <button onClick={() => setStep(s => Math.min(orders.length, s + 1))} className="text-xs px-3 py-1.5 border rounded-md bg-accent text-accent-foreground">Next event</button>
-        <button onClick={() => setStep(0)} className="text-xs px-3 py-1.5 border rounded-md hover:bg-surface-2">Reset</button>
+        <button onClick={() => setStep(s => Math.max(0, s - 1))} className="text-[13px] px-3 py-1.5 border rounded-md hover:bg-surface-2">Back</button>
+        <button onClick={() => setStep(s => Math.min(orders.length, s + 1))} className="text-[13px] px-3 py-1.5 border rounded-md bg-accent text-accent-foreground">Next event</button>
+        <button onClick={() => setStep(0)} className="text-[13px] px-3 py-1.5 border rounded-md hover:bg-surface-2">Reset</button>
       </div>
     </LabFrame>
   );

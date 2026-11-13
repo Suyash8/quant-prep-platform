@@ -1,0 +1,269 @@
+{
+  "id": "opt-exotics-american",
+  "moduleId": "ph7-options",
+  "title": "American Exercise, Barriers and Asian Options",
+  "estMinutes": 35,
+  "difficulty": "advanced",
+  "prereqs": [
+    "opt-volatility-surfaces"
+  ],
+  "objectives": [
+    "Price American exercise by backward induction",
+    "Distinguish path-dependent Asian and barrier payoffs",
+    "Explain why European parity is not equality for American options"
+  ],
+  "motivation": "Two contracts can share strike and expiry yet have different values because one can be exercised early or because payment depends on the path. A European option pays from the terminal underlying price. An American option lets its holder choose exercise time within the contract rules. An Asian option uses an average, and a barrier option activates or terminates when a monitored level is crossed. Write exercise, observation, averaging and settlement conventions before choosing a numerical method. A model price without those terms can be internally consistent while valuing the wrong contract. Real markets also impose operational deadlines and funding constraints.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "The exercise rule changes the product"
+    },
+    {
+      "type": "p",
+      "md": "Two contracts can share strike and expiry yet have different values because one can be exercised early or because payment depends on the path. A European option pays from the terminal underlying price. An American option lets its holder choose exercise time within the contract rules. An Asian option uses an average, and a barrier option activates or terminates when a monitored level is crossed. Write exercise, observation, averaging and settlement conventions before choosing a numerical method. A model price without those terms can be internally consistent while valuing the wrong contract. Real markets also impose operational deadlines and funding constraints."
+    },
+    {
+      "type": "h2",
+      "text": "American backward induction"
+    },
+    {
+      "type": "p",
+      "md": "In a Cox-Ross-Rubinstein tree, let u=exp(sigma*sqrt(dt)), d=1/u and p=(exp((r-q)*dt)-d)/(u-d). The transition requires p between zero and one. Terminal put values are max(K-S,0). At each earlier node, first discount the probability-weighted child values, then take the maximum of continuation and immediate exercise K-S. This maximisation represents the holder's choice. Taking the maximum only at the root misses later opportunities. For a non-dividend-paying stock and non-negative rates under the usual frictionless assumptions, early exercise of a standard call is not optimal. Dividends or other changed assumptions can alter the decision."
+    },
+    {
+      "type": "h2",
+      "text": "Worked example: an early-exercise put"
+    },
+    {
+      "type": "p",
+      "md": "Use a one-period tree with S=100, K=110, u=1.2, d=0.8, r=0.1 and dt=1. The risk-neutral up probability is (exp(0.1)-0.8)/0.4, about 0.762927. Terminal put values are zero at 120 and 30 at 80. Discounted continuation is about 6.435368, while immediate exercise is 10. The American value is therefore 10 and the European value is only the continuation value. This deliberately simple example isolates the exercise comparison. A finer tree is normally needed for a usable approximation, and convergence should be measured rather than assumed from a single step count."
+    },
+    {
+      "type": "math",
+      "tex": "V_t=\\max\\left(K-S_t,\\ e^{-r\\Delta t}\\left[pV_{t+1}^{u}+(1-p)V_{t+1}^{d}\\right]\\right)",
+      "caption": "Formula under the assumptions stated in the surrounding explanation."
+    },
+    {
+      "type": "h2",
+      "text": "Asian averages need path conventions"
+    },
+    {
+      "type": "p",
+      "md": "An arithmetic-average Asian call pays max(A-K,0), where A is the specified average of observed prices. State whether the initial price is included, which dates are sampled and how missed fixings are handled. A geometric-average Asian uses a different average and is not the same payoff. Monte Carlo naturally simulates complete paths and computes the payoff path by path, then averages discounted payoffs. Taking the payoff of the average across simulated paths is a different operation because max is nonlinear. Antithetic paths and a geometric-Asian control variate can reduce variance, but they require correct coupling and their own checks."
+    },
+    {
+      "type": "h2",
+      "text": "Worked example: average before payoff"
+    },
+    {
+      "type": "p",
+      "md": "For observation prices [100,110,90], the arithmetic average is 100. A strike-95 Asian call pays 5. A European call on the last observation pays zero, because the terminal price is 90. This difference is contract design, not simulation error. If the price paths have averages 90 and 110 at strike 100, the average pathwise payoff is 5, whereas the payoff of the pooled mean is zero. The executable example checks these exact values. In a Monte Carlo implementation, retain observation dates and discount conventions alongside the pseudorandom seed so the price is reproducible and the product definition is auditable."
+    },
+    {
+      "type": "h2",
+      "text": "Barriers add monitoring risk"
+    },
+    {
+      "type": "p",
+      "md": "A down-and-out call terminates after the monitored price breaches its lower barrier; a down-and-in call activates instead. Under matching terms and no complicating rebate, in plus out reproduces the corresponding vanilla payoff path by path. Discrete monitoring can miss crossings between observations, so a discretely monitored and continuously monitored barrier are different products. Brownian-bridge corrections can estimate missed crossings under suitable diffusion assumptions. Barrier rebates, touch conventions and payment timing change values. A coarse time grid with no correction should not be reported as a continuous-monitoring price merely because the underlying process is simulated from a continuous-time equation."
+    },
+    {
+      "type": "h2",
+      "text": "Parity and model limitations"
+    },
+    {
+      "type": "p",
+      "md": "European put-call parity relies on matching terminal exercise and cash flows. American calls and puts need not satisfy that equality because exercise times differ; use the appropriate bounds under stated assumptions. American path-dependent products require a richer state or methods such as regression-based exercise estimation rather than terminal-payoff Monte Carlo alone. Validate with limiting cases, European comparisons and convergence checks. The binomial lab shows a vanilla tree; it is not a barrier or Asian pricing engine. Before using a result for a trade, include dividends, exercise rules, discrete fixings, transaction costs and model uncertainty. Numerical precision cannot correct a misread term sheet."
+    },
+    {
+      "type": "h2",
+      "text": "Worked example: run and check"
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import math\nS,K,u,d,r=100,110,1.2,0.8,0.1\np=(math.exp(r)-d)/(u-d)\ncontinuation=math.exp(-r)*(p*max(K-S*u,0)+(1-p)*max(K-S*d,0))\namerican=max(K-S,continuation)\nassert 0<p<1 and american==10 and continuation<10\nprint(f\"{american:.2f}\")\npath=[100,110,90]\nasian=max(sum(path)/len(path)-95,0)\neuropean=max(path[-1]-95,0)\nassert asian==5 and european==0\nprint(f\"{asian:.2f} {european:.2f}\")",
+      "caption": "Complete Python 3.11+ example"
+    },
+    {
+      "type": "p",
+      "md": "The exact output is `10.00; 5.00 0.00`. Run the example before changing a parameter, then predict the direction of the change. The assertions encode the stated checks; a failed assertion means that the implementation and the claimed result disagree."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Check this misconception",
+      "md": "The holder can choose exercise or continuation, so backward induction takes their maximum. Always continuing prices a European feature instead of the American right."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import math\nimport random\nrng = random.Random(23)\nS0,K,r,sigma,T,steps,paths,barrier=100.0,95.0,0.02,0.2,1.0,12,4000,80.0\ndt=T/steps\nasian=barrier_call=0.0\nfor _ in range(paths):\n    S=S0\n    fixings=[]\n    alive=True\n    for _ in range(steps):\n        S*=math.exp((r-0.5*sigma*sigma)*dt+sigma*math.sqrt(dt)*rng.gauss(0,1))\n        fixings.append(S)\n        alive=alive and S>barrier\n    asian+=max(sum(fixings)/steps-K,0)\n    barrier_call+=max(S-K,0) if alive else 0\nasian*=math.exp(-r*T)/paths\nbarrier_call*=math.exp(-r*T)/paths\nassert asian>=0 and barrier_call>=0\nprint(f\"{asian:.4f} {barrier_call:.4f}\")\n",
+      "caption": "Complete seeded Monte Carlo: arithmetic Asian and discretely monitored down-and-out call. Output on the checked runtime: 8.4126 11.6468"
+    },
+    {
+      "type": "p",
+      "md": "The simulation uses twelve monthly fixings excluding the initial price, checks the lower barrier at those fixings only and pays at expiry. It uses risk-neutral geometric Brownian motion without dividends. This is discrete monitoring, not a continuous barrier price. The seed makes the demonstration repeatable on the recorded runtime; report sampling error and grid sensitivity before interpreting a real price. More paths reduce Monte Carlo noise but do not repair a wrong monitoring convention."
+    },
+    {
+      "type": "interactive",
+      "component": "BinomialTreeLab",
+      "params": {},
+      "caption": "Related concept lab. The lab illustrates the named building block; it is not a full implementation of every model in this lesson."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Compare average-payoff and terminal-payoff calls for [100,110,90] at strike 95. Success check: The Asian pays 5 and the European pays 0.",
+    "hints": [
+      "Compute the arithmetic average.",
+      "Apply max(average-strike,0).",
+      "Use the final observation for the European payoff."
+    ],
+    "solution": "\n```python\np=[100,110,90]\na=max(sum(p)/len(p)-95,0)\ne=max(p[-1]-95,0)\nassert (a,e)==(5,0)\nprint(a,e)\n```\nExpected output: `5.0 0`.",
+    "successCheck": "The Asian pays 5 and the European pays 0."
+  },
+  "independentExercise": {
+    "prompt": "Apply an American exercise decision with intrinsic value 10 and continuation 6.435. Success check: The retained value is 10.",
+    "hints": [
+      "List the holder's two choices.",
+      "The holder chooses the higher value.",
+      "Use maximum, not minimum."
+    ],
+    "solution": "\n```python\nintrinsic,continuation=10.0,6.435\nv=max(intrinsic,continuation)\nassert v==10\nprint(f\"{v:.2f}\")\n```\nExpected output: `10.00`.",
+    "successCheck": "The retained value is 10."
+  },
+  "commonMistakes": [
+    "The holder can choose exercise or continuation, so backward induction takes their maximum. Always continuing prices a European feature instead of the American right.",
+    "The path may cross and return between sampled observations. Ignoring that event changes monitoring assumptions; discounting cannot restore the missed activation or termination."
+  ],
+  "realWorldApplication": "Use the assumptions and checks above when reviewing american exercise, barriers and asian options. Record inputs, state the failure conditions and compare the result with a simple independent calculation.",
+  "quantFinanceApplication": "For a trading or risk workflow, validate the model and timestamp conventions before using american exercise, barriers and asian options. The worked result is conditional on its assumptions, not a return promise.",
+  "summary": [
+    "Price American exercise by backward induction",
+    "Distinguish path-dependent Asian and barrier payoffs",
+    "Explain why European parity is not equality for American options"
+  ],
+  "quiz": [
+    {
+      "type": "mcq",
+      "prompt": "At an American put tree node, which value is retained?",
+      "options": [
+        "The larger of exercise and continuation",
+        "Only the discounted continuation value",
+        "Only the current intrinsic value always",
+        "The smaller of exercise and continuation"
+      ],
+      "answerIndex": 0,
+      "explanation": "The holder can choose exercise or continuation, so backward induction takes their maximum. Always continuing prices a European feature instead of the American right.",
+      "id": "q1",
+      "objective": 0
+    },
+    {
+      "type": "mcq",
+      "prompt": "Why can a coarse grid misprice a continuously monitored barrier?",
+      "options": [
+        "Every sampled price is necessarily biased",
+        "Crossings may occur between sampled dates",
+        "A barrier never depends on path history",
+        "Discounting removes every crossing effect"
+      ],
+      "answerIndex": 1,
+      "explanation": "The path may cross and return between sampled observations. Ignoring that event changes monitoring assumptions; discounting cannot restore the missed activation or termination.",
+      "id": "q2",
+      "objective": 1
+    },
+    {
+      "type": "numeric",
+      "prompt": "Prices are [100,110,90], averaged arithmetically. What is the undiscounted strike-95 Asian call payoff in price units?",
+      "answer": 5,
+      "tolerance": 1e-06,
+      "explanation": "The average is 300/3=100, so the payoff is max(100-95,0)=5. Using the final value 90 instead would price a different, terminal-only payoff.",
+      "id": "q3",
+      "objective": 1
+    },
+    {
+      "type": "code-output",
+      "prompt": "What does this pathwise payoff average print?",
+      "code": "averages=[90,110]\nprint(sum(max(a-100,0) for a in averages)/2)",
+      "language": "python",
+      "answer": "5.0",
+      "explanation": "The two pathwise payoffs are zero and ten. Averaging them gives five; applying the payoff after averaging the underlying values would incorrectly give zero.",
+      "id": "q4",
+      "objective": 1
+    },
+    {
+      "type": "short",
+      "prompt": "Why is European put-call parity not an automatic equality for American options?",
+      "modelAnswer": "American holders can exercise at different times, so the contracts no longer have the same fixed terminal cash-flow replication.",
+      "keywords": [
+        "exercise|early",
+        "time|terminal",
+        "cash|replication|replicate|parity"
+      ],
+      "explanation": "The European replication aligns terminal payments. Early exercise changes timing and funding, so applying the same equality without checking assumptions is not valid.",
+      "id": "q5",
+      "objective": 2
+    },
+    {
+      "type": "ms",
+      "prompt": "Which product terms must be specified?",
+      "options": [
+        "Whether the initial Asian fixing is included",
+        "Whether a barrier is monitored continuously",
+        "A Monte Carlo seed instead of exercise rules",
+        "A universal equality for American parity"
+      ],
+      "answerIndices": [
+        0,
+        1
+      ],
+      "explanation": "Fixing and monitoring conventions define the payoff. A seed only makes a simulation repeatable, and a European equality does not replace American exercise terms.",
+      "id": "q6",
+      "objective": 1
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "At an American put tree node, which value is retained?",
+      "back": "The larger of exercise and continuation"
+    },
+    {
+      "type": "concept",
+      "front": "Why can a coarse grid misprice a continuously monitored barrier?",
+      "back": "Crossings may occur between sampled dates"
+    },
+    {
+      "type": "concept",
+      "front": "Prices are [100,110,90], averaged arithmetically. What is the undiscounted strike-95 Asian call payoff in price units?",
+      "back": "The result is 5 under the stated inputs."
+    },
+    {
+      "type": "concept",
+      "front": "Why is European put-call parity not an automatic equality for American options?",
+      "back": "American holders can exercise at different times, so the contracts no longer have the same fixed terminal cash-flow replication."
+    },
+    {
+      "type": "concept",
+      "front": "Which product terms must be specified?",
+      "back": "Whether the initial Asian fixing is included, Whether a barrier is monitored continuously"
+    }
+  ],
+  "references": [
+    {
+      "label": "QuantLib: pricing engines",
+      "url": "https://www.quantlib.org/reference/group__engines.html"
+    },
+    {
+      "label": "MIT OCW: finance theory",
+      "url": "https://ocw.mit.edu/courses/15-401-finance-theory-i-fall-2008/"
+    },
+    {
+      "label": "Cboe: options education",
+      "url": "https://www.cboe.com/optionsinstitute/"
+    }
+  ],
+  "skills": [
+    "options"
+  ]
+}

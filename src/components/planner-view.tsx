@@ -97,29 +97,29 @@ export function Planner({ initialPlan }: { initialPlan: Plan | null }) {
           <span className="icon-tile icon-tile-sm icon-tile-info"><SlidersHorizontal /></span>
           <h2>Your constraints</h2>
         </div>
-        <div className="space-y-5 text-sm">
+        <div className="space-y-5 text-[15px]">
           <div>
             <div className="flex items-center justify-between gap-2">
-              <span className="flex items-center gap-1.5 font-bold text-sm">
+              <span className="flex items-center gap-1.5 font-bold text-[15px]">
                 <Clock className="h-3.5 w-3.5 text-info" /> Hours per week
               </span>
               <span className="chip chip-accent tnum">{hoursPerWeek}h</span>
             </div>
             <input type="range" min={2} max={50} value={hoursPerWeek} onChange={e => setHours(parseInt(e.target.value))} className="qf-range mt-2.5" aria-label="Hours per week" style={{ '--fill': `${((hoursPerWeek - 2) / 48) * 100}%` } as React.CSSProperties} />
-            <div className="mt-1 flex justify-between text-xs text-faint font-semibold"><span>2h</span><span>50h</span></div>
+            <div className="mt-1 flex justify-between text-[13px] text-faint font-semibold"><span>2h</span><span>50h</span></div>
           </div>
           <div>
             <div className="flex items-center justify-between gap-2">
-              <span className="flex items-center gap-1.5 font-bold text-sm">
+              <span className="flex items-center gap-1.5 font-bold text-[15px]">
                 <CalendarDays className="h-3.5 w-3.5 text-info" /> Study days per week
               </span>
               <span className="chip chip-accent tnum">{daysPerWeek} {daysPerWeek === 1 ? 'day' : 'days'}</span>
             </div>
             <input type="range" min={1} max={7} value={daysPerWeek} onChange={e => setDays(parseInt(e.target.value))} className="qf-range mt-2.5" aria-label="Days per week" style={{ '--fill': `${((daysPerWeek - 1) / 6) * 100}%` } as React.CSSProperties} />
-            <div className="mt-1 flex justify-between text-xs text-faint font-semibold"><span>1 day</span><span>7 days</span></div>
+            <div className="mt-1 flex justify-between text-[13px] text-faint font-semibold"><span>1 day</span><span>7 days</span></div>
           </div>
           <label className="block">
-            <span className="flex items-center gap-1.5 font-bold text-sm">
+            <span className="flex items-center gap-1.5 font-bold text-[15px]">
               <Route className="h-3.5 w-3.5 text-info" /> Target track
             </span>
             <select value={track} onChange={e => setTrack(e.target.value)} className="qf-select mt-1.5" aria-label="Track">
@@ -132,7 +132,7 @@ export function Planner({ initialPlan }: { initialPlan: Plan | null }) {
             </select>
           </label>
           <label className="block">
-            <span className="flex items-center gap-1.5 font-bold text-sm">
+            <span className="flex items-center gap-1.5 font-bold text-[15px]">
               <Gauge className="h-3.5 w-3.5 text-info" /> Mode
             </span>
             <select value={mode} onChange={e => setMode(e.target.value)} className="qf-select mt-1.5" aria-label="Mode">
@@ -142,7 +142,7 @@ export function Planner({ initialPlan }: { initialPlan: Plan | null }) {
             </select>
           </label>
           <label className="block">
-            <span className="flex items-center gap-1.5 font-bold text-sm">
+            <span className="flex items-center gap-1.5 font-bold text-[15px]">
               <CalendarClock className="h-3.5 w-3.5 text-info" /> Target date <span className="text-faint font-semibold">(optional)</span>
             </span>
             <input type="date" value={targetDate} onChange={e => setTargetDate(e.target.value)} className="qf-input mt-1.5" aria-label="Target date" />
@@ -158,9 +158,9 @@ export function Planner({ initialPlan }: { initialPlan: Plan | null }) {
               <div className="mt-5 rounded-2xl border-2 border-border bg-surface-2/50 p-4">
                 <div className="flex items-center gap-2 mb-2">
                   <span className="icon-tile icon-tile-sm icon-tile-info"><Route className="h-4 w-4" /></span>
-                  <p className="text-[10px] font-black uppercase tracking-[0.1em] text-muted">This plan covers</p>
+                  <p className="text-[12px] font-black uppercase tracking-[0.1em] text-muted">This plan covers</p>
                 </div>
-                <p className="text-sm font-bold leading-relaxed text-muted">
+                <p className="text-[15px] font-bold leading-relaxed text-muted">
                   <span className="font-black text-foreground tnum">{plan.weeks}</span> weeks ·{' '}
                   <span className="font-black text-foreground tnum">{lessons}</span> lessons ·{' '}
                   <span className="font-black text-foreground tnum">≈{hours}h</span> of study
@@ -170,7 +170,7 @@ export function Planner({ initialPlan }: { initialPlan: Plan | null }) {
             );
           })()}
         </div>
-        <p className="mt-auto pt-5 text-xs text-muted leading-relaxed">
+        <p className="mt-auto pt-5 text-[13px] text-muted leading-relaxed">
           The planner walks lessons in prerequisite order, it never schedules a lesson before its prerequisites,
           and it will not compress a 1,000-hour programme into a 90-day promise.
         </p>
@@ -205,8 +205,8 @@ export function Planner({ initialPlan }: { initialPlan: Plan | null }) {
             <div className="qf-card-flat p-4 flex items-start gap-3 anim-slide-up">
               <span className="icon-tile icon-tile-sm icon-tile-info"><Info /></span>
               <div className="min-w-0">
-                <p className="font-bold text-sm">{plan.feasibility}</p>
-                <p className="mt-1 text-xs text-muted leading-relaxed">
+                <p className="font-bold text-[15px]">{plan.feasibility}</p>
+                <p className="mt-1 text-[13px] text-muted leading-relaxed">
                   {plan.note} XP estimates assume +1 XP per focused minute.
                 </p>
               </div>
@@ -231,14 +231,14 @@ export function Planner({ initialPlan }: { initialPlan: Plan | null }) {
                           <div key={day} className="qf-card-flat p-3 flex flex-col sm:flex-row sm:items-center gap-3 min-w-0">
                             <span className="icon-tile icon-tile-sm icon-tile-neutral shrink-0 self-start sm:self-center"><DayIcon /></span>
                             <div className="flex-1 min-w-0">
-                              <p className="font-bold text-sm">Study day {day}</p>
+                              <p className="font-bold text-[15px]">Study day {day}</p>
                               <div className="mt-1.5 flex flex-wrap gap-1.5">
                                 {dayTasks.map((t, ti) => {
                                   const kindCls = (KIND_STYLE[t.kind] ? 'chip ' + KIND_STYLE[t.kind] : 'chip') + ' min-w-0 max-w-full overflow-hidden';
                                   const label = t.title.length > 42 ? t.title.slice(0, 41) + '…' : t.title;
                                   const inner = (
                                     <>
-                                      <span className="text-[10px] uppercase tracking-wide font-bold text-muted shrink-0">{t.kind}</span>
+                                      <span className="text-[12px] uppercase tracking-wide font-bold text-muted shrink-0">{t.kind}</span>
                                       <span className="min-w-0 truncate">{label}</span>
                                     </>
                                   );
@@ -268,7 +268,7 @@ export function Planner({ initialPlan }: { initialPlan: Plan | null }) {
           <div className="qf-empty anim-pop-in">
             <span className="empty-emoji" aria-hidden>🗓️</span>
             <h2 className="font-extrabold text-lg">No plan yet</h2>
-            <p className="mt-1 text-sm text-muted max-w-md mx-auto leading-relaxed">
+            <p className="mt-1 text-[15px] text-muted max-w-md mx-auto leading-relaxed">
               Set your hours, days and pace on the left, we’ll sequence every lesson by prerequisites and fit it around your week.
             </p>
             <button onClick={generate} disabled={busy} className="btn3d mt-5">

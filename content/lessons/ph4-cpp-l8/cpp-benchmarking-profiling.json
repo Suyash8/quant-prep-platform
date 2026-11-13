@@ -2,7 +2,7 @@
   "id": "cpp-benchmarking-profiling",
   "moduleId": "ph4-cpp-l8",
   "title": "Benchmarking, prof, Sanitisers and Latency Percentiles",
-  "estMinutes": 28,
+  "estMinutes": 30,
   "difficulty": "specialist",
   "prereqs": [
     "cpp-branchless-simd"
@@ -21,13 +21,16 @@
     },
     {
       "type": "p",
-      "md": "A timing loop around code the optimizer can see through is a trap: it deletes computations with no observable effect, hoists invariants out of your timed region, and swaps real loads for constants it folded at compile time. Google Benchmark runs your function many times over a `State`, and gives you two escape hatches: `benchmark::DoNotOptimize(x)` tells the compiler a value is *used in unknowable ways* (so the work producing it cannot be deleted), and `benchmark::ClobberMemory()` tells it memory may have been read or written (so stores cannot be elided)."
+      "md": "A timing loop around code the optimiser can see through is a trap: it deletes computations with no observable effect, hoists invariants out of your timed region, and swaps real loads for constants it folded at compile time. Google Benchmark runs your function many times over a `State`, and gives you two escape hatches: `benchmark::DoNotOptimize(x)` tells the compiler a value is *used in unknowable ways* (so the work producing it cannot be deleted), and `benchmark::ClobberMemory()` tells it memory may have been read or written (so stores cannot be elided)."
     },
     {
       "type": "code",
       "lang": "cpp",
       "code": "#include <benchmark/benchmark.h>\n#include <vector>\n\nstatic void BM_SpreadSum(benchmark::State& state) {\n    const int n = state.range(0);\n    std::vector<double> bid(n, 99.5), ask(n, 100.0);   // set up OUTSIDE the timer\n    for (auto _ : state) {                             // state tracks iterations + time\n        double s = 0.0;\n        for (int i = 0; i < n; ++i) s += ask[i] - bid[i];\n        benchmark::DoNotOptimize(s);   // work survives: s must 'exist'\n        benchmark::ClobberMemory();    // stores/loads cannot be elided\n    }\n    state.SetItemsProcessed(state.iterations() * n);\n}\nBENCHMARK(BM_SpreadSum)->Arg(1 << 10)->Arg(1 << 20);\nBENCHMARK_MAIN();",
-      "caption": "Setup outside the loop, effects forced inside it. Run with: ./bench --benchmark_filter=Spread"
+      "caption": "Setup outside the loop, effects forced inside it. Run with: ./bench --benchmark_filter=Spread",
+      "requires": [
+        "google-benchmark"
+      ]
     },
     {
       "type": "p",
@@ -128,17 +131,17 @@
     "solution": "p50: $\\lceil 0.50 \\times 20 \\rceil = 10$ -> 10th value = **5 µs**. p95: $\\lceil 0.95 \\times 20 \\rceil = 19$ -> **12 µs**. p99: $\\lceil 0.99 \\times 20 \\rceil = 20$ -> **40 µs**. Mean $= 145/20 = 7.25$ µs. The mean sits between median and p95, describing nothing: it overstates the typical case (most requests beat 6 µs) and understates the tail (1 in 20 takes 12+ µs, 1 in 100 takes 40 µs). Latency-sensitive systems budget on percentiles, not means."
   },
   "independentExercise": {
-    "prompt": "You suspect your matcher is memory-bound. (a) Name the perf command and the two counters you would inspect, and the signature that indicates memory-boundness. (b) Your benchmark harness currently measures `for (auto _ : state) { double s = expensiveFold(prices); }` with no DoNotOptimize, explain what the optimizer does to your numbers and the fix. (c) The team's release CI runs ASan on the same binary used for latency numbers, what is wrong, and how do you split it?",
+    "prompt": "You suspect your matcher is memory-bound. (a) Name the perf command and the two counters you would inspect, and the signature that indicates memory-boundness. (b) Your benchmark harness currently measures `for (auto _ : state) { double s = expensiveFold(prices); }` with no DoNotOptimize, explain what the optimiser does to your numbers and the fix. (c) The team's release CI runs ASan on the same binary used for latency numbers, what is wrong, and how do you split it?",
     "hints": [
       "IPC is instructions per cycle; memory-bound code stalls on loads, so cycles rise while instructions stay flat.",
       "If a computed value is never observed, the compiler may delete its computation entirely.",
       "Sanitiser instrumentation changes timing; performance measurement needs an uninstrumented build."
     ],
-    "solution": "(a) `perf stat ./matcher`; watch `cache-misses` (LLC) and `cycles`/IPC: memory-bound shows low IPC (stalled on loads) with cache-misses a significant fraction of cycles; `branch-misses` low. (b) `s` is never observed, so the optimizer may constant-fold `expensiveFold` and delete the loop body, you benchmark an empty loop and report fantasy nanoseconds. Fix: `benchmark::DoNotOptimize(s);` (plus `ClobberMemory()` if stores were involved). (c) ASan instrumentation roughly doubles runtime and perturbs cache behaviour, so latency numbers from it are meaningless. Split the pipeline: ASan/UBSan/TSan jobs run the test suite for correctness; a separate clean `-O3 -march=native` build produces the benchmark/latency artefacts."
+    "solution": "(a) `perf stat ./matcher`; watch `cache-misses` (LLC) and `cycles`/IPC: memory-bound shows low IPC (stalled on loads) with cache-misses a significant fraction of cycles; `branch-misses` low. (b) `s` is never observed, so the optimiser may constant-fold `expensiveFold` and delete the loop body, you benchmark an empty loop and report fantasy nanoseconds. Fix: `benchmark::DoNotOptimize(s);` (plus `ClobberMemory()` if stores were involved). (c) ASan instrumentation roughly doubles runtime and perturbs cache behaviour, so latency numbers from it are meaningless. Split the pipeline: ASan/UBSan/TSan jobs run the test suite for correctness; a separate clean `-O3 -march=native` build produces the benchmark/latency artefacts."
   },
   "commonMistakes": [
     "Timing with wall-clock prints inside the code instead of a harness: you measure print overhead and scheduler noise.",
-    "Letting the optimizer delete the work: no DoNotOptimize means the benchmark may measure nothing.",
+    "Letting the optimiser delete the work: no DoNotOptimize means the benchmark may measure nothing.",
     "Reporting the mean latency as the system's speed while the p99 is 8x the median, clients and risk engines live in the tail.",
     "Comparing -O0 debug numbers to -O3 numbers, or benchmarking with a sanitiser attached.",
     "Running benchmarks on a noisy machine (background jobs, variable CPU governor) and 'discovering' 5% wins that are noise."
@@ -146,7 +149,7 @@
   "realWorldApplication": "Every serious C++ codebase pairs Google Benchmark harnesses with perf-based attribution and a sanitiser CI lane; percentiles (p50/p95/p99) are the standard SLO language for services and trading infrastructure alike.",
   "quantFinanceApplication": "Tick-to-trade budgets are quoted in percentiles, a desk may require p99 < 10 µs, and the tail is exactly what perf exposes: an occasional page fault, a rare allocator slow path, or a co-located process's cache pollution shows up in p99 long before it moves the mean.",
   "summary": [
-    "Google Benchmark + DoNotOptimize/ClobberMemory stops the optimizer from deleting the work you meant to measure.",
+    "Google Benchmark + DoNotOptimize/ClobberMemory stops the optimiser from deleting the work you meant to measure.",
     "Sound methodology: release flags, warm-up, pinned/quiet machine, one variable at a time, distributions over single numbers.",
     "Nearest-rank percentile: sorted value at rank ceil(p/100 x N); p50/p95/p99 describe the tail that means hide.",
     "perf stat diagnoses the *kind* of bottleneck (IPC, cache-misses, branch-misses); perf record/report locates the functions.",
@@ -156,14 +159,14 @@
     {
       "id": "q1",
       "type": "mcq",
-      "prompt": "In a Google Benchmark loop you compute a sum `s` but never store or print it. Which call stops the optimizer from deleting the computation, and why?",
+      "prompt": "In a Google Benchmark loop you compute a sum `s` but never store or print it. Which call stops the optimiser from deleting the computation, and why?",
       "options": [
+        "volatile double v = s, volatile is the only correct mechanism",
         "state.PauseTiming(), it excludes overhead",
         "benchmark::DoNotOptimize(s), it marks s as observable, so the computation producing it must happen",
-        "state.SetItemsProcessed(1), it forces one iteration",
-        "volatile double v = s, volatile is the only correct mechanism"
+        "state.SetItemsProcessed(1), it forces one iteration"
       ],
-      "answerIndex": 1,
+      "answerIndex": 2,
       "explanation": "DoNotOptimize tells the compiler the value escapes into unknown code, so the work producing it cannot be elided as dead code. (A volatile sink is a folk remedy; DoNotOptimize is the supported tool.)"
     },
     {
@@ -186,11 +189,11 @@
       "prompt": "perf stat shows low IPC and a large cache-miss count for your scan loop, with few branch-misses. What does this diagnose, and which earlier lesson's fix applies?",
       "options": [
         "CPU is faulty; reboot the benchmark machine",
+        "Compiler bug: switch optimisation levels",
         "Memory-bound: layout/locality fix. SoA, contiguous arrays, prefetch-friendly streams",
-        "Branch-bound: apply mask-based branchless rewrites",
-        "Compiler bug: switch optimisation levels"
+        "Branch-bound: apply mask-based branchless rewrites"
       ],
-      "answerIndex": 1,
+      "answerIndex": 2,
       "explanation": "Low instructions-per-cycle with high cache-misses means cycles are lost waiting on memory, not on mispredicted branches, the cache-locality/data-oriented-design fixes apply."
     },
     {
@@ -199,11 +202,11 @@
       "prompt": "Your multithreaded gateway intermittently computes corrupted totals, with no crash. Which sanitiser targets this bug class?",
       "options": [
         "ASan, heap-buffer-overflow",
+        "LSan, leak detection",
         "UBSan, signed overflow",
-        "TSan, data races between unsynchronised accesses",
-        "LSan, leak detection"
+        "TSan, data races between unsynchronised accesses"
       ],
-      "answerIndex": 2,
+      "answerIndex": 3,
       "explanation": "Silent corruption with no crash in threaded code is the signature of a data race; TSan (built with -fsanitize=thread) reports both racing accesses with stacks."
     },
     {
@@ -212,11 +215,11 @@
       "prompt": "Why are sanitiser builds kept out of latency benchmarking pipelines?",
       "options": [
         "Sanitisers only work on Linux, so results are not portable",
-        "Instrumentation roughly doubles runtime and perturbs cache/branch behaviour, so the numbers do not describe production",
         "Sanitisers disable the CPU's branch predictor",
-        "They require -O0, and -O0 benchmarks are more honest"
+        "They require -O0, and -O0 benchmarks are more honest",
+        "Instrumentation roughly doubles runtime and perturbs cache/branch behaviour, so the numbers do not describe production"
       ],
-      "answerIndex": 1,
+      "answerIndex": 3,
       "explanation": "Sanitisers trade speed for bug detection: the instrumentation dominates timing and changes cache dynamics. Correctness from sanitiser builds, numbers from clean release builds, never both at once."
     }
   ],

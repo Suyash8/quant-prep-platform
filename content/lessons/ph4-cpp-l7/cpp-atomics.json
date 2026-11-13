@@ -139,7 +139,7 @@
       "compare_exchange_strong overwrites `expected` with the observed value on failure, if it stays true, every retry fails forever.",
       "Re-run the guided exercise's argument with a relaxed store: which step loses its edge?"
     ],
-    "solution": "```cpp\nclass SpinlockB {\n    std::atomic<bool> held{false};\npublic:\n    void lock() {\n        bool expected = false;\n        while (!held.compare_exchange_strong(expected, true,\n                    std::memory_order_acquire, std::memory_order_relaxed)) {\n            expected = false;        // CAS failure wrote the observed value\n        }\n    }\n    void unlock() { held.store(false, std::memory_order_release); }\n};\n```\n**(1)** The CAS success ordering is **acquire**: the winning thread must synchronise with the previous holder's **release** store in unlock, so everything the previous holder did inside the section happens-before this holder's work. The failure ordering can be relaxed: a failed CAS means we must retry and we have not read anything ordered-critical yet (it is the *successful* acquisition that consumes the previous release). **(2)** On failure, `compare_exchange_strong` loads the observed value into `expected`; after the first failure `expected` is `true`, and without resetting it the loop retries CAS(false->true) against a flag that is true, it can only fail again once the flag actually clears, but with `expected` stuck at true every attempt compares wrong; the reset restores the intended 'try to acquire an unheld lock' semantics. **(3)** With `store(relaxed)` there is no release edge, so the next successful acquire-CAS synchronises with nothing: writes made inside the previous critical section are not guaranteed visible to the new holder. Mutual exclusion survives; visibility does not. The 'saved fence' buys microseconds and costs a rare, unreproducible stale-read bug, exactly the trade a correctness argument exists to catch."
+    "solution": "```cpp\n#include <atomic>\nclass SpinlockB {\n    std::atomic<bool> held{false};\npublic:\n    void lock() {\n        bool expected = false;\n        while (!held.compare_exchange_strong(expected, true,\n                    std::memory_order_acquire, std::memory_order_relaxed)) {\n            expected = false;        // CAS failure wrote the observed value\n        }\n    }\n    void unlock() { held.store(false, std::memory_order_release); }\n};\n```\n**(1)** The CAS success ordering is **acquire**: the winning thread must synchronise with the previous holder's **release** store in unlock, so everything the previous holder did inside the section happens-before this holder's work. The failure ordering can be relaxed: a failed CAS means we must retry and we have not read anything ordered-critical yet (it is the *successful* acquisition that consumes the previous release). **(2)** A failed compare-exchange overwrites expected with the current value, which is true while another thread holds the lock. If expected is not reset to false, the next compare-exchange may successfully replace true with true and incorrectly enter an already-held lock. Resetting expected restores the required comparison against an unheld false flag. **(3)** With `store(relaxed)` there is no release edge, so the next successful acquire-CAS synchronises with nothing: writes made inside the previous critical section are not guaranteed visible to the new holder. Mutual exclusion survives; visibility does not. The 'saved fence' buys microseconds and costs a rare, unreproducible stale-read bug, exactly the trade a correctness argument exists to catch."
   },
   "commonMistakes": [
     "Using volatile to fix a data race, volatile gives neither atomicity nor inter-thread ordering.",
@@ -165,12 +165,12 @@
       "type": "mcq",
       "prompt": "What is the default memory_order for atomic operations if you do not specify one?",
       "options": [
-        "memory_order_relaxed",
-        "memory_order_acquire",
+        "memory_order_consume",
         "memory_order_seq_cst",
-        "memory_order_consume"
+        "memory_order_acquire",
+        "memory_order_relaxed"
       ],
-      "answerIndex": 2,
+      "answerIndex": 1,
       "explanation": "All overloads without an explicit ordering parameter default to memory_order_seq_cst, the strongest, safest and typically most expensive option."
     },
     {
@@ -204,12 +204,12 @@
       "type": "mcq",
       "prompt": "In the message-passing pattern, which pair makes the payload write visible to the reader?",
       "options": [
-        "A relaxed store to the flag and a relaxed load of the flag",
         "A release store to the flag and an acquire load of the flag that reads it",
         "Two seq_cst operations on two different objects",
-        "A volatile flag read in a loop"
+        "A volatile flag read in a loop",
+        "A relaxed store to the flag and a relaxed load of the flag"
       ],
-      "answerIndex": 1,
+      "answerIndex": 0,
       "explanation": "synchronises-with needs a release-store and an acquire-load of the SAME object, with the load observing the stored value, that creates the happens-before edge covering the payload. Relaxed gives no ordering; volatile gives neither atomicity nor ordering."
     },
     {

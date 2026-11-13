@@ -1,0 +1,254 @@
+{
+  "id": "cpp-span-string-view-expected",
+  "moduleId": "ph4-cpp-l5",
+  "title": "Views and Explicit Result Types",
+  "estMinutes": 35,
+  "difficulty": "advanced",
+  "prereqs": [
+    "cpp-chrono-fs-ranges"
+  ],
+  "objectives": [
+    "Distinguish ownership from borrowing in span and string_view",
+    "Use optional for absence and a result type for errors",
+    "Identify C++23 expected and a C++20 fallback"
+  ],
+  "motivation": "A feed decoder must inspect a packet without copying every byte. Returning a pointer and a separate length works, but the pair can disagree and ownership is unclear. A span packages contiguous elements and their length without owning storage. A string_view describes a character sequence in the same way. These small value types are cheap to pass, but neither extends its source lifetime. Start an interface review by identifying the owner, how long it stays alive and what can invalidate its storage. Saving a view means saving a lifetime obligation that the type itself cannot enforce.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Say what the API borrows"
+    },
+    {
+      "type": "p",
+      "md": "A feed decoder must inspect a packet without copying every byte. Returning a pointer and a separate length works, but the pair can disagree and ownership is unclear. A span packages contiguous elements and their length without owning storage. A string_view describes a character sequence in the same way. These small value types are cheap to pass, but neither extends its source lifetime. Start an interface review by identifying the owner, how long it stays alive and what can invalidate its storage. Saving a view means saving a lifetime obligation that the type itself cannot enforce."
+    },
+    {
+      "type": "h2",
+      "text": "Spans and bounds"
+    },
+    {
+      "type": "p",
+      "md": "std::span<T> is a C++20 view with either a dynamic extent or a compile-time fixed extent. span<const T> prevents mutation through that view, not through other aliases. Subviews such as first and subspan name packet regions without allocating. In C++20, operator[] does not provide a general checked-access guarantee, so validate length before indexing. A span cannot directly represent a linked list or a strided matrix slice. If a vector reallocates, existing spans dangle even though the vector object itself remains alive. Treat owner lifetime and storage stability as two separate conditions, both of which must hold."
+    },
+    {
+      "type": "h2",
+      "text": "A view is not a C string"
+    },
+    {
+      "type": "p",
+      "md": "string_view records a pointer and a length. A substring need not end at a null terminator. Passing data() to a C function expecting a terminated string may read beyond the intended region. Make an owning string when an external interface requires termination. Embedded null characters matter too: view length and strlen need not agree. A view into a temporary string dangles after the temporary dies; returning a view into a local string has the same bug. Returning a view into caller-owned input can be safe when the caller keeps that storage alive and does not invalidate it."
+    },
+    {
+      "type": "h2",
+      "text": "Optional means absence"
+    },
+    {
+      "type": "p",
+      "md": "std::optional<T>, available since C++17, holds either a T or no value. It suits a lookup where not found is an ordinary outcome. Test has_value before dereferencing; value() throws if empty. Do not use zero to mean missing when zero is valid input. Optional alone cannot distinguish malformed, missing and out-of-range fields. If those differences matter, define an error type rather than silently discarding information. The return type should expose every branch a caller needs to handle. Even a present optional<string_view> still borrows characters, so optional does not repair the lifetime problem of its payload."
+    },
+    {
+      "type": "h2",
+      "text": "Expected is a C++23 facility"
+    },
+    {
+      "type": "p",
+      "md": "std::expected<T,E> represents either a value or an error. It belongs to C++23, not to this course's C++20 runner, so check toolchain and library support before using it. A named result struct or variant<T,E> is a C++20 alternative, with a different interface but the same explicit domain choice. The example uses variant<int, Error>. Error information can drive logging, protocol rejection or a retry policy; it is not an excuse to continue with a default number. Keep the payload inaccessible on failure, and make callers visibly inspect which alternative is present before consuming it."
+    },
+    {
+      "type": "h2",
+      "text": "Two worked examples"
+    },
+    {
+      "type": "p",
+      "md": "For prices [10, 20, 30], a span over the first two elements sums to 30. The third price remains in the owner but is outside the view. A string_view over the first three characters of ABCXYZ reads ABC, yet its pointer still points into the longer string. The second example accepts the exact token 42 and returns Error for bad. That small grammar makes the contract visible without pretending to be a general parser. A production integer parser also checks signs, full consumption and overflow, for example with from_chars. Accepting the prefix 42 in 42garbage is wrong when the packet grammar requires a complete field."
+    },
+    {
+      "type": "h2",
+      "text": "Keep borrowing within the packet lifetime"
+    },
+    {
+      "type": "p",
+      "md": "Decode while the receive stage owns a buffer, then copy fields that must outlive it. Queueing a view into reused ring-buffer storage can make a later consumer read the next packet's characters. Test by recycling the owner after decoding to expose retained views. Explicit result types also distinguish unsupported messages from corrupt messages, which may need different recovery. Write down invalidation events, maximum field length and the owner of each returned view. The related memory lab illustrates storage and access; it cannot prove a returned view is safe. Review borrowing at thread and queue boundaries where lifetimes are hardest to see."
+    },
+    {
+      "type": "h2",
+      "text": "Worked example: run and check"
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <iostream>\n#include <span>\n#include <string>\n#include <string_view>\n#include <variant>\n#include <vector>\nstruct Error {};\nstd::variant<int, Error> parse(std::string_view s) {\n    if (s == \"42\") return 42;\n    return Error{};\n}\nint main() {\n    std::vector<int> a{10, 20, 30};\n    std::span<const int> v(a.data(), 2);\n    std::string owner = \"ABCXYZ\";\n    std::cout << v[0]+v[1] << '\\n';\n    std::cout << std::string_view(owner).substr(0, 3) << '\\n';\n    std::cout << std::holds_alternative<Error>(parse(\"bad\")) << '\\n';\n}",
+      "caption": "Complete C++20 program"
+    },
+    {
+      "type": "p",
+      "md": "The exact output is `30; ABC; 1`. Run the example before changing a parameter, then predict the direction of the change. The assertions encode the stated checks; a failed assertion means that the implementation and the claimed result disagree."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Check this misconception",
+      "md": "The view borrows characters from their owner. Copying its pointer and length does not copy the characters or extend their lifetime; optional does not add ownership."
+    },
+    {
+      "type": "interactive",
+      "component": "MemoryLayout",
+      "params": {},
+      "caption": "Related concept lab. The lab illustrates the named building block; it is not a full implementation of every model in this lesson."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Validate packet length before reading a three-character field. Success check: ABCXYZ yields ABC; a two-character packet is rejected.",
+    "hints": [
+      "Check length before slicing.",
+      "Require at least three characters.",
+      "Raise an error on short input."
+    ],
+    "solution": "\n```python\ndef field(s):\n    if len(s) < 3:\n        raise ValueError(\"short\")\n    return s[:3]\nassert field(\"ABCXYZ\") == \"ABC\"\ntry:\n    field(\"AB\")\nexcept ValueError:\n    print(\"rejected\")\n```\nExpected output: `rejected`.",
+    "successCheck": "ABCXYZ yields ABC; a two-character packet is rejected."
+  },
+  "independentExercise": {
+    "prompt": "Keep a valid zero separate from malformed integer input. Success check: 0 is a successful value and bad is an error.",
+    "hints": [
+      "Do not choose zero as an error marker.",
+      "Return a status and a payload.",
+      "Catch only the parsing error."
+    ],
+    "solution": "\n```python\ndef parse(s):\n    try:\n        return True, int(s)\n    except ValueError:\n        return False, \"malformed\"\nassert parse(\"0\") == (True, 0)\nassert parse(\"bad\") == (False, \"malformed\")\nprint(\"separated\")\n```\nExpected output: `separated`.",
+    "successCheck": "0 is a successful value and bad is an error."
+  },
+  "commonMistakes": [
+    "The view borrows characters from their owner. Copying its pointer and length does not copy the characters or extend their lifetime; optional does not add ownership.",
+    "A variant stores an explicit active alternative, retaining success or error information. A zero sentinel incorrectly rejects valid zero unless the domain excludes it."
+  ],
+  "realWorldApplication": "Use the assumptions and checks above when reviewing views and explicit result types. Record inputs, state the failure conditions and compare the result with a simple independent calculation.",
+  "quantFinanceApplication": "For a trading or risk workflow, validate the model and timestamp conventions before using views and explicit result types. The worked result is conditional on its assumptions, not a return promise.",
+  "summary": [
+    "Distinguish ownership from borrowing in span and string_view",
+    "Use optional for absence and a result type for errors",
+    "Identify C++23 expected and a C++20 fallback"
+  ],
+  "quiz": [
+    {
+      "type": "mcq",
+      "prompt": "What keeps a string_view's characters alive?",
+      "options": [
+        "A private character copy in the view",
+        "The view's length and destructor",
+        "The original storage owner",
+        "An optional containing only the view"
+      ],
+      "answerIndex": 2,
+      "explanation": "The view borrows characters from their owner. Copying its pointer and length does not copy the characters or extend their lifetime; optional does not add ownership.",
+      "id": "q1",
+      "objective": 0
+    },
+    {
+      "type": "mcq",
+      "prompt": "Which C++20 type distinguishes a parsed int from Error?",
+      "options": [
+        "An int with zero as a failure sentinel",
+        "A view pointing into local storage",
+        "A bool discarding every payload",
+        "A variant<int, Error> result"
+      ],
+      "answerIndex": 3,
+      "explanation": "A variant stores an explicit active alternative, retaining success or error information. A zero sentinel incorrectly rejects valid zero unless the domain excludes it.",
+      "id": "q2",
+      "objective": 2
+    },
+    {
+      "type": "numeric",
+      "prompt": "A span covers the first 2 elements of [10, 20, 30]. What is its sum?",
+      "answer": 30,
+      "tolerance": 1e-06,
+      "explanation": "The view includes 10 and 20 only, giving 30. The third element belongs to the owner but is outside the span's stated extent.",
+      "id": "q3",
+      "objective": 0
+    },
+    {
+      "type": "code-output",
+      "prompt": "What does this token prefix operation print?",
+      "code": "owner = 'ABCXYZ'\nprint(owner[:3])",
+      "language": "python",
+      "answer": "ABC",
+      "explanation": "The first three characters are ABC. Python slicing creates an owning string here; a C++ string_view would borrow the region, so lifetime behaviour is different.",
+      "id": "q4",
+      "objective": 0
+    },
+    {
+      "type": "short",
+      "prompt": "Which lifetime conditions must hold for a stored span?",
+      "modelAnswer": "Its owner must outlive it and must not invalidate or reallocate the viewed storage.",
+      "keywords": [
+        "owner|storage",
+        "lifetime|outlive|alive",
+        "invalidate|invalidation|reallocate|reallocation|stable|stability"
+      ],
+      "explanation": "A living owner is necessary but insufficient. Reallocation can invalidate a span before its owner dies, and bounds checks cannot fix a dangling pointer.",
+      "id": "q5",
+      "objective": 0
+    },
+    {
+      "type": "ms",
+      "prompt": "Which statements are correct?",
+      "options": [
+        "A string_view may lack a terminator",
+        "An optional can represent absence",
+        "A span always extends owner lifetime",
+        "std::expected is standard in C++20"
+      ],
+      "answerIndices": [
+        0,
+        1
+      ],
+      "explanation": "A view uses an explicit length, and optional models missing values. Views do not own storage; expected belongs to C++23 rather than the C++20 baseline.",
+      "id": "q6",
+      "objective": 1
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "What keeps a string_view's characters alive?",
+      "back": "The original storage owner"
+    },
+    {
+      "type": "concept",
+      "front": "Which C++20 type distinguishes a parsed int from Error?",
+      "back": "A variant<int, Error> result"
+    },
+    {
+      "type": "concept",
+      "front": "A span covers the first 2 elements of [10, 20, 30]. What is its sum?",
+      "back": "The result is 30 under the stated inputs."
+    },
+    {
+      "type": "concept",
+      "front": "Which lifetime conditions must hold for a stored span?",
+      "back": "Its owner must outlive it and must not invalidate or reallocate the viewed storage."
+    },
+    {
+      "type": "concept",
+      "front": "Which statements are correct?",
+      "back": "A string_view may lack a terminator, An optional can represent absence"
+    }
+  ],
+  "references": [
+    {
+      "label": "cppreference: span",
+      "url": "https://en.cppreference.com/w/cpp/container/span"
+    },
+    {
+      "label": "cppreference: string_view",
+      "url": "https://en.cppreference.com/w/cpp/string/basic_string_view"
+    },
+    {
+      "label": "cppreference: expected",
+      "url": "https://en.cppreference.com/w/cpp/utility/expected"
+    }
+  ],
+  "skills": [
+    "cpp-advanced"
+  ]
+}

@@ -31,6 +31,7 @@ export type PlayerCard =
   | {
       kind: 'exercise'; title: string; exKind: 'guided' | 'independent';
       prompt: string; hints: string[]; solution: string;
+      snippet?: boolean; file?: string; requires?: string[]; successCheck?: string;
     }
   | { kind: 'quiz'; title: string; question: SafeQuestion; index: number; total: number }
   | { kind: 'mistakes'; title: string; items: string[] }
@@ -156,6 +157,10 @@ export function buildLessonCards(lesson: Lesson): PlayerCard[] {
     prompt: lesson.guidedExercise.prompt,
     hints: lesson.guidedExercise.hints,
     solution: lesson.guidedExercise.solution,
+    snippet: lesson.guidedExercise.snippet,
+    file: lesson.guidedExercise.file,
+    requires: lesson.guidedExercise.requires,
+    successCheck: lesson.guidedExercise.successCheck,
   });
   cards.push({
     kind: 'exercise',
@@ -164,6 +169,10 @@ export function buildLessonCards(lesson: Lesson): PlayerCard[] {
     prompt: lesson.independentExercise.prompt,
     hints: lesson.independentExercise.hints,
     solution: lesson.independentExercise.solution,
+    snippet: lesson.independentExercise.snippet,
+    file: lesson.independentExercise.file,
+    requires: lesson.independentExercise.requires,
+    successCheck: lesson.independentExercise.successCheck,
   });
 
   lesson.quiz.forEach((q, i) => {

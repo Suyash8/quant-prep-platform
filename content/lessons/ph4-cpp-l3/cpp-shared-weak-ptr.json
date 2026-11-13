@@ -2,7 +2,7 @@
   "id": "cpp-shared-weak-ptr",
   "moduleId": "ph4-cpp-l3",
   "title": "std::shared_ptr, std::weak_ptr and Shared Ownership",
-  "estMinutes": 27,
+  "estMinutes": 30,
   "difficulty": "core",
   "prereqs": [
     "cpp-unique-ptr"
@@ -197,7 +197,7 @@
     {
       "id": "q1",
       "type": "code-output",
-      "prompt": "What does this program print?",
+      "prompt": "What does this shared reference counts example print?",
       "language": "cpp",
       "code": "#include <iostream>\n#include <memory>\nstruct S {\n    S() { std::cout << \"ctor\\n\"; }\n    ~S() { std::cout << \"dtor\\n\"; }\n};\nint main() {\n    auto a = std::make_shared<S>();\n    auto b = a;\n    std::cout << a.use_count() << \"\\n\";\n    b.reset();\n    std::cout << a.use_count() << \"\\n\";\n    a.reset();\n    std::cout << \"done\\n\";\n}",
       "answer": "ctor\n2\n1\ndtor\ndone",
@@ -206,7 +206,7 @@
     {
       "id": "q2",
       "type": "code-output",
-      "prompt": "What does this program print?",
+      "prompt": "What does this weak observation after owner expiry example print?",
       "language": "cpp",
       "code": "#include <iostream>\n#include <memory>\nint main() {\n    std::weak_ptr<int> w;\n    {\n        auto s = std::make_shared<int>(42);\n        w = s;\n        std::cout << w.use_count() << \"\\n\";\n        if (auto p = w.lock()) std::cout << *p << \"\\n\";\n    }\n    std::cout << (w.expired() ? \"expired\" : \"alive\") << \"\\n\";\n    std::cout << (w.lock() ? \"locked\" : \"failed\") << \"\\n\";\n}",
       "answer": "1\n42\nexpired\nfailed",
@@ -224,12 +224,12 @@
       "type": "mcq",
       "prompt": "In the shared_ptr control-block model, when exactly is the *control block* itself freed?",
       "options": [
-        "When the strong count reaches zero",
-        "When the weak count reaches zero (and strong is already zero)",
         "When the last shared_ptr goes out of scope, regardless of weak_ptr observers",
-        "It is never freed; the block is reused by the allocator"
+        "It is never freed; the block is reused by the allocator",
+        "When the weak count reaches zero (and strong is already zero)",
+        "When the strong count reaches zero"
       ],
-      "answerIndex": 1,
+      "answerIndex": 2,
       "explanation": "Strong count zero destroys the object; the block must outlive weak_ptr observers (they read it in lock()), so it is freed when the weak count also reaches zero. This is why make_shared object memory persists while weak observers exist."
     },
     {
@@ -237,10 +237,10 @@
       "type": "mcq",
       "prompt": "Two objects hold std::shared_ptr to each other and both stack pointers are destroyed. What happens?",
       "options": [
-        "Both objects are destroyed immediately",
-        "Nothing: each object's strong count stays at 1, pinned by the other, both leak and no destructor runs",
         "The compiler detects the cycle and deletes the older object",
-        "One object is destroyed and the other dangles"
+        "Nothing: each object's strong count stays at 1, pinned by the other, both leak and no destructor runs",
+        "One object is destroyed and the other dangles",
+        "Both objects are destroyed immediately"
       ],
       "answerIndex": 1,
       "explanation": "Each object owns the other, so neither strong count can reach zero: a permanent leak. The fix is to make one direction (typically the back-pointer) a weak_ptr."
@@ -251,11 +251,9 @@
       "prompt": "Why is the pattern `if (!w.expired()) { auto p = w.lock(); use(*p); }` unsafe, and what is the correct pattern?",
       "modelAnswer": "The last strong owner may destroy the object between the expired() check and the lock() call, so lock() can still return null and the use is invalid. Correct: call lock() once - `if (auto p = w.lock()) { use(*p); }` - since lock() atomically converts observation into ownership.",
       "keywords": [
-        "race",
-        "lock",
-        "atomic",
-        "expired",
-        "shared_ptr"
+        "race|between|concurrent|destroy",
+        "lock|lock()",
+        "atomic|atomically|ownership|owner|shared_ptr"
       ],
       "explanation": "expired()-then-lock() is a check-then-act race on another thread's destruction. lock() performs the check and the acquisition atomically, returning either a owning shared_ptr or null, a single decision point."
     }

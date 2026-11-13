@@ -7,6 +7,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const eslintConfig = [...nextCoreWebVitals, ...nextTypescript, {
+  // Node build and tooling scripts are CommonJS by design.
+  files: ["**/*.cjs"],
+  rules: { "@typescript-eslint/no-require-imports": "off" },
+}, {
   rules: {
     // TypeScript rules
     "@typescript-eslint/no-explicit-any": "off",

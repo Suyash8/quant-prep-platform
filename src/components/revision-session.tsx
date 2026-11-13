@@ -11,7 +11,7 @@ export interface DueCard {
   intervalDays: number; repetitions: number; lapses: number;
 }
 
-const GRADE_BTN = 'w-full py-2.5 rounded-xl text-xs font-black hover:brightness-105 active:translate-y-[3px] active:shadow-none transition-all';
+const GRADE_BTN = 'w-full py-2.5 rounded-xl text-[13px] font-black hover:brightness-105 active:translate-y-[3px] active:shadow-none transition-all';
 
 const GRADES = [
   { g: 0, label: 'Blackout', desc: 'No recall at all', cls: `bg-danger text-white shadow-[0_3px_0_0_#c93a3f] ${GRADE_BTN}` },
@@ -57,7 +57,7 @@ export function RevisionSession({ cards }: { cards: DueCard[] }) {
           <Sparkles className="h-7 w-7" strokeWidth={2.5} />
         </span>
         <h2 className="mt-4 text-xl font-black tracking-tight">Session complete, {done} card{done === 1 ? '' : 's'} reviewed.</h2>
-        <p className="mt-1.5 text-sm font-semibold text-muted max-w-md mx-auto">
+        <p className="mt-1.5 text-[15px] font-semibold text-muted max-w-md mx-auto">
           The scheduler has re-spaced everything you touched. Cards return as their intervals grow; lapsed cards come back sooner.
         </p>
         <a href="/revision" className="btn3d mt-4">Back to revision centre</a>
@@ -76,11 +76,11 @@ export function RevisionSession({ cards }: { cards: DueCard[] }) {
       <div className="qf-card overflow-hidden">
         <div className="p-6 min-h-[140px] flex flex-col items-center justify-center text-center">
           <p className="text-2xl font-black leading-snug"><QMath text={card.front} /></p>
-          <p className="mt-3 text-[11px] font-black uppercase tracking-[0.12em] text-faint">
+          <p className="mt-3 text-[12px] font-black uppercase tracking-[0.12em] text-faint">
             Card {idx + 1} of {queue.length} · {typeTitle}{card.source === 'quiz_miss' ? ' · from a missed question' : ''}
           </p>
           {revealed && (
-            <div className="anim-slide-up mt-5 pt-5 border-t w-full text-sm text-muted leading-relaxed font-semibold">
+            <div className="anim-slide-up mt-5 pt-5 border-t w-full text-[15px] text-muted leading-relaxed font-semibold">
               <QMath text={card.back} />
             </div>
           )}
@@ -104,8 +104,8 @@ export function RevisionSession({ cards }: { cards: DueCard[] }) {
           )}
         </div>
       </div>
-      {!revealed && <p className="mt-3 text-xs text-faint text-center font-semibold">Try to recall before revealing, retrieval effort is what builds memory.</p>}
-      {revealed && <p className="mt-3 text-xs text-faint text-center font-semibold">Grade honestly: the SM-2 scheduler uses it to set the next interval.</p>}
+      {!revealed && <p className="mt-3 text-[13px] text-faint text-center font-semibold">Try to recall before revealing, retrieval effort is what builds memory.</p>}
+      {revealed && <p className="mt-3 text-[13px] text-faint text-center font-semibold">Grade honestly: the SM-2 scheduler uses it to set the next interval.</p>}
     </div>
   );
 }

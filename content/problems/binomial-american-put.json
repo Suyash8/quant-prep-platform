@@ -1,0 +1,118 @@
+{
+  "slug": "binomial-american-put",
+  "title": "American Put on a Binomial Tree",
+  "difficulty": "hard",
+  "category": "quant-finance",
+  "tags": [
+    "quant-finance",
+    "options",
+    "dynamic-programming",
+    "floating-point"
+  ],
+  "statement": [
+    {
+      "type": "p",
+      "md": "Price an American put with the Cox-Ross-Rubinstein tree. With $\\Delta t = T/N$:"
+    },
+    {
+      "type": "math",
+      "tex": "u = e^{\\sigma\\sqrt{\\Delta t}}, \\quad d = 1/u, \\quad q = \\frac{e^{r\\Delta t} - d}{u - d}, \\quad \\text{disc} = e^{-r\\Delta t}"
+    },
+    {
+      "type": "p",
+      "md": "Node $(i, j)$ ($i$ steps, $j$ up moves) has spot $S u^{j} d^{\\,i-j}$. At step $N$ the value is $\\max(K - S_{N,j}, 0)$. Going backwards, the value at a node is the larger of the immediate exercise value $K - S_{i,j}$ and the continuation value $\\text{disc}\\,(q\\,V_{i+1,j+1} + (1-q)\\,V_{i+1,j})$, and never below 0. Print the root value with exactly 6 decimals. Tests keep the answer away from a rounding tie."
+    }
+  ],
+  "inputFormat": "One line: `S K r sigma T N`.",
+  "outputFormat": "One number with 6 decimals.",
+  "constraints": [
+    "$1 \\le N \\le 1000$",
+    "$1 \\le S, K \\le 1000$",
+    "$0 \\le r \\le 0.2$, $0.01 \\le \\sigma \\le 1$, $0.01 \\le T \\le 10$",
+    "$0 < q < 1$"
+  ],
+  "examples": [
+    {
+      "input": "100.00 100.00 0.0500 0.2000 1.00 3\n",
+      "output": "6.499560\n"
+    }
+  ],
+  "hints": [
+    "Keep one array of $N+1$ values and roll it back one level at a time.",
+    "Compute the spot at a node from its level and up count; exercise is checked at every node."
+  ],
+  "editorial": [
+    {
+      "type": "p",
+      "md": "Rolling a single array gives $O(N^2)$ time and $O(N)$ memory. The early exercise check at each node is the only difference from the European put."
+    },
+    {
+      "type": "p",
+      "md": "With $r = 0$ early exercise has no benefit, so the American put equals the European one. That is a good test."
+    }
+  ],
+  "lessons": [
+    "opt-exotics-american",
+    "opt-binomial",
+    "prc-binomial-engine"
+  ],
+  "solutions": {
+    "python": "import sys\nfrom math import exp, sqrt\n\n\ndef main():\n    t = sys.stdin.read().split()\n    S, K, r, sg, T = map(float, t[:5])\n    N = int(t[5])\n    dt = T / N\n    u = exp(sg * sqrt(dt))\n    d = 1 / u\n    q = (exp(r * dt) - d) / (u - d)\n    disc = exp(-r * dt)\n    u2 = u * u\n    s = S * d ** N\n    V = []\n    for j in range(N + 1):\n        V.append(max(K - s, 0.0))\n        s *= u2\n    for i in range(N - 1, -1, -1):\n        s = S * d ** i\n        for j in range(i + 1):\n            V[j] = max(K - s, disc * (q * V[j + 1] + (1 - q) * V[j]), 0.0)\n            s *= u2\n    print(f\"{V[0]:.6f}\")\n\n\nmain()",
+    "cpp": "#include <cstdio>\n#include <cmath>\n#include <vector>\n#include <algorithm>\nusing namespace std;\n\nint main() {\n    double S, K, r, sg, T;\n    int N;\n    if (scanf(\"%lf %lf %lf %lf %lf %d\", &S, &K, &r, &sg, &T, &N) != 6) return 1;\n    double dt = T / N, u = exp(sg * sqrt(dt)), d = 1 / u;\n    double q = (exp(r * dt) - d) / (u - d), disc = exp(-r * dt), u2 = u * u;\n    vector<double> V(N + 1);\n    double s = S * pow(d, N);\n    for (int j = 0; j <= N; j++) { V[j] = max(K - s, 0.0); s *= u2; }\n    for (int i = N - 1; i >= 0; i--) {\n        s = S * pow(d, i);\n        for (int j = 0; j <= i; j++) {\n            V[j] = max(max(K - s, disc * (q * V[j + 1] + (1 - q) * V[j])), 0.0);\n            s *= u2;\n        }\n    }\n    printf(\"%.6f\\n\", V[0]);\n    return 0;\n}"
+  },
+  "tests": [
+    {
+      "input": "100.00 100.00 0.0500 0.2000 1.00 3\n",
+      "expected": "6.499560\n",
+      "hidden": false
+    },
+    {
+      "input": "100.00 100.00 0.0000 0.2000 1.00 10\n",
+      "expected": "7.769218\n",
+      "hidden": true
+    },
+    {
+      "input": "50.00 100.00 0.1000 0.3000 2.00 20\n",
+      "expected": "50.000000\n",
+      "hidden": true
+    },
+    {
+      "input": "100.00 1.00 0.0500 0.2000 1.00 5\n",
+      "expected": "0.000000\n",
+      "hidden": true
+    },
+    {
+      "input": "100.00 100.00 0.0500 0.2000 1.00 1\n",
+      "expected": "7.285227\n",
+      "hidden": true
+    },
+    {
+      "input": "100.00 100.00 0.0100 0.0100 10.00 50\n",
+      "expected": "0.170431\n",
+      "hidden": true
+    },
+    {
+      "input": "100.00 105.00 0.0500 0.2500 1.00 1000\n",
+      "expected": "10.641393\n",
+      "hidden": true
+    },
+    {
+      "input": "80.00 100.00 0.0800 0.4000 3.00 1000\n",
+      "expected": "26.456106\n",
+      "hidden": true
+    },
+    {
+      "input": "116.31 9.83 0.0252 0.6994 1.22 4\n",
+      "expected": "0.000000\n",
+      "hidden": true
+    },
+    {
+      "input": "181.53 121.01 0.0484 0.5908 2.27 30\n",
+      "expected": "21.624908\n",
+      "hidden": true
+    }
+  ],
+  "timeLimitMs": 4000,
+  "memoryLimitMb": 256,
+  "estMinutes": 45
+}

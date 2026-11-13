@@ -162,7 +162,7 @@ export default async function CareerPage() {
           <p className="page-sub">{companies.length} companies · {rolesTotal} mapped roles · {tracksCount} career tracks</p>
         </div>
       </header>
-      <p className="-mt-2.5 mb-6 max-w-3xl text-xs font-semibold leading-relaxed text-muted anim-slide-up">
+      <p className="-mt-2.5 mb-6 max-w-3xl text-[13px] font-semibold leading-relaxed text-muted anim-slide-up">
         Honest preparation for quantitative hiring. Facts marked <em>sourced</em> come from official career pages with
         retrieval dates; patterns are labelled <em>inferred</em> ,  never presented as guarantees.
       </p>
@@ -200,8 +200,8 @@ export default async function CareerPage() {
                 <span className={`icon-tile icon-tile-sm ${TRACK_TILE[key] ?? 'icon-tile-accent'}`}><Route /></span>
               </div>
               <h3 className="mt-3 font-extrabold tracking-tight leading-snug">{t.title}</h3>
-              <p className="mt-1 text-xs font-bold text-faint">Typical employers: {t.employers}</p>
-              <p className="mt-2 text-sm text-muted leading-relaxed">{t.focus}</p>
+              <p className="mt-1 text-[13px] font-bold text-faint">Typical employers: {t.employers}</p>
+              <p className="mt-2 text-[15px] text-muted leading-relaxed">{t.focus}</p>
               <div className="mt-auto pt-4">
                 <Link href="/curriculum" className="btn3d btn3d-ghost btn3d-sm">
                   Mapped curriculum <ArrowRight className="h-3.5 w-3.5" />
@@ -216,8 +216,8 @@ export default async function CareerPage() {
               <span className="icon-tile icon-tile-sm"><Compass /></span>
             </div>
             <h3 className="mt-3 font-extrabold tracking-tight leading-snug">Undecided?</h3>
-            <p className="mt-1 text-xs font-bold text-faint">Every track shares the same core phases</p>
-            <p className="mt-2 text-sm text-muted leading-relaxed">
+            <p className="mt-1 text-[13px] font-bold text-faint">Every track shares the same core phases</p>
+            <p className="mt-2 text-[15px] text-muted leading-relaxed">
               The first phases are common to all five tracks, start the curriculum and take the diagnostic; your
               placement picks the track with you.
             </p>
@@ -238,7 +238,7 @@ export default async function CareerPage() {
             <h2>Requirements matrix</h2>
             <span className="chip ml-auto tnum">Updated {matrix.generatedAt}</span>
           </div>
-          <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
+          <div className="mb-3 flex flex-wrap items-center gap-2 text-[13px]">
             <span className="text-faint font-bold">Legend:</span>
             {TIER_ORDER.map(k => (
               <span key={k} className={TIER_META[k].cls}>{TIER_META[k].label}</span>
@@ -246,7 +246,7 @@ export default async function CareerPage() {
             <span className="ml-auto text-faint font-semibold">Hover any cell for the full requirement wording</span>
           </div>
           <div className="qf-card p-2 sm:p-4 overflow-x-auto thin-scroll">
-            <table className="qf-table text-sm">
+            <table className="qf-table text-[15px]">
               <thead>
                 <tr>
                   <th className="sticky left-0 bg-surface z-10">Skill</th>
@@ -295,7 +295,7 @@ export default async function CareerPage() {
             return [(
               <div key={cat}>
                 <div className="flex items-center gap-2.5 mb-2.5 px-1">
-                  <h3 className="text-xs font-black uppercase tracking-[0.12em] text-muted">{label}</h3>
+                  <h3 className="text-[13px] font-black uppercase tracking-[0.12em] text-muted">{label}</h3>
                   <span className="flex-1 h-0.5 rounded-full bg-border" />
                   <span className="chip tnum">{firms.length} firms</span>
                 </div>
@@ -314,9 +314,9 @@ export default async function CareerPage() {
                         <span className="flex items-center gap-2 flex-wrap">
                           <span className={`text-[15px] ${i === 0 ? 'font-black' : 'font-bold'} group-hover:text-accent-deep dark:group-hover:text-accent transition-colors`}>{c.name}</span>
                           {c.gradRoles && <span className="chip chip-accent">Graduate roles</span>}
-                          <span className="text-xs font-bold text-faint tnum hidden sm:inline">{c.roles} roles · tracks {c.trackLetters}</span>
+                          <span className="text-[13px] font-bold text-faint tnum hidden sm:inline">{c.roles} roles · tracks {c.trackLetters}</span>
                         </span>
-                        <span className="block mt-0.5 text-xs text-muted font-semibold truncate">{COMPANY_BLURB[c.slug] ?? CATEGORY_DESC[c.category] ?? 'Quantitative hiring preparation profile.'}</span>
+                        <span className="block mt-0.5 text-[13px] text-muted font-semibold truncate">{COMPANY_BLURB[c.slug] ?? CATEGORY_DESC[c.category] ?? 'Quantitative hiring preparation profile.'}</span>
                       </span>
                       <ChevronRight className="h-5 w-5 shrink-0 text-faint transition-transform group-hover:translate-x-0.5 group-hover:text-accent" />
                     </Link>
@@ -345,7 +345,7 @@ export default async function CareerPage() {
                 <span className={`icon-tile icon-tile-sm ${tip.tile}`}><tip.icon /></span>
                 <h3 className="font-extrabold tracking-tight">{tip.title}</h3>
               </div>
-              <p className="mt-2.5 text-sm text-muted leading-relaxed">{tip.body}</p>
+              <p className="mt-2.5 text-[15px] text-muted leading-relaxed">{tip.body}</p>
             </div>
           ))}
         </div>
@@ -368,7 +368,7 @@ export default async function CareerPage() {
               <span className="icon-tile bg-surface text-accent-deep dark:text-accent"><Compass /></span>
               <div>
                 <h2 className="font-extrabold text-lg tracking-tight">Not sure where you stand?</h2>
-                <p className="text-sm text-muted">Take the 28-question diagnostic and start at the phase that matches you, no wasted weeks.</p>
+                <p className="text-[15px] text-muted">Take the 28-question diagnostic and start at the phase that matches you, no wasted weeks.</p>
               </div>
             </div>
             <Link href="/diagnostic" className="btn3d">Take the diagnostic <ArrowRight className="h-4 w-4" /></Link>

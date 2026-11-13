@@ -2,15 +2,15 @@
   "id": "cpp-classes",
   "moduleId": "ph4-cpp-l2",
   "title": "Classes, Encapsulation and Constructors",
-  "estMinutes": 27,
+  "estMinutes": 30,
   "difficulty": "core",
   "prereqs": [
     "cpp-structs-enums-namespaces"
   ],
   "objectives": [
     "Define a class with private data and public member functions, and explain what invariant-enforcing encapsulation buys",
-    "Write constructors using member initializer lists and predict initialization order from member declarations",
-    "Use delegating constructors, in-class default initializers and explicit to keep validation in one place",
+    "Write constructors using member initialiser lists and predict initialisation order from member declarations",
+    "Use delegating constructors, in-class default initialisers and explicit to keep validation in one place",
     "Write const-correct accessors and compute derived values on demand instead of storing them"
   ],
   "motivation": "A trading system cannot let every caller poke raw fields inside an Order: one misplaced sign in a quantity and the desk risk figures are quietly wrong. Classes exist to put a wall around state and give a single, tested set of functions custody of it. This lesson turns the structs you already know into classes with enforced invariants, constructors that make invalid objects impossible to create, and const-correct accessors, the vocabulary every later C++ lesson in this track uses.",
@@ -35,17 +35,17 @@
     },
     {
       "type": "h2",
-      "text": "Member initializer lists"
+      "text": "Member initialiser lists"
     },
     {
       "type": "p",
-      "md": "The constructor must bring every member into a valid state before the body runs. Assigning in the body is not initialization: by the time the body executes, every member has already been default-constructed, then assigned again, wasted work for a std::string, and flat-out impossible for `const` members or reference members, which **must** be initialized in the member initializer list. Write `: symbol_{symbol}, qty_{qty}` and leave the body for validation that needs statements."
+      "md": "The constructor must bring every member into a valid state before the body runs. Assigning in the body is not initialisation: by the time the body executes, every member has already been default-constructed, then assigned again, wasted work for a std::string, and flat-out impossible for `const` members or reference members, which **must** be initialised in the member initialiser list. Write `: symbol_{symbol}, qty_{qty}` and leave the body for validation that needs statements."
     },
     {
       "type": "callout",
       "variant": "pitfall",
-      "title": "Initialization follows declaration order",
-      "md": "Members are initialized in the order they are **declared in the class**, never the order they appear in the initializer list. If the list mentions px_ before qty_ but the declarations put qty_ first, qty_ is still built first. Keep the declaration order and the list order identical so readers never have to wonder."
+      "title": "Initialisation follows declaration order",
+      "md": "Members are initialised in the order they are **declared in the class**, never the order they appear in the initialiser list. If the list mentions px_ before qty_ but the declarations put qty_ first, qty_ is still built first. Keep the declaration order and the list order identical so readers never have to wonder."
     },
     {
       "type": "code",
@@ -72,7 +72,7 @@
     },
     {
       "type": "p",
-      "md": "Classes often need several constructors, and duplicating validation in each is how invariants leak. A **delegating constructor** hands off to another constructor of the same class: the target runs to completion first, then the delegating body. In-class default initializers such as `double realized_ = 0.0;` give every constructor a sane starting point with zero duplication. Together they mean the validating constructor is written exactly once."
+      "md": "Classes often need several constructors, and duplicating validation in each is how invariants leak. A **delegating constructor** hands off to another constructor of the same class: the target runs to completion first, then the delegating body. In-class default initialisers such as `double realized_ = 0.0;` give every constructor a sane starting point with zero duplication. Together they mean the validating constructor is written exactly once."
     },
     {
       "type": "code",
@@ -82,7 +82,7 @@
     },
     {
       "type": "p",
-      "md": "One-argument constructors also participate in **implicit conversions**: without `explicit`, `printQty(7)` would silently build a Quantity out of a bare int. That is occasionally convenient and usually dangerous in financial code, where types encode units, lots versus shares versus dollars. Mark single-argument constructors `explicit` unless you genuinely want the conversion; explicit only restricts copy-initialization, so `Quantity{7}` keeps working."
+      "md": "One-argument constructors also participate in **implicit conversions**: without `explicit`, `printQty(7)` would silently build a Quantity out of a bare int. That is occasionally convenient and usually dangerous in financial code, where types encode units, lots versus shares versus dollars. Mark single-argument constructors `explicit` unless you genuinely want the conversion; explicit only restricts copy-initialisation, so `Quantity{7}` keeps working."
     },
     {
       "type": "code",
@@ -98,9 +98,9 @@
     }
   ],
   "guidedExercise": {
-    "prompt": "Write a `PnLCalculator` class that accumulates realized PnL. Requirements: a private `double realized_` starting at 0.0 (use an in-class default initializer), `addTrade(int qty, double entryPx, double exitPx)` that adds `qty * (exitPx - entryPx)`, a `realized()` accessor marked `const`, and `reset()`. In `main`, record a buy of 100 at \\$42.10 sold at \\$42.75, then a buy of 50 at \\$41.50 sold at \\$41.20, and print the total.",
+    "prompt": "Write a `PnLCalculator` class that accumulates realised PnL. Requirements: a private `double realized_` starting at 0.0 (use an in-class default initialiser), `addTrade(int qty, double entryPx, double exitPx)` that adds `qty * (exitPx - entryPx)`, a `realized()` accessor marked `const`, and `reset()`. In `main`, record a buy of 100 at \\$42.10 sold at \\$42.75, then a buy of 50 at \\$41.50 sold at \\$41.20, and print the total.",
     "hints": [
-      "Realized PnL per round trip is qty x (exit, entry); the sign does the bookkeeping for you.",
+      "Realised PnL per round trip is qty x (exit, entry); the sign does the bookkeeping for you.",
       "Accessors that only read state should be const so they work through const references."
     ],
     "solution": "The two trades contribute $100 \\times (42.75 - 42.10) = +65.00$ and $50 \\times (41.20 - 41.50) = -15.00$, so the program prints `50`.\n\n```cpp\n#include <iostream>\n\nclass PnLCalculator {\npublic:\n    void addTrade(int qty, double entryPx, double exitPx) {\n        realized_ += qty * (exitPx - entryPx);\n    }\n    double realized() const { return realized_; }\n    void reset() { realized_ = 0.0; }\nprivate:\n    double realized_ = 0.0;   // in-class default: starts clean for every ctor\n};\n\nint main() {\n    PnLCalculator pnl;\n    pnl.addTrade(100, 42.10, 42.75);   // +65.00\n    pnl.addTrade(50, 41.50, 41.20);    // -15.00\n    std::cout << pnl.realized() << '\\n';   // 50\n}\n```"
@@ -114,8 +114,8 @@
     "solution": "`5300.5 / 0.25 = 21202` exactly, so it passes; `5300.52 / 0.25 = 21202.08` is 0.08 ticks from an integer and throws.\n\n```cpp\n#include <cmath>\n#include <iostream>\n#include <stdexcept>\n#include <string>\n#include <utility>\n\nclass Instrument {\npublic:\n    Instrument(std::string symbol, double tickSize)\n        : symbol_{std::move(symbol)}, tickSize_{tickSize}, price_{0.0} {\n        if (tickSize_ <= 0.0) throw std::invalid_argument(\"tick size must be positive\");\n    }\n    const std::string& symbol() const { return symbol_; }\n    double price() const { return price_; }\n    void setPrice(double p) {\n        double ticks = p / tickSize_;\n        if (std::abs(ticks - std::round(ticks)) > 1e-9)\n            throw std::invalid_argument(\"price off tick grid\");\n        price_ = p;\n    }\nprivate:\n    std::string symbol_;\n    double tickSize_;\n    double price_;\n};\n\nint main() {\n    Instrument i{\"NQZ5\", 0.25};\n    i.setPrice(5300.5);          // on-tick: accepted\n    // i.setPrice(5300.52);      // throws: 0.08 ticks off the grid\n    std::cout << i.symbol() << \" @ \" << i.price() << '\\n';   // NQZ5 @ 5300.5\n}\n```"
   },
   "commonMistakes": [
-    "Assigning members in the constructor body and calling it initialization, for const or reference members this does not even compile.",
-    "Writing the initializer list in a different order than the member declarations, then being surprised by the construction order.",
+    "Assigning members in the constructor body and calling it initialisation, for const or reference members this does not even compile.",
+    "Writing the initialiser list in a different order than the member declarations, then being surprised by the construction order.",
     "Leaving data members public \"for convenience\" and losing the single place invariants are enforced.",
     "Forgetting const on accessors, so they cannot be called through const references.",
     "Storing derived values such as notional and forgetting to update them on every mutation."
@@ -124,8 +124,8 @@
   "quantFinanceApplication": "The Order class here mirrors real front-office code: quantity and limit price guarded by invariants, notional computed on demand, and money-like types kept distinct so the compiler enforces the units.",
   "summary": [
     "A class is a struct with discipline: private data plus a public set of functions that enforce invariants in exactly one place.",
-    "Members are initialized by the member initializer list in declaration order; const and reference members must use the list.",
-    "Delegating constructors and in-class default initializers keep validation and defaults in one place.",
+    "Members are initialised by the member initialiser list in declaration order; const and reference members must use the list.",
+    "Delegating constructors and in-class default initialisers keep validation and defaults in one place.",
     "Mark single-argument constructors explicit to stop silent unit-destroying conversions, and mark read-only member functions const."
   ],
   "quiz": [
@@ -135,11 +135,11 @@
       "prompt": "An `Order` object reaches a function as `const Order& o`. Which call is legal inside that function?",
       "options": [
         "o.reduce(4)",
+        "o.qty_ = o.qty_ + 1",
         "o.notional()",
-        "o.qty_ = 6",
-        "o.qty_ = o.qty_ + 1"
+        "o.qty_ = 6"
       ],
-      "answerIndex": 1,
+      "answerIndex": 2,
       "explanation": "A const reference permits only const member functions: notional() is const, reduce() is not. The data members are private, so no outside function could touch them anyway."
     },
     {
@@ -149,7 +149,7 @@
       "language": "cpp",
       "code": "#include <iostream>\n\nstruct Leg {\n    explicit Leg(const char* name) { std::cout << name << ' '; }\n};\n\nclass Order {\n    Leg qty_;   // declared FIRST\n    Leg px_;    // declared SECOND\npublic:\n    Order() : px_{\"px\"}, qty_{\"qty\"} {}\n};\n\nint main() { Order o; std::cout << '\\n'; }",
       "answer": "qty px",
-      "explanation": "Members initialize in declaration order, not initializer-list order: qty_ (\"qty\") is constructed first, then px_ (\"px\")."
+      "explanation": "Members initialise in declaration order, not initialiser-list order: qty_ (\"qty\") is constructed first, then px_ (\"px\")."
     },
     {
       "id": "q3",
@@ -163,7 +163,7 @@
     {
       "id": "q4",
       "type": "ms",
-      "prompt": "Which members MUST be initialized in the member initializer list rather than in the constructor body?",
+      "prompt": "Which members MUST be initialised in the member initialiser list rather than in the constructor body?",
       "options": [
         "A const data member",
         "A reference data member",
@@ -174,7 +174,7 @@
         0,
         1
       ],
-      "explanation": "const and reference members can never be assigned after default-initialization, so the initializer list is their only chance. Plain ints and strings can be assigned in the body, though the list is still preferred. (Members of types without default constructors also require the list.)"
+      "explanation": "const and reference members can never be assigned after default-initialisation, so the initialiser list is their only chance. Plain ints and strings can be assigned in the body, though the list is still preferred. (Members of types without default constructors also require the list.)"
     },
     {
       "id": "q5",
@@ -183,11 +183,11 @@
       "options": [
         "It makes the constructor run faster",
         "It prevents implicit conversions such as printQty(7)",
-        "It allows the class to declare two constructors",
-        "It marks the class as abstract"
+        "It marks the class as abstract",
+        "It allows the class to declare two constructors"
       ],
       "answerIndex": 1,
-      "explanation": "explicit blocks copy-initialization conversions like `Quantity q = 7;` or passing a bare int where a Quantity is expected. Direct-initialization (Quantity{7}) still works."
+      "explanation": "explicit blocks copy-initialisation conversions like `Quantity q = 7;` or passing a bare int where a Quantity is expected. Direct-initialisation (Quantity{7}) still works."
     },
     {
       "id": "q6",
@@ -195,10 +195,9 @@
       "prompt": "Why should notional() be a computed const member function rather than a stored member updated on every fill?",
       "modelAnswer": "Because notional is derived from qty and limitPrice; storing it would create a second copy of the truth that every mutation must remember to refresh.",
       "keywords": [
-        "derived",
-        "stale",
-        "invariant",
-        "truth"
+        "derived|derive|computed|calculate",
+        "duplicate|second copy|one source|truth",
+        "mutation|update|stale|refresh|inconsistent"
       ],
       "explanation": "A stored derived value is a duplicate of state that can go stale after any mutation. Computing it from the private members guarantees consistency, the class keeps a single source of truth and the invariant holds by construction."
     }
@@ -211,13 +210,13 @@
     },
     {
       "type": "concept",
-      "front": "Member initializer list vs constructor body",
-      "back": "The list initializes members directly (mandatory for const and reference members); body statements only assign after default-initialization. Initialization order = declaration order."
+      "front": "Member initialiser list vs constructor body",
+      "back": "The list initialises members directly (mandatory for const and reference members); body statements only assign after default-initialisation. Initialisation order = declaration order."
     },
     {
       "type": "code-output",
       "front": "struct Leg prints its name in its ctor. class Order { Leg qty_; Leg px_; public: Order() : px_{\"px\"}, qty_{\"qty\"} {} };: what does constructing an Order print?",
-      "back": "qty px, members initialize in declaration order, not list order."
+      "back": "qty px, members initialise in declaration order, not list order."
     },
     {
       "type": "error-identification",

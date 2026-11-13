@@ -1,0 +1,254 @@
+{
+  "id": "tsmd-exchange-protocols",
+  "moduleId": "ph10-trading-systems",
+  "title": "FIX, Binary Feeds and Gap Recovery",
+  "estMinutes": 35,
+  "difficulty": "advanced",
+  "prereqs": [
+    "tsmd-connectivity"
+  ],
+  "objectives": [
+    "Distinguish FIX session handling from application messages",
+    "Decode a specified binary format with explicit byte order",
+    "Detect sequence gaps and recover before publishing a trusted book"
+  ],
+  "motivation": "A feed handler can decode every byte correctly and still publish a wrong order book if it misses one event. Exchange connectivity combines message layout with sequencing, session state, retransmission and application semantics. Separate these concerns in the design. FIX commonly uses readable tag-value messages, while exchange feeds and order-entry protocols often use compact binary layouts. Neither text nor binary guarantees correctness or a particular latency. Version, venue and channel determine the actual contract. Treat a public protocol overview as background and use the exact certified venue specification for a production connection.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "The wire format is only half the protocol"
+    },
+    {
+      "type": "p",
+      "md": "A feed handler can decode every byte correctly and still publish a wrong order book if it misses one event. Exchange connectivity combines message layout with sequencing, session state, retransmission and application semantics. Separate these concerns in the design. FIX commonly uses readable tag-value messages, while exchange feeds and order-entry protocols often use compact binary layouts. Neither text nor binary guarantees correctness or a particular latency. Version, venue and channel determine the actual contract. Treat a public protocol overview as background and use the exact certified venue specification for a production connection."
+    },
+    {
+      "type": "h2",
+      "text": "FIX fields and message framing"
+    },
+    {
+      "type": "p",
+      "md": "In classic FIX tag-value encoding, fields have the form tag=value and are separated by the SOH byte, not a visual vertical bar. Human logs often replace SOH with a bar for readability; the displayed log is not the original byte stream. BeginString, BodyLength and CheckSum frame the message. BodyLength counts the defined byte region after its field delimiter up to the checksum field, while CheckSum is the byte sum before tag 10 modulo 256, formatted with three digits. Test the exact bytes and lengths. A delimiter, newline or character-encoding change can invalidate both checks even when the visible words look identical."
+    },
+    {
+      "type": "h2",
+      "text": "Session identity and recovery"
+    },
+    {
+      "type": "p",
+      "md": "FIX session sequence numbers detect gaps and duplicates within the session rules. A resend request may recover missing messages, while gap-fill and duplicate indicators have specific meanings. Application identifiers such as client order IDs are not substitutes for transport sequence numbers. A timeout after sending an order does not tell you whether the venue accepted it. Follow the venue's documented resend, status-query and reconciliation rules; blindly creating a new order identifier can duplicate exposure. Persist sufficient session and order state for restart, and distinguish a rejected order from an unresolved outcome. No generic tutorial can authorise a venue-specific retry rule."
+    },
+    {
+      "type": "h2",
+      "text": "Binary feeds: ITCH, OUCH and SBE"
+    },
+    {
+      "type": "p",
+      "md": "ITCH-style feeds describe market events, while OUCH-style protocols describe order entry; their exact versions and venues differ. Do not treat either as one universal binary schema. Simple Binary Encoding supplies a schema-based binary encoding framework, not a complete exchange recovery policy. A decoder needs byte order, integer widths, signedness, scaling, timestamps and message lengths. Validate lengths before reading fields and use checked arithmetic for scaling. Casting an arbitrary packet pointer to a native struct can break on padding, alignment and endianness. A parser must reject unsupported message versions instead of guessing from a familiar type byte."
+    },
+    {
+      "type": "h2",
+      "text": "Worked example: a tiny explicit schema"
+    },
+    {
+      "type": "p",
+      "md": "For this lesson only, define a five-byte message: one unsigned type byte followed by a big-endian unsigned 32-bit sequence number. Bytes [65,0,0,0,7] decode to type 65 and sequence 7. The program uses Python struct with the explicit >BI format and checks the exact length. This is an invented teaching schema, not an ITCH or OUCH message, and must not be labelled as a real venue decoder. Its purpose is to demonstrate that a schema fixes width and byte order. A short packet or extra trailing bytes is rejected under this exact-length contract."
+    },
+    {
+      "type": "h2",
+      "text": "Worked example: gap detection"
+    },
+    {
+      "type": "p",
+      "md": "Starting after sequence 100, receive [101,102,105]. The first missing sequence is 103 and the missing range ends at 104. Mark the dependent book stale before publishing sequence 105 as trusted state. Recovery may use retransmission or a snapshot plus incremental replay, depending on the venue. If a snapshot represents sequence 104, replay the buffered update 105 exactly once, then resume. Duplicate 102 should not be applied again. Buffering without bounds can exhaust memory, so impose limits and escalate when recovery cannot catch up. Keep the last trusted sequence separate from the largest sequence observed on the network."
+    },
+    {
+      "type": "h2",
+      "text": "Prove the recovery path"
+    },
+    {
+      "type": "p",
+      "md": "Build tests for loss, duplication, reordering, reconnects, malformed lengths and sequence resets. Verify that replay from a known snapshot produces the same state as the uninterrupted event stream. Checksums detect some corruption, not malicious messages or validly encoded semantic mistakes. The packet lab illustrates network stages rather than a certified exchange protocol. Log schema version, channel, timestamps and recovery events without exposing session credentials. A production gateway needs venue certification, risk controls and operational runbooks in addition to a working parser. Never resume trading from an uncertain position merely because the network connection is live again."
+    },
+    {
+      "type": "h2",
+      "text": "Worked example: run and check"
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import struct\npacket=bytes([65,0,0,0,7])\nassert len(packet)==5\nkind,seq=struct.unpack('>BI',packet)\nassert (kind,seq)==(65,7)\nprint(kind,seq)\nexpected=101\nfor s in [101,102,105]:\n    if s>expected:\n        print(expected,s-1)\n        break\n    if s==expected:\n        expected+=1\npayload=b'8=FIX.4.4\u00019=0\u0001'\nprint(f\"{sum(payload)%256:03d}\")",
+      "caption": "Complete Python 3.11+ example"
+    },
+    {
+      "type": "p",
+      "md": "The exact output is `65 7; 103 104; 200`. Run the example before changing a parameter, then predict the direction of the change. The assertions encode the stated checks; a failed assertion means that the implementation and the claimed result disagree."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Check this misconception",
+      "md": "A gap identifies missing session or channel sequence information under its rules. It does not settle order acceptance or make later dependent state safe to publish."
+    },
+    {
+      "type": "interactive",
+      "component": "PacketJourney",
+      "params": {},
+      "caption": "Related concept lab. The lab illustrates the named building block; it is not a full implementation of every model in this lesson."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Decode the teaching schema type=65 and big-endian sequence=7. Success check: The decoded tuple is (65,7).",
+    "hints": [
+      "Use five bytes exactly.",
+      "The first field is B and the second is I.",
+      "Prefix the struct format with >."
+    ],
+    "solution": "\n```python\nimport struct\np=bytes([65,0,0,0,7])\nassert len(p)==5\na=struct.unpack(\">BI\",p)\nassert a==(65,7)\nprint(a)\n```\nExpected output: `(65, 7)`.",
+    "successCheck": "The decoded tuple is (65,7)."
+  },
+  "independentExercise": {
+    "prompt": "Find the first missing range in [101,102,105], starting at expected sequence 101. Success check: The range is 103 through 104.",
+    "hints": [
+      "Advance expected only for a matching sequence.",
+      "A larger observed value reveals a gap.",
+      "The gap ends one before that observation."
+    ],
+    "solution": "\n```python\nexpected=101\nfor s in [101,102,105]:\n    if s>expected:\n        print(expected,s-1)\n        break\n    if s==expected:\n        expected+=1\n```\nExpected output: `103 104`.",
+    "successCheck": "The range is 103 through 104."
+  },
+  "commonMistakes": [
+    "A gap identifies missing session or channel sequence information under its rules. It does not settle order acceptance or make later dependent state safe to publish.",
+    "The schema explicitly fixes five bytes and big-endian uint32 sequence encoding. Native padding and host endianness are not portable substitutes for the wire contract."
+  ],
+  "realWorldApplication": "Use the assumptions and checks above when reviewing fix, binary feeds and gap recovery. Record inputs, state the failure conditions and compare the result with a simple independent calculation.",
+  "quantFinanceApplication": "For a trading or risk workflow, validate the model and timestamp conventions before using fix, binary feeds and gap recovery. The worked result is conditional on its assumptions, not a return promise.",
+  "summary": [
+    "Distinguish FIX session handling from application messages",
+    "Decode a specified binary format with explicit byte order",
+    "Detect sequence gaps and recover before publishing a trusted book"
+  ],
+  "quiz": [
+    {
+      "type": "mcq",
+      "prompt": "What does a session sequence gap establish?",
+      "options": [
+        "Every later order was certainly rejected",
+        "The newest observed book is automatically trusted",
+        "One or more expected messages were not received",
+        "The client order identifier must be regenerated"
+      ],
+      "answerIndex": 2,
+      "explanation": "A gap identifies missing session or channel sequence information under its rules. It does not settle order acceptance or make later dependent state safe to publish.",
+      "id": "q1",
+      "objective": 2
+    },
+    {
+      "type": "mcq",
+      "prompt": "Which decoder choice is safe for the teaching schema?",
+      "options": [
+        "Cast bytes to any native padded structure",
+        "Ignore length if the first type byte is known",
+        "Assume the host byte order matches every venue",
+        "Use explicit width, length and big-endian order"
+      ],
+      "answerIndex": 3,
+      "explanation": "The schema explicitly fixes five bytes and big-endian uint32 sequence encoding. Native padding and host endianness are not portable substitutes for the wire contract.",
+      "id": "q2",
+      "objective": 1
+    },
+    {
+      "type": "numeric",
+      "prompt": "After trusted sequence 102, the next observed sequence is 105. How many intervening sequence numbers are missing?",
+      "answer": 2,
+      "tolerance": 1e-06,
+      "explanation": "The missing sequence numbers are 103 and 104, giving two. The difference 105-102 is three because it also includes the received endpoint.",
+      "id": "q3",
+      "objective": 2
+    },
+    {
+      "type": "code-output",
+      "prompt": "What does the explicit five-byte decoder print?",
+      "code": "import struct\nprint(struct.unpack('>BI',bytes([65,0,0,0,7])))",
+      "language": "python",
+      "answer": "(65, 7)",
+      "explanation": "The first byte is unsigned type 65 and the remaining big-endian bytes encode seven. This exact teaching layout is not a claim about an actual ITCH message.",
+      "id": "q4",
+      "objective": 1
+    },
+    {
+      "type": "short",
+      "prompt": "Why must a recovered snapshot be paired with a sequence boundary?",
+      "modelAnswer": "The boundary tells which buffered updates come after the snapshot, preventing omitted or duplicate event application during replay.",
+      "keywords": [
+        "snapshot|state",
+        "sequence|boundary",
+        "replay|duplicate|missing"
+      ],
+      "explanation": "Without a boundary, buffered events may already be included or may be skipped. Exactly-once state reconstruction requires knowing where the snapshot ends and incremental replay begins.",
+      "id": "q5",
+      "objective": 2
+    },
+    {
+      "type": "ms",
+      "prompt": "Which statements are sound?",
+      "options": [
+        "SOH is the classic FIX field delimiter",
+        "Recovery rules depend on the venue and session",
+        "A valid checksum proves every message is safe",
+        "An order timeout proves the order never arrived"
+      ],
+      "answerIndices": [
+        0,
+        1
+      ],
+      "explanation": "FIX encoding uses a byte delimiter and session recovery is protocol-specific. Checksums are limited integrity checks, and timeouts leave order acceptance uncertain.",
+      "id": "q6",
+      "objective": 0
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "What does a session sequence gap establish?",
+      "back": "One or more expected messages were not received"
+    },
+    {
+      "type": "concept",
+      "front": "Which decoder choice is safe for the teaching schema?",
+      "back": "Use explicit width, length and big-endian order"
+    },
+    {
+      "type": "concept",
+      "front": "After trusted sequence 102, the next observed sequence is 105. How many intervening sequence numbers are missing?",
+      "back": "The result is 2 under the stated inputs."
+    },
+    {
+      "type": "concept",
+      "front": "Why must a recovered snapshot be paired with a sequence boundary?",
+      "back": "The boundary tells which buffered updates come after the snapshot, preventing omitted or duplicate event application during replay."
+    },
+    {
+      "type": "concept",
+      "front": "Which statements are sound?",
+      "back": "SOH is the classic FIX field delimiter, Recovery rules depend on the venue and session"
+    }
+  ],
+  "references": [
+    {
+      "label": "FIX Session Layer technical specification, June 2020",
+      "url": "https://www.fixtrading.org/wp-content/uploads/download-manager-files/FIX_Session_Layer_June_2020.pdf"
+    },
+    {
+      "label": "FIX Simple Binary Encoding",
+      "url": "https://www.fixtrading.org/standards/sbe/"
+    },
+    {
+      "label": "Nasdaq Trader: technical specifications",
+      "url": "https://www.nasdaqtrader.com/Trader.aspx?id=TradingSpecs"
+    }
+  ],
+  "skills": [
+    "trading-systems"
+  ]
+}

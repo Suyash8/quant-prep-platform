@@ -1,0 +1,113 @@
+{
+  "slug": "ring-buffer-spsc",
+  "title": "SPSC Ring Buffer",
+  "difficulty": "medium",
+  "category": "systems-design",
+  "tags": [
+    "systems-design",
+    "ring-buffer",
+    "queues",
+    "low-latency"
+  ],
+  "statement": [
+    {
+      "type": "p",
+      "md": "A single-producer single-consumer ring buffer has $c$ slots, indexed $0$ to $c-1$, and two indices: `head` (next slot to read) and `tail` (next slot to write). Both start at 0 and wrap around modulo $c$. To tell a full buffer from an empty one without a counter, **one slot is always left unused**: the buffer is empty when `head == tail` and full when `(tail + 1) mod c == head`. So it holds at most $c - 1$ items."
+    },
+    {
+      "type": "p",
+      "md": "Simulate a stream of operations. `PUSH x` writes $x$ at `tail` and advances `tail` unless the buffer is full, in which case it prints `FULL` and changes nothing. `POP` reads at `head` and advances `head`, or prints `EMPTY` if the buffer is empty. A successful push prints `OK`; a successful pop prints the value read."
+    }
+  ],
+  "inputFormat": "First line: $c$ and $t$. Then $t$ operations, one per line: `PUSH x` or `POP`.",
+  "outputFormat": "One line per operation as described. After the last operation print `HEAD h TAIL t SIZE s` where $s$ is the number of items currently stored.",
+  "constraints": [
+    "$2 \\le c \\le 10^6$, $1 \\le t \\le 2 \\cdot 10^5$",
+    "$-10^9 \\le x \\le 10^9$",
+    "Operations are applied strictly in the given order"
+  ],
+  "examples": [
+    {
+      "input": "4 8\nPUSH 1\nPUSH 2\nPUSH 3\nPUSH 4\nPOP\nPUSH 5\nPOP\nPOP\n",
+      "output": "OK\nOK\nOK\nFULL\n1\nOK\n2\n3\nHEAD 3 TAIL 0 SIZE 1\n"
+    }
+  ],
+  "hints": [
+    "Do not track a size counter for the full test. Use the rule (tail + 1) % c == head.",
+    "The size is (tail - head + c) % c."
+  ],
+  "editorial": [
+    {
+      "type": "p",
+      "md": "With one slot kept free, `head == tail` can only mean empty, so a producer and a consumer can each update only their own index. That is what makes the structure safe without locks: the producer writes `tail`, the consumer writes `head`, and each only reads the other."
+    },
+    {
+      "type": "p",
+      "md": "The price is one wasted slot. A power-of-two capacity would let you replace `% c` with a bit mask, which is why production buffers usually use it. Here $c$ is arbitrary, so use the modulo."
+    }
+  ],
+  "lessons": [
+    "ds-stacks-queues",
+    "ll-user-space-techniques",
+    "cpp-lock-free"
+  ],
+  "solutions": {
+    "python": "import sys\n\n\ndef main():\n    lines = sys.stdin.read().split('\\n')\n    c, t = map(int, lines[0].split())\n    slots = [0] * c\n    head = tail = 0\n    out = []\n    for line in lines[1:1 + t]:\n        parts = line.split()\n        if parts[0] == 'PUSH':\n            if (tail + 1) % c == head:\n                out.append('FULL')\n            else:\n                slots[tail] = int(parts[1])\n                tail = (tail + 1) % c\n                out.append('OK')\n        else:\n            if head == tail:\n                out.append('EMPTY')\n            else:\n                out.append(str(slots[head]))\n                head = (head + 1) % c\n    out.append(f\"HEAD {head} TAIL {tail} SIZE {(tail - head + c) % c}\")\n    print('\\n'.join(out))\n\n\nmain()",
+    "cpp": "#include <cstdio>\n#include <vector>\nusing namespace std;\n\nint main() {\n    int c, t;\n    if (scanf(\"%d %d\", &c, &t) != 2) return 1;\n    vector<long long> slots(c, 0);\n    int head = 0, tail = 0;\n    while (t--) {\n        char op[8];\n        if (scanf(\"%7s\", op) != 1) return 1;\n        if (op[1] == 'U') {  // PUSH\n            long long x;\n            if (scanf(\"%lld\", &x) != 1) return 1;\n            if ((tail + 1) % c == head) {\n                puts(\"FULL\");\n            } else {\n                slots[tail] = x;\n                tail = (tail + 1) % c;\n                puts(\"OK\");\n            }\n        } else {  // POP\n            if (head == tail) {\n                puts(\"EMPTY\");\n            } else {\n                printf(\"%lld\\n\", slots[head]);\n                head = (head + 1) % c;\n            }\n        }\n    }\n    printf(\"HEAD %d TAIL %d SIZE %d\\n\", head, tail, (tail - head + c) % c);\n    return 0;\n}"
+  },
+  "tests": [
+    {
+      "input": "4 8\nPUSH 1\nPUSH 2\nPUSH 3\nPUSH 4\nPOP\nPUSH 5\nPOP\nPOP\n",
+      "expected": "OK\nOK\nOK\nFULL\n1\nOK\n2\n3\nHEAD 3 TAIL 0 SIZE 1\n",
+      "hidden": false
+    },
+    {
+      "input": "2 4\nPUSH 1\nPUSH 2\nPOP\nPOP\n",
+      "expected": "OK\nFULL\n1\nEMPTY\nHEAD 1 TAIL 1 SIZE 0\n",
+      "hidden": true
+    },
+    {
+      "input": "3 3\nPOP\nPOP\nPOP\n",
+      "expected": "EMPTY\nEMPTY\nEMPTY\nHEAD 0 TAIL 0 SIZE 0\n",
+      "hidden": true
+    },
+    {
+      "input": "5 6\nPUSH -1000000000\nPUSH 1000000000\nPOP\nPOP\nPOP\nPUSH 0\n",
+      "expected": "OK\nOK\n-1000000000\n1000000000\nEMPTY\nOK\nHEAD 2 TAIL 3 SIZE 1\n",
+      "hidden": true
+    },
+    {
+      "input": "3 7\nPUSH 1\nPUSH 2\nPUSH 3\nPOP\nPUSH 3\nPOP\nPOP\n",
+      "expected": "OK\nOK\nFULL\n1\nOK\n2\n3\nHEAD 0 TAIL 0 SIZE 0\n",
+      "hidden": true
+    },
+    {
+      "input": "5 8\nPUSH 1\nPOP\nPUSH 9\nPUSH 1\nPOP\nPUSH -5\nPOP\nPOP\n",
+      "expected": "OK\n1\nOK\nOK\n9\nOK\n1\n-5\nHEAD 4 TAIL 4 SIZE 0\n",
+      "hidden": true
+    },
+    {
+      "input": "4 5\nPOP\nPUSH -9\nPUSH 9\nPOP\nPUSH -9\n",
+      "expected": "EMPTY\nOK\nOK\n-9\nOK\nHEAD 1 TAIL 3 SIZE 2\n",
+      "hidden": true
+    },
+    {
+      "input": "3 8\nPOP\nPUSH 0\nPUSH 4\nPUSH -7\nPOP\nPUSH 9\nPUSH -2\nPOP\n",
+      "expected": "EMPTY\nOK\nOK\nFULL\n0\nOK\nFULL\n4\nHEAD 2 TAIL 0 SIZE 1\n",
+      "hidden": true
+    },
+    {
+      "input": "5 2\nPOP\nPUSH 9\n",
+      "expected": "EMPTY\nOK\nHEAD 0 TAIL 1 SIZE 1\n",
+      "hidden": true
+    },
+    {
+      "input": "2 12\nPUSH -8\nPUSH 6\nPUSH 5\nPOP\nPUSH 4\nPUSH 6\nPUSH 5\nPUSH -4\nPUSH -2\nPOP\nPUSH 6\nPUSH 9\n",
+      "expected": "OK\nFULL\nFULL\n-8\nOK\nFULL\nFULL\nFULL\nFULL\n4\nOK\nFULL\nHEAD 0 TAIL 1 SIZE 1\n",
+      "hidden": true
+    }
+  ],
+  "timeLimitMs": 4000,
+  "memoryLimitMb": 256,
+  "estMinutes": 30
+}

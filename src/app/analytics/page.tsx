@@ -135,7 +135,7 @@ export default async function AnalyticsPage() {
   const studyTimeValue = Math.floor(totalMinutes / 60) + 'h ' + (totalMinutes % 60) + 'm';
   const lessonsValue =
     progressRows.filter(p => p.status === 'passed').length + ' / ' + progressRows.filter(p => p.status === 'mastered').length;
-  const drillPctValue = drillStats.total ? Math.round((drillStats.correct / drillStats.total) * 100) + '%' : '—';
+  const drillPctValue = drillStats.total ? Math.round((drillStats.correct / drillStats.total) * 100) + '%' : 'None yet';
   const drillMsChip = drillStats.n ? Math.round(drillStats.ms / drillStats.n) + 'ms avg' : null;
 
   // canonical horizontal tiles: one hero hue (accent), one secondary (info), neutrals for the rest;
@@ -204,7 +204,7 @@ export default async function AnalyticsPage() {
                   const pct = (d.minutes / maxMinutes) * 100;
                   return (
                     <div key={d.day} className="flex-1 min-w-0 flex flex-col" title={d.day + ': ' + d.minutes + ' min'}>
-                      <span className="h-4 flex items-end justify-center text-[9px] font-black tnum leading-none text-muted">
+                      <span className="h-4 flex items-end justify-center text-[12px] font-black tnum leading-none text-muted">
                         {d.minutes > 0 ? d.minutes + 'm' : ''}
                       </span>
                       <div className="flex-1 w-full flex items-end justify-center">
@@ -219,15 +219,15 @@ export default async function AnalyticsPage() {
               <div className="border-t-2 border-border" aria-hidden />
               <div className="mt-1.5 flex gap-1.5">
                 {days.map(d => (
-                  <span key={d.day} className="flex-1 min-w-0 text-center text-[10px] font-bold text-muted leading-none">{weekdayLetter(d.day)}</span>
+                  <span key={d.day} className="flex-1 min-w-0 text-center text-[12px] font-bold text-muted leading-none">{weekdayLetter(d.day)}</span>
                 ))}
               </div>
             </div>
           ) : (
             <div className="qf-empty">
               <span className="empty-emoji">📊</span>
-              <p className="text-sm font-black">Complete lessons to see your study time</p>
-              <p className="mt-1 text-xs text-faint font-semibold">Every session you run will chart here, day by day.</p>
+              <p className="text-[15px] font-black">Complete lessons to see your study time</p>
+              <p className="mt-1 text-[13px] text-faint font-semibold">Every session you run will chart here, day by day.</p>
               <Link href="/curriculum" className="btn3d btn3d-sm mt-4">
                 Go to lessons
               </Link>
@@ -252,12 +252,12 @@ export default async function AnalyticsPage() {
               {topSkills.length === 0 && (
                 <li className="qf-empty">
                   <span className="empty-emoji">🧠</span>
-                  <p className="text-sm font-black">Complete lessons to populate skill mastery</p>
+                  <p className="text-[15px] font-black">Complete lessons to populate skill mastery</p>
                 </li>
               )}
             </ul>
             {topSkills.length > 0 && (
-              <p className="mt-4 pt-3.5 border-t-2 border-border text-xs font-bold text-muted flex items-center justify-between">
+              <p className="mt-4 pt-3.5 border-t-2 border-border text-[13px] font-bold text-muted flex items-center justify-between">
                 <span>{skillTotals.tracked} skills tracked · {skillTotals.mastered} fully mastered</span>
                 <Link href="/curriculum" className="text-info hover:underline">grow them →</Link>
               </p>
@@ -275,8 +275,8 @@ export default async function AnalyticsPage() {
             {weakest.length === 0 ? (
               <div className="qf-empty">
                 <span className="icon-tile icon-tile-accent mb-1"><CircleCheck className="h-7 w-7" /></span>
-                <p className="text-sm font-black">No weak spots detected</p>
-                <p className="mt-1 text-xs text-faint font-semibold">Master every lesson you start and this panel stays quiet.</p>
+                <p className="text-[15px] font-black">No weak spots detected</p>
+                <p className="mt-1 text-[13px] text-faint font-semibold">Master every lesson you start and this panel stays quiet.</p>
               </div>
             ) : (() => {
               // group by status: rows with real progress stay individual, dormant ones collapse into one summary
@@ -296,7 +296,7 @@ export default async function AnalyticsPage() {
                             </span>
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center justify-between gap-2 mb-1.5">
-                                <span className="text-sm font-bold capitalize truncate">{name}</span>
+                                <span className="text-[15px] font-bold capitalize truncate">{name}</span>
                                 <span className="chip tnum shrink-0">{v.passed}/{v.total}</span>
                               </div>
                               <div className="prog-track h-2.5">
@@ -314,8 +314,8 @@ export default async function AnalyticsPage() {
                         <span className="icon-tile icon-tile-sm icon-tile-neutral shrink-0">
                           <CircleDashed className="h-4 w-4" />
                         </span>
-                        <p className="flex-1 min-w-0 text-sm font-semibold text-muted leading-relaxed">
-                          <span className="font-black text-foreground tnum">{dormant.length}</span> skill{dormant.length === 1 ? '' : 's'} not started yet — begin any lesson to seed them.
+                        <p className="flex-1 min-w-0 text-[15px] font-semibold text-muted leading-relaxed">
+                          <span className="font-black text-foreground tnum">{dormant.length}</span> skill{dormant.length === 1 ? '' : 's'} not started yet, begin any lesson to seed them.
                         </p>
                       </div>
                       <div className="mt-2.5 flex flex-wrap gap-1.5">
@@ -346,9 +346,9 @@ export default async function AnalyticsPage() {
                 const pct = Math.round((w.n / maxWeekReviews) * 100);
                 return (
                   <li key={w.week}>
-                    <div className="flex items-center justify-between text-sm mb-1.5">
+                    <div className="flex items-center justify-between text-[15px] mb-1.5">
                       <span className="font-semibold text-muted">{w.week}</span>
-                      <span className="tnum text-xs font-black">{w.n} card{w.n === 1 ? '' : 's'} reviewed</span>
+                      <span className="tnum text-[13px] font-black">{w.n} card{w.n === 1 ? '' : 's'} reviewed</span>
                     </div>
                     <div className="prog-track h-2.5">
                       <div className="prog-fill" style={{ width: Math.max(pct, 2) + '%' }} />
@@ -372,11 +372,11 @@ export default async function AnalyticsPage() {
                 { k: 'Needs revision', v: String(needsRev.length) },
                 { k: 'Lapsed cards', v: String(lapsed) },
                 { k: 'Unverified passes', v: String(stalePassed.length) },
-                { k: 'Drill accuracy', v: drillStats.total ? Math.round((drillStats.correct / drillStats.total) * 100) + '%' : '—' },
+                { k: 'Drill accuracy', v: drillStats.total ? Math.round((drillStats.correct / drillStats.total) * 100) + '%' : 'None yet' },
               ].map(r => (
                 <div key={r.k} className="rounded-xl bg-surface-2/50 border border-border/60 px-3 py-2 flex items-baseline justify-between gap-2">
-                  <dt className="text-xs font-bold text-muted">{r.k}</dt>
-                  <dd className="text-sm font-black tnum">{r.v}</dd>
+                  <dt className="text-[13px] font-bold text-muted">{r.k}</dt>
+                  <dd className="text-[15px] font-black tnum">{r.v}</dd>
                 </div>
               ))}
             </dl>
@@ -384,7 +384,7 @@ export default async function AnalyticsPage() {
               {bottlenecks.map((b, i) => {
                 const isClean = b.startsWith('No bottlenecks');
                 return (
-                  <li key={i} className="flex items-start gap-2.5 text-sm rounded-xl bg-surface-2/50 border border-border/60 px-3 py-2.5">
+                  <li key={i} className="flex items-start gap-2.5 text-[15px] rounded-xl bg-surface-2/50 border border-border/60 px-3 py-2.5">
                     {isClean ? (
                       <CircleCheck className="h-4 w-4 mt-0.5 text-accent shrink-0" />
                     ) : (
@@ -406,7 +406,7 @@ export default async function AnalyticsPage() {
           <span className="icon-tile icon-tile-sm icon-tile-accent shrink-0">
             <Flame />
           </span>
-          <p className="flex-1 min-w-[220px] text-sm font-semibold text-muted">
+          <p className="flex-1 min-w-[220px] text-[15px] font-semibold text-muted">
             {streakDays > 0
               ? `You are on a ${streakDays}-day streak, one lesson today keeps it alive.`
               : 'Start a new streak today, one focused lesson is enough.'}
@@ -435,7 +435,7 @@ function SkillBar({ skill, passed, total, idx }: { skill: string; passed: number
         </span>
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between gap-2">
-            <span className="capitalize font-semibold text-sm truncate">{label}</span>
+            <span className="capitalize font-semibold text-[15px] truncate">{label}</span>
             <span className="chip tnum">not started</span>
           </div>
         </div>
@@ -449,7 +449,7 @@ function SkillBar({ skill, passed, total, idx }: { skill: string; passed: number
       </span>
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between gap-2 mb-1.5">
-          <span className="capitalize font-semibold text-sm truncate">{label}</span>
+          <span className="capitalize font-semibold text-[15px] truncate">{label}</span>
           <span className="chip tnum">{pct}%</span>
         </div>
         <div className="prog-track h-2.5">

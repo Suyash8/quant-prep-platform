@@ -2,7 +2,7 @@
   "id": "cpp-constexpr",
   "moduleId": "ph4-cpp-l5",
   "title": "constexpr, consteval and Compile-Time Programming",
-  "estMinutes": 27,
+  "estMinutes": 30,
   "difficulty": "advanced",
   "prereqs": [
     "cpp-lambdas-optional-variant"
@@ -151,7 +151,7 @@
       "Each df[n] is the previous one divided by 1.04, one division per step, exactly like the lesson's 5% ladder.",
       "Check df5 = 1/(1.04)^5 by squaring twice and multiplying once: 1.04^2 = 1.0816, 1.04^4 = 1.16985856, 1.04^5 = 1.2166529024."
     ],
-    "solution": "```cpp\n// C++17\nconstexpr std::array<double, 6> ladder4() {\n    std::array<double, 6> df{};\n    df[0] = 1.0;\n    for (int n = 1; n < 6; ++n) df[n] = df[n - 1] / 1.04;\n    return df;\n}\nstatic_assert(ladder4()[5] > 0.8219 && ladder4()[5] < 0.8220);\n```\n\nDiscount factors: $df_1 = 0.961538$, $df_2 = 0.924556$, $df_3 = 0.888996$, $df_4 = 0.854804$, $df_5 = \\mathbf{0.821927}$ (check: $1/1.2166529024 = 0.8219271$).\n\nChanging `1.04` to `1.05` recomputes the whole table at compile time, and the assert, still expecting 0.8219-0.8220, now **fails the build**, because the true df5 is 0.783526. That failure is the point: the bound is a compiler-checked contract on the curve."
+    "solution": "```cpp\n#include <array>\n// C++17\nconstexpr std::array<double, 6> ladder4() {\n    std::array<double, 6> df{};\n    df[0] = 1.0;\n    for (int n = 1; n < 6; ++n) df[n] = df[n - 1] / 1.04;\n    return df;\n}\nstatic_assert(ladder4()[5] > 0.8219 && ladder4()[5] < 0.8220);\n```\n\nDiscount factors: $df_1 = 0.961538$, $df_2 = 0.924556$, $df_3 = 0.888996$, $df_4 = 0.854804$, $df_5 = \\mathbf{0.821927}$ (check: $1/1.2166529024 = 0.8219271$).\n\nChanging `1.04` to `1.05` recomputes the whole table at compile time, and the assert, still expecting 0.8219-0.8220, now **fails the build**, because the true df5 is 0.783526. That failure is the point: the bound is a compiler-checked contract on the curve."
   },
   "commonMistakes": [
     "Assuming constexpr forces compile-time evaluation, a call with runtime arguments is legal and executes at runtime.",
@@ -173,7 +173,7 @@
     {
       "id": "q1",
       "type": "code-output",
-      "prompt": "What does this program print?",
+      "prompt": "What does this constexpr factorial example print?",
       "language": "cpp",
       "code": "// C++14\n#include <iostream>\nconstexpr int fact(int n) { return n <= 1 ? 1 : n * fact(n - 1); }\nint main() {\n    constexpr int f5 = fact(5);\n    std::cout << f5 << \" \" << fact(6);\n}",
       "answer": "120 720",
@@ -182,7 +182,7 @@
     {
       "id": "q2",
       "type": "code-output",
-      "prompt": "What does this program print?",
+      "prompt": "What does this constexpr loop accumulation example print?",
       "language": "cpp",
       "code": "// C++14\n#include <iostream>\nconstexpr int steps(int n) {\n    int s = 0;\n    for (int i = 0; i < n; ++i) s += i;\n    return s;\n}\nint main() {\n    static_assert(steps(5) == 10);\n    std::cout << steps(5) + steps(4);\n}",
       "answer": "16",
@@ -193,10 +193,10 @@
       "type": "mcq",
       "prompt": "A constexpr function is called with a value read from the user at runtime. What happens?",
       "options": [
-        "Compile error: constexpr functions only accept constants",
-        "It runs at runtime, exactly like an ordinary inline function",
         "It is silently replaced by zero",
-        "It is evaluated at compile time anyway"
+        "It runs at runtime, exactly like an ordinary inline function",
+        "It is evaluated at compile time anyway",
+        "Compile error: constexpr functions only accept constants"
       ],
       "answerIndex": 1,
       "explanation": "constexpr is permission, not obligation: without a constant context the call is an ordinary runtime call. To force compile-time evaluation, consume the result in a constexpr variable, static_assert, array bound or template argument."
@@ -206,12 +206,12 @@
       "type": "mcq",
       "prompt": "(C++20) A consteval function is called with a runtime value. What happens?",
       "options": [
-        "It compiles and runs at runtime",
-        "Compile error: consteval functions must be called with constant expressions",
+        "A linker error",
         "It falls back to constexpr semantics",
-        "A linker error"
+        "Compile error: consteval functions must be called with constant expressions",
+        "It compiles and runs at runtime"
       ],
-      "answerIndex": 1,
+      "answerIndex": 2,
       "explanation": "consteval declares an immediate function: every call must be a constant expression, so a runtime call is rejected at compile time, the no-fallback guarantee constexpr lacks."
     },
     {
@@ -227,12 +227,12 @@
       "type": "mcq",
       "prompt": "(C++20) What does constinit guarantee?",
       "options": [
+        "The variable lives in read-only memory pages",
         "The variable is immutable after initialisation",
         "The variable is constant-initialised before any dynamic initialisation, avoiding the static-initialisation-order fiasco, and stays mutable",
-        "The variable lives in read-only memory pages",
         "The variable is initialised lazily on first use"
       ],
-      "answerIndex": 1,
+      "answerIndex": 2,
       "explanation": "constinit is about *when*, not *whether you may write*: it forces constant initialisation for static-storage variables, killing the static-initialisation-order fiasco, while the variable remains writable."
     }
   ],

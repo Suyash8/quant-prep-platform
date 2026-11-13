@@ -2,7 +2,7 @@
   "id": "os-virtual-memory",
   "moduleId": "ph2-operating-systems",
   "title": "Virtual Memory, Paging and Memory Allocation",
-  "estMinutes": 27,
+  "estMinutes": 30,
   "difficulty": "core",
   "prereqs": [
     "os-processes-threads"
@@ -127,7 +127,7 @@
     {
       "type": "code",
       "lang": "c",
-      "code": "#include <fcntl.h>\n#include <stdio.h>\n#include <sys/mman.h>\n#include <unistd.h>\n\nint main(void) {\n    int fd = open(\"quotes.bin\", O_RDONLY);\n    if (fd < 0) { perror(\"open\"); return 1; }\n\n    size_t len = 64 * 1024 * 1024;                 // 64 MiB mapping\n    char *map = mmap(NULL, len, PROT_READ, MAP_PRIVATE, fd, 0);\n    if (map == MAP_FAILED) { perror(\"mmap\"); return 1; }\n\n    madvise(map, len, MADV_WILLNEED);              // hint: prefetch pages\n    mlock(map, len);                               // pin resident (needs limits)\n\n    long long checksum = 0;\n    for (size_t i = 0; i < len; i += 4096)         // one touch per 4 KiB page\n        checksum += map[i];                        // faults happen here if unpinned\n\n    printf(\"checksum %lld\\n\", checksum);\n    munlock(map, len);\n    munmap(map, len);\n    close(fd);\n    return 0;\n}",
+      "code": "#define _DEFAULT_SOURCE\n#include <fcntl.h>\n#include <stdio.h>\n#include <sys/mman.h>\n#include <unistd.h>\n\nint main(void) {\n    int fd = open(\"quotes.bin\", O_RDONLY);\n    if (fd < 0) { perror(\"open\"); return 1; }\n\n    size_t len = 64 * 1024 * 1024;                 // 64 MiB mapping\n    char *map = mmap(NULL, len, PROT_READ, MAP_PRIVATE, fd, 0);\n    if (map == MAP_FAILED) { perror(\"mmap\"); return 1; }\n\n    madvise(map, len, MADV_WILLNEED);              // hint: prefetch pages\n    mlock(map, len);                               // pin resident (needs limits)\n\n    long long checksum = 0;\n    for (size_t i = 0; i < len; i += 4096)         // one touch per 4 KiB page\n        checksum += map[i];                        // faults happen here if unpinned\n\n    printf(\"checksum %lld\\n\", checksum);\n    munlock(map, len);\n    munmap(map, len);\n    close(fd);\n    return 0;\n}",
       "caption": "Map, prefetch, pin, then touch: faults get paid in warmup, not during trading hours. mlock needs RLIMIT_MEMLOCK, desks raise it deliberately."
     },
     {
@@ -180,12 +180,12 @@
       "type": "mcq",
       "prompt": "On a TLB miss where the requested page IS present in RAM, what happens next?",
       "options": [
-        "The CPU raises a page fault for the kernel to fix",
         "Hardware performs a multi-level page walk to build the translation",
         "The page is copied into the TLB from disk",
-        "The kernel switches processes to free memory"
+        "The kernel switches processes to free memory",
+        "The CPU raises a page fault for the kernel to fix"
       ],
-      "answerIndex": 1,
+      "answerIndex": 0,
       "explanation": "Present pages never need the kernel: hardware walks the four-level table itself and caches the result in the TLB. Only a *not-present* page escalates to a fault."
     },
     {

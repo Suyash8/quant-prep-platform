@@ -2,7 +2,7 @@
   "id": "tsmd-matching-strategy",
   "moduleId": "ph10-trading-systems",
   "title": "Matching Engines, Strategy Execution and Risk Checks",
-  "estMinutes": 28,
+  "estMinutes": 35,
   "difficulty": "advanced",
   "prereqs": [
     "tsmd-oms-positions"
@@ -35,7 +35,8 @@
       "type": "code",
       "lang": "python",
       "code": "while True:\n    msg = inbound.pop()                 # SPSC ring, already parsed\n    if msg.kind == \"FILL\":\n        positions.on_fill(msg)          # idempotent: dedupe on exec ID\n    elif msg.kind == \"TICK\":\n        quote = strategy.decide(msg, positions)\n        if quote and risk.check(quote): # synchronous gate, before send\n            outbound.send(encode(quote))",
-      "caption": "Pseudocode of one iteration; production versions are C++ over pre-allocated queues, but the shape, apply, decide, gate, send, is identical."
+      "caption": "Deliberate pseudocode fragment: inbound, positions, strategy, risk, outbound and encode are supplied by the surrounding service. It is not a standalone program.",
+      "snippet": true
     },
     {
       "type": "p",
@@ -231,12 +232,12 @@
       "type": "mcq",
       "prompt": "Where must pre-trade risk checks run?",
       "options": [
-        "In the hot path, before the order leaves the firm",
-        "At the end of the trading day",
         "Asynchronously on the venue's servers",
+        "At the end of the trading day",
+        "In the hot path, before the order leaves the firm",
         "In the nightly risk batch"
       ],
-      "answerIndex": 0,
+      "answerIndex": 2,
       "explanation": "Exposure exists as soon as the venue can match the order. Only a synchronous, pre-transmission check can prevent it."
     },
     {
@@ -277,12 +278,12 @@
       "type": "mcq",
       "prompt": "A retransmitted execution report arrives with an execution ID the strategy has already processed. What does a correct event loop do?",
       "options": [
+        "Cancel all working orders",
         "Apply it again to keep the book fresh",
-        "Ignore it as a duplicate, keyed on the execution ID",
         "Reject the order it belongs to",
-        "Cancel all working orders"
+        "Ignore it as a duplicate, keyed on the execution ID"
       ],
-      "answerIndex": 1,
+      "answerIndex": 3,
       "explanation": "Idempotent handlers dedupe on execution/order IDs: replayed messages must change nothing the second time."
     },
     {

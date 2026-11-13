@@ -51,7 +51,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ action: st
 
     const out = await runnerPost<Record<string, unknown>>('/submit', {
       language, code,
-      tests: problem.tests.map(t => ({ input: t.input, expected: t.expected })),
+      tests: problem.tests.map(t => ({ input: t.input, expected: t.expected, hidden: !!t.hidden })),
       timeLimitMs: problem.timeLimitMs,
       memoryLimitMb: problem.memoryLimitMb,
     });
@@ -82,6 +82,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ action: st
     return NextResponse.json({ ...out, xpAwarded });
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'unknown';
+    if (!msg.startsWith('RUNNER_UNAVAILABLE')) console.error('[judge] runner failure:', msg);
     if (msg.startsWith('RUNNER_UNAVAILABLE')) {
       if (process.env.VERCEL === '1') {
         return NextResponse.json({ error: 'Code execution is not available on this serverless deployment yet. Lessons, quizzes and everything else work normally, run code locally or point CODE_RUNNER_URL at a runner host.' }, { status: 503 });

@@ -13,6 +13,7 @@ import { getManifest } from '@/lib/client/packs';
 interface DlState {
   running: boolean;
   done: number;
+  failed?: number;
   total: number;
   phase: string;
   error: null | string;
@@ -41,7 +42,7 @@ export function OfflineManager() {
     navigator.serviceWorker.ready.then(() => { if (alive) setSwReady(true); }).catch(() => {});
     const onMsg = (ev: MessageEvent) => {
       if (ev.data?.type === 'QF3_DL_PROGRESS') {
-        setDl({ running: ev.data.running, done: ev.data.done, total: ev.data.total, phase: ev.data.phase, error: ev.data.error, finishedAt: ev.data.finishedAt });
+        setDl({ running: ev.data.running, done: ev.data.done, total: ev.data.total, phase: ev.data.phase, error: ev.data.error, finishedAt: ev.data.finishedAt, failed: ev.data.failed ?? 0 });
         if (ev.data.phase === 'done') refreshStorage();
       }
     };
@@ -63,32 +64,37 @@ export function OfflineManager() {
     setTimeout(refreshStorage, 600);
   }
 
-  const pct = dl && dl.total > 0 ? Math.min(100, Math.round((dl.done / dl.total) * 100)) : 0;
+  const pct = dl && dl.total > 0
+    ? dl.phase === 'partial'
+      ? Math.min(99, Math.floor(((dl.done - (dl.failed ?? 0)) / dl.total) * 100)) // never show 100% when something failed
+      : Math.min(100, Math.round((dl.done / dl.total) * 100))
+    : 0;
   const finished = dl?.phase === 'done';
+  const partial = dl?.phase === 'partial';
 
   return (
     <section className="qf-card p-5 mt-6">
       <div className="section-head">
         <span className="icon-tile-sm icon-tile-info"><CloudOff /></span>
         <h2>Offline</h2>
-        <span className={`chip ml-auto ${finished ? 'chip-success' : ''}`}>
-          {finished ? 'ready' : swReady ? 'available' : 'unsupported'}
+        <span className={`chip ml-auto ${finished ? 'chip-success' : partial ? 'chip-danger' : ''}`}>
+          {finished ? 'ready' : partial ? 'incomplete' : swReady ? 'available' : 'unsupported'}
         </span>
       </div>
-      <p className="mt-2 text-sm font-semibold text-muted leading-relaxed">
+      <p className="mt-2 text-[15px] font-semibold text-muted leading-relaxed">
         Download every lesson, problem, assessment and project to this device. After that the whole
         app opens and scores instantly with no network: lessons, quizzes, XP, streaks and revision all
         run locally and sync the next time you&apos;re online.
       </p>
 
       {!swReady ? (
-        <p className="mt-4 text-sm font-semibold text-faint">Offline storage needs a browser that supports service workers (any modern browser, over HTTPS).</p>
+        <p className="mt-4 text-[15px] font-semibold text-faint">Offline storage needs a browser that supports service workers (any modern browser, over HTTPS).</p>
       ) : (
         <>
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <button onClick={startDownload} disabled={dl?.running} className="btn3d btn3d-sm">
               {dl?.running ? <Loader2 className="h-4 w-4 animate-spin" /> : finished ? <ArrowDownToLine className="h-4 w-4" /> : <ArrowDownToLine className="h-4 w-4" />}
-              {dl?.running ? 'Downloading…' : finished ? 'Download again' : 'Download everything'}
+              {dl?.running ? 'Downloading…' : finished ? 'Download again' : partial ? 'Retry download' : 'Download everything'}
             </button>
             {(finished || storage) && (
               <button onClick={clearOffline} className="btn3d btn3d-ghost btn3d-sm">
@@ -105,7 +111,7 @@ export function OfflineManager() {
 
           {dl && (dl.running || dl.done > 0) && (
             <div className="mt-4">
-              <div className="flex justify-between text-[11px] font-black text-faint tnum mb-1.5">
+              <div className="flex justify-between text-[12px] font-black text-faint tnum mb-1.5">
                 <span>
                   {dl.running
                     ? dl.phase === 'manifest' ? 'Reading the content manifest…'
@@ -113,27 +119,28 @@ export function OfflineManager() {
                     : dl.phase === 'pages' ? `Saving app pages… ${dl.done}/${dl.total}`
                     : 'Working…'
                     : finished ? 'Everything saved. The app now works offline.'
+                    : partial ? `Saved ${dl.done - (dl.failed ?? 0)} of ${dl.total}. ${dl.failed ?? 0} could not be saved.`
                     : ''}
                 </span>
                 <span>{dl.total > 0 ? pct + '%' : ''}</span>
               </div>
               <div className="h-3 rounded-full bg-surface-3 border border-border overflow-hidden">
                 <div
-                  className={`h-full rounded-full transition-all duration-300 ${finished ? 'bg-accent' : 'bg-info'}`}
-                  style={{ width: `${dl.running || finished ? Math.max(pct, 4) : 0}%` }}
+                  className={`h-full rounded-full transition-all duration-300 ${finished ? 'bg-accent' : partial ? 'bg-danger' : 'bg-info'}`}
+                  style={{ width: `${dl.running || finished || partial ? Math.max(pct, 4) : 0}%` }}
                 />
               </div>
-              {dl.error && <p className="mt-2 text-xs font-bold text-danger">Something failed: {dl.error}. Try again.</p>}
+              {dl.error && <p role="alert" className="mt-2 text-[13px] font-bold text-danger">{partial ? dl.error : `Something failed: ${dl.error}. Try again.`}</p>}
             </div>
           )}
 
           {finished && !dl?.running && (
-            <p className="mt-3 text-xs font-semibold text-success flex items-center gap-1.5">
+            <p className="mt-3 text-[13px] font-semibold text-success flex items-center gap-1.5">
               <CheckCircle2 className="h-4 w-4" /> Offline ready. Tip: add the app to your home screen for the full experience.
             </p>
           )}
           {cleared && !dl?.running && (
-            <p className="mt-3 text-xs font-semibold text-faint">Offline data cleared. The app still works online.</p>
+            <p className="mt-3 text-[13px] font-semibold text-faint">Offline data cleared. The app still works online.</p>
           )}
         </>
       )}

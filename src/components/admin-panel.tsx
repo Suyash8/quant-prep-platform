@@ -76,9 +76,9 @@ export function AdminPanel({ report, stats }: { report: ValidationReport; stats:
       {/* effort banner */}
       <div className="qf-card-flat p-4 flex items-center gap-4 !bg-surface-2/50">
         <span className="icon-tile icon-tile-sm icon-tile-accent"><Clock className="h-5 w-5" /></span>
-        <p className="text-sm font-bold">
+        <p className="text-[15px] font-bold">
           ~{stats.estHours} hours of authored core content
-          <span className="block text-xs font-semibold text-muted mt-0.5">Lesson time only, exercises, drills, assessments and projects add more.</span>
+          <span className="block text-[13px] font-semibold text-muted mt-0.5">Lesson time only, exercises, drills, assessments and projects add more.</span>
         </p>
       </div>
 
@@ -93,7 +93,7 @@ export function AdminPanel({ report, stats }: { report: ValidationReport; stats:
               </span>
               <div>
                 <h2 className="font-black">Content validation</h2>
-                <p className="text-xs font-semibold text-muted">
+                <p className="text-[13px] font-semibold text-muted">
                   {rep.ok ? 'All authored content passes the schema gate.' : 'The validator found problems, details below.'}
                 </p>
               </div>
@@ -110,25 +110,25 @@ export function AdminPanel({ report, stats }: { report: ValidationReport; stats:
               {rep.errors.length} errors
             </span>
             <span className="chip chip-warning tnum"><AlertTriangle className="h-3 w-3" /> {rep.warnings.length} warnings</span>
-            <span className="ml-auto text-xs font-semibold text-faint tnum">
+            <span className="ml-auto text-[13px] font-semibold text-faint tnum">
               Validator ran {new Date(rep.ranAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
             </span>
           </div>
 
           {rep.errors.length > 0 && (
             <div className="mt-3 rounded-2xl border-2 border-danger/30 p-3.5 bg-danger-soft/40 max-h-52 overflow-y-auto thin-scroll">
-              <p className="text-xs font-black text-danger mb-2">Errors ({rep.errors.length})</p>
-              <ul className="text-xs space-y-1 font-mono">{rep.errors.map((e, i) => <li key={i}>{e}</li>)}</ul>
+              <p className="text-[13px] font-black text-danger mb-2">Errors ({rep.errors.length})</p>
+              <ul className="text-[13px] space-y-1 font-mono">{rep.errors.map((e, i) => <li key={i}>{e}</li>)}</ul>
             </div>
           )}
           {rep.warnings.length > 0 && (
             <details className="mt-3 group rounded-2xl border-2 border-warning bg-warning-soft px-4 py-2.5">
-              <summary className="text-sm font-black text-warning-strong dark:text-warning cursor-pointer flex items-center gap-2.5 select-none list-none [&::-webkit-details-marker]:hidden">
+              <summary className="text-[15px] font-black text-warning-strong dark:text-warning cursor-pointer flex items-center gap-2.5 select-none list-none [&::-webkit-details-marker]:hidden">
                 <span className="icon-tile icon-tile-sm icon-tile-warning !h-7 !w-7"><AlertTriangle className="!h-4 !w-4" /></span>
                 <span className="tnum">{rep.warnings.length} warnings</span>
                 <ChevronDown className="ml-auto h-4 w-4 shrink-0 transition-transform group-open:rotate-180" />
               </summary>
-              <ul className="mt-2.5 text-xs space-y-1 font-mono max-h-40 overflow-y-auto thin-scroll rounded-xl bg-surface/70 border border-warning/25 p-3">
+              <ul className="mt-2.5 text-[13px] space-y-1 font-mono max-h-40 overflow-y-auto thin-scroll rounded-xl bg-surface/70 border border-warning/25 p-3">
                 {rep.warnings.map((w, i) => <li key={i}>{w}</li>)}
               </ul>
             </details>
@@ -143,7 +143,7 @@ export function AdminPanel({ report, stats }: { report: ValidationReport; stats:
             <span className="icon-tile icon-tile-warning"><Upload className="h-6 w-6" /></span>
             <div>
               <h2 className="font-black">Bulk content import</h2>
-              <p className="text-xs font-semibold text-muted">Drop a schema-valid JSON file to add content</p>
+              <p className="text-[13px] font-semibold text-muted">Drop a schema-valid JSON file to add content</p>
             </div>
           </div>
           <label
@@ -159,15 +159,15 @@ export function AdminPanel({ report, stats }: { report: ValidationReport; stats:
             }}
           >
             <Upload className={`h-7 w-7 ${dragOver ? 'text-accent' : 'text-faint'}`} />
-            <span className="text-sm font-extrabold">Drag a .json file here</span>
+            <span className="text-[15px] font-extrabold">Drag a .json file here</span>
             <span className="btn3d btn3d-ghost btn3d-sm" aria-hidden>Browse files</span>
-            <span className="text-xs font-semibold text-muted text-center max-w-xs">
+            <span className="text-[13px] font-semibold text-muted text-center max-w-xs">
               Lesson, problem, assessment, project or company, validated before it lands in <code className="text-[0.9em] font-bold">content/</code>. Schema: content/README.md
             </span>
             <input type="file" accept=".json" className="sr-only" onChange={e => { const f = e.target.files?.[0]; if (f) importJson(f); }} />
           </label>
           {importResult && (
-            <p className="mt-3 text-xs font-bold font-mono rounded-xl bg-surface-2/70 border border-border px-3 py-2 break-all">{importResult}</p>
+            <p className="mt-3 text-[13px] font-bold font-mono rounded-xl bg-surface-2/70 border border-border px-3 py-2 break-all">{importResult}</p>
           )}
         </section>
 
@@ -177,12 +177,12 @@ export function AdminPanel({ report, stats }: { report: ValidationReport; stats:
             <span className="icon-tile icon-tile-info"><FileJson className="h-6 w-6" /></span>
             <div>
               <h2 className="font-black">How content works</h2>
-              <p className="text-xs font-semibold text-muted">File-based authoring, validated on import</p>
+              <p className="text-[13px] font-semibold text-muted">File-based authoring, validated on import</p>
             </div>
           </div>
           <ul className="mt-4 flex-1 divide-y divide-border rounded-2xl border-2 border-border bg-surface-2/40">
             {[
-              { icon: Layers, k: 'Curriculum structure', v: '11 phases · 65 modules, edit via PR, validated on save' },
+              { icon: Layers, k: 'Curriculum structure', v: 'Phases and modules live in content/map, edit via PR, validated on save' },
               { icon: BookOpen, k: 'Rich blocks', v: '10 lesson block types · 5 question types; interactive components registered in code' },
               { icon: FileJson, k: 'Stable ids', v: 'JSON files are immutable once published; changes ship as new versions' },
               { icon: CheckCircle2, k: 'Docs', v: 'Schema documentation lives in content/README.md' },
@@ -190,8 +190,8 @@ export function AdminPanel({ report, stats }: { report: ValidationReport; stats:
               <li key={item.k} className="flex items-center gap-3 px-4 py-3">
                 <span className="icon-tile icon-tile-sm icon-tile-neutral"><item.icon className="h-4 w-4" /></span>
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-extrabold">{item.k}</div>
-                  <div className="text-xs font-semibold text-muted mt-0.5">{item.v}</div>
+                  <div className="text-[15px] font-extrabold">{item.k}</div>
+                  <div className="text-[13px] font-semibold text-muted mt-0.5">{item.v}</div>
                 </div>
               </li>
             ))}

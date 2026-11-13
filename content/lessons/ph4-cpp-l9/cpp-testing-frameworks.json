@@ -2,7 +2,7 @@
   "id": "cpp-testing-frameworks",
   "moduleId": "ph4-cpp-l9",
   "title": "GoogleTest, Benchmarking Frameworks and CI Pipelines",
-  "estMinutes": 26,
+  "estMinutes": 30,
   "difficulty": "advanced",
   "prereqs": [
     "cpp-tooling"
@@ -27,7 +27,10 @@
       "type": "code",
       "lang": "cpp",
       "code": "#include <algorithm>\n#include <gtest/gtest.h>\n\n// Class under test: a tiny one-sided limit book\nclass Book {\npublic:\n    void add(double px, int qty) {\n        totalQty_ += qty;\n        best_ = std::max(best_, px);\n    }\n    double best() const { return best_; }\n    int totalQty() const { return totalQty_; }\nprivate:\n    double best_ = 0.0;\n    int totalQty_ = 0;\n};\n\nclass BookTest : public ::testing::Test {\nprotected:\n    void SetUp() override {        // runs before EVERY test in this fixture\n        book_.add(100.0, 10);      // shared starting state\n    }\n    Book book_;                    // constructed fresh per test\n};\n\nTEST_F(BookTest, TracksBestPrice) {\n    book_.add(101.5, 5);\n    EXPECT_DOUBLE_EQ(book_.best(), 101.5);   // exact-bit near-equality for doubles\n    EXPECT_EQ(book_.totalQty(), 15);         // 10 (SetUp) + 5\n}\n\nTEST_F(BookTest, LowerAddLeavesBestUnchanged) {\n    book_.add(99.0, 7);\n    ASSERT_EQ(book_.totalQty(), 17);         // ASSERT: abort THIS test if wrong\n    EXPECT_DOUBLE_EQ(book_.best(), 100.0);   // only reached if the assert held\n}",
-      "caption": "Each TEST_F gets a new Book with SetUp state: no test depends on another having run."
+      "caption": "Each TEST_F gets a new Book with SetUp state: no test depends on another having run.",
+      "requires": [
+        "googletest"
+      ]
     },
     {
       "type": "p",
@@ -69,7 +72,8 @@
       "type": "code",
       "lang": "cpp",
       "code": "// tests/test_pnl.cpp - GoogleTest, testing what actually breaks\n#include <gtest/gtest.h>\n#include \"pricer/pnl.hpp\"\n\nTEST(PnL, FlatPositionHasZeroPnL) {\n    Position p{0, 0.0};\n    EXPECT_DOUBLE_EQ(realised_pnl(p, 100.0), 0.0);\n}\n\nTEST(PnL, AverageCostUpdatesOnIncreasing) {\n    Position p;\n    p.apply_fill(+100, 50.0);\n    p.apply_fill(+100, 60.0);\n    EXPECT_DOUBLE_EQ(p.avg_cost, 55.0);      // weighted, not last-price\n}\n\nTEST(PnL, ReducingFlipRealisesCorrectly) {\n    Position p;\n    p.apply_fill(+100, 50.0);\n    p.apply_fill(-150, 60.0);                // flip to short\n    EXPECT_DOUBLE_EQ(p.realised, 1000.0);   // 100 * 10 profit\n    EXPECT_EQ(p.qty, -50);\n    EXPECT_DOUBLE_EQ(p.avg_cost, 60.0);      // new side priced at fill\n}\n\nTEST(PnL, NoFloatingDriftAcrossCycle) {\n    Position p;\n    for (int i = 0; i < 100000; ++i) p.apply_fill(+1, 0.1);\n    EXPECT_NEAR(p.qty * p.avg_cost, 10000.0, 1e-6);   // accumulation sanity\n}",
-      "caption": "Test the invariants and the flip cases, those are where P&L bugs live."
+      "caption": "Test the invariants and the flip cases, those are where P&L bugs live. Deliberate fragment: surrounding service definitions and initialisation are required.",
+      "snippet": true
     },
     {
       "type": "interactive",
@@ -131,7 +135,11 @@
       "GoogleTest has EXPECT_THROW / EXPECT_NO_THROW / EXPECT_ANY_THROW.",
       "Recall what runs (constructor, SetUp) and when, per TEST_F."
     ],
-    "solution": "```cpp\nTEST_F(BookTest, RejectsNonPositiveQty) {\n    EXPECT_THROW(book_.add(100.0, 0), std::invalid_argument);\n    EXPECT_EQ(book_.totalQty(), 10);   // rejected add changed nothing\n}\n``` (a) First assert the *contract*: if the call silently succeeded (no throw), every later state assertion would test a corrupted premise, so the throw check is the anchor. (b) GoogleTest constructs a fresh `BookTest` object per test and calls `SetUp()` before each body - `TracksBestPrice`'s mutations died with its fixture instance, so this test always starts from one 100.0/10 add. No ordering, no shared statics."
+    "solution": "```cpp\nTEST_F(BookTest, RejectsNonPositiveQty) {\n    EXPECT_THROW(book_.add(100.0, 0), std::invalid_argument);\n    EXPECT_EQ(book_.totalQty(), 10);   // rejected add changed nothing\n}\n``` (a) First assert the *contract*: if the call silently succeeded (no throw), every later state assertion would test a corrupted premise, so the throw check is the anchor. (b) GoogleTest constructs a fresh `BookTest` object per test and calls `SetUp()` before each body - `TracksBestPrice`'s mutations died with its fixture instance, so this test always starts from one 100.0/10 add. No ordering, no shared statics.\nThis is an additional test in the BookTest fixture file, not a separate translation unit.",
+    "snippet": true,
+    "requires": [
+      "googletest"
+    ]
   },
   "independentExercise": {
     "prompt": "Your team's CI currently builds Release only and runs `./run_all.sh` manually. Write a concrete upgrade plan: (a) the two build configurations to add and what each catches; (b) the sanitiser lane contents and the bug classes it covers; (c) the exact cmake/ctest commands (per the sketch) for the sanitiser job; (d) one paragraph on why benchmarks from this pipeline must come from a separate uninstrumented Release job, referencing DoNotOptimize-era lessons.",
@@ -163,12 +171,12 @@
       "type": "mcq",
       "prompt": "In a GoogleTest fixture, when does `SetUp()` run?",
       "options": [
-        "Once, before the entire suite",
-        "Before the body of every test in the fixture",
         "Only if the test fails",
-        "After TearDown, for cleanup"
+        "After TearDown, for cleanup",
+        "Once, before the entire suite",
+        "Before the body of every test in the fixture"
       ],
-      "answerIndex": 1,
+      "answerIndex": 3,
       "explanation": "Each TEST_F constructs a fresh fixture object; SetUp() runs before each test's body (TearDown after). That per-test freshness is what makes tests order-independent."
     },
     {
@@ -196,10 +204,10 @@
       "type": "mcq",
       "prompt": "Why is `EXPECT_DOUBLE_EQ(a, b)` usually preferred over `EXPECT_EQ(a, b)` for computed doubles?",
       "options": [
-        "It casts both to float to speed comparison",
+        "It prints a diff instead of failing",
         "It compares within ~4 ULPs, tolerating legitimate floating-point reassociation by the optimiser",
         "It rounds both values to 2 decimals",
-        "It prints a diff instead of failing"
+        "It casts both to float to speed comparison"
       ],
       "answerIndex": 1,
       "explanation": "Bit-exact equality fails when -O3 reassociates an expression (e.g. FMA contraction); EXPECT_DOUBLE_EQ allows a 4-ULP window. For a domain tolerance ('within half a tick'), EXPECT_NEAR states it explicitly."
@@ -218,12 +226,12 @@
       "type": "mcq",
       "prompt": "In the CI sketch, why does the pipeline build both Debug and Release on every commit?",
       "options": [
-        "To double test coverage",
         "Different builds catch different failures: asserts only exist in Debug (-DNDEBUG removes them in Release), and optimiser-sensitive UB only shows in Release",
+        "Ninja requires two build directories to function",
         "Debug builds run on Windows, Release on Linux",
-        "Ninja requires two build directories to function"
+        "To double test coverage"
       ],
-      "answerIndex": 1,
+      "answerIndex": 0,
       "explanation": "The matrix is about failure modes, not volume: Debug keeps assert() and enables logic-error catching; Release exposes optimisation-sensitive UB and produces performance artefacts."
     }
   ],

@@ -320,6 +320,8 @@ export function scheduleFlush(delayMs = 1500) {
   flushTimer = setTimeout(() => { void flush(); }, delayMs);
 }
 
+const syncAttempts = new Map<string, number>();
+
 async function flush(): Promise<void> {
   if (typeof window === 'undefined' || syncDisabled || !navigator.onLine) return;
   const batch = queue.slice(0, 200);
@@ -333,13 +335,35 @@ async function flush(): Promise<void> {
     });
     if (res.status === 401) { syncDisabled = true; return; }
     if (!res.ok) throw new Error(`sync ${res.status}`);
-    const data = (await res.json()) as { snapshot?: ServerSnapshot };
-    const sent = new Set(batch.map(e => e.id));
-    queue = queue.filter(e => !sent.has(e.id));
+    const data = (await res.json()) as { snapshot?: ServerSnapshot; accepted?: string[]; duplicates?: string[]; failed?: string[]; rejected?: { id: string | null; reason: string }[] };
+    // Remove only events the server explicitly acknowledged (accepted or duplicate).
+    // Anything else, including failed events, stays queued and retries with back-off.
+    const acked = new Set([...(data.accepted ?? []), ...(data.duplicates ?? [])]);
+    const failedIds = new Set(data.failed ?? []);
+    for (const id of failedIds) syncAttempts.set(id, (syncAttempts.get(id) ?? 0) + 1);
+    // Schema-invalid events can never succeed: move them out of the retry queue into a
+    // visible quarantine record instead of blocking or silently deleting them.
+    const rejectedIds = new Set((data.rejected ?? []).map(r => r.id).filter((x): x is string => !!x));
+    if (rejectedIds.size > 0) {
+      try {
+        const old = JSON.parse(localStorage.getItem('qf3-rejected') || '[]') as unknown[];
+        const moved = queue.filter(e => rejectedIds.has(e.id));
+        localStorage.setItem('qf3-rejected', JSON.stringify([...old, ...moved.map(e => ({ rejectedAt: new Date().toISOString(), event: e, reason: data.rejected?.find(r => r.id === e.id)?.reason }))].slice(-50)));
+      } catch { /* storage unavailable */ }
+    }
+    queue = queue.filter(e => !acked.has(e.id) && !rejectedIds.has(e.id));
+    try {
+      if (failedIds.size > 0 || rejectedIds.size > 0) {
+        // durable error visibility: survives reloads and can be shown in Settings
+        localStorage.setItem('qf3:sync-error', JSON.stringify({ at: new Date().toISOString(), failed: failedIds.size, rejected: rejectedIds.size, queued: queue.length }));
+      } else {
+        localStorage.removeItem('qf3:sync-error');
+      }
+    } catch { /* storage unavailable */ }
     persistQueue();
     if (data.snapshot) applySnapshot(data.snapshot);
     done();
-    if (queue.length > 0) scheduleFlush(400); // more to send
+    if (queue.length > 0) scheduleFlush(failedIds.size > 0 ? Math.min(15000 * Math.max(...[...failedIds].map(id => syncAttempts.get(id) ?? 1)), 600000) : 400); // back off after failures
   } catch {
     // offline or server hiccup: retry later, nothing is lost
     scheduleFlush(15000);

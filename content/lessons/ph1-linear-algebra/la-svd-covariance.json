@@ -2,18 +2,18 @@
   "id": "la-svd-covariance",
   "moduleId": "ph1-linear-algebra",
   "title": "SVD, Covariance Matrices and Positive Definiteness",
-  "estMinutes": 30,
+  "estMinutes": 35,
   "difficulty": "core",
   "prereqs": [
     "la-orthogonality-projections"
   ],
   "objectives": [
     "Compute a covariance matrix from a small return dataset and read its structure",
-    "Diagnose positive (semi-)definiteness via leading principal minors and eigenvalue signs",
+    "Distinguish PSD from PD using eigenvalue signs, and use positive leading principal minors as the symmetric PD criterion",
     "Relate the eigenvalues of a covariance matrix to principal components and variance shares",
     "Describe the SVD A = U Sigma V^T and its role in PCA on a data matrix"
   ],
-  "motivation": "Everything a risk system knows about a portfolio's diversification is stored in one object: the covariance matrix. Its diagonal says how volatile each asset is; its off-diagonal says how much they move together. Before that matrix can be inverted, factorised or fed to an optimiser, it must be **positive definite**, and estimated covariance matrices frequently are not. This lesson connects the estimation of $C$, its eigendecomposition (PCA), its validity checks, and the SVD that modern libraries actually compute underneath.",
+  "motivation": "A covariance matrix summarises second-order co-movement and gives portfolio variance w^T*C*w. It does not capture every feature of dependence or tail risk. A valid covariance is positive semidefinite, but may be singular; positive definiteness is required for an ordinary inverse and an unpivoted positive-diagonal Cholesky factorisation. This lesson links sample covariance, PCA, numerical validity checks and SVD. Distinguish statistical validity from a particular algorithm requiring an invertible matrix.",
   "blocks": [
     {
       "type": "h2",
@@ -21,7 +21,7 @@
     },
     {
       "type": "p",
-      "md": "For $n$ assets, the **covariance matrix** $C$ has entries $C_{ij} = \\text{Cov}(r_i, r_j)$. The diagonal holds variances (each asset's own risk); the off-diagonal holds covariances (how pairs co-move). It is automatically **symmetric** since $\\text{Cov}(r_i, r_j) = \\text{Cov}(r_j, r_i)$, and it is the object that turns a weight vector into portfolio risk via $w^\\top C w$. With $T$ observations of returns, each entry is an average of products of deviations from the mean (divide by $T - 1$ for the sample covariance)."
+      "md": "For $n$ assets, the **covariance matrix** $C$ has entries $C_{ij} = \\text{Cov}(r_i, r_j)$. The diagonal holds variances (each asset's own risk); the off-diagonal holds covariances (how pairs co-move). It is automatically **symmetric** since $\\text{Cov}(r_i, r_j) = \\text{Cov}(r_j, r_i)$, and it is the object that turns a weight vector into portfolio variance via $w^\\top C w$. With $T$ observations of returns, each entry is an average of products of deviations from the mean (divide by $T - 1$ for the sample covariance)."
     },
     {
       "type": "steps",
@@ -33,7 +33,7 @@
         "Variance of A: $\\dfrac{1^2 + (-1)^2 + 0^2}{2} = \\dfrac{2}{2} = 1$.",
         "Variance of B: $\\dfrac{0 + 4 + 4}{2} = 4$.",
         "Covariance: $\\dfrac{(1)(0) + (-1)(-2) + (0)(2)}{2} = \\dfrac{2}{2} = 1$.",
-        "So $C = \\begin{pmatrix} 1 & 1 \\\\ 1 & 4 \\end{pmatrix}$ - symmetric, diagonal dominant, co-movement positive."
+        "Thus C=[[1,1],[1,4]], in squared percentage-point units. Its determinant is 3 and its diagonal is positive. Entering returns as decimals would divide every covariance entry by 10000."
       ]
     },
     {
@@ -42,7 +42,7 @@
     },
     {
       "type": "p",
-      "md": "From the previous lesson: a symmetric matrix diagonalises with orthogonal eigenvectors. For a covariance matrix this has a direct interpretation, each eigenvector is a synthetic portfolio whose returns are **uncorrelated with every other eigenvector's**, and its eigenvalue is that portfolio's variance. Finding them means solving $\\det(C - \\lambda I) = 0$."
+      "md": "A real symmetric covariance matrix has an orthonormal eigenbasis. Use unit eigenvectors q_i: Cov(q_i^T*r,q_j^T*r)=q_i^T*C*q_j is zero for different basis vectors, and the variance of q_i^T*r is lambda_i. Non-unit eigenvectors have variance lambda_i times their squared norm instead. This decorrelation does not imply statistical independence. A variance share lambda_i/trace(C) is defined only when trace(C)>0 and describes the data covariance, not the risk contribution to an arbitrary portfolio."
     },
     {
       "type": "steps",
@@ -52,7 +52,7 @@
         "Quadratic formula: $\\lambda = \\dfrac{5 \\pm \\sqrt{13}}{2}$, i.e. $\\lambda_1 \\approx 4.3028$ and $\\lambda_2 \\approx 0.6972$.",
         "Cross-check: sum $= 5 = 1 + 4$ (trace) ✓; product $= 3 = 4 - 1$ (determinant) ✓.",
         "First principal component explains $\\dfrac{4.3028}{5} \\approx 86\\%$ of total variance; the second only $\\approx 14\\%$.",
-        "Eigenvector for $\\lambda_1$: from $(1 - 4.3028)v_1 + v_2 = 0$, take $v \\approx (1, 3.30)$. Check: $C(1, 3.30) = (4.30, 14.21) \\approx 4.30 \\times (1, 3.30)$ ✓, the risky direction is B-heavy.",
+        "For lambda 1=(5+sqrt(13))/2, an eigenvector is(1,lambda 1-1), approximately(1,3.302776). Divide by sqrt(1+(lambda 1-1)^2) to give unit length before interpreting lambda 1 as variance. The eigen-equation holds coordinate by coordinate.",
         "The other eigenvector is orthogonal to it (symmetric matrix), roughly $(3.30, -1)$ - the hedging direction."
       ]
     },
@@ -60,7 +60,7 @@
       "type": "callout",
       "variant": "quant",
       "title": "Why this matters for finance",
-      "md": "On a yield curve, PCA over rate changes reliably finds the top eigenvector to be \"level\" (all maturities moving together, usually 80-90% of variance), then \"slope\" (short vs long), then \"curvature\". Trading desks and risk systems quote exactly these components, because working in the eigen-basis means every factor is uncorrelated by construction, hedging and stress-testing become one-dimensional problems."
+      "md": "Yield-change PCA often produces interpretable level-like, slope-like and curvature-like modes. Their shapes and variance shares depend on the period, maturities, units and preprocessing; no fixed 80-90% share is guaranteed. In-sample orthogonality of PCA returns does not eliminate joint tail risk or make every hedge a one-dimensional problem. Re-estimate and stress the model rather than treating historical components as permanent economic laws."
     },
     {
       "type": "h2",
@@ -68,7 +68,7 @@
     },
     {
       "type": "p",
-      "md": "A symmetric matrix is **positive semi-definite (PSD)** when $x^\\top C x \\ge 0$ for every vector $x$, and **positive definite (PD)** when it is strictly positive for $x \\neq 0$. Since $x^\\top C x$ is the variance of the portfolio $x$ (up to units), PSD is not optional, a negative variance is nonsense. Equivalently, $C$ is PD exactly when **all eigenvalues are positive**. Fast practical checks for a $2 \\times 2$: positive diagonal entries and a positive determinant. True covariance matrices computed from real data are always PSD; the pathology arises when practitioners *edit* one, e.g. stress-testing matrices assembled by hand from correlations, or estimate with fewer observations than assets, which can make the matrix singular."
+      "md": "For real symmetric C, PSD means x^T*C*x>=0 for every x, while PD means strict positivity for nonzero x. PSD is equivalent to nonnegative eigenvalues; PD to strictly positive ones. Sylvester's criterion for PD requires every leading principal minor positive. For 2-by-2, C11>0 and det(C)>0 suffice. For PSD, nonnegative leading minors alone are insufficient in general: all principal minors must be nonnegative, or use eigenvalues. A complete-case centred sample matrix gives C=X^T*X/(T-1), automatically PSD in exact arithmetic, with rank at most min(n,T-1). Thus n>=T forces singularity, not negative variance. Pairwise missing-data estimates, manual edits and numerical rounding can produce different issues; use an appropriate numerical tolerance."
     },
     {
       "type": "steps",
@@ -78,7 +78,7 @@
         "First compute $Cw = (1 \\times 0.5 + 1 \\times 0.5,\\ 1 \\times 0.5 + 4 \\times 0.5) = (1.0, 2.5)$.",
         "Then $w^\\top C w = 0.5 \\times 1.0 + 0.5 \\times 2.5 = 1.75$.",
         "Decomposed: $0.25 \\times 1 + 2 \\times 0.5 \\times 0.5 \\times 1 + 0.25 \\times 4 = 0.25 + 0.5 + 1.0 = 1.75$ ✓, own variances plus the diversification-cross term.",
-        "PD check: diagonal $> 0$ and $\\det = 4 - 1 = 3 > 0$ ✓; eigenvalues $4.30, 0.70 > 0$ ✓. Every portfolio built from these two assets has positive variance."
+        "Positive diagonal and determinant 3 establish PD. Hence every nonzero weight vector has positive variance in this model; the zero portfolio has zero variance."
       ]
     },
     {
@@ -87,7 +87,7 @@
     },
     {
       "type": "p",
-      "md": "The **singular value decomposition** states that *every* matrix, rectangular, singular, anything, factors as $A = U \\Sigma V^\\top$, with $U$ and $V$ orthogonal and $\\Sigma$ diagonal with nonnegative entries $\\sigma_1 \\ge \\sigma_2 \\ge \\dots$, the **singular values**. The connection to eigenvalues: the singular values of $A$ are the square roots of the eigenvalues of $A^\\top A$ (and of $AA^\\top$). For a symmetric positive definite matrix the two decompositions coincide: $C = Q \\Lambda Q^\\top$ **is** an SVD with $\\sigma_i = \\lambda_i$. In PCA practice you rarely form $C$ explicitly: with data matrix $X$ ($T$ observations $\\times$ $n$ assets, mean-centred), the SVD $X = U \\Sigma V^\\top$ hands you the principal components in $V$ directly, and $\\sigma_i^2/(T-1)$ are the component variances, numerically safer than squaring the data into $X^\\top X$ first."
+      "md": "Every real m-by-n matrix has an SVD A=U*Sigma*V^T. In the full form U is m-by-m and V n-by-n orthogonal; Sigma is m-by-n rectangular diagonal, with min(m,n) nonnegative singular values. Nonzero eigenvalues of A^T*A and A*A^T equal the squared nonzero singular values; the larger square matrix may have extra zeros. A symmetric PSD matrix admits an SVD using its orthonormal eigenbasis and nonnegative eigenvalues. For complex matrices use conjugate transpose and unitary factors. With centred data X and T>1 observations, covariance eigenvalues are sigma_i^2/(T-1), and columns of V are principal directions. Direct SVD avoids forming X^T*X. Software may also offer covariance-eigen, truncated or randomised solvers, so inspect the selected method instead of assuming all PCA calls use full SVD."
     },
     {
       "type": "p",
@@ -96,7 +96,7 @@
     {
       "type": "code",
       "lang": "python",
-      "code": "import numpy as np\nC = np.array([[1.0, 1.0], [1.0, 4.0]])\nw = np.array([0.5, 0.5])\nprint(np.round(w @ C @ w, 6))          # 1.75 - portfolio variance\nprint(np.linalg.eigvalsh(C)[0] < 0)    # False - smallest eigenvalue is positive\nU, S, Vt = np.linalg.svd(C)\nprint(S.tolist())                      # [4.303, 0.697] - singular values = eigenvalues (symmetric PD)",
+      "code": "import numpy as np\nC = np.array([[1.0, 1.0], [1.0, 4.0]])\nw = np.array([0.5, 0.5])\nprint(np.round(w @ C @ w, 6))          # 1.75 - portfolio variance\nprint(np.linalg.eigvalsh(C)[0] < 0)    # False - smallest eigenvalue is positive\nU, S, Vt = np.linalg.svd(C)\nprint(np.round(S, 3).tolist())                      # [4.303, 0.697] - singular values = eigenvalues (symmetric PD)",
       "caption": "For symmetric PD matrices the SVD returns the eigenvalues as singular values, in descending order."
     },
     {
@@ -106,32 +106,36 @@
     }
   ],
   "guidedExercise": {
-    "prompt": "Using $C = \\begin{pmatrix} 2 & 1 \\\\ 1 & 2 \\end{pmatrix}$ and the concentrated portfolio $w = (0.75, 0.25)$: compute $w^\\top C w$ step by step, then compare it with the variance of the eigen-portfolios $(1, 1)/\\sqrt2$ and $(1, -1)/\\sqrt2$ (which are 3 and 1). Why must the concentrated portfolio's variance lie between 1 and 3?",
+    "prompt": "For C=[[2,1],[1,2]] and w=(0.75,0.25), compute portfolio variance and express it in the unit eigenbasis. Derive the bounds lambda_min*||w||^2 and lambda_max*||w||^2. Does sum(w)=1 imply ||w||=1?",
     "hints": [
       "Compute Cw first, then dot w with it.",
-      "Variances of portfolios are weighted averages of eigenvalues with weights given by the squared coordinates in the eigen-basis."
+      "Squared eigenbasis coordinates sum to ||w||^2, not automatically to 1. Divide by that norm squared to obtain a weighted average.",
+      "Check eigenvalue conditions independently of any software label, and keep units and normalisation explicit."
     ],
-    "solution": "$Cw = (2 \\times 0.75 + 1 \\times 0.25,\\ 1 \\times 0.75 + 2 \\times 0.25) = (1.75, 1.25)$. Then $w^\\top C w = 0.75 \\times 1.75 + 0.25 \\times 1.25 = 1.3125 + 0.3125 = \\textbf{1.625}$. Cross-check in the eigen-basis: with $Q = \\tfrac{1}{\\sqrt 2}\\begin{pmatrix} 1 & 1 \\\\ 1 & -1 \\end{pmatrix}$, the coordinates of $w$ are $c = Q^\\top w = (\\tfrac{1}{\\sqrt 2}, \\tfrac{0.5}{\\sqrt 2})$, so $c_1^2 = 0.5$, $c_2^2 = 0.125$ (summing to $\\lVert w \\rVert^2 = 0.625$), and $w^\\top C w = 3 \\times 0.5 + 1 \\times 0.125 = 1.625$ ✓. Since the variance is the eigenvalue-weighted sum $\\lambda_1 c_1^2 + \\lambda_2 c_2^2$, it is pinned between $\\lambda_{\\min} \\lVert w \\rVert^2 = 0.625$ and $\\lambda_{\\max} \\lVert w \\rVert^2 = 1.875$ - no portfolio direction can escape the eigenspectrum, and for a fully-invested unit vector the bounds become exactly 1 and 3."
+    "solution": "$Cw = (2 \\times 0.75 + 1 \\times 0.25,\\ 1 \\times 0.75 + 2 \\times 0.25) = (1.75, 1.25)$. Then $w^\\top C w = 0.75 \\times 1.75 + 0.25 \\times 1.25 = 1.3125 + 0.3125 = \\textbf{1.625}$. Cross-check in the eigen-basis: with $Q = \\tfrac{1}{\\sqrt 2}\\begin{pmatrix} 1 & 1 \\\\ 1 & -1 \\end{pmatrix}$, the coordinates of $w$ are $c = Q^\\top w = (\\tfrac{1}{\\sqrt 2}, \\tfrac{0.5}{\\sqrt 2})$, so $c_1^2 = 0.5$, $c_2^2 = 0.125$ (summing to $\\lVert w \\rVert^2 = 0.625$), and $w^\\top C w = 3 \\times 0.5 + 1 \\times 0.125 = 1.625$ ✓. Since the variance is the eigenvalue-weighted sum $\\lambda_1 c_1^2 + \\lambda_2 c_2^2$, it lies between $\\lambda_{\\min} \\lVert w \\rVert^2 = 0.625$ and $\\lambda_{\\max} \\lVert w \\rVert^2 = 1.875$. The norm squared is 0.625, so the bounds are 0.625 and 1.875, and the computed variance 1.625 lies between them. Fully invested means the weights sum to 1, not that their squared norm is 1. Only a Euclidean-unit vector has bounds 1 and 3; equivalently the Rayleigh quotient (w^T*C*w)/(w^T*w) lies in that interval for nonzero w.",
+    "successCheck": "Variance 1.625, norm squared 0.625, bounds[0.625,1.875]; fully invested is not Euclidean-unit."
   },
   "independentExercise": {
-    "prompt": "A colleague hands you a \"stress-test\" covariance matrix $M = \\begin{pmatrix} 4 & 3 \\\\ 3 & 1 \\end{pmatrix}$. (a) Use the 2x2 PD checks (positive diagonal, positive determinant) to decide whether it is a valid covariance matrix. (b) If not valid, explain what is wrong and propose the standard shrinkage repair $M + \\lambda I$ with $\\lambda = 2.5$, verifying the repaired matrix passes the checks.",
+    "prompt": "A colleague hands you a \"stress-test\" covariance matrix $M = \\begin{pmatrix} 4 & 3 \\\\ 3 & 1 \\end{pmatrix}$. (a) Use the 2x2 PD checks (positive diagonal, positive determinant) to decide whether it is a valid covariance matrix. (b) If not valid, explain what is wrong and propose the diagonal-loading repair $M + \\lambda I$ with $\\lambda = 2.5$, verifying the repaired matrix passes the checks.",
     "hints": [
       "Check the determinant first, it decides everything for a 2x2.",
-      "Shrinkage adds lambda to both diagonal entries; off-diagonals stay."
+      "Diagonal loading adds lambda to both diagonal entries, shifting every eigenvalue by lambda.",
+      "Check eigenvalue conditions independently of any software label, and keep units and normalisation explicit."
     ],
-    "solution": "(a) Diagonal is positive ($4, 1 > 0$), but $\\det(M) = 4 \\times 1 - 3 \\times 3 = 4 - 9 = -5 < 0$. A negative determinant means one eigenvalue is negative: there exist portfolios with **negative variance**, so $M$ is **indefinite**, not a valid covariance matrix. (b) Shrinkage: $M + 2.5I = \\begin{pmatrix} 6.5 & 3 \\\\ 3 & 3.5 \\end{pmatrix}$. Checks: diagonal positive ✓; $\\det = 6.5 \\times 3.5 - 9 = 22.75 - 9 = 13.75 > 0$ ✓, now PD, with all eigenvalues positive, and a legitimate (if conservative) risk model."
+    "solution": "(a) Diagonal is positive ($4, 1 > 0$), but $\\det(M) = 4 \\times 1 - 3 \\times 3 = 4 - 9 = -5 < 0$. A negative determinant means one eigenvalue is negative: there exist portfolios with **negative variance**, so $M$ is **indefinite**, not a valid covariance matrix. (b) Diagonal loading: $M + 2.5I = \\begin{pmatrix} 6.5 & 3 \\\\ 3 & 3.5 \\end{pmatrix}$. Checks: diagonal positive ✓; $\\det = 6.5 \\times 3.5 - 9 = 22.75 - 9 = 13.75 > 0$ ✓, now PD, with all eigenvalues positive, and algebraically a valid positive-definite covariance. This repair does not establish that the entries are well-calibrated estimates of real risks.",
+    "successCheck": "Original determinant-5 is indefinite; loaded determinant 13.75 is positive with positive diagonals."
   },
   "commonMistakes": [
     "Dividing by $T$ when the task calls for the sample covariance (divide by $T - 1$), or forgetting to subtract the means before forming products.",
-    "Checking only that a matrix is symmetric before using it as a covariance, symmetry is necessary but positive definiteness is the real licence.",
+    "Requiring PD for every legitimate covariance: PSD is enough for validity, while invertibility needs PD. Symmetry and positive determinant alone are insufficient: -I has positive determinant in two dimensions but is negative definite.",
     "Reordering eigenvectors inconsistently with eigenvalues when assembling $Q \\Lambda Q^\\top$.",
     "Assuming SVD applies only to square matrices, its power is precisely that every rectangular matrix has one."
   ],
   "realWorldApplication": "Recommender systems (Netflix-style) compress user-item matrices via SVD; image compression keeps the top singular values; noise reduction in signals drops the small ones, in all cases the SVD separates the dominant structure from the residual.",
-  "quantFinanceApplication": "Risk engines estimate $C$ from return histories, validate it is PD, decompose it by eigendecomposition/SVD into principal factors, and compute portfolio risk as $w^\\top C w$. Shrinkage toward $\\lambda I$ is standard when the estimate is noisy or near-singular.",
+  "quantFinanceApplication": "Risk engines compute portfolio variance from a PSD covariance estimate. Ordinary inversion needs PD or a rank-aware alternative. Diagonal loading C+lambda*I shifts eigenvalues; shrinkage commonly forms(1-alpha)*C+alpha*tau*I. Neither repair proves that the statistical model captures current or tail risk.",
   "summary": [
     "The covariance matrix stores all pairwise co-movement; portfolio variance is the quadratic form $w^\\top C w$.",
-    "Eigenvectors of $C$ are uncorrelated synthetic portfolios and eigenvalues their variances; $\\lambda_i / \\text{trace}(C)$ is the variance share (PCA).",
+    "Unit covariance eigenvectors define uncorrelated projected portfolios, with variances lambda_i. For positive trace, lambda_i/trace(C) is the data variance share, not arbitrary portfolio risk contribution.",
     "PD means $x^\\top C x > 0$ for $x \\neq 0$, equivalently all eigenvalues positive; 2x2 quick check: positive diagonal and positive determinant.",
     "SVD $A = U \\Sigma V^\\top$ exists for every matrix; singular values are $\\sqrt{\\text{eigenvalues of } A^\\top A}$, and for symmetric PD $C$ the SVD coincides with the eigendecomposition."
   ],
@@ -143,11 +147,12 @@
       "options": [
         "Correlation coefficients",
         "The variances of each asset",
-        "The covariances with the market",
-        "The eigenvalues"
+        "The eigenvalues",
+        "The covariances with the market"
       ],
       "answerIndex": 1,
-      "explanation": "$C_{ii} = \\text{Var}(r_i)$ - each asset's own variance. Off-diagonal entries $C_{ij}$ are covariances; correlations are covariances rescaled by standard deviations."
+      "explanation": "$C_{ii} = \\text{Var}(r_i)$ - each asset's own variance. Off-diagonal entries $C_{ij}$ are covariances; correlations are covariances rescaled by standard deviations.",
+      "objective": 0
     },
     {
       "id": "q2",
@@ -155,20 +160,22 @@
       "prompt": "With $C = \\begin{pmatrix} 1 & 1 \\\\ 1 & 4 \\end{pmatrix}$ and $w = (0.5, 0.5)$, what is the portfolio variance $w^\\top C w$?",
       "answer": 1.75,
       "tolerance": 0.001,
-      "explanation": "$Cw = (1.0, 2.5)$ and $w \\cdot Cw = 0.5 + 1.25 = 1.75$. Equivalently $0.25 \\times 1 + 2(0.5)(0.5)(1) + 0.25 \\times 4 = 1.75$."
+      "explanation": "$Cw = (1.0, 2.5)$ and $w \\cdot Cw = 0.5 + 1.25 = 1.75$. Equivalently $0.25 \\times 1 + 2(0.5)(0.5)(1) + 0.25 \\times 4 = 1.75$.",
+      "objective": 0
     },
     {
       "id": "q3",
       "type": "mcq",
       "prompt": "A symmetric $2 \\times 2$ matrix is positive definite exactly when:",
       "options": [
-        "Both diagonal entries are positive",
+        "Its diagonal entries and determinant are positive",
         "It is symmetric and has positive determinant",
-        "All its entries are positive",
-        "Its trace is positive"
+        "Its trace is positive with arbitrary determinant",
+        "Both diagonal entries are positive, regardless of determinant"
       ],
-      "answerIndex": 1,
-      "explanation": "For symmetric 2x2 matrices, positive diagonal entries AND positive determinant together mean both eigenvalues are positive (PD). Note all-positive entries is neither necessary nor sufficient, and a positive trace alone permits a negative eigenvalue (e.g. det < 0)."
+      "answerIndex": 0,
+      "explanation": "Positive diagonal and positive determinant are sufficient and necessary here. Positive determinant alone fails for -I, whose two eigenvalues are negative. Positive diagonals alone fail for[[1,2],[2,1]], whose determinant is-3.",
+      "objective": 1
     },
     {
       "id": "q4",
@@ -177,34 +184,68 @@
       "language": "python",
       "code": "import numpy as np\nC = np.array([[1.0, 1.0], [1.0, 4.0]])\nw = np.array([0.5, 0.5])\nprint(np.round(w @ C @ w, 6))\nprint(np.linalg.eigvalsh(C)[0] < 0)",
       "answer": "1.75\nFalse",
-      "explanation": "The quadratic form evaluates to 1.75 (portfolio variance). eigvalsh returns eigenvalues ascending, so index 0 is the smallest, about 0.697, positive, so the comparison prints False."
+      "explanation": "The quadratic form evaluates to 1.75 (portfolio variance). eigvalsh returns eigenvalues ascending, so index 0 is the smallest, about 0.697, positive, so the comparison prints False.",
+      "objective": 1
     },
     {
       "id": "q5",
       "type": "short",
-      "prompt": "In one sentence: what is the relationship between the singular values of a matrix and its eigenvalues, and why does PCA often compute the SVD of the data matrix instead of forming the covariance?",
-      "modelAnswer": "Singular values are the square roots of the eigenvalues of A^T A; computing the SVD of the (mean-centred) data matrix X gives the principal components directly in V and the variances as sigma_i^2/(T-1), avoiding the numerically lossy step of squaring the data into X^T X.",
+      "prompt": "For real centred data X, how do its singular values give sample-covariance eigenvalues, and what numerical step does direct SVD avoid?",
+      "modelAnswer": "For the centred data matrix X with T>1 rows, variance eigenvalues equal squared singular values divided by T-1. Direct SVD avoids explicitly forming the covariance product X^T X, avoiding numerical damage from squaring its condition number.",
       "keywords": [
-        "square root",
-        "A^T A",
-        "data matrix",
-        "numerical",
-        "variance"
+        "singular",
+        "squared|square",
+        "T-1|T - 1",
+        "numerical|condition",
+        "covariance"
       ],
-      "explanation": "$\\sigma_i^2$ are the eigenvalues of $A^\\top A$, so for mean-centred data the SVD routes around forming $X^\\top X$ - fewer floating-point operations and better conditioning, which is what np.linalg.svd-based PCA implementations exploit."
+      "explanation": "Covariance is X^T*X/(T-1). SVD gives the same nonzero eigenvalues as sigma_i squared divided by T-1 without forming the Gram matrix. This is a numerical advantage, not a claim that every SVD solver is faster than every covariance method.",
+      "objective": 3
     },
     {
       "id": "q6",
       "type": "mcq",
-      "prompt": "PCA on daily yield-curve changes typically finds the first principal component corresponds to:",
+      "prompt": "A yield-change PCA finds a leading loading vector with similar signs and magnitudes across maturities. Which interpretation fits this observed shape?",
       "options": [
-        "Curvature of the curve",
-        "A near-parallel shift in all rates (level)",
+        "Idiosyncratic noise",
         "Short rates moving against long rates (slope)",
-        "Idiosyncratic noise"
+        "A near-parallel shift in all rates (level)",
+        "Curvature of the curve"
       ],
-      "answerIndex": 1,
-      "explanation": "The top eigenvector of the rate covariance matrix is overwhelmingly a level (parallel shift) factor, typically explaining 80-90% of variance; slope and curvature follow with decreasing eigenvalues."
+      "answerIndex": 2,
+      "explanation": "Similar loadings across maturities describe a near-parallel, level-like move. This interpretation follows the measured shape, not a guarantee that every dataset has such a first mode or any fixed explained-variance share.",
+      "objective": 2
+    },
+    {
+      "id": "q7",
+      "type": "numeric",
+      "objective": 0,
+      "prompt": "For the three-day returns A=(3,1,2), B=(4,2,6), in percentage points, what is their sample covariance in squared percentage points?",
+      "answer": 1,
+      "explanation": "Means are 2 and 4. Centred products are 0,2,0, summing to 2. Divide by T-1=2 to get 1. Decimal return units would instead give 0.0001; units matter."
+    },
+    {
+      "id": "q8",
+      "type": "numeric",
+      "objective": 2,
+      "prompt": "A positive-trace covariance has eigenvalues 4.3027756377 and 0.6972243623. What fraction of total variance does the first unit principal component explain? Give six decimal places.",
+      "answer": 0.86055512754,
+      "tolerance": 1e-06,
+      "explanation": "Total variance is trace(C)=4.3027756377+0.6972243623=5. Divide the leading eigenvalue by 5 to get approximately 0.860555. It is about 86.06%, not the variance contribution to any chosen portfolio."
+    },
+    {
+      "id": "q9",
+      "type": "mcq",
+      "objective": 1,
+      "prompt": "For a real symmetric 3-by-3 matrix, which condition is Sylvester's positive-definiteness criterion?",
+      "options": [
+        "Every leading principal determinant is positive",
+        "Only the full determinant is strictly positive",
+        "All matrix entries are strictly positive",
+        "Only all diagonal entries must be positive"
+      ],
+      "answerIndex": 0,
+      "explanation": "Require the determinants of the top-left 1-by-1,2-by-2 and 3-by-3 blocks all to be positive. One positive full determinant does not exclude two negative eigenvalues. For PSD, checking only nonnegative leading minors is insufficient."
     }
   ],
   "flashcards": [
@@ -221,17 +262,17 @@
     {
       "type": "concept",
       "front": "PCA reading of the eigendecomposition of C",
-      "back": "Eigenvectors = uncorrelated synthetic portfolios (principal directions); eigenvalues = their variances; lambda_i / trace(C) = share of total variance."
+      "back": "Unit covariance eigenvectors give uncorrelated projected returns; eigenvalues are their variances. lambda_i/trace(C) is defined for positive trace and is a data variance share."
     },
     {
       "type": "definition",
       "front": "Singular Value Decomposition",
-      "back": "$A = U \\Sigma V^\\top$ for ANY matrix; $\\sigma_i^2$ = eigenvalues of $A^\\top A$; for symmetric PD matrices SVD = eigendecomposition."
+      "back": "For real A, A=U*Sigma*V^T. Nonzero sigma_i squared are the nonzero eigenvalues of A^T*A. Rectangular cases may have additional zero eigenvalues; symmetric PSD matrices admit the eigenbasis SVD."
     },
     {
       "type": "concept",
-      "front": "Shrinkage repair for a broken covariance matrix",
-      "back": "Use $C + \\lambda I$: adds $\\lambda$ to every eigenvalue, lifting them above zero while keeping correlations' signs; the standard fix for singular or indefinite estimates."
+      "front": "Diagonal loading versus isotropic shrinkage",
+      "back": "Loading C+lambda*I shifts all eigenvalues by lambda. Shrinkage often mixes(1-alpha)*C+alpha*tau*I. Choose parameters and validate estimates; algebraic PD does not prove calibration."
     }
   ],
   "references": [
@@ -240,7 +281,7 @@
       "url": "https://ocw.mit.edu/courses/18-06-linear-algebra-spring-2010/"
     },
     {
-      "label": "scikit-learn: PCA implementation notes (SVD-based, doesn't form the covariance)",
+      "label": "scikit-learn PCA: SVD and covariance-eigen solver options",
       "url": "https://scikit-learn.org/stable/modules/generated/sklearn.decomposition.PCA.html"
     }
   ],

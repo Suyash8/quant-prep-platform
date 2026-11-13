@@ -2,7 +2,7 @@
   "id": "cpp-chrono-fs-ranges",
   "moduleId": "ph4-cpp-l5",
   "title": "std::chrono, std::filesystem, Ranges and Coroutines",
-  "estMinutes": 27,
+  "estMinutes": 30,
   "difficulty": "advanced",
   "prereqs": [
     "cpp-value-categories"
@@ -94,7 +94,8 @@
       "type": "code",
       "lang": "cpp",
       "code": "// C++20 language; std::generator is C++23 - shape sketch, not self-contained\nGenerator<Tick> streamTicks(TapeFile& tape) {\n    while (auto t = tape.nextTick())\n        co_yield *t;              // suspend: hand one tick to the caller\n}\n// consumer: for (const Tick& t : streamTicks(tape)) { /* react */ }",
-      "caption": "One tick materialised per pull: the pipeline never holds the whole tape in memory."
+      "caption": "One tick materialised per pull: the pipeline never holds the whole tape in memory. Deliberate fragment: surrounding service definitions and initialisation are required.",
+      "snippet": true
     },
     {
       "type": "table",
@@ -150,7 +151,8 @@
       "file_size returns std::uintmax_t, an unsigned byte count.",
       "filter decides which entries pass; transform maps an entry to its size, both are views, both are C++20."
     ],
-    "solution": "(a)\n\n```cpp\n// C++17\nstd::uintmax_t total = 0;\nfor (const auto& e : fs::directory_iterator(\"data/ticks\"))\n    if (e.is_regular_file() && e.path().extension() == \".csv\")\n        total += e.file_size();\n```\n\nOnly the CSVs pass the test: $4{,}000{,}000 + 2{,}500{,}000 = \\mathbf{6{,}500{,}000}$ bytes (readme.md excluded).\n\n(b) 180 us $= 180{,}000$ ns. With 3 entries iterated, the cost is $180{,}000 / 3 = \\mathbf{60{,}000}$ ns (60 us) per entry, the readme.md entry is visited but contributes nothing to the sum.\n\n(c)\n\n```cpp\n// C++20\nauto csvSizes = fs::directory_iterator(\"data/ticks\")\n              | std::views::filter([](const auto& e) {\n                    return e.is_regular_file() && e.path().extension() == \".csv\"; })\n              | std::views::transform([](const auto& e) { return e.file_size(); });\n```\n\n`std::views::filter`, `std::views::transform` and the `|` pipe are C++20-only; the directory iterator becomes a proper range in C++20. Summing over this lazy pipeline yields the same 6,500,000 bytes without building any intermediate container."
+    "solution": "(a)\n\n```cpp\n// C++17\nstd::uintmax_t total = 0;\nfor (const auto& e : fs::directory_iterator(\"data/ticks\"))\n    if (e.is_regular_file() && e.path().extension() == \".csv\")\n        total += e.file_size();\n```\n\nOnly the CSVs pass the test: $4{,}000{,}000 + 2{,}500{,}000 = \\mathbf{6{,}500{,}000}$ bytes (readme.md excluded).\n\n(b) 180 us $= 180{,}000$ ns. With 3 entries iterated, the cost is $180{,}000 / 3 = \\mathbf{60{,}000}$ ns (60 us) per entry, the readme.md entry is visited but contributes nothing to the sum.\n\n(c)\n\n```cpp\n// C++20\nauto csvSizes = fs::directory_iterator(\"data/ticks\")\n              | std::views::filter([](const auto& e) {\n                    return e.is_regular_file() && e.path().extension() == \".csv\"; })\n              | std::views::transform([](const auto& e) { return e.file_size(); });\n```\n\n`std::views::filter`, `std::views::transform` and the `|` pipe are C++20-only; the directory iterator becomes a proper range in C++20. Summing over this lazy pipeline yields the same 6,500,000 bytes without building any intermediate container.\nBoth fragments belong inside a function with namespace fs = std::filesystem and the described data/ticks directory. Include <filesystem>, <ranges> and <cstdint>.",
+    "snippet": true
   },
   "commonMistakes": [
     "Benchmarking with system_clock (steps with NTP) or high_resolution_clock (an unspecified alias), use steady_clock for all duration measurement.",
@@ -172,7 +174,7 @@
     {
       "id": "q1",
       "type": "code-output",
-      "prompt": "What does this C++17 program print?",
+      "prompt": "What does this duration conversion and remainder example print?",
       "language": "cpp",
       "code": "#include <chrono>\n#include <iostream>\nint main() {\n    using namespace std::chrono;\n    milliseconds ms(1500);\n    const seconds s = duration_cast<seconds>(ms);\n    std::cout << s.count() << \" \" << (ms - s).count();\n}",
       "answer": "1 500",
@@ -183,10 +185,10 @@
       "type": "mcq",
       "prompt": "Which clock should you use to benchmark a hot loop, and why?",
       "options": [
-        "system_clock: it is the real wall time",
-        "steady_clock: monotonic, immune to NTP and DST adjustments",
         "high_resolution_clock: it is the most precise by definition",
-        "Any clock: they are all equivalent for durations"
+        "steady_clock: monotonic, immune to NTP and DST adjustments",
+        "Any clock: they are all equivalent for durations",
+        "system_clock: it is the real wall time"
       ],
       "answerIndex": 1,
       "explanation": "steady_clock is contractually monotonic, it never steps, so intervals across it are trustworthy even when NTP moves the wall clock. high_resolution_clock is an unspecified alias, and system_clock is for human timestamps."
@@ -194,7 +196,7 @@
     {
       "id": "q3",
       "type": "code-output",
-      "prompt": "What does this C++17 program print?",
+      "prompt": "What does this odd-fill filtering example print?",
       "language": "cpp",
       "code": "#include <iostream>\n#include <vector>\nint main() {\n    const std::vector<int> fills{3, 1, 4, 1, 5, 9, 2, 6};\n    int sum = 0;\n    for (int f : fills) if (f % 2 != 0) sum += f;\n    std::cout << sum;\n}",
       "answer": "19",
@@ -230,11 +232,11 @@
       "prompt": "(C++20) When does a std::views::filter / std::views::transform pipeline actually examine elements?",
       "options": [
         "At construction: it copies matching elements immediately",
-        "Only as the consumer iterates, nothing runs until iteration, one element at a time",
         "In a background thread the library spawns",
+        "Only as the consumer iterates, nothing runs until iteration, one element at a time",
         "At destruction of the view, in one batch"
       ],
-      "answerIndex": 1,
+      "answerIndex": 2,
       "explanation": "Views are lazy, non-owning adaptors: elements flow through the pipeline as the consumer iterates, which means one pass and zero intermediate containers."
     }
   ],

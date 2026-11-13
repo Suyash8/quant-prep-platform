@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
   // Retrieval mastery: passing a later cumulative assessment marks retrievalDone on passed lessons
 
 
-  if (!isDiagnostic && pct >= 70) {
+  if (!isDiagnostic && pct >= (assessment.passMarkPercent ?? 70)) {
     const passedLessons = await db.lessonProgress.findMany({ where: { userId: user.id, status: 'passed' } });
     for (const p of passedLessons) {
       await db.lessonProgress.update({ where: { id: p.id }, data: { retrievalDone: true } }).catch(() => {});

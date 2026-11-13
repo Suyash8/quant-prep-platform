@@ -1,0 +1,259 @@
+{
+  "id": "ts-state-space-kalman",
+  "moduleId": "ph8-time-series",
+  "title": "State-Space Models and the Kalman Filter",
+  "estMinutes": 35,
+  "difficulty": "advanced",
+  "prereqs": [
+    "ts-cointegration"
+  ],
+  "objectives": [
+    "Write state and observation equations with distinct noise covariances",
+    "Compute a scalar Kalman prediction and update",
+    "Model a dynamic hedge ratio without using future observations"
+  ],
+  "motivation": "A quoted price is noisy, while the underlying quantity you want to track may evolve more smoothly. A state-space model distinguishes an unobserved state from its measurement. The state might be a latent level, trend or hedge coefficient. Its uncertainty is not the same as measurement noise. This distinction lets you combine a forecast with a new observation according to their relative precision. It does not prove the latent state exists as a tradable fair price. Define the state, units and observation mechanism before fitting parameters, and decide whether a linear Gaussian approximation is appropriate for the problem.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Separate what moves from what you measure"
+    },
+    {
+      "type": "p",
+      "md": "A quoted price is noisy, while the underlying quantity you want to track may evolve more smoothly. A state-space model distinguishes an unobserved state from its measurement. The state might be a latent level, trend or hedge coefficient. Its uncertainty is not the same as measurement noise. This distinction lets you combine a forecast with a new observation according to their relative precision. It does not prove the latent state exists as a tradable fair price. Define the state, units and observation mechanism before fitting parameters, and decide whether a linear Gaussian approximation is appropriate for the problem."
+    },
+    {
+      "type": "h2",
+      "text": "Two equations and their assumptions"
+    },
+    {
+      "type": "p",
+      "md": "A linear model writes x_t=F_t*x_(t-1)+w_t and y_t=H_t*x_t+v_t. Here w and v have zero means and covariances Q and R. The standard Kalman filter assumes suitable initial Gaussian uncertainty and independent noises across time and between the two processes. Conditional means and covariances then describe the filtering distribution exactly. Without Gaussian noise, the same recursion can remain the best linear estimator under suitable second-moment assumptions, but it is not generally the exact full posterior. Dimensions matter: H maps a state into observation units, and covariance matrices must remain symmetric and positive semidefinite."
+    },
+    {
+      "type": "h2",
+      "text": "Predict, then correct"
+    },
+    {
+      "type": "p",
+      "md": "Predict m_minus=F*m and P_minus=F*P*F_transpose+Q. Compute innovation e=y-H*m_minus and innovation covariance S=H*P_minus*H_transpose+R. The gain is K=P_minus*H_transpose*S_inverse. Update m=m_minus+K*e. Use a linear solve rather than explicitly forming an inverse in a matrix implementation. The Joseph covariance update, (I-KH)P_minus(I-KH)_transpose+K*R*K_transpose, helps preserve symmetry and non-negative variance under round-off. The innovation is a one-step forecast error, not the smoothed residual after all future data has been used. Store it before updating the state."
+    },
+    {
+      "type": "math",
+      "tex": "K_t=P_t^-H_t^\\top(H_tP_t^-H_t^\\top+R_t)^{-1},\\qquad m_t=m_t^-+K_t(y_t-H_tm_t^-)",
+      "caption": "Formula under the assumptions stated in the surrounding explanation."
+    },
+    {
+      "type": "h2",
+      "text": "Worked example: one measurement"
+    },
+    {
+      "type": "p",
+      "md": "Take a scalar random-walk state with F=H=1, previous mean 0 and variance 1. Let Q=0.1, R=0.9 and the new measurement y=2. Prediction gives variance 1.1. Innovation variance is 2.0, gain 0.55 and updated mean 1.1. The updated variance is 0.495. The state moves partway towards 2 because the observation is informative but noisy. Replacing R with a very large value makes the gain small; replacing it with a tiny positive value makes the observation dominate. Zero or negative covariance inputs require deliberate handling, not a blind divide."
+    },
+    {
+      "type": "h2",
+      "text": "Worked example: a dynamic hedge ratio"
+    },
+    {
+      "type": "p",
+      "md": "For an observed pair y_t and z_t, set the state to [alpha_t,beta_t] and H_t=[1,z_t], so y_t is approximately alpha_t+beta_t*z_t plus observation noise. A random-walk transition lets the intercept and hedge coefficient drift. If alpha is known to be zero and z=2, the scalar observation is y=2*beta+noise; with prior beta=1, P=1, Q=0 and R=1, observing y=3 yields gain 2/5 and posterior beta=1.4. The covariance becomes 0.2. This is an estimation example, not proof of cointegration or a profitable pairs strategy."
+    },
+    {
+      "type": "h2",
+      "text": "Filtering is not smoothing"
+    },
+    {
+      "type": "p",
+      "md": "A filter uses observations available through the current timestamp. A smoother revisits historical states using later observations. Smoothed estimates are useful for analysis but are a look-ahead leak if treated as historical live signals. Tune Q and R only with a defensible training and validation scheme; choosing them from the full backtest changes the experiment. Too little process noise can make the state slow to adapt, while too much can chase noise. Inspect normalised innovations and missing-data behaviour. If a measurement is missing, retain the prediction and its increased uncertainty rather than pretending an invented observation was received."
+    },
+    {
+      "type": "h2",
+      "text": "Numerical and market limits"
+    },
+    {
+      "type": "p",
+      "md": "Use stable factorisations for larger systems, test covariance symmetry and validate finite inputs. A state-space decomposition can hide non-identifiability: different combinations of state variation and measurement variation may explain similar observed paths. Structural breaks, heavy tails and asynchronous prices can violate the simple model. The time-series lab illustrates trend and noise separation, not a complete hedge-ratio estimator. In production, record the parameter version, timestamps, innovations and state uncertainty used for each decision. Apply transaction-cost and risk checks outside the filter. A precise estimate of a coefficient is not permission to assume instantaneous, costless or unlimited hedging. In the dynamic hedge example, record the regressor timestamp as carefully as the dependent price timestamp. Pairing a current observation with a later revised regressor is another look-ahead leak. For a two-dimensional implementation, initialise both the intercept and slope covariance deliberately and test the matrix dimensions. An arbitrary zero initial variance can tell the filter to ignore later evidence about that component, which is a modelling choice rather than a harmless default."
+    },
+    {
+      "type": "h2",
+      "text": "Worked example: run and check"
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "m,P,Q,R,y=0.0,1.0,0.1,0.9,2.0\nPm=P+Q\nK=Pm/(Pm+R)\nm=m+K*(y-m)\nP=(1-K)**2*Pm+K*K*R\nassert abs(m-1.1)<1e-12 and abs(P-0.495)<1e-12\nprint(f\"{K:.3f} {m:.3f} {P:.3f}\")\nbeta,P,H,R,y=1.0,1.0,2.0,1.0,3.0\nK=P*H/(H*P*H+R)\nbeta+=K*(y-H*beta)\nP=(1-K*H)**2*P+K*K*R\nprint(f\"{beta:.3f} {P:.3f}\")",
+      "caption": "Complete Python 3.11+ example"
+    },
+    {
+      "type": "p",
+      "md": "The exact output is `0.550 1.100 0.495; 1.400 0.200`. Run the example before changing a parameter, then predict the direction of the change. The assertions encode the stated checks; a failed assertion means that the implementation and the claimed result disagree."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Check this misconception",
+      "md": "R describes uncertainty in observation noise. Q instead describes process noise in the state transition, so confusing them changes how the filter balances predictions and measurements."
+    },
+    {
+      "type": "interactive",
+      "component": "TimeSeriesDecompose",
+      "params": {},
+      "caption": "Related concept lab. The lab illustrates the named building block; it is not a full implementation of every model in this lesson."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Compute the scalar update for prior mean 0, P=1, Q=0.1, R=0.9 and y=2. Success check: Gain=0.55, mean=1.1.",
+    "hints": [
+      "Add Q to the prior variance.",
+      "Divide predicted variance by predicted plus measurement variance.",
+      "Multiply the innovation by that gain."
+    ],
+    "solution": "\n```python\nP=1+0.1\nK=P/(P+0.9)\nm=K*2\nassert abs(K-0.55)<1e-12\nprint(f\"{m:.3f}\")\n```\nExpected output: `1.100`.",
+    "successCheck": "Gain=0.55, mean=1.1."
+  },
+  "independentExercise": {
+    "prompt": "Update beta with H=2, prior beta=1 and P=R=1 after observing y=3. Success check: Posterior beta=1.4.",
+    "hints": [
+      "Innovation is 3-2*1.",
+      "Innovation variance is 2*1*2+1.",
+      "Gain is 1*2/5."
+    ],
+    "solution": "\n```python\nbeta=1.0\nH,P,R,y=2.0,1.0,1.0,3.0\nK=P*H/(H*P*H+R)\nbeta+=K*(y-H*beta)\nassert abs(beta-1.4)<1e-12\nprint(f\"{beta:.3f}\")\n```\nExpected output: `1.400`.",
+    "successCheck": "Posterior beta=1.4."
+  },
+  "commonMistakes": [
+    "R describes uncertainty in observation noise. Q instead describes process noise in the state transition, so confusing them changes how the filter balances predictions and measurements.",
+    "A smoother revises past states using later observations. Treating that revised estimate as a live historical signal introduces information unavailable at the decision timestamp."
+  ],
+  "realWorldApplication": "Use the assumptions and checks above when reviewing state-space models and the kalman filter. Record inputs, state the failure conditions and compare the result with a simple independent calculation.",
+  "quantFinanceApplication": "For a trading or risk workflow, validate the model and timestamp conventions before using state-space models and the kalman filter. The worked result is conditional on its assumptions, not a return promise.",
+  "summary": [
+    "Write state and observation equations with distinct noise covariances",
+    "Compute a scalar Kalman prediction and update",
+    "Model a dynamic hedge ratio without using future observations"
+  ],
+  "quiz": [
+    {
+      "type": "mcq",
+      "prompt": "What does observation covariance R describe?",
+      "options": [
+        "The state transition matrix alone",
+        "The realised trading return target",
+        "Uncertainty in the measurement noise",
+        "The exact posterior mean every day"
+      ],
+      "answerIndex": 2,
+      "explanation": "R describes uncertainty in observation noise. Q instead describes process noise in the state transition, so confusing them changes how the filter balances predictions and measurements.",
+      "id": "q1",
+      "objective": 0
+    },
+    {
+      "type": "mcq",
+      "prompt": "For a dynamic hedge-ratio backtest, which historical state estimate may use future observations?",
+      "options": [
+        "A one-step prediction made at that time",
+        "A filtered state using only past data",
+        "A prior before the measurement arrives",
+        "A smoothed state using the full sample"
+      ],
+      "answerIndex": 3,
+      "explanation": "A smoother revises past states using later observations. Treating that revised estimate as a live historical signal introduces information unavailable at the decision timestamp.",
+      "id": "q2",
+      "objective": 2
+    },
+    {
+      "type": "numeric",
+      "prompt": "Scalar P_minus=1.1 and R=0.9 with H=1. What is the Kalman gain?",
+      "answer": 0.55,
+      "tolerance": 1e-06,
+      "explanation": "The scalar gain is 1.1/(1.1+0.9)=0.55. Reversing the variance ratio would give more weight to a less reliable source of information.",
+      "id": "q3",
+      "objective": 1
+    },
+    {
+      "type": "code-output",
+      "prompt": "What posterior mean does this scalar update print?",
+      "code": "gain=1.1/(1.1+0.9)\nprint(f\"{0+gain*(2-0):.3f}\")",
+      "language": "python",
+      "answer": "1.100",
+      "explanation": "The innovation is two and the gain is 0.55, so the mean moves to 1.1 rather than directly to the noisy measurement of two.",
+      "id": "q4",
+      "objective": 1
+    },
+    {
+      "type": "short",
+      "prompt": "Why distinguish process noise Q from observation noise R?",
+      "modelAnswer": "Q describes latent state evolution uncertainty while R describes measurement uncertainty; their balance determines the gain and adaptation.",
+      "keywords": [
+        "state|process",
+        "measurement|observation",
+        "uncertain|uncertainty|variance|gain"
+      ],
+      "explanation": "The two covariances refer to different equations. Increasing process uncertainty and increasing measurement uncertainty have opposite effects on the relative trust in a new observation.",
+      "id": "q5",
+      "objective": 0
+    },
+    {
+      "type": "ms",
+      "prompt": "Which implementation choices are sound?",
+      "options": [
+        "Use a linear solve for matrix innovation systems",
+        "Skip correction when the observation is missing",
+        "Use smoothed states as past live signals",
+        "Allow negative variances to improve the fit"
+      ],
+      "answerIndices": [
+        0,
+        1
+      ],
+      "explanation": "Solves avoid explicit matrix inversion and missing observations permit a prediction-only step. Smoothing leaks future information, while negative variances violate covariance meaning.",
+      "id": "q6",
+      "objective": 2
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "What does observation covariance R describe?",
+      "back": "Uncertainty in the measurement noise"
+    },
+    {
+      "type": "concept",
+      "front": "Which historical state estimate may use future observations?",
+      "back": "A smoothed state using the full sample"
+    },
+    {
+      "type": "concept",
+      "front": "Scalar P_minus=1.1 and R=0.9 with H=1. What is the Kalman gain?",
+      "back": "The result is 0.55 under the stated inputs."
+    },
+    {
+      "type": "concept",
+      "front": "Why distinguish process noise Q from observation noise R?",
+      "back": "Q describes latent state evolution uncertainty while R describes measurement uncertainty; their balance determines the gain and adaptation."
+    },
+    {
+      "type": "concept",
+      "front": "Which implementation choices are sound?",
+      "back": "Use a linear solve for matrix innovation systems, Skip correction when the observation is missing"
+    }
+  ],
+  "references": [
+    {
+      "label": "Welch and Bishop: Kalman filter introduction (sktime mirror)",
+      "url": "https://www.sktime.org/files/-welch/media/pdf/kalman_intro.pdf"
+    },
+    {
+      "label": "Statsmodels: state space models",
+      "url": "https://www.statsmodels.org/stable/statespace.html"
+    },
+    {
+      "label": "SciPy: linear solve",
+      "url": "https://docs.scipy.org/doc/scipy/reference/generated/scipy.linalg.solve.html"
+    }
+  ],
+  "skills": [
+    "time-series"
+  ]
+}

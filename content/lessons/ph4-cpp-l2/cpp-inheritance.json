@@ -2,13 +2,13 @@
   "id": "cpp-inheritance",
   "moduleId": "ph4-cpp-l2",
   "title": "Inheritance and Access Control",
-  "estMinutes": 26,
+  "estMinutes": 30,
   "difficulty": "core",
   "prereqs": [
     "cpp-operator-overloading"
   ],
   "objectives": [
-    "Derive classes with public inheritance and recognize when the is-a relationship genuinely holds",
+    "Derive classes with public inheritance and recognise when the is-a relationship genuinely holds",
     "Apply the public/protected/private access ladder inside derived classes and from outside code",
     "Predict construction and destruction order for objects with base subobjects",
     "List what is and is not inherited, and choose composition over inheritance when has-a fits"
@@ -27,11 +27,11 @@
       "type": "code",
       "lang": "cpp",
       "code": "#include <iostream>\n#include <string>\n#include <utility>\n\nclass Instrument {\npublic:\n    explicit Instrument(std::string symbol) : symbol_{std::move(symbol)} {}\n    const std::string& symbol() const { return symbol_; }\nprotected:\n    double tickSize_ = 0.01;    // derived classes may use this\nprivate:\n    std::string symbol_;        // nobody outside Instrument may name this\n};\n\nclass Future : public Instrument {\npublic:\n    Future(std::string symbol, double tickSize, double multiplier)\n        : Instrument{std::move(symbol)}, tickSize_{tickSize}, multiplier_{multiplier} {}\n    double tickValue() const { return tickSize_ * multiplier_; }  // own member\n    double baseTick() const { return tickSize_; }                 // OK: protected\n    // double s = symbol_;   // would NOT compile: symbol_ is private in the base\nprivate:\n    double tickSize_, multiplier_;\n};\n\nint main() {\n    Future f{\"ESZ5\", 0.25, 50.0};\n    std::cout << f.symbol() << \" tick value \" << f.tickValue() << '\\n';\n}",
-      "caption": "Output: ESZ5 tick value 12.5. The derived constructor initializes the base subobject first."
+      "caption": "Output: ESZ5 tick value 12.5. The derived constructor initialises the base subobject first."
     },
     {
       "type": "p",
-      "md": "Two details in the snippet matter. The Future constructor must initialize the base through its constructor - `Instrument{std::move(symbol)}` - because the base has no default constructor; omitting it would be a compile error. Alternatively, `using Instrument::Instrument;` inside Future **inherits** the base constructors, which works when every added member has a default initializer. And note that `symbol_` still exists inside every Future, private members are inherited as part of the subobject, but Future code cannot name it; that is exactly why the public `symbol()` accessor exists."
+      "md": "Two details in the snippet matter. The Future constructor must initialise the base through its constructor - `Instrument{std::move(symbol)}` - because the base has no default constructor; omitting it would be a compile error. Alternatively, `using Instrument::Instrument;` inside Future **inherits** the base constructors, which works when every added member has a default initialiser. And note that `symbol_` still exists inside every Future, private members are inherited as part of the subobject, but Future code cannot name it; that is exactly why the public `symbol()` accessor exists."
     },
     {
       "type": "table",
@@ -115,7 +115,7 @@
   "guidedExercise": {
     "prompt": "Build the account hierarchy. Class `Account` has `protected double balance_`, a constructor taking the opening cash, `deposit(double)` and `withdraw(double)` accepting only positive amounts and never overdrawing, and a `balance()` const accessor. Derive `class MarginAccount : public Account` with a private `double limit_`, a constructor forwarding to the base, and `buyingPower()` returning `balance_ + limit_`. In `main`, open an account with \\$10000 cash and \\$40000 margin; print buyingPower() then balance(). Also explain why `m.balance_ = 1e9;` in main would not compile.",
     "hints": [
-      "The derived constructor initializer list calls Account{cash} before initializing limit_.",
+      "The derived constructor initialiser list calls Account{cash} before initialising limit_.",
       "protected lets MarginAccount read balance_ directly; main is neither Account nor a derived class."
     ],
     "solution": "buyingPower() is $10000 + 40000 = 50000$; balance() is 10000. `m.balance_` is protected, and non-member code (main) may only touch public members, that is the access ladder doing its job.\n\n```cpp\n#include <iostream>\n\nclass Account {\npublic:\n    explicit Account(double cash) : balance_{cash} {}\n    void deposit(double amt) { if (amt > 0.0) balance_ += amt; }\n    void withdraw(double amt) { if (amt > 0.0 && amt <= balance_) balance_ -= amt; }\n    double balance() const { return balance_; }\nprotected:\n    double balance_;   // subclasses may use; outsiders may not\n};\n\nclass MarginAccount : public Account {\npublic:\n    explicit MarginAccount(double cash, double limit)\n        : Account{cash}, limit_{limit} {}          // base subobject first\n    double buyingPower() const { return balance_ + limit_; }\nprivate:\n    double limit_;\n};\n\nint main() {\n    MarginAccount m{10000.0, 40000.0};\n    std::cout << m.buyingPower() << '\\n';   // 50000\n    std::cout << m.balance() << '\\n';       // 10000\n    // m.balance_ = 1e9;   // compile error: protected, and main is not a member\n}\n```"
@@ -123,7 +123,7 @@
   "independentExercise": {
     "prompt": "Extend the Instrument hierarchy from the lesson. Add `class Bond : public Instrument` with a private `double coupon_`, and `class EquityOption : public Instrument` with a private `double strike_` and `double intrinsic(double spot) const` returning `std::max(spot - strike_, 0.0)`. Both constructors must forward the symbol to the base constructor. In `main`, construct Bond{\"UST10Y\", 0.0425} and EquityOption{\"AAPL 260115C150\", 150.0}; print the bond symbol and coupon, then the option intrinsic value at spot 155.0.",
     "hints": [
-      "Forward to the base first: Instrument{std::move(symbol)} as the first item of the initializer list.",
+      "Forward to the base first: Instrument{std::move(symbol)} as the first item of the initialiser list.",
       "std::max lives in <algorithm>; a call option below strike must clamp the intrinsic to 0."
     ],
     "solution": "Intrinsic at spot 155 with strike 150 is $\\max(155 - 150, 0) = 5$.\n\n```cpp\n#include <algorithm>\n#include <iostream>\n#include <string>\n#include <utility>\n\nclass Instrument {\npublic:\n    explicit Instrument(std::string symbol) : symbol_{std::move(symbol)} {}\n    const std::string& symbol() const { return symbol_; }\nprotected:\n    double tickSize_ = 0.01;\nprivate:\n    std::string symbol_;\n};\n\nclass Bond : public Instrument {\npublic:\n    Bond(std::string symbol, double coupon)\n        : Instrument{std::move(symbol)}, coupon_{coupon} {}\n    double coupon() const { return coupon_; }\nprivate:\n    double coupon_;\n};\n\nclass EquityOption : public Instrument {\npublic:\n    EquityOption(std::string symbol, double strike)\n        : Instrument{std::move(symbol)}, strike_{strike} {}\n    double intrinsic(double spot) const { return std::max(spot - strike_, 0.0); }\nprivate:\n    double strike_;\n};\n\nint main() {\n    Bond b{\"UST10Y\", 0.0425};\n    EquityOption o{\"AAPL 260115C150\", 150.0};\n    std::cout << b.symbol() << \" coupon \" << b.coupon() << '\\n';\n    std::cout << o.symbol() << \" intrinsic at 155: \" << o.intrinsic(155.0) << '\\n';\n}\n```"
@@ -132,7 +132,7 @@
     "Writing `class D : B` without `public` and losing the base interface, class inheritance defaults to private.",
     "Deriving when you mean composition: an Order is not an Instrument, it has one.",
     "Granting protected access casually; every future subclass can then depend on the field, weakening the invariant.",
-    "Forgetting to pass base constructor arguments in the initializer list when the base has no default constructor.",
+    "Forgetting to pass base constructor arguments in the initialiser list when the base has no default constructor.",
     "Assuming friends of the base are friends of the derived class, friendship is not inherited.",
     "Expecting members declared private in the base to be callable or nameable in derived code."
   ],
@@ -152,11 +152,11 @@
       "prompt": "Under public inheritance, which base members may code inside a Derived member function access?",
       "options": [
         "private and protected members",
-        "protected members only, never public",
         "public and protected members directly, private only through the base public interface",
-        "all members regardless of access level"
+        "all members regardless of access level",
+        "protected members only, never public"
       ],
-      "answerIndex": 2,
+      "answerIndex": 1,
       "explanation": "Private members exist inside the derived object but cannot be named by derived code. Derived functions use public or protected members; private state is reached via the base public/protected interface."
     },
     {

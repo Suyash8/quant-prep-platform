@@ -2,7 +2,7 @@
   "id": "ds-rpc-queues",
   "moduleId": "ph2-distributed-systems",
   "title": "Client-Server Systems, RPC, REST and Message Queues",
-  "estMinutes": 26,
+  "estMinutes": 35,
   "difficulty": "advanced",
   "prereqs": [
     "net-tcp-udp"
@@ -22,7 +22,7 @@
     },
     {
       "type": "p",
-      "md": "A **server** owns state and logic; **clients** open connections and send requests; the server replies with responses. Behind the simple picture sits a fixed protocol tax: name resolution (DNS), TCP's three-way handshake, and (for anything crossing the internet) a TLS handshake, then the request/response round trip itself. On a LAN with a 0.5 ms round-trip time, a TLS 1.2 session costs roughly 2 extra round trips plus TCP's 1, so a first request needs about $3 \\times 0.5\\,\\text{ms} = 1.5\\,\\text{ms}$ of setup before a 1 ms exchange, and servers add their own processing time on top. That is why production systems keep connections warm with pooling: setup cost is paid once, not per request."
+      "md": "In this simplified cold HTTP-over-TCP example, count uncached DNS separately, one RTT for TCP, two RTTs for a full TLS 1.2 handshake and one RTT for request/response, plus processing and transfer time. At0.5 ms RTT that is 1.5 ms of TCP/TLS setup before a0.5 ms request round trip. TLS 1.3, resumption, multiplexing and HTTP/3 have different handshake/transport behaviour. Pooling can amortise setup while a connection stays usable; it does not remove every DNS or reconnection cost."
     },
     {
       "type": "table",
@@ -59,7 +59,7 @@
     },
     {
       "type": "p",
-      "md": "**Remote Procedure Call** frameworks (gRPC is today's standard) let you call `get_quote(ticker)` on another machine as if it were a local function. Generated **stubs** on each side handle **marshalling**, packing arguments into bytes on the wire (via a schema such as Protocol Buffers) and unpacking the reply. The convenience hides a brutal truth: a local call either runs or crashes your process, while a remote call has a third outcome. If the client times out, it cannot tell whether the server (a) never received the request, (b) executed it but the reply was lost, or (c) is still working. The **failure ambiguity** is unavoidable, the network cannot prove a negative, and it dictates the design rule of the next lesson: make repeated execution of the same request harmless (idempotence), because timeouts force retries."
+      "md": "**Remote Procedure Call** frameworks such as gRPC let you call `get_quote(ticker)` on another machine as if it were a local function. Generated **stubs** on each side handle **marshalling**, packing arguments into bytes on the wire (via a schema such as Protocol Buffers) and unpacking the reply. The convenience hides a brutal truth: a local call either runs or crashes your process, while a remote call has a third outcome. If the client times out, it cannot tell whether the server (a) never received the request, (b) executed it but the reply was lost, or (c) is still working. The **failure ambiguity** is unavoidable, the network cannot prove a negative, and it dictates the design rule of the next lesson: make repeated execution of the same request harmless (idempotence), because timeouts force retries."
     },
     {
       "type": "callout",
@@ -73,7 +73,7 @@
     },
     {
       "type": "p",
-      "md": "REST models the world as **resources** with URLs (`/orders/4317`), manipulated with HTTP verbs. The semantics carry load-bearing weight: `GET` is **safe** (no state change), `PUT` and `DELETE` are **idempotent** (repeating them leaves the same end state), and `POST` is neither, exactly the verb that creates orders. Status codes are the contract: `2xx` success, `4xx` *your* mistake (retrying a `400` will fail identically), `5xx` *our* mistake (a `503` invites a retry with backoff). A retry policy that ignores this distinction hammers servers with requests that can never succeed."
+      "md": "Resource-oriented APIs commonly use HTTP semantics. GET is safe in intended effect, although incidental logging may occur. PUT and DELETE are idempotent: repeating an identical request has the same intended effect, not necessarily the same response. POST is not guaranteed safe or idempotent, but an application can add idempotency keys. Status codes guide rather than fully determine retries: unchanged malformed 400 requests should be fixed,429 may require waiting per Retry-After, and 503 may be transient. Retry only within a bounded policy that checks operation safety, unknown outcomes and application guarantees."
     },
     {
       "type": "h2",
@@ -81,7 +81,7 @@
     },
     {
       "type": "p",
-      "md": "A **message queue** (Kafka, RabbitMQ) inserts a durable buffer between a **producer** and a **consumer**. The producer appends and moves on, it never waits for the consumer. This buys three things RPC cannot: **decoupling** (producer and consumer deploy and fail independently), **load shaping** (bursts land in the buffer instead of crushing the consumer), and **replay** (Kafka retains a log, so a rebuilt consumer can reprocess history). The price is a new failure mode and a new arithmetic: the **backlog**. Delivery semantics matter too, queues typically offer *at-least-once* delivery, so consumers must tolerate duplicates, again foreshadowing idempotent processing."
+      "md": "A broker or log can buffer messages between producers and consumers. A producer need not wait for consumer processing, but it may wait for broker acknowledgements, durable replication or available buffer space. Availability, durability, ordering, replay and duplicate delivery depend on the product and configuration. Kafka retention can permit replay; a consumed/deleted queue message is not automatically replayable. At-least-once processing needs duplicate-safe consumers. Neither queues nor RPC eliminate failure coupling: the broker itself can be unavailable or throttled."
     },
     {
       "type": "steps",
@@ -90,20 +90,20 @@
         "Producer (market-data publisher): 1{,}200 messages per second. Consumer (feature extractor): 1{,}000 per second.",
         "Deficit: $1200 - 1000 = 200$ messages per second accumulate in the queue.",
         "After 60 seconds: $200 \\times 60 = 12{,}000$ messages of backlog, and latency to consume a 'fresh' message grows by $12000/1000 = 12$ seconds.",
-        "To drain that backlog within the next 60 seconds, the consumer needs capacity $12000/60 + 1000 = 1200$ per second: exactly the producer's rate, held for the whole drain window."
+        "With producers continuing at 1,200/s, draining 12,000 messages in60 seconds needs net drain 200/s, so total consumer capacity must be1,200+200=1,400/s. Capacity 1,200/s only stops further growth; the backlog never drains. If producers stop,200/s alone drains it in60 seconds."
       ]
     },
     {
       "type": "code",
       "lang": "python",
       "code": "produced_per_s = 1200\nconsumed_per_s = 1000\nbacklog = 0\nfor _ in range(60):                 # one minute of steady overload\n    backlog += produced_per_s - consumed_per_s\nprint(backlog)                      # 12000\nprint(backlog / consumed_per_s)     # 12.0 seconds of added latency",
-      "caption": "Backlog is the integral of the rate mismatch. A 'small' 17% overload compounds into minutes of staleness."
+      "caption": "Starting empty under constant rates, backlog grows to 12,000 messages in60 seconds. At1,000/s service this is approximately 12 seconds of queue work, not minutes. Arrival/service timing and scheduling affect individual message latency."
     },
     {
       "type": "callout",
       "variant": "quant",
       "title": "Backlog is stale data",
-      "md": "For a trading system, 12{,}000 unconsumed ticks is not storage, it is *staleness*: features computed off a 12-second-old tape are wrong, and signals fired on them are wrong faster. Queue depth belongs on your trading dashboard next to latency."
+      "md": "A12,000-message queue represents work waiting for service. At1,000/s it is about 12 seconds of queued work under a simple FIFO fluid model. Whether those messages are obsolete depends on event timestamps, processing policy and the application; queue depth is an alert signal, not proof that every computed feature or signal is wrong."
     },
     {
       "type": "h2",
@@ -114,7 +114,7 @@
       "component": "ComplexityCompare",
       "params": {
         "expressions": [
-          "x / (1, x)",
+          "x/(1-x)",
           "x"
         ],
         "xMin": 0,
@@ -122,7 +122,7 @@
         "xLabel": "utilization",
         "yLabel": "relative delay"
       },
-      "caption": "Queueing delay grows roughly like $\\rho/(1-\\rho)$ with utilization $\\rho$: near 90% utilization small bursts explode into huge waits, the mathematical reason queues need headroom and backpressure (next lessons)."
+      "caption": "Illustrative normalised M/M/1 waiting-time shape: rho/(1-rho), with utilisation rho in[0,1). Under that specific stable queue model, waiting time in units of mean service time grows sharply near full utilisation. General queue delay depends on arrival and service variability, capacity and scheduling; the curve is not a guarantee for every queue."
     },
     {
       "type": "p",
@@ -136,20 +136,22 @@
       "Warm connections skip DNS/TCP/TLS entirely.",
       "Setup cost per cold call times 200 gives the per-second waste."
     ],
-    "solution": "(a) Setup: DNS 0.5 + TCP $1 \\times 1$ + TLS $2 \\times 1$ = 3.5 ms; plus request RTT 1 ms; plus processing 4 ms. Total $= 3.5 + 1 + 4 = 8.5$ ms. (b) Warm: request RTT 1 ms + processing 4 ms $= 5$ ms. (c) Setup waste per cold call is $3.5$ ms, so 200 cold calls burn $3.5 \\times 200 = 700$ ms of wall-clock setup per second, pooling recovers nearly all of it; per call that is a 41% latency reduction (8.5 to 5 ms)."
+    "solution": "(a) Setup: DNS 0.5 + TCP $1 \\times 1$ + TLS $2 \\times 1$ = 3.5 ms; plus request RTT 1 ms; plus processing 4 ms. Total $= 3.5 + 1 + 4 = 8.5$ ms. (b) Warm: request RTT 1 ms + processing 4 ms $= 5$ ms. (c) Setup waste per cold call is $3.5$ ms, so 200 cold calls burn $3.5 \\times 200 = 700$ ms of aggregate per-request setup latency each second, a fully reusable pooled connection can avoid that setup in this model; concurrent waits overlap, so this is not necessarily 700 ms of elapsed wall-clock or CPU time; per call that is a 41% latency reduction (8.5 to 5 ms).",
+    "successCheck": "Cold latency 8.5 ms and warm 5 ms under the specified TLS 1.2 model. Setup sums to 700 ms of aggregate request latency per second, not necessarily elapsed wall-clock time."
   },
   "independentExercise": {
-    "prompt": "A queue fronts an EOD position-reporting service. Producers push 900 messages/s; the consumer handles 750/s for the first 2 minutes of the burst, then an autoscaler doubles consumer capacity to 1{,}500/s. (a) How many messages are queued after the 2 minutes? (b) How long does the doubled consumer take to drain the backlog (to the nearest second, assuming producers have stopped)? (c) During the overload window, how many seconds of extra latency does a message enqueued at the end of the burst experience if it is consumed last?",
+    "prompt": "A queue fronts an EOD position-reporting service. Producers push 900 messages/s; the consumer handles 750/s for the first 2 minutes of the burst, then an autoscaler doubles consumer capacity to 1{,}500/s. (a) How many messages are queued after the 2 minutes? (b) How long does the doubled consumer take to drain the backlog (to the nearest second, assuming producers have stopped)? (c) Under a fluid FIFO approximation, how long does a message arriving immediately as scaling occurs wait behind the existing backlog, excluding its own service time? Assume producers stop then and scaling is instantaneous.",
     "hints": [
       "Backlog accumulates at producer rate minus consumer rate.",
       "Drain time = backlog / drain rate.",
       "The last-enqueued message waits for the entire backlog ahead of it."
     ],
-    "solution": "(a) Deficit $= 900 - 750 = 150$/s; over 120 s: $150 \\times 120 = 18{,}000$ messages. (b) $18000 / 1500 = 12$ seconds. (c) A message enqueued at the end sits behind 18{,}000 others; at the eventual 1{,}500/s rate that is $18000/1500 = 12$ seconds of wait (during the slow phase it would have been $18000/750 = 24$ seconds), the autoscaler halves the worst-case staleness."
+    "solution": "(a) Deficit $= 900 - 750 = 150$/s; over 120 s: $150 \\times 120 = 18{,}000$ messages. (b) $18000 / 1500 = 12$ seconds. (c) In the fluid approximation, a new message sits behind about 18,000 queued messages; at the eventual 1{,}500/s rate that is $18000/1500 = 12$ seconds of wait (during the slow phase it would have been $18000/750 = 24$ seconds), this fluid-model queue wait is halved relative to maintaining 750/s after producers stop, not a general worst-case latency guarantee.",
+    "successCheck": "Backlog 18,000; with arrivals stopped and instantaneous 1,500/s service, fluid drain time 12 seconds. If900/s arrivals continued instead, net drain 600/s would require 30 seconds."
   },
   "commonMistakes": [
     "Treating a timed-out RPC as a failed one: the request may have executed, so retries need deduplication or idempotent design.",
-    "Retrying 4xx responses: a 400 will fail identically every time; only 5xx and network errors justify retries.",
+    "Retrying from status class alone:429 and some 408/5xx cases may be transient, but method semantics, application idempotency, Retry-After and retry budgets decide whether a retry is safe.",
     "Reading queue depth as 'free buffering', backlog is latency, and unbounded queues end in out-of-memory crashes or stale-data decisions.",
     "Assuming a queue guarantees exactly-once processing: at-least-once delivery means consumers must handle duplicates."
   ],
@@ -158,8 +160,8 @@
   "summary": [
     "Client-server requests pay fixed protocol taxes (DNS, TCP, TLS) that pooling amortises; processing time is budgeted separately from round trips.",
     "RPC marshals calls over the wire but introduces failure ambiguity: a timeout means 'unknown outcome', forcing idempotent designs and explicit reconciliation.",
-    "REST semantics are load-bearing: GET safe, PUT/DELETE idempotent, POST neither; 4xx means do-not-retry, 5xx means retry-with-backoff.",
-    "Queues decouple producers from consumers and shape bursts, at the cost of backlog latency; backlog = integral of (production, consumption) rate.",
+    "GET is safe in intended effect; PUT/DELETE are idempotent, while POST is not guaranteed idempotent. Retry policy also needs application semantics and status details, not only 4xx versus 5xx.",
+    "Queues can buffer bursts and decouple processing, but broker acknowledgement/backpressure may still block producers. Backlog changes by arrivals minus actual departures and cannot fall below zero.",
     "Sync calls gate decisions (orders); queues carry events downstream (blotters, analytics), production trading stacks deliberately use both."
   ],
   "quiz": [
@@ -168,13 +170,14 @@
       "type": "mcq",
       "prompt": "An RPC client times out after 2 seconds waiting for a risk check. What is the correct interpretation of the timeout?",
       "options": [
-        "The server definitely did not execute the check",
-        "The server definitely executed the check",
-        "The outcome is unknown, the check may or may not have executed",
-        "The network is down"
+        "The network is definitely down and no service can be reached",
+        "The server definitely completed the check before the timeout",
+        "The outcome is unknown; the check may or may not have executed",
+        "The server definitely received nothing and no action occurred"
       ],
       "answerIndex": 2,
-      "explanation": "A timeout means the reply did not arrive; the request may have been lost, executed-but-reply-lost, or still in progress. Only the outcome is unknown, which is why retries require idempotence or deduplication."
+      "explanation": "A timeout means the reply did not arrive; the request may have been lost, executed-but-reply-lost, or still in progress. Only the outcome is unknown, which is why retries require idempotence or deduplication.",
+      "objective": 1
     },
     {
       "id": "q2",
@@ -191,7 +194,8 @@
         2,
         3
       ],
-      "explanation": "GET (safe, no state change), PUT and DELETE are idempotent. POST is not: each POST typically creates a new resource, which is exactly why order-submission retries need idempotency keys."
+      "explanation": "GET is safe and idempotent in intended effect; PUT and DELETE are idempotent even if later responses differ. POST is not guaranteed idempotent by method semantics, though an application may supply a deduplicated operation using an idempotency key.",
+      "objective": 2
     },
     {
       "id": "q3",
@@ -200,7 +204,8 @@
       "answer": 9000,
       "tolerance": 0.5,
       "unit": "messages",
-      "explanation": "Deficit $= 200$/s; backlog $= 200 \\times 45 = 9{,}000$ messages."
+      "explanation": "Starting from an empty queue, arrivals exceed service by 1,200-1,000=200 messages/s. Over 45 seconds the accumulated backlog is 200*45=9,000 messages. This constant-rate fluid calculation assumes no drops, retries or other consumers change those rates.",
+      "objective": 4
     },
     {
       "id": "q4",
@@ -209,7 +214,8 @@
       "answer": 300,
       "tolerance": 0.5,
       "unit": "messages/second",
-      "explanation": "$9000 / 30 = 300$ messages per second of pure drain capacity (on top of any new production, which is assumed stopped)."
+      "explanation": "$9000 / 30 = 300$ messages per second of pure drain capacity (on top of any new production, which is assumed stopped).",
+      "objective": 4
     },
     {
       "id": "q5",
@@ -218,13 +224,14 @@
       "language": "python",
       "code": "produced_per_s = 1200\nconsumed_per_s = 1000\nbacklog = 0\nfor _ in range(60):\n    backlog += produced_per_s - consumed_per_s\nprint(backlog)\nprint(backlog / consumed_per_s)",
       "answer": "12000\n12.0",
-      "explanation": "Backlog grows by 200 per second for 60 seconds: 12{,}000 messages. Dividing by the consumption rate gives 12.0 seconds of added latency for a message that arrives at the end of the window."
+      "explanation": "Backlog grows by 200 per second for 60 seconds: 12{,}000 messages. Dividing by the consumption rate gives 12.0 seconds of added latency for a message that arrives at the end of the window.",
+      "objective": 4
     },
     {
       "id": "q6",
       "type": "short",
       "prompt": "Give two distinct reasons a design might route order *events* through a message queue rather than calling the blotter service synchronously over RPC.",
-      "modelAnswer": "Decoupling: the blotter can be down or redeploying without stalling order flow, and the producer never blocks on it. Load shaping: bursts of fills buffer in the queue instead of overwhelming the blotter, with replay available for consumers that fall behind.",
+      "modelAnswer": "Decoupling lets the blotter be down or redeploy while a healthy broker buffers events. Load shaping lets bursts of fills wait in a buffer instead of directly overwhelming the blotter. Replay depends on broker retention, and producers can still block on acknowledgements or backpressure.",
       "keywords": [
         "decoupl",
         "buffer",
@@ -234,7 +241,59 @@
         "independen",
         "load"
       ],
-      "explanation": "Queues buy availability independence, burst absorption and replay; the synchronous path is reserved for calls whose answer gates a decision."
+      "explanation": "Queues buy availability independence, burst absorption and replay; the synchronous path is reserved for calls whose answer gates a decision.",
+      "objective": 3
+    },
+    {
+      "id": "q7",
+      "type": "numeric",
+      "objective": 0,
+      "prompt": "Cold RPC setup has DNS 0.5 ms, TCP 1 RTT and full TLS 1.2 handshake 2 RTT. RTT is 1 ms and server work 4 ms; request/response takes one further RTT. What is total latency in ms under this model?",
+      "answer": 8.5,
+      "tolerance": 0.01,
+      "explanation": "Add non-overlapping stages in this stated model:0.5+1+2+1+4=8.5 ms. A warm request omits the setup and takes 5 ms. Different TLS/transport versions, caching and parallelism can change real latency; the arithmetic applies to the given assumptions."
+    },
+    {
+      "id": "q8",
+      "type": "numeric",
+      "objective": 4,
+      "prompt": "A FIFO fluid queue has 12,000 messages waiting and producers continue at 1,200/s. What total consumer rate drains the backlog in60 seconds?",
+      "answer": 1400,
+      "tolerance": 0.01,
+      "explanation": "Net drain must be12,000/60=200/s in addition to new arrivals. Total service therefore needs 1,200+200=1,400/s. Matching arrivals at 1,200/s prevents growth but leaves the existing backlog unchanged. If arrivals stopped, the calculation would instead use only 200/s."
+    },
+    {
+      "id": "q9",
+      "type": "ms",
+      "objective": 2,
+      "prompt": "Which HTTP semantics and retry statements are correct?",
+      "options": [
+        "GET safety refers to intended effect, not a ban on incidental logs",
+        "DELETE can be idempotent while successive responses differ",
+        "429 can ask the client to wait with Retry-After",
+        "Every 4xx response forbids any retry under all circumstances",
+        "Every 5xx response makes an order POST safe to repeat"
+      ],
+      "answerIndices": [
+        0,
+        1,
+        2
+      ],
+      "explanation": "Safe/idempotent semantics concern intended effects. Status codes do not themselves supply deduplication: an order may already have executed despite a failed response.429 is a client-error status with an explicit waiting/retry use case, disproving the blanket no4xx-retry rule."
+    },
+    {
+      "id": "q10",
+      "type": "mcq",
+      "objective": 2,
+      "prompt": "An order API has synchronously created a new order resource and returns its URL. Which status most specifically indicates successful creation?",
+      "options": [
+        "201 Created",
+        "400 Bad Request",
+        "429 Too Many Requests",
+        "503 Service Unavailable"
+      ],
+      "answerIndex": 0,
+      "explanation": "201 Created specifically indicates successful resource creation; the response can identify the new resource with Location.400 concerns a malformed request,429 rate limits and 503 temporary service unavailability. A202 Accepted would instead indicate acceptance for processing, not completed creation."
     }
   ],
   "flashcards": [
@@ -251,12 +310,12 @@
     {
       "type": "concept",
       "front": "HTTP verb semantics",
-      "back": "GET safe (no state change); PUT/DELETE idempotent (repeat = same end state); POST neither. Status codes: 4xx = caller error (do not retry), 5xx = server error (retry with backoff)."
+      "back": "GET is safe in intended effect; PUT/DELETE are idempotent; POST is not guaranteed either. Responses may vary across repetitions. Retry policy needs status details, operation semantics and bounded backoff;429 can include Retry-After."
     },
     {
       "type": "formula",
       "front": "Queue backlog",
-      "back": "Backlog $= \\int (\\text{producer rate} - \\text{consumer rate})\\,dt$; added staleness $\\approx$ backlog / consumer rate. Drain time $=$ backlog / drain capacity."
+      "back": "Backlog changes by arrivals minus actual departures and stays nonnegative. FIFO fluid queue work time is about backlog/service rate. With continuing arrivals, net drain rate is service minus arrival rate."
     },
     {
       "type": "concept",
@@ -276,6 +335,18 @@
     {
       "label": "Apache Kafka: documentation (producer/consumer, delivery semantics)",
       "url": "https://kafka.apache.org/documentation/"
+    },
+    {
+      "label": "MDN: Safe HTTP methods",
+      "url": "https://developer.mozilla.org/en-US/docs/Glossary/Safe/HTTP"
+    },
+    {
+      "label": "MDN: Idempotent methods",
+      "url": "https://developer.mozilla.org/en-US/docs/Glossary/Idempotent"
+    },
+    {
+      "label": "MDN:429 status and Retry-After",
+      "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/429"
     }
   ],
   "skills": [

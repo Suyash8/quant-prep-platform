@@ -1,5 +1,6 @@
 'use client';
 
+import { SyncErrorNotice } from '@/components/sync-error-notice';
 import * as React from 'react';
 import { useTheme } from 'next-themes';
 import { toast } from 'sonner';
@@ -59,6 +60,7 @@ export function SettingsForm({ user }: { user: { name: string; email: string; ro
 
   return (
     <div className="grid gap-5 lg:grid-cols-2 max-w-4xl">
+      <div className="lg:col-span-2 empty:hidden"><SyncErrorNotice /></div>
       {/* gamification summary + daily goal */}
       {gamed && (
         <section className="qf-card p-5 lg:col-span-2">
@@ -67,14 +69,14 @@ export function SettingsForm({ user }: { user: { name: string; email: string; ro
               <span className="icon-tile icon-tile-gold h-11 w-11"><Target className="h-6 w-6" /></span>
               <div className="flex-1 min-w-[180px]">
                 <h2 className="font-black">Daily goal</h2>
-                <p className="text-xs font-semibold text-muted">How much XP do you want to chase each day?</p>
+                <p className="text-[13px] font-semibold text-muted">How much XP do you want to chase each day?</p>
               </div>
               {/* one highlighted chip, the rest are quiet text stats */}
               <div className="flex items-center gap-x-4 gap-y-1.5 flex-wrap">
                 <span className="chip chip-warning tnum"><Flame className="h-3 w-3" /> {gamed.streakCount}-day streak</span>
-                <span className="text-sm font-semibold text-muted whitespace-nowrap">Level <span className="font-black text-foreground tnum">{gamed.level}</span></span>
-                <span className="text-sm font-semibold text-muted whitespace-nowrap tnum"><span className="font-black text-foreground">{gamed.xp.toLocaleString()}</span> XP</span>
-                <span className="text-sm font-semibold text-muted whitespace-nowrap">best <span className="font-black text-foreground tnum">{gamed.longestStreak}d</span></span>
+                <span className="text-[15px] font-semibold text-muted whitespace-nowrap">Level <span className="font-black text-foreground tnum">{gamed.level}</span></span>
+                <span className="text-[15px] font-semibold text-muted whitespace-nowrap tnum"><span className="font-black text-foreground">{gamed.xp.toLocaleString()}</span> XP</span>
+                <span className="text-[15px] font-semibold text-muted whitespace-nowrap">best <span className="font-black text-foreground tnum">{gamed.longestStreak}d</span></span>
               </div>
             </div>
             <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -100,8 +102,8 @@ export function SettingsForm({ user }: { user: { name: string; email: string; ro
                       </span>
                     )}
                     <span className={cn('block text-lg font-black tnum', active && 'text-accent-deep dark:text-accent')}>{xp}</span>
-                    <span className="block text-[11px] font-extrabold text-muted">XP / day</span>
-                    <span className="block text-[10px] font-bold text-muted">{vibe}</span>
+                    <span className="block text-[12px] font-extrabold text-muted">XP / day</span>
+                    <span className="block text-[12px] font-bold text-muted">{vibe}</span>
                   </button>
                 );
               })}
@@ -116,11 +118,11 @@ export function SettingsForm({ user }: { user: { name: string; email: string; ro
           <span className="icon-tile icon-tile-neutral h-11 w-11"><UserRound className="h-6 w-6" /></span>
           <div>
             <h2 className="font-black">Profile</h2>
-            <p className="text-xs font-semibold text-muted">How your name appears across the app</p>
+            <p className="text-[13px] font-semibold text-muted">How your name appears across the app</p>
           </div>
         </div>
         <label className="block mt-4">
-          <span className="text-xs font-extrabold text-muted uppercase tracking-wide">Display name</span>
+          <span className="text-[13px] font-extrabold text-muted uppercase tracking-wide">Display name</span>
           <div className="flex gap-2 mt-1.5">
             <input value={name} onChange={e => setName(e.target.value)} className="qf-input flex-1" aria-label="Display name" />
             <button
@@ -132,7 +134,7 @@ export function SettingsForm({ user }: { user: { name: string; email: string; ro
             </button>
           </div>
         </label>
-        <dl className="mt-4 space-y-2 text-sm font-semibold flex-1">
+        <dl className="mt-4 space-y-2 text-[15px] font-semibold flex-1">
           <div className="flex items-center justify-between gap-3 rounded-xl bg-surface-2/60 px-3 py-2">
             <dt className="text-muted">Email</dt><dd className="truncate">{user.email}</dd>
           </div>
@@ -154,7 +156,7 @@ export function SettingsForm({ user }: { user: { name: string; email: string; ro
           <span className="icon-tile icon-tile-violet h-11 w-11"><Palette className="h-6 w-6" /></span>
           <div>
             <h2 className="font-black">Appearance</h2>
-            <p className="text-xs font-semibold text-muted">Pick the theme that is easy on your eyes</p>
+            <p className="text-[13px] font-semibold text-muted">Pick the theme that is easy on your eyes</p>
           </div>
         </div>
         <div className="mt-4 grid grid-cols-3 gap-2.5" role="radiogroup" aria-label="Theme">
@@ -172,13 +174,13 @@ export function SettingsForm({ user }: { user: { name: string; email: string; ro
                 )}
               >
                 <opt.icon className={cn('h-5 w-5', active ? 'text-violet' : 'text-muted')} />
-                <span className={cn('text-xs font-extrabold', active && 'text-violet')}>{opt.label}</span>
+                <span className={cn('text-[13px] font-extrabold', active && 'text-violet')}>{opt.label}</span>
               </button>
             );
           })}
         </div>
         {/* one compact note instead of three identical full-width rows */}
-        <p className="mt-4 flex items-start gap-2.5 rounded-xl bg-surface-2/60 border border-border/50 px-3 py-2.5 text-xs font-semibold text-muted leading-relaxed">
+        <p className="mt-4 flex items-start gap-2.5 rounded-xl bg-surface-2/60 border border-border/50 px-3 py-2.5 text-[13px] font-semibold text-muted leading-relaxed">
           <Accessibility className="h-4 w-4 text-violet shrink-0 mt-0.5" aria-hidden />
           <span>Reduced-motion preferences are respected and animations tone down automatically. Everything is keyboard-navigable with visible focus rings, and mathematics stays selectable, copyable and searchable.</span>
         </p>
@@ -190,11 +192,11 @@ export function SettingsForm({ user }: { user: { name: string; email: string; ro
           <span className="icon-tile icon-tile-info h-11 w-11"><ShieldCheck className="h-6 w-6" /></span>
           <div>
             <h2 className="font-black">Data &amp; privacy</h2>
-            <p className="text-xs font-semibold text-muted">Your data stays in this deployment</p>
+            <p className="text-[13px] font-semibold text-muted">Your data stays in this deployment</p>
           </div>
         </div>
         {/* two-column definition grid: labels left on a shared column, values right with consistent padding */}
-        <dl className="mt-4 flex-1 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2.5 content-start rounded-2xl border border-border/60 bg-surface-2/60 p-3.5 text-sm font-semibold">
+        <dl className="mt-4 flex-1 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2.5 content-start rounded-2xl border border-border/60 bg-surface-2/60 p-3.5 text-[15px] font-semibold">
           {[
             { k: 'Storage', v: 'This deployment’s own database, nothing leaves it' },
             { k: 'Passwords', v: 'Salted scrypt hashes, never plain text' },
@@ -207,7 +209,7 @@ export function SettingsForm({ user }: { user: { name: string; email: string; ro
             </React.Fragment>
           ))}
         </dl>
-        <p className="mt-3 text-[11px] font-semibold text-faint leading-relaxed">
+        <p className="mt-3 text-[12px] font-semibold text-faint leading-relaxed">
           To erase your data, contact the deployment administrator.
         </p>
       </section>
@@ -218,10 +220,10 @@ export function SettingsForm({ user }: { user: { name: string; email: string; ro
           <span className="icon-tile icon-tile-danger h-11 w-11"><LogOut className="h-6 w-6" /></span>
           <div>
             <h2 className="font-black">Session</h2>
-            <p className="text-xs font-semibold text-muted">Done for now? Your streak will wait for you.</p>
+            <p className="text-[13px] font-semibold text-muted">Done for now? Your streak will wait for you.</p>
           </div>
         </div>
-        <dl className="mt-4 space-y-2 text-sm font-semibold flex-1">
+        <dl className="mt-4 space-y-2 text-[15px] font-semibold flex-1">
           <div className="flex items-center justify-between gap-3 rounded-xl bg-surface-2/60 px-3 py-2">
             <dt className="text-muted">Signed in as</dt>
             <dd className="truncate max-w-[180px]">{user.email}</dd>

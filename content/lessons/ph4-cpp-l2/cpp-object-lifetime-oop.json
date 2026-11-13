@@ -2,7 +2,7 @@
   "id": "cpp-object-lifetime-oop",
   "moduleId": "ph4-cpp-l2",
   "title": "Object Construction, Destruction and Slicing",
-  "estMinutes": 26,
+  "estMinutes": 30,
   "difficulty": "core",
   "prereqs": [
     "cpp-polymorphism"
@@ -10,7 +10,7 @@
   "objectives": [
     "Trace the exact construction and destruction sequence for objects with base subobjects and members",
     "Identify when the copy constructor and copy assignment are invoked",
-    "Recognize object slicing, explain its cause, and prevent it with references, pointer containers or a deleted base copy",
+    "Recognise object slicing, explain its cause, and prevent it with references, pointer containers or a deleted base copy",
     "Keep invariants across all construction paths using delegating constructors and in-class defaults"
   ],
   "motivation": "Subtle PnL bugs hide in object lifetimes: a copy made in the wrong place reports yesterday state, and a derived position pushed into a base-valued container silently loses its option fields. C++ destroys objects deterministically, at scope exit, in reverse construction order, which is precisely what makes RAII possible. This lesson makes the construction and destruction sequence explicit, then attacks the classic value-semantics trap: object slicing.",
@@ -21,7 +21,7 @@
     },
     {
       "type": "p",
-      "md": "An object lifetime begins when its constructor completes and ends when its destructor **starts**. For an object with a base class and members, construction follows a fixed recipe: direct base classes in declaration order (virtual bases, if any, first), then members in declaration order, then the constructor body. Destruction is the exact mirror image, derived destructor body first, then members in reverse, then the base. A delegating constructor behaves as its target constructor followed by a body, and in-class default initializers apply whenever the initializer list omits the member."
+      "md": "An object lifetime begins when its constructor completes and ends when its destructor **starts**. For an object with a base class and members, construction follows a fixed recipe: direct base classes in declaration order (virtual bases, if any, first), then members in declaration order, then the constructor body. Destruction is the exact mirror image, derived destructor body first, then members in reverse, then the base. A delegating constructor behaves as its target constructor followed by a body, and in-class default initialisers apply whenever the initialiser list omits the member."
     },
     {
       "type": "code",
@@ -35,7 +35,7 @@
     },
     {
       "type": "p",
-      "md": "The **copy constructor** fires when a new object is initialized from an existing one: `Order b = a;`, pass-by-value, and return-by-value (compilers routinely elide the last case, never count on observing it). The **copy assignment** fires when an already-existing object is assigned. Both are generated memberwise when you do not write them, and both must preserve the class invariant. Copies of large objects are real work, so hot paths pass heavy or polymorphic types by `const&` - which, unlike pass-by-value, also preserves the dynamic type."
+      "md": "The **copy constructor** fires when a new object is initialised from an existing one: `Order b = a;`, pass-by-value, and return-by-value (compilers routinely elide the last case, never count on observing it). The **copy assignment** fires when an already-existing object is assigned. Both are generated memberwise when you do not write them, and both must preserve the class invariant. Copies of large objects are real work, so hot paths pass heavy or polymorphic types by `const&` - which, unlike pass-by-value, also preserves the dynamic type."
     },
     {
       "type": "code",
@@ -106,7 +106,7 @@
   "commonMistakes": [
     "Passing polymorphic types by value, slicing, and then reading the wrong virtual function result.",
     "Using std::vector<Base> for heterogeneous collections instead of pointers.",
-    "Assuming the initializer-list order controls construction when declaration order does.",
+    "Assuming the initialiser-list order controls construction when declaration order does.",
     "Expecting the copy constructor to run on every return statement, compilers elide copies.",
     "Forgetting destruction is reverse construction order when reasoning about cleanup sequencing.",
     "Adding a validating constructor but a second default constructor that skips the validation instead of delegating."
@@ -115,16 +115,16 @@
   "quantFinanceApplication": "Heterogeneous books are stored as base-class pointers and valued through virtual pnl()/pv() calls; slicing is precisely why a positions table typed as values reports every option as its underlying.",
   "summary": [
     "Construction: base subobjects (declaration order), then members (declaration order), then the body; destruction is the exact reverse.",
-    "The copy constructor fires on initialization from an existing object (including pass-by-value); copy assignment fires on assignment to an existing object; both are memberwise by default.",
+    "The copy constructor fires on initialisation from an existing object (including pass-by-value); copy assignment fires on assignment to an existing object; both are memberwise by default.",
     "Slicing: copying a Derived into a Base value copies only the base subobject and re-targets the vptr, so virtual calls act as Base.",
     "Prevent slicing by passing references/pointers, storing pointers in containers, or deleting the base copy constructor.",
-    "Delegating constructors plus in-class default initializers give every construction path the same invariant."
+    "Delegating constructors plus in-class default initialisers give every construction path the same invariant."
   ],
   "quiz": [
     {
       "id": "q1",
       "type": "code-output",
-      "prompt": "What does this program print?",
+      "prompt": "What does this constructor and destructor ordering example print?",
       "language": "cpp",
       "code": "#include <iostream>\n\nclass Trade {\npublic:\n    explicit Trade(const char* name) : name_{name} { std::cout << \"c\" << name_ << ' '; }\n    ~Trade() { std::cout << \"d\" << name_ << ' '; }\nprivate:\n    const char* name_;\n};\n\nint main() {\n    Trade a{\"A\"};\n    { Trade b{\"B\"}; }\n    Trade c{\"C\"};\n}",
       "answer": "cA cB dB cC dC dA",
@@ -133,7 +133,7 @@
     {
       "id": "q2",
       "type": "code-output",
-      "prompt": "What does this program print?",
+      "prompt": "What does this virtual kind dispatch example print?",
       "language": "cpp",
       "code": "#include <iostream>\n#include <string>\n\nclass Instrument {\npublic:\n    virtual std::string kind() const { return \"Instrument\"; }\n};\n\nclass Option : public Instrument {\npublic:\n    std::string kind() const override { return \"Option\"; }\n};\n\nvoid bookAsValue(Instrument inst) { std::cout << inst.kind() << '\\n'; }\nvoid bookAsRef(const Instrument& inst) { std::cout << inst.kind() << '\\n'; }\n\nint main() {\n    Option o;\n    bookAsValue(o);\n    bookAsRef(o);\n}",
       "answer": "Instrument\nOption",
@@ -144,12 +144,12 @@
       "type": "mcq",
       "prompt": "Why exactly does `Base b = derivedObj;` slice?",
       "options": [
-        "The Base copy constructor is selected from the static type at compile time, so only the Base subobject is copied",
         "C++ deletes derived members during assignment",
         "The vtable shrinks the object to fit",
-        "Runtime polymorphism requires it"
+        "Runtime polymorphism requires it",
+        "The Base copy constructor is selected from the static type at compile time, so only the Base subobject is copied"
       ],
-      "answerIndex": 0,
+      "answerIndex": 3,
       "explanation": "The target b has static type Base, so the compiler chooses Base(const Base&) and feeds it a Base& view of the derived object. The derived members and vtable link are simply never copied, it is compile-time selection, not a runtime decision."
     },
     {
@@ -216,7 +216,7 @@
     {
       "type": "concept",
       "front": "Copy constructor vs copy assignment: when does each fire?",
-      "back": "Copy ctor: a NEW object is initialized from an existing one (T b = a; pass-by-value; return-by-value pre-elision). Assignment: an EXISTING object is assigned (b = a;)."
+      "back": "Copy ctor: a NEW object is initialised from an existing one (T b = a; pass-by-value; return-by-value pre-elision). Assignment: an EXISTING object is assigned (b = a;)."
     }
   ],
   "references": [

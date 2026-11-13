@@ -1,0 +1,116 @@
+{
+  "slug": "bond-price-ytm",
+  "title": "Bond Price and Yield to Maturity",
+  "difficulty": "medium",
+  "category": "quant-finance",
+  "tags": [
+    "quant-finance",
+    "fixed-income",
+    "bisection",
+    "floating-point"
+  ],
+  "statement": [
+    {
+      "type": "p",
+      "md": "A bond pays a coupon $c = F \\cdot (\\text{coupon rate}) / m$ at the end of each of $m$ periods per year, for $N = m \\cdot \\text{years}$ periods, and returns the face value $F$ with the last coupon. With annual yield $y$ (compounded $m$ times a year) and $i = y / m$:"
+    },
+    {
+      "type": "math",
+      "tex": "P(y) = \\sum_{t=1}^{N} \\frac{c}{(1+i)^t} + \\frac{F}{(1+i)^N}"
+    },
+    {
+      "type": "p",
+      "md": "Answer two kinds of queries. `P F cpn m years y` asks for the price with $y$ given in percent. `Y F cpn m years price` asks for the yield in percent, found by bisection of the annual yield on $[0, 1]$ (0% to 100%); the price is strictly decreasing in $y$. Print every answer with exactly 4 decimals. Tests only use prices that lie between $P(1)$ and $P(0)$, and keep outputs away from a rounding tie."
+    }
+  ],
+  "inputFormat": "First line: $q$. Then $q$ lines, each a query as above. `cpn` and `y` are percents, `years` is an integer, `m` is one of 1, 2, 4, 12.",
+  "outputFormat": "One line per query with 4 decimals.",
+  "constraints": [
+    "$1 \\le q \\le 200$",
+    "$F \\le 10^6$, $1 \\le \\text{years} \\le 30$",
+    "$0 \\le \\text{cpn}, y \\le 100$"
+  ],
+  "examples": [
+    {
+      "input": "2\nP 1000 5.00 2 10 5.00\nP 100 0.00 1 5 8.00\n",
+      "output": "1000.0000\n68.0583\n"
+    }
+  ],
+  "hints": [
+    "Price is a plain sum of discounted cash flows. Loop over periods.",
+    "For the yield use 100 to 200 bisection steps: lo=0 gives the highest price, hi=1 the lowest."
+  ],
+  "editorial": [
+    {
+      "type": "p",
+      "md": "Evaluate $P(y)$ in $O(N)$. Because $P$ is strictly decreasing in $y$, bisection on $[0,1]$ converges to the yield; 100 halvings give far more than the 4 decimals needed."
+    },
+    {
+      "type": "p",
+      "md": "A bond priced at par has yield equal to the coupon rate. That is a useful self check."
+    }
+  ],
+  "lessons": [
+    "fi-bond-pricing-yield",
+    "numa-root-finding"
+  ],
+  "solutions": {
+    "python": "import sys\n\n\ndef price(F, cpn, m, yrs, y):\n    N = m * yrs\n    i = y / m\n    c = F * cpn / m\n    s = 0.0\n    for t in range(1, N + 1):\n        s += c / (1 + i) ** t\n    return s + F / (1 + i) ** N\n\n\ndef main():\n    lines = sys.stdin.read().split('\\n')\n    for line in lines[1:1 + int(lines[0])]:\n        t = line.split()\n        F, cpn, m, yrs, x = float(t[1]), float(t[2]) / 100, int(t[3]), int(t[4]), float(t[5])\n        if t[0] == 'P':\n            print(f\"{price(F, cpn, m, yrs, x / 100):.4f}\")\n        else:\n            lo, hi = 0.0, 1.0\n            for _ in range(100):\n                mid = (lo + hi) / 2\n                if price(F, cpn, m, yrs, mid) > x:\n                    lo = mid\n                else:\n                    hi = mid\n            print(f\"{(lo + hi) / 2 * 100:.4f}\")\n\n\nmain()",
+    "cpp": "#include <cstdio>\n#include <cmath>\nusing namespace std;\n\nstatic double price(double F, double cpn, int m, int yrs, double y) {\n    int N = m * yrs;\n    double i = y / m, c = F * cpn / m, s = 0.0;\n    for (int t = 1; t <= N; t++) s += c / pow(1 + i, t);\n    return s + F / pow(1 + i, N);\n}\n\nint main() {\n    int q;\n    if (scanf(\"%d\", &q) != 1) return 1;\n    while (q--) {\n        char k;\n        double F, cpn, x;\n        int m, yrs;\n        if (scanf(\" %c %lf %lf %d %d %lf\", &k, &F, &cpn, &m, &yrs, &x) != 6) return 1;\n        cpn /= 100;\n        if (k == 'P') {\n            printf(\"%.4f\\n\", price(F, cpn, m, yrs, x / 100));\n        } else {\n            double lo = 0, hi = 1;\n            for (int it = 0; it < 100; it++) {\n                double mid = (lo + hi) / 2;\n                if (price(F, cpn, m, yrs, mid) > x) lo = mid; else hi = mid;\n            }\n            printf(\"%.4f\\n\", (lo + hi) / 2 * 100);\n        }\n    }\n    return 0;\n}"
+  },
+  "tests": [
+    {
+      "input": "2\nP 1000 5.00 2 10 5.00\nP 100 0.00 1 5 8.00\n",
+      "expected": "1000.0000\n68.0583\n",
+      "hidden": false
+    },
+    {
+      "input": "3\nP 1000 6.00 2 10 0.00\nP 100 10.00 1 1 100.00\nP 1000 5.00 12 30 5.00\n",
+      "expected": "1600.0000\n55.0000\n1000.0000\n",
+      "hidden": true
+    },
+    {
+      "input": "3\nY 100 10.92 12 22 96.68\nP 5000 14.66 4 25 2.95\nP 100 6.77 2 11 6.99\n",
+      "expected": "11.3305\n15328.5304\n98.3308\n",
+      "hidden": true
+    },
+    {
+      "input": "4\nP 5000 13.86 12 1 16.02\nP 5000 18.74 2 15 26.28\nP 5000 3.05 12 3 1.65\nP 1000 3.59 4 7 5.88\n",
+      "expected": "4900.8159\n3600.7861\n5204.7499\n869.3677\n",
+      "hidden": true
+    },
+    {
+      "input": "3\nY 5000 14.09 12 7 3764.82\nY 5000 12.18 4 17 6325.74\nY 100 6.28 12 14 49.18\n",
+      "expected": "20.8200\n9.1000\n14.9706\n",
+      "hidden": true
+    },
+    {
+      "input": "3\nY 100 16.09 12 1 114.15\nY 1000 9.31 4 13 943.86\nP 100 7.94 4 24 5.50\n",
+      "expected": "1.8015\n10.0900\n132.4055\n",
+      "hidden": true
+    },
+    {
+      "input": "3\nY 5000 2.30 4 5 1993.00\nP 100 6.32 2 6 1.57\nP 1000 17.85 1 5 21.06\n",
+      "expected": "22.7400\n127.0975\n906.1980\n",
+      "hidden": true
+    },
+    {
+      "input": "4\nY 5000 17.31 12 24 4197.22\nY 1000 9.13 1 7 774.26\nP 100 9.10 1 23 22.91\nY 100 5.54 12 3 61.21\n",
+      "expected": "20.6500\n14.4699\n40.2450\n23.7382\n",
+      "hidden": true
+    },
+    {
+      "input": "1\nP 100 5.01 2 18 1.93\n",
+      "expected": "146.6468\n",
+      "hidden": true
+    },
+    {
+      "input": "3\nP 1000 10.75 12 5 18.33\nP 5000 3.34 12 8 21.06\nP 1000 0.69 2 5 14.93\n",
+      "expected": "752.9975\n1584.7853\n510.4954\n",
+      "hidden": true
+    }
+  ],
+  "timeLimitMs": 4000,
+  "memoryLimitMb": 256,
+  "estMinutes": 35
+}

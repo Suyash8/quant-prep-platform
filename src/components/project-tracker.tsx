@@ -28,7 +28,7 @@ export function ProjectTracker({ slug, milestones, initialDone, initialStatus, i
 
   const pct = Math.min(Math.round((done / milestoneCount) * 100), 100);
   const fillWidth = Math.max(pct, 2) + '%';
-  const pctBadge = pct >= 100 ? 'chip chip-success anim-pop-in' : 'tnum font-bold text-faint text-sm';
+  const pctBadge = pct >= 100 ? 'chip chip-success anim-pop-in' : 'tnum font-bold text-faint text-[15px]';
 
   return (
     <div className="mt-4 qf-card p-5 anim-slide-up">
@@ -51,7 +51,7 @@ export function ProjectTracker({ slug, milestones, initialDone, initialStatus, i
                 aria-checked={status === opt.v}
                 disabled={busy}
                 onClick={() => { setStatus(opt.v); save({ status: opt.v }); }}
-                className={`press rounded-xl px-3.5 py-1.5 text-xs font-black transition-all ${
+                className={`press rounded-xl px-3.5 py-1.5 text-[13px] font-black transition-all ${
                   status === opt.v
                     ? 'bg-accent text-white shadow-[0_3px_0_0_var(--accent-deep)]'
                     : 'text-muted hover:bg-surface-2'
@@ -80,7 +80,7 @@ export function ProjectTracker({ slug, milestones, initialDone, initialStatus, i
           return (
             <li key={i} className="relative flex items-center gap-3 py-1.5">
               <span
-                className={`relative z-10 w-8 h-8 rounded-full font-black text-sm flex items-center justify-center shrink-0 tnum ${
+                className={`relative z-10 w-8 h-8 rounded-full font-black text-[15px] flex items-center justify-center shrink-0 tnum ${
                   isDone
                     ? 'bg-accent text-white'
                     : isCurrent
@@ -91,7 +91,7 @@ export function ProjectTracker({ slug, milestones, initialDone, initialStatus, i
                 {isDone ? <Check className="h-4 w-4" /> : i + 1}
               </span>
               <div className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
-                <span className={`text-sm ${isDone ? 'line-through text-muted' : isCurrent ? 'font-bold' : 'font-semibold text-muted'}`}>
+                <span className={`text-[15px] ${isDone ? 'line-through text-muted' : isCurrent ? 'font-bold' : 'font-semibold text-muted'}`}>
                   {m.title}
                 </span>
                 {isDone && <CheckCircle2 className="h-4 w-4 text-accent" />}
@@ -114,7 +114,7 @@ export function ProjectTracker({ slug, milestones, initialDone, initialStatus, i
           disabled={busy || done === 0}
           className="btn3d btn3d-sm btn3d-ghost"
         ><Undo2 className="h-3.5 w-3.5" /> Undo</button>
-        <span className="text-xs text-faint inline-flex items-center gap-1.5">
+        <span className="text-[13px] text-faint inline-flex items-center gap-1.5">
           <Info className="h-3.5 w-3.5 shrink-0" /> Self-logged against the criteria below, be honest with yourself.
         </span>
       </div>
@@ -125,7 +125,7 @@ export function ProjectTracker({ slug, milestones, initialDone, initialStatus, i
         onBlur={() => save({ notes })}
         rows={3}
         placeholder="Design decisions, benchmarks achieved, open questions… (saved on blur)"
-        className="qf-textarea mt-4 text-sm"
+        className="qf-textarea mt-4 text-[15px]"
         aria-label="Project notes"
       />
     </div>

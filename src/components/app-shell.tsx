@@ -1,5 +1,6 @@
 'use client';
 
+import { APP_VERSION } from '@/lib/version';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useTheme } from 'next-themes';
@@ -137,26 +138,26 @@ function UserMenu({ name, isAdmin }: { name: string; isAdmin?: boolean }) {
         aria-label="Account menu"
         className="press flex items-center gap-1.5 px-1.5 py-1 rounded-xl hover:bg-surface-2"
       >
-        <span className="h-9 w-9 rounded-2xl bg-accent text-on-accent text-sm font-black flex items-center justify-center shadow-[0_3px_0_0_var(--accent-deep)]">
+        <span className="h-9 w-9 rounded-2xl bg-accent text-on-accent text-[15px] font-black flex items-center justify-center shadow-[0_3px_0_0_var(--accent-deep)]">
           {name.slice(0, 1).toUpperCase()}
         </span>
         <ChevronDown className="h-4 w-4 text-muted hidden xl:block" aria-hidden />
       </button>
       {open && (
         <div role="menu" className="absolute right-0 top-full mt-2 w-52 qf-card p-2 anim-bounce-in z-50">
-          <p className="px-3 py-2 text-xs font-bold text-faint truncate">{name}</p>
-          <Link role="menuitem" href="/settings" className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-bold hover:bg-surface-2" onClick={() => setOpen(false)}>
+          <p className="px-3 py-2 text-[13px] font-bold text-faint truncate">{name}</p>
+          <Link role="menuitem" href="/settings" className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-[15px] font-bold hover:bg-surface-2" onClick={() => setOpen(false)}>
             <Settings className="h-4 w-4 text-muted" aria-hidden /> Settings
           </Link>
           {isAdmin && (
-            <Link role="menuitem" href="/admin" className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-bold hover:bg-surface-2" onClick={() => setOpen(false)}>
+            <Link role="menuitem" href="/admin" className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-[15px] font-bold hover:bg-surface-2" onClick={() => setOpen(false)}>
               <ShieldCheck className="h-4 w-4 text-muted" aria-hidden /> Admin
             </Link>
           )}
-          <Link role="menuitem" href="/analytics" className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-bold hover:bg-surface-2" onClick={() => setOpen(false)}>
+          <Link role="menuitem" href="/analytics" className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-[15px] font-bold hover:bg-surface-2" onClick={() => setOpen(false)}>
             <Activity className="h-4 w-4 text-muted" aria-hidden /> My stats
           </Link>
-          <button role="menuitem" type="button" onClick={signOut} className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-bold text-danger hover:bg-danger-soft">
+          <button role="menuitem" type="button" onClick={signOut} className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-[15px] font-bold text-danger hover:bg-danger-soft">
             <LogOut className="h-4 w-4" aria-hidden /> Sign out
           </button>
         </div>
@@ -202,7 +203,7 @@ export function AppShell({ user, children, isAdmin }: { user: { name: string; em
                   href={item.href}
                   title={item.label}
                   className={cn(
-                    'press px-2 xl:px-3 py-2 text-sm font-extrabold rounded-xl text-muted hover:bg-surface-2 hover:text-foreground transition-colors inline-flex items-center gap-1.5 whitespace-nowrap',
+                    'press px-2 xl:px-3 py-2 text-[15px] font-extrabold rounded-xl text-muted hover:bg-surface-2 hover:text-foreground transition-colors inline-flex items-center gap-1.5 whitespace-nowrap',
                     active && 'bg-accent-soft text-accent-deep dark:text-accent shadow-[inset_0_-3px_0_0_var(--accent)]'
                   )}
                 >
@@ -233,7 +234,7 @@ export function AppShell({ user, children, isAdmin }: { user: { name: string; em
                       style={{ width: `${Math.min(100, (hud.todayXp / Math.max(hud.dailyGoalXp, 1)) * 100)}%` }}
                     />
                   </span>
-                  <span className="tnum text-[11px] text-muted">{Math.min(hud.todayXp, hud.dailyGoalXp)}/{hud.dailyGoalXp}</span>
+                  <span className="tnum text-[12px] text-muted">{Math.min(hud.todayXp, hud.dailyGoalXp)}/{hud.dailyGoalXp}</span>
                 </span>
               </>
             )}
@@ -262,34 +263,34 @@ export function AppShell({ user, children, isAdmin }: { user: { name: string; em
               </span>
               QuantFoundry
             </div>
-            <p className="text-sm font-semibold text-muted max-w-xs">An honest preparation pathway for quantitative engineering. Learn by doing, track real mastery.</p>
+            <p className="text-[15px] font-semibold text-muted max-w-xs">An honest preparation pathway for quantitative engineering. Learn by doing, track real mastery.</p>
             <span className="chip chip-info"><Wifi className="h-3.5 w-3.5" aria-hidden /> Works offline</span>
           </div>
           <nav aria-label="Learn links" className="space-y-2.5">
-            <p className="text-xs font-black uppercase tracking-wider text-faint">Learn</p>
-            <Link href="/curriculum" className="block text-sm font-bold text-muted hover:text-foreground">Curriculum</Link>
-            <Link href="/learn" className="block text-sm font-bold text-muted hover:text-foreground">All lessons</Link>
-            <Link href="/revision" className="block text-sm font-bold text-muted hover:text-foreground">Spaced repetition</Link>
-            <Link href="/drills" className="block text-sm font-bold text-muted hover:text-foreground">Mental math drills</Link>
+            <p className="text-[13px] font-black uppercase tracking-wider text-faint">Learn</p>
+            <Link href="/curriculum" className="block text-[15px] font-bold text-muted hover:text-foreground">Curriculum</Link>
+            <Link href="/learn" className="block text-[15px] font-bold text-muted hover:text-foreground">All lessons</Link>
+            <Link href="/revision" className="block text-[15px] font-bold text-muted hover:text-foreground">Spaced repetition</Link>
+            <Link href="/drills" className="block text-[15px] font-bold text-muted hover:text-foreground">Mental math drills</Link>
           </nav>
           <nav aria-label="Practice links" className="space-y-2.5">
-            <p className="text-xs font-black uppercase tracking-wider text-faint">Practice</p>
-            <Link href="/practice" className="block text-sm font-bold text-muted hover:text-foreground">Code problems</Link>
-            <Link href="/assessments" className="block text-sm font-bold text-muted hover:text-foreground">Assessments</Link>
-            <Link href="/projects" className="block text-sm font-bold text-muted hover:text-foreground">Projects</Link>
-            <Link href="/lab" className="block text-sm font-bold text-muted hover:text-foreground">Interactive labs</Link>
+            <p className="text-[13px] font-black uppercase tracking-wider text-faint">Practice</p>
+            <Link href="/practice" className="block text-[15px] font-bold text-muted hover:text-foreground">Code problems</Link>
+            <Link href="/assessments" className="block text-[15px] font-bold text-muted hover:text-foreground">Assessments</Link>
+            <Link href="/projects" className="block text-[15px] font-bold text-muted hover:text-foreground">Projects</Link>
+            <Link href="/lab" className="block text-[15px] font-bold text-muted hover:text-foreground">Interactive labs</Link>
           </nav>
           <nav aria-label="Product links" className="space-y-2.5">
-            <p className="text-xs font-black uppercase tracking-wider text-faint">Product</p>
-            <Link href="/methodology" className="block text-sm font-bold text-muted hover:text-foreground">Methodology</Link>
-            <Link href="/analytics" className="block text-sm font-bold text-muted hover:text-foreground">Your analytics</Link>
-            <Link href="/planner" className="block text-sm font-bold text-muted hover:text-foreground">Study planner</Link>
-            {isAdmin && <Link href="/admin" className="block text-sm font-bold text-muted hover:text-foreground">Admin</Link>}
+            <p className="text-[13px] font-black uppercase tracking-wider text-faint">Product</p>
+            <Link href="/methodology" className="block text-[15px] font-bold text-muted hover:text-foreground">Methodology</Link>
+            <Link href="/analytics" className="block text-[15px] font-bold text-muted hover:text-foreground">Your analytics</Link>
+            <Link href="/planner" className="block text-[15px] font-bold text-muted hover:text-foreground">Study planner</Link>
+            {isAdmin && <Link href="/admin" className="block text-[15px] font-bold text-muted hover:text-foreground">Admin</Link>}
           </nav>
         </div>
         <div className="border-t-2 border-border">
-          <div className="max-w-6xl mx-auto px-4 lg:px-6 py-3 flex flex-wrap items-center justify-between gap-2 text-xs font-semibold text-faint">
-            <span>QuantFoundry · v3.1 · content checked by the validator</span>
+          <div className="max-w-6xl mx-auto px-4 lg:px-6 py-3 flex flex-wrap items-center justify-between gap-2 text-[13px] font-semibold text-faint">
+            <span>QuantFoundry · {APP_VERSION} · content checked by the validator</span>
             <span className="flex items-center gap-3">
               <Link href="/about" className="hover:text-muted">About</Link>
               <Link href="/methodology" className="hover:text-muted">Methodology</Link>
@@ -315,7 +316,7 @@ export function AppShell({ user, children, isAdmin }: { user: { name: string; em
               >
                 {active && <span className="absolute top-0 h-1 w-8 rounded-full bg-accent" />}
                 <tab.icon className={cn('h-6 w-6', active && 'anim-bob')} />
-                <span className="text-xs font-extrabold">{tab.label}</span>
+                <span className="text-[13px] font-extrabold">{tab.label}</span>
               </Link>
             );
           })}
@@ -336,7 +337,7 @@ export function PublicHeader({ user }: { user?: { name: string } | null }) {
           </span>
           <span>QuantFoundry</span>
         </Link>
-        <nav className="ml-4 lg:ml-8 hidden sm:flex items-center gap-1 text-sm font-extrabold" aria-label="Public">
+        <nav className="ml-4 lg:ml-8 hidden sm:flex items-center gap-1 text-[15px] font-extrabold" aria-label="Public">
           <Link href="/curriculum" className="press px-3.5 py-2 rounded-xl text-muted hover:bg-surface-2 hover:text-foreground">Curriculum</Link>
           <Link href="/methodology" className="press px-3.5 py-2 rounded-xl text-muted hover:bg-surface-2 hover:text-foreground">Methodology</Link>
           <Link href="/career" className="press px-3.5 py-2 rounded-xl text-muted hover:bg-surface-2 hover:text-foreground">Career Tracks</Link>
@@ -346,7 +347,7 @@ export function PublicHeader({ user }: { user?: { name: string } | null }) {
             <Link href="/dashboard" className="btn3d btn3d-sm">Continue learning</Link>
           ) : (
             <>
-              <Link href="/login" className="press text-sm font-extrabold px-3 py-2 rounded-xl text-muted hover:bg-surface-2">Sign in</Link>
+              <Link href="/login" className="press text-[15px] font-extrabold px-3 py-2 rounded-xl text-muted hover:bg-surface-2">Sign in</Link>
               <Link href="/register" className="btn3d btn3d-sm">Start free</Link>
             </>
           )}

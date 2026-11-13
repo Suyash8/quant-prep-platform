@@ -1,7 +1,8 @@
+import { APP_VERSION } from '@/lib/version';
 import Link from 'next/link';
 import { PublicHeader } from '@/components/app-shell';
 import { getCurrentUser } from '@/lib/auth';
-import { getMap, getRegistry, listProblems, listProjects } from '@/lib/content';
+import { countLabs, getMap, getRegistry, listProblems, listProjects } from '@/lib/content';
 import { mathText } from '@/lib/math-text';
 import { Mascot } from '@/components/brand/mascot';
 import { Ring } from '@/components/page-kit';
@@ -51,6 +52,7 @@ export default async function LandingPage() {
   const projects = listProjects();
 
   const publishedLessons = reg.lessons.length;
+  const labCount = countLabs();
   const modules = map.phases.reduce((n, p) => n + p.modules.length, 0);
   const totalHours = Math.round(reg.lessons.reduce((n, l) => n + l.estMinutes, 0) / 60);
 
@@ -87,7 +89,7 @@ export default async function LandingPage() {
     { icon: Code2, tone: 'accent', title: 'Your code actually runs', desc: 'C++17/C++20 compiled with g++ and Python 3, executed in a sandboxed runner with CPU, memory and output limits.', chip: 'Real compiler', chipIcon: Play },
     { icon: Timer, tone: 'warning', title: 'Mental math drills', desc: 'Timed arithmetic practice with speed and accuracy tracking, so the easy stuff stops slowing you down later.', chip: '8 modes', chipIcon: Zap },
     { icon: Undo2, tone: 'info', title: 'Flashcards that come back', desc: 'Every lesson generates cards, scheduled by SM-2, the same algorithm Anki uses. Miss a quiz question and it joins the queue too.', chip: 'SM-2', chipIcon: Undo2 },
-    { icon: FlaskConical, tone: 'violet', title: 'Interactive labs', desc: 'Thirty-three labs you drive with sliders and checkboxes: geometric Brownian motion, queues, cache behaviour, Black-Scholes.', chip: 'In the browser', chipIcon: FlaskConical },
+    { icon: FlaskConical, tone: 'violet', title: 'Interactive labs', desc: `${labCount} labs you drive with sliders and checkboxes: geometric Brownian motion, queues, cache behaviour, Black-Scholes.`, chip: 'In the browser', chipIcon: FlaskConical },
     { icon: WifiOff, tone: 'danger', title: 'Works fully offline', desc: 'Download the packs once. Lessons, labs and quizzes all keep working with the network off, and sync when you reconnect.', chip: 'PWA', chipIcon: Plane },
     { icon: LineChart, tone: 'gold', title: 'Honest analytics', desc: 'Every metric on your dashboard is computed from what you actually did. Unfinished topics say so. We would rather be boring than fake.', chip: 'No inflated numbers', chipIcon: ShieldCheck },
   ];
@@ -107,7 +109,7 @@ export default async function LandingPage() {
 
           <div className="relative max-w-6xl mx-auto px-4 lg:px-6 py-14 lg:py-24 grid lg:grid-cols-[1.1fr_0.9fr] gap-10 lg:gap-12 items-center">
             <div className="min-w-0">
-              <span className="chip chip-accent !text-xs !px-3 !py-1.5 anim-pop-in">Zero → quantitative developer</span>
+              <span className="chip chip-accent !text-[13px] !px-3 !py-1.5 anim-pop-in">Zero → quantitative developer</span>
               <h1 className="mt-5 text-4xl lg:text-6xl font-black tracking-tight leading-[1.05] max-w-3xl anim-slide-up">
                 Everything between your first line of code and{' '}
                 <span className="text-accent">building trading systems.</span>
@@ -133,18 +135,18 @@ export default async function LandingPage() {
             <div className="relative min-w-0 anim-pop-in" style={{ animationDelay: '0.25s' }} aria-hidden>
               <div className="qf-card p-6 rotate-1 hover:rotate-0 transition-transform duration-300">
                 <div className="flex items-center justify-between gap-2 min-w-0">
-                  <span className="text-sm font-black truncate min-w-0">Lesson 12 · Pre-algebra</span>
+                  <span className="text-[15px] font-black truncate min-w-0">Lesson 12 · Pre-algebra</span>
                   <span className="flex items-center gap-2 shrink-0">
-                    <span className="hud-pill"><Flame className="h-3.5 w-3.5 text-flame anim-flame" /><span className="text-xs tnum">7</span></span>
-                    <span className="hud-pill"><Zap className="h-3.5 w-3.5 text-warning" /><span className="text-xs tnum">1,480</span></span>
+                    <span className="hud-pill"><Flame className="h-3.5 w-3.5 text-flame anim-flame" /><span className="text-[13px] tnum">7</span></span>
+                    <span className="hud-pill"><Zap className="h-3.5 w-3.5 text-warning" /><span className="text-[13px] tnum">1,480</span></span>
                   </span>
                 </div>
                 <div className="mt-3 flex items-center gap-3">
                   <Ring value={62} size={44} thickness={5} tone="var(--accent)">
-                    <span className="text-[10px] font-black tnum">62%</span>
+                    <span className="text-[12px] font-black tnum">62%</span>
                   </Ring>
                   <div className="min-w-0">
-                    <p className="text-sm font-extrabold leading-snug">Solve for x in one step</p>
+                    <p className="text-[15px] font-extrabold leading-snug">Solve for x in one step</p>
                     <div className="mt-1.5 flex flex-wrap gap-1.5">
                       <span className="chip">6 min</span>
                       <span className="chip chip-warning">+20 XP</span>
@@ -154,25 +156,25 @@ export default async function LandingPage() {
                 <div className="mt-4 space-y-2">
                   <span className="qf-answer-tile qf-selected">
                     <span className="qf-answer-badge">A</span>
-                    <span className="min-w-0 flex-1 text-sm">x = 7, add 5 to both sides</span>
+                    <span className="min-w-0 flex-1 text-[15px]">x = 7, add 5 to both sides</span>
                     <CheckCircle2 className="h-4 w-4 flex-none text-accent-deep dark:text-accent" />
                   </span>
                   <span className="qf-answer-tile opacity-90">
                     <span className="qf-answer-badge">B</span>
-                    <span className="min-w-0 flex-1 text-sm">x = 2, subtract from both sides</span>
+                    <span className="min-w-0 flex-1 text-[15px]">x = 2, subtract from both sides</span>
                     <ChevronDown className="h-4 w-4 flex-none opacity-40" />
                   </span>
                 </div>
                 <div className="mt-4 flex items-center gap-2">
                   <span className="chip chip-info anim-pop-in" style={{ animationDelay: '0.9s' }}><Zap className="h-3.5 w-3.5" aria-hidden /> +20 XP</span>
                   <span className="chip chip-gold"><Trophy className="h-3.5 w-3.5" aria-hidden /> 3 day streak</span>
-                  <span className="ml-auto tnum text-xs font-black text-faint">7 / 10 today</span>
+                  <span className="ml-auto tnum text-[13px] font-black text-faint">7 / 10 today</span>
                 </div>
                 {/* the practice layer lives inside the same mock, not a detached chip */}
                 <div className="mt-4 qf-card-flat p-3 bg-surface-2 flex items-center gap-3">
                   <span className="icon-tile-sm icon-tile-accent"><Code2 aria-hidden /></span>
                   <div className="min-w-0 flex-1">
-                    <p className="text-xs font-extrabold truncate">practice: two-sum (easy)</p>
+                    <p className="text-[13px] font-extrabold truncate">practice: two-sum (easy)</p>
                     <div className="mt-1 prog-track h-1.5 w-32"><span className="prog-fill" style={{ width: '70%' }} /></div>
                   </div>
                   <span className="chip chip-success"><CheckCircle2 className="h-3.5 w-3.5" aria-hidden /> 7/10 tests</span>
@@ -188,7 +190,7 @@ export default async function LandingPage() {
             <dl className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               {[
                 { k: `${publishedLessons}`, v: 'bite-sized lessons', sub: `across ${modules} modules`, tone: 'accent', icon: BookOpenCheck },
-                { k: '33', v: 'interactive labs', sub: 'computed live in-browser', tone: 'info', icon: FlaskConical },
+                { k: String(labCount), v: 'interactive labs', sub: 'computed live in-browser', tone: 'info', icon: FlaskConical },
                 { k: `${problems.length}`, v: 'judged problems', sub: 'C++17 · C++20 · Python 3', tone: 'neutral', icon: Code2 },
                 { k: `${totalHours}h+`, v: 'of core content', sub: 'lesson time only', tone: 'neutral', icon: Timer },
               ].map((s, i) => (
@@ -215,9 +217,9 @@ export default async function LandingPage() {
                 <span className="icon-tile icon-tile-sm icon-tile-neutral !text-[13px] font-black tnum absolute right-4 top-3" aria-hidden>{s.n}</span>
                 <span className={`icon-tile icon-tile-${['accent', 'info', 'violet'][i]}`}><s.icon aria-hidden /></span>
                 <h3 className="mt-3 font-black">{s.title}</h3>
-                <p className="mt-1.5 text-sm text-muted leading-relaxed font-semibold">{s.desc}</p>
+                <p className="mt-1.5 text-[15px] text-muted leading-relaxed font-semibold">{s.desc}</p>
                 {i === 1 && (
-                  <div className="mt-3 flex items-center gap-2 text-xs font-bold text-muted" aria-hidden>
+                  <div className="mt-3 flex items-center gap-2 text-[13px] font-bold text-muted" aria-hidden>
                     <span className="kbd">drag</span><span className="prog-track flex-1 h-2"><span className="prog-fill" style={{ width: '55%' }} /></span><span className="tnum">σ=1.2</span>
                   </div>
                 )}
@@ -241,7 +243,7 @@ export default async function LandingPage() {
                 <div key={p.title} className={`qf-card-flat p-5 anim-slide-up`} style={{ animationDelay: `${i * 80}ms` }}>
                   <span className={`icon-tile icon-tile-${p.tone}`}><p.icon aria-hidden strokeWidth={2.5} /></span>
                   <h3 className="mt-3 font-black">{p.title}</h3>
-                  <p className="mt-1.5 text-sm text-muted leading-relaxed font-semibold">{p.desc}</p>
+                  <p className="mt-1.5 text-[15px] text-muted leading-relaxed font-semibold">{p.desc}</p>
                 </div>
               ))}
             </div>
@@ -268,10 +270,10 @@ export default async function LandingPage() {
                     <span className="path-node h-14 w-14 rounded-full flex items-center justify-center border-[3px] border-surface shadow-[0_4px_0_0_var(--shadow-hard)]" style={{ background: color }}>
                       <Icon className="h-6 w-6 text-white" aria-hidden />
                     </span>
-                    <span className="chip !text-[10px] tnum">{ph.modules.reduce((n, m) => n + m.lessons.length, 0)}</span>
+                    <span className="chip !text-[12px] tnum">{ph.modules.reduce((n, m) => n + m.lessons.length, 0)}</span>
                   </span>
-                  <span className="text-xs font-black leading-tight line-clamp-2">{ph.title.split(/[,.]/)[0]}</span>
-                  <span className="text-[10px] font-bold text-faint">{ph.modules.length} modules</span>
+                  <span className="text-[13px] font-black leading-tight line-clamp-2">{ph.title.split(/[,.]/)[0]}</span>
+                  <span className="text-[12px] font-bold text-faint">{ph.modules.length} modules</span>
                 </Link>
               );
             })}
@@ -295,7 +297,7 @@ export default async function LandingPage() {
                     <span className="chip"><f.chipIcon className="h-3.5 w-3.5" aria-hidden /> {f.chip}</span>
                   </div>
                   <h3 className="mt-3 font-black">{f.title}</h3>
-                  <p className="mt-1.5 text-sm text-muted leading-relaxed font-semibold">{f.desc}</p>
+                  <p className="mt-1.5 text-[15px] text-muted leading-relaxed font-semibold">{f.desc}</p>
                 </div>
               ))}
             </div>
@@ -318,9 +320,9 @@ export default async function LandingPage() {
                   <ArrowRight className="h-4 w-4 text-faint group-hover:text-foreground transition-colors" />
                 </div>
                 <h3 className="mt-3 font-black leading-snug">{t.title}</h3>
-                <p className="mt-1.5 text-sm text-muted leading-relaxed font-semibold">{t.focus}</p>
+                <p className="mt-1.5 text-[15px] text-muted leading-relaxed font-semibold">{t.focus}</p>
                 <div className="mt-auto pt-3 flex flex-wrap gap-1.5">
-                  {(TRACK_SKILLS[key] ?? []).map(s => <span key={s} className="chip !text-[10px]">{s}</span>)}
+                  {(TRACK_SKILLS[key] ?? []).map(s => <span key={s} className="chip !text-[12px]">{s}</span>)}
                 </div>
               </Link>
             ))}
@@ -331,13 +333,13 @@ export default async function LandingPage() {
                 <ArrowRight className="h-4 w-4 text-faint group-hover:text-foreground transition-colors" />
               </div>
               <h3 className="mt-3 font-black leading-snug">Take the diagnostic first</h3>
-              <p className="mt-1.5 text-sm text-muted leading-relaxed font-semibold">
+              <p className="mt-1.5 text-[15px] text-muted leading-relaxed font-semibold">
                 It places you at the right phase and the track picks itself.
               </p>
               <div className="mt-auto pt-3 flex flex-wrap gap-1.5">
-                <span className="chip !text-[10px]">28 questions</span>
-                <span className="chip !text-[10px]">~45 min</span>
-                <span className="chip !text-[10px]">no stakes</span>
+                <span className="chip !text-[12px]">28 questions</span>
+                <span className="chip !text-[12px]">~45 min</span>
+                <span className="chip !text-[12px]">no stakes</span>
               </div>
             </Link>
           </div>
@@ -361,15 +363,15 @@ export default async function LandingPage() {
             <div className="qf-card-flat p-4 bg-surface" aria-hidden>
               <div className="flex items-center gap-3">
                 <span className="icon-tile-sm icon-tile-accent"><Download /></span>
-                <p className="text-sm font-black flex-1">Downloading content packs</p>
-                <span className="chip chip-warning tnum">82%</span>
+                <p className="text-[15px] font-black flex-1">Downloading content packs</p>
+                <span className="chip chip-warning">Illustration</span>
               </div>
-              <div className="mt-3 prog-track h-3"><span className="prog-fill" style={{ width: '82%' }} /></div>
-              <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-bold text-muted">
-                <span className="flex items-center gap-1.5"><CheckCircle2 className="h-3.5 w-3.5 text-accent-deep dark:text-accent" /> 283 lessons</span>
-                <span className="flex items-center gap-1.5"><CheckCircle2 className="h-3.5 w-3.5 text-accent-deep dark:text-accent" /> 33 labs</span>
+              <div className="mt-3 prog-track h-3"><span className="prog-fill" style={{ width: '100%' }} /></div>
+              <div className="mt-3 grid grid-cols-2 gap-2 text-[13px] font-bold text-muted">
+                <span className="flex items-center gap-1.5"><CheckCircle2 className="h-3.5 w-3.5 text-accent-deep dark:text-accent" /> {publishedLessons} lessons</span>
+                <span className="flex items-center gap-1.5"><CheckCircle2 className="h-3.5 w-3.5 text-accent-deep dark:text-accent" /> {labCount} labs</span>
                 <span className="flex items-center gap-1.5"><Layers className="h-3.5 w-3.5" /> packs v3</span>
-                <span className="flex items-center gap-1.5 tnum">18.4 MB of 22.4 MB</span>
+                <span className="flex items-center gap-1.5">Sizes shown in Settings</span>
               </div>
             </div>
           </div>
@@ -407,7 +409,7 @@ export default async function LandingPage() {
                   </span>
                   <ChevronDown className="h-4 w-4 ml-auto flex-none text-muted" aria-hidden />
                 </AccordionTrigger>
-                <AccordionContent className="text-sm text-muted font-semibold px-1 pb-4 pt-1">
+                <AccordionContent className="text-[15px] text-muted font-semibold px-1 pb-4 pt-1">
                   {f.a}
                 </AccordionContent>
               </AccordionItem>
@@ -421,7 +423,7 @@ export default async function LandingPage() {
             <div className="flex flex-col items-center gap-3">
               <Mascot pose="wave" size={104} />
               <h2 className="text-2xl lg:text-3xl font-black tracking-tight text-center">Start with the 10-minute diagnostic</h2>
-              <p className="max-w-lg text-sm font-semibold text-muted text-center">
+              <p className="max-w-lg text-[15px] font-semibold text-muted text-center">
                 It maps what you already know across 7 areas and drops you at the right phase. No account needed to look at the curriculum.
               </p>
               <div className="mt-2 flex flex-wrap items-center justify-center gap-3">
@@ -445,34 +447,34 @@ export default async function LandingPage() {
               </span>
               QuantFoundry
             </div>
-            <p className="text-sm font-semibold text-muted max-w-xs">An honest preparation pathway for quantitative engineering. Learn by doing, track real mastery.</p>
+            <p className="text-[15px] font-semibold text-muted max-w-xs">An honest preparation pathway for quantitative engineering. Learn by doing, track real mastery.</p>
             <span className="chip chip-info"><Wifi className="h-3.5 w-3.5" aria-hidden /> Works offline</span>
           </div>
           <nav aria-label="Learn links" className="space-y-2.5">
-            <p className="text-xs font-black uppercase tracking-wider text-faint">Learn</p>
-            <Link href="/curriculum" className="block text-sm font-bold text-muted hover:text-foreground">Curriculum</Link>
-            <Link href="/learn" className="block text-sm font-bold text-muted hover:text-foreground">All lessons</Link>
-            <Link href="/revision" className="block text-sm font-bold text-muted hover:text-foreground">Spaced repetition</Link>
-            <Link href="/drills" className="block text-sm font-bold text-muted hover:text-foreground">Mental math drills</Link>
+            <p className="text-[13px] font-black uppercase tracking-wider text-faint">Learn</p>
+            <Link href="/curriculum" className="block text-[15px] font-bold text-muted hover:text-foreground">Curriculum</Link>
+            <Link href="/learn" className="block text-[15px] font-bold text-muted hover:text-foreground">All lessons</Link>
+            <Link href="/revision" className="block text-[15px] font-bold text-muted hover:text-foreground">Spaced repetition</Link>
+            <Link href="/drills" className="block text-[15px] font-bold text-muted hover:text-foreground">Mental math drills</Link>
           </nav>
           <nav aria-label="Practice links" className="space-y-2.5">
-            <p className="text-xs font-black uppercase tracking-wider text-faint">Practice</p>
-            <Link href="/practice" className="block text-sm font-bold text-muted hover:text-foreground">Code problems</Link>
-            <Link href="/assessments" className="block text-sm font-bold text-muted hover:text-foreground">Assessments</Link>
-            <Link href="/projects" className="block text-sm font-bold text-muted hover:text-foreground">Projects</Link>
-            <Link href="/lab" className="block text-sm font-bold text-muted hover:text-foreground">Interactive labs</Link>
+            <p className="text-[13px] font-black uppercase tracking-wider text-faint">Practice</p>
+            <Link href="/practice" className="block text-[15px] font-bold text-muted hover:text-foreground">Code problems</Link>
+            <Link href="/assessments" className="block text-[15px] font-bold text-muted hover:text-foreground">Assessments</Link>
+            <Link href="/projects" className="block text-[15px] font-bold text-muted hover:text-foreground">Projects</Link>
+            <Link href="/lab" className="block text-[15px] font-bold text-muted hover:text-foreground">Interactive labs</Link>
           </nav>
           <nav aria-label="Product links" className="space-y-2.5">
-            <p className="text-xs font-black uppercase tracking-wider text-faint">Product</p>
-            <Link href="/methodology" className="block text-sm font-bold text-muted hover:text-foreground">Methodology</Link>
-            <Link href="/career" className="block text-sm font-bold text-muted hover:text-foreground">Career tracks</Link>
-            <Link href="/about" className="block text-sm font-bold text-muted hover:text-foreground">About</Link>
-            <Link href="/login" className="block text-sm font-bold text-muted hover:text-foreground">Sign in</Link>
+            <p className="text-[13px] font-black uppercase tracking-wider text-faint">Product</p>
+            <Link href="/methodology" className="block text-[15px] font-bold text-muted hover:text-foreground">Methodology</Link>
+            <Link href="/career" className="block text-[15px] font-bold text-muted hover:text-foreground">Career tracks</Link>
+            <Link href="/about" className="block text-[15px] font-bold text-muted hover:text-foreground">About</Link>
+            <Link href="/login" className="block text-[15px] font-bold text-muted hover:text-foreground">Sign in</Link>
           </nav>
         </div>
         <div className="border-t-2 border-border">
-          <div className="max-w-6xl mx-auto px-4 lg:px-6 py-3 flex flex-wrap items-center justify-between gap-2 text-xs font-semibold text-muted">
-            <span>QuantFoundry · v3.1 · conventions follow cppreference, OpenStax, Python and NumPy docs</span>
+          <div className="max-w-6xl mx-auto px-4 lg:px-6 py-3 flex flex-wrap items-center justify-between gap-2 text-[13px] font-semibold text-muted">
+            <span>QuantFoundry · {APP_VERSION} · conventions follow cppreference, OpenStax, Python and NumPy docs</span>
             <span>No fake numbers, no fake testimonials.</span>
           </div>
         </div>

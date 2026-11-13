@@ -2,7 +2,7 @@
   "id": "orient-quant-developer-role",
   "moduleId": "ph0-orientation",
   "title": "What a Quantitative Developer Actually Does",
-  "estMinutes": 22,
+  "estMinutes": 30,
   "difficulty": "foundation",
   "prereqs": [
     "orient-what-is-quant-finance"
@@ -47,13 +47,13 @@
     },
     {
       "type": "p",
-      "md": "The same person may write both kinds of code in the same week, but they are different crafts with different definitions of success. **Research code** optimises for iteration speed: try a hypothesis, plot the result, throw it away if it fails. Hard-coded paths, global state and notebook-style scripts are acceptable because the artefact is an insight. **Production code** optimises for correctness, latency, maintainability and auditability: the artefact is a system that other people run, that must behave identically every run, and that someone must be able to inspect a year later to explain a decision."
+      "md": "The same person may write both kinds of code in the same week, but they are different crafts with different definitions of success. **Research code** optimises for iteration speed: try a hypothesis, plot the result, throw it away if it fails. Hard-coded paths, global state and notebook-style scripts are acceptable because the artefact is an insight. **Production code** optimises for correctness, latency, maintainability and auditability: the artefact is a system that other people run, whose deterministic calculations must be reproducible for the same inputs and configuration, and that someone must be able to inspect a year later to explain a decision."
     },
     {
       "type": "list",
       "ordered": false,
       "items": [
-        "**Testing**, research code is checked by eyeballing plots; production code carries unit and regression tests, including tests of numerical values to a stated tolerance.",
+        "**Testing**, exploratory research may start with plots, but research conclusions still need verification; production code carries unit and regression tests, including tests of numerical values to a stated tolerance.",
         "**Reproducibility**, a research result that cannot be re-run is annoying; a production PnL number that cannot be reproduced is an audit finding.",
         "**Failure behaviour**, a research script may crash freely; a production system must fail loudly, alert someone, and never silently continue with wrong data.",
         "**Interfaces and review**, production code is reviewed by colleagues, versioned, and built by reproducible pipelines, because many people will change it after you."
@@ -68,7 +68,7 @@
     {
       "type": "code",
       "lang": "python",
-      "code": "import math\n\nxs = [0.1] * 10\nprint(sum(xs))        # 0.9999999999999999  (naive left-to-right accumulation)\nprint(math.fsum(xs))  # 1.0                 (exact summation, then one rounding)\nprint(0.1 + 0.2)      # 0.30000000000000004 (0.1 and 0.2 are not exact in binary)",
+      "code": "import math\n\nxs = [0.1] * 10\ntotal = 0.0\nfor x in xs:\n    total += x\nprint(total)        # 0.9999999999999999  (naive left-to-right accumulation)\nprint(math.fsum(xs))  # 1.0                 (accurate summation using partial sums)\nprint(0.1 + 0.2)      # 0.30000000000000004 (0.1 and 0.2 are not exact in binary)",
       "caption": "Ten additions of 0.1 give 0.9999999999999999, not 1.0. Same numbers, different accumulation strategy, different answer."
     },
     {
@@ -88,17 +88,21 @@
     "prompt": "Pick one of the four workstreams (pricing library, data pipeline, backtesting infrastructure, order-book system) and write three or four sentences describing what a *bad* implementation of it looks like and what a production-quality implementation adds.",
     "hints": [
       "For each workstream, ask: what does 'silently wrong' mean here, and what would the downstream consequence be?",
-      "Production-quality means tests, validation at boundaries, reproducibility, and measured performance, attach those to concrete failure modes."
+      "Production-quality means tests, validation at boundaries, reproducibility, and measured performance, attach those to concrete failure modes.",
+      "For each proposed improvement, name a concrete check and the wrong result or failure it would catch."
     ],
-    "solution": "**Model answer (data pipeline).** A bad pipeline reads price files, converts them, and loads them into a table, with no checks: if a feed changes scale from dollars to cents, or a corporate action is missing, the wrong data flows downstream silently, and every backtest and risk number built on it is wrong. A production-quality pipeline validates at each boundary, schema checks, range checks (a price of \\$0.01 for a large-cap stock triggers review), reconciliation against secondary sources, explicit handling of corporate actions and calendar gaps, and monitoring that alarms when volumes or distributions shift. It also records lineage: which source, which version, which transformation produced each row, so a questionable number can be traced to its origin."
+    "solution": "**Model answer (data pipeline).** A bad pipeline reads price files, converts them, and loads them into a table, with no checks: if a feed changes scale from dollars to cents, or a corporate action is missing, the wrong data flows downstream silently, and every backtest and risk number built on it is wrong. A production-quality pipeline validates at each boundary, schema checks, range checks (a price of \\$0.01 for a large-cap stock triggers review), reconciliation against secondary sources, explicit handling of corporate actions and calendar gaps, and monitoring that alarms when volumes or distributions shift. It also records lineage: which source, which version, which transformation produced each row, so a questionable number can be traced to its origin.",
+    "successCheck": "Your answer names a specific silent failure, its downstream financial consequence and at least two engineering checks that would detect or prevent it."
   },
   "independentExercise": {
     "prompt": "Think of a piece of code you have written in any language (a script, a coursework project, anything). Classify it honestly as research-style or production-style, then write down two concrete changes that would move it toward production grade, and one numerical edge case in it you have never actually verified.",
     "hints": [
       "Production-grade markers: automated tests, input validation, version control with review, documentation, known behaviour on empty/zero/negative inputs.",
-      "Numerical edge cases: empty inputs, zero, negative values, very large values, repeated additions where error could accumulate."
+      "Numerical edge cases: empty inputs, zero, negative values, very large values, repeated additions where error could accumulate.",
+      "For each proposed improvement, name a concrete check and the wrong result or failure it would catch."
     ],
-    "solution": "**Model answer.** My coursework script that averaged daily returns is research-style: it read a hard-coded CSV path, had no tests, and printed results straight to the console. Two production changes: (1) wrap the averaging in a function with input validation that rejects non-numeric or missing rows loudly rather than skipping them; (2) add unit tests with hand-computed expected values, e.g. mean of [0.02, -0.01, 0.05] = 0.02. An unverified numerical edge case: I never checked what happens with a single data point (the mean is trivially that point, but my variance call may divide by zero), a production version must specify and test that behaviour rather than letting it crash at 2 a.m."
+    "solution": "**Model answer.** My coursework script that averaged daily returns is research-style: it read a hard-coded CSV path, had no tests, and printed results straight to the console. Two production changes: (1) wrap the averaging in a function with input validation that rejects non-numeric or missing rows loudly rather than skipping them; (2) add unit tests with hand-computed expected values, e.g. mean of [0.02, -0.01, 0.05] = 0.02. An unverified numerical edge case: I never checked what happens with a single data point (the mean is trivially that point, but my variance call may divide by zero), a production version must specify and test that behaviour rather than letting it crash at 2 a.m.",
+    "successCheck": "Your note classifies a real program, gives two implementable changes and states the expected behaviour for one numerical edge case."
   },
   "commonMistakes": [
     "Assuming the quant developer role is 'researcher who codes', the accountability is engineering accountability: correctness, performance, maintainability.",
@@ -121,13 +125,14 @@
       "type": "mcq",
       "prompt": "What is the primary deliverable of a quantitative developer?",
       "options": [
-        "Reliable, fast, correct software that implements models and trading ideas in production",
-        "Publishing academic research papers",
-        "Deciding which trades the desk takes intraday",
-        "Negotiating commissions with brokers"
+        "Choosing market exposure and deciding which trades to take",
+        "Designing a new statistical hypothesis and publishing its theory",
+        "Building software that implements models reliably in production",
+        "Negotiating brokerage terms and managing client relationships"
       ],
-      "answerIndex": 0,
-      "explanation": "The quant developer is accountable for turning models into production software. Researchers publish and design, traders take the decisions, and broker negotiations are commercial, not engineering, work."
+      "answerIndex": 2,
+      "explanation": "The quant developer is accountable for turning models into production software. Researchers publish and design, traders take the decisions, and broker negotiations are commercial, not engineering, work.",
+      "objective": 0
     },
     {
       "id": "q2",
@@ -147,58 +152,59 @@
         3,
         4
       ],
-      "explanation": "Pricing libraries, data pipelines, backtesting infrastructure and order-book/execution systems are the four workstreams from the lesson. Marketing campaigns and tax audits are not engineering workstreams."
+      "explanation": "Pricing libraries, data pipelines, backtesting infrastructure and order-book/execution systems are the four workstreams from the lesson. Marketing campaigns and tax audits are not engineering workstreams.",
+      "objective": 0
     },
     {
       "id": "q3",
       "type": "mcq",
-      "prompt": "In backtesting, what is look-ahead bias?",
+      "prompt": "Which release process best reflects the engineering habits expected of production quant code?",
       "options": [
-        "Using information in the simulation that the strategy would not yet have had at that point in time",
-        "Re-running the backtest multiple times to tune parameters",
-        "Testing a strategy on data after the period it was designed on",
-        "Simulating trades at the closing price instead of intraday prices"
+        "Run numerical regression tests, get review and measure performance before release",
+        "Check a plausible plot, skip tests and make the first live run the benchmark",
+        "Copy the notebook output, omit source versions and leave failures undocumented",
+        "Publish the fastest implementation before checking its numerical results"
       ],
       "answerIndex": 0,
-      "explanation": "Look-ahead bias means the simulated strategy acts on future information (e.g. today's closing price when deciding this morning), inflating results. Out-of-sample testing (option C) is good practice, and choice of simulated price (option D) is a fidelity decision, not the definition of the bias."
+      "explanation": "Tests check known results, review checks the change and benchmarks measure performance. You also need documented interfaces and failure behaviour. A plausible plot or a fast run is not evidence that an implementation is numerically correct or safe to release.",
+      "objective": 3
     },
     {
       "id": "q4",
       "type": "short",
-      "prompt": "Give two concrete differences between research code and production code, as described in this lesson.",
-      "modelAnswer": "Research code optimises iteration speed (scripts, no tests, plots as output); production code carries unit/regression tests, is reviewed and versioned, must be reproducible, has specified failure behaviour and monitoring, and meets latency/performance requirements.",
+      "prompt": "How do automated testing, reproducibility and code review change when a research prototype becomes production code?",
+      "modelAnswer": "Production code needs automated tests with known results, reproducible inputs and versions, and review of changes by another engineer. Research prototypes prioritise fast iteration, but evidence used for a real decision must still be checked.",
       "keywords": [
-        "test",
-        "review",
-        "reproducib",
-        "latency",
-        "maintainab",
-        "monitor",
-        "version"
+        "test|testing|tests",
+        "reproducible|reproducibility|repeatable|version",
+        "review|reviewed|inspection"
       ],
-      "explanation": "Any two of: testing, reproducibility, failure behaviour, review/versioning, performance requirements. The definitions of success differ: insight vs dependable system."
+      "explanation": "The three named practices turn a result into something that can be checked and repeated by other people. Research may use lighter processes during exploration; that does not excuse unverified research findings. Production requires these practices to be repeatable and recorded.",
+      "objective": 1
     },
     {
       "id": "q5",
       "type": "code-output",
       "prompt": "What exactly does this Python code print?",
       "language": "python",
-      "code": "xs = [0.1] * 10\nprint(sum(xs))\nprint(0.1 + 0.2 == 0.3)",
+      "code": "xs = [0.1] * 10\ntotal = 0.0\nfor x in xs:\n    total += x\nprint(total)\nprint(0.1 + 0.2 == 0.3)",
       "answer": "0.9999999999999999\nFalse",
-      "explanation": "Naive summation of ten 0.1s accumulates binary rounding error to 0.9999999999999999, and 0.1 + 0.2 is 0.30000000000000004, which is not equal to 0.3, so the comparison prints False. This is ordinary floating-point behaviour, which production code anticipates rather than discovers."
+      "explanation": "Naive summation of ten 0.1s accumulates binary rounding error to 0.9999999999999999, and 0.1 + 0.2 is 0.30000000000000004, which is not equal to 0.3, so the comparison prints False. This is ordinary floating-point behaviour, which production code anticipates rather than discovers.",
+      "objective": 2
     },
     {
       "id": "q6",
       "type": "mcq",
       "prompt": "Why do quant developers treat numerical accumulation order as a design decision?",
       "options": [
-        "Different summation orders give different last-bit results, and across millions of operations these become PnL discrepancies that must be explained",
-        "Because Python requires lists to be sorted before summing",
-        "Because regulators mandate ascending-order summation of all prices",
-        "Because summation order affects how quickly the source code compiles"
+        "Because regulators require that all prices be sorted before addition",
+        "Because different accumulation orders can change rounded results",
+        "Because the order of addition determines the source-code encoding",
+        "Because Python refuses to add an unsorted list of market prices"
       ],
-      "answerIndex": 0,
-      "explanation": "Floating-point addition is not associative: order changes the rounding. At industrial scale, uncontrolled accumulation shows up as reconciliation breaks, so precision strategy is specified deliberately (e.g. pairwise or exact summation, stated tolerances)."
+      "answerIndex": 1,
+      "explanation": "Floating-point addition is not associative: order changes the rounding. At industrial scale, uncontrolled accumulation shows up as reconciliation breaks, so precision strategy is specified deliberately (e.g. pairwise or exact summation, stated tolerances).",
+      "objective": 2
     }
   ],
   "flashcards": [
@@ -219,8 +225,8 @@
     },
     {
       "type": "code-output",
-      "front": "In Python, what is sum([0.1] * 10)?",
-      "back": "0.9999999999999999, naive floating-point accumulation drifts; math.fsum gives exactly 1.0 by summing exactly and rounding once."
+      "front": "What does a loop that adds 0.1 to an initial 0.0 ten times print in the supported Python runtimes?",
+      "back": "0.9999999999999999. The explicit left-to-right loop accumulates rounding error. Built-in sum can differ by Python version; math.fsum([0.1] * 10) returns 1.0."
     },
     {
       "type": "definition",
@@ -230,7 +236,7 @@
   ],
   "references": [
     {
-      "label": "Python documentation: math.fsum (exact floating-point summation)",
+      "label": "Python documentation: math.fsum (accurate floating-point summation)",
       "url": "https://docs.python.org/3/library/math.html#math.fsum"
     },
     {

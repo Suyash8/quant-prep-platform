@@ -20,9 +20,9 @@ export function AuthForm({ mode, stats }: { mode: 'login' | 'register'; stats?: 
   const [error, setError] = useState<string | null>(null);
   const [touched, setTouched] = useState<{ email: boolean; password: boolean }>({ email: false, password: false });
 
-  const lessons = stats?.lessons ?? 283;
-  const labs = stats?.labs ?? 33;
-  const problems = stats?.problems ?? 28;
+  const lessons = stats?.lessons ?? 0;
+  const labs = stats?.labs ?? 0;
+  const problems = stats?.problems ?? 0;
 
   // After a successful sign-in we send the user back to whatever they were
   // trying to reach (the `next` param), falling back to the dashboard.
@@ -108,17 +108,12 @@ export function AuthForm({ mode, stats }: { mode: 'login' | 'register'; stats?: 
                 </span>
                 <div>
                   <p className="font-black tracking-tight text-lg leading-none">QuantFoundry</p>
-                  <p className="text-[11px] font-bold text-faint uppercase tracking-[0.12em] mt-1">Quant dev, built properly</p>
+                  <p className="text-[12px] font-bold text-faint uppercase tracking-[0.12em] mt-1">Quant dev, built properly</p>
                 </div>
               </div>
 
-              {mode === 'login' ? (
-                <div className="mt-5 flex flex-wrap gap-2">
-                  <span className="hud-pill"><Flame className="h-4 w-4 text-flame anim-flame" /> 7-day streak</span>
-                  <span className="hud-pill"><Zap className="h-4 w-4 text-warning-strong dark:text-warning" /> 1,480 XP</span>
-                  <span className="hud-pill"><Trophy className="h-4 w-4 text-accent-deep dark:text-accent" /> Level 4</span>
-                </div>
-              ) : (
+              {(
+
                 <div className="mt-5 grid grid-cols-3 gap-2.5">
                   <div className="stat-tile !p-3">
                     <div className="stat-body">
@@ -141,8 +136,8 @@ export function AuthForm({ mode, stats }: { mode: 'login' | 'register'; stats?: 
                 </div>
               )}
 
-              <p className="mt-5 text-[11px] font-black uppercase tracking-[0.14em] text-faint">
-                {mode === 'register' ? 'What you get' : 'While you were away'}
+              <p className="mt-5 text-[12px] font-black uppercase tracking-[0.14em] text-faint">
+                What you get
               </p>
               <ul className="mt-3.5 space-y-3.5">
                 {perks.map(p => (
@@ -150,16 +145,16 @@ export function AuthForm({ mode, stats }: { mode: 'login' | 'register'; stats?: 
                     <span className="h-8 w-8 shrink-0 rounded-xl bg-accent-soft text-accent-deep dark:text-accent flex items-center justify-center">
                       <p.icon className="h-4 w-4" strokeWidth={2.5} />
                     </span>
-                    <span className="text-sm font-bold leading-snug pt-1">{p.text}</span>
+                    <span className="text-[15px] font-bold leading-snug pt-1">{p.text}</span>
                   </li>
                 ))}
               </ul>
               <div className="mt-6 pt-5 border-t-2 border-border">
-                <div className="flex items-center justify-between text-sm font-black">
+                <div className="flex items-center justify-between text-[15px] font-black">
                   <span className="text-muted">Price</span>
                   <span className="text-accent-deep dark:text-accent">Free, while we earn your trust</span>
                 </div>
-                <div className="mt-2.5 flex items-center justify-between text-sm font-black">
+                <div className="mt-2.5 flex items-center justify-between text-[15px] font-black">
                   <span className="text-muted">Catch</span>
                   <span>You actually have to study</span>
                 </div>
@@ -177,7 +172,7 @@ export function AuthForm({ mode, stats }: { mode: 'login' | 'register'; stats?: 
             <h1 className="mt-4 text-2xl font-black tracking-tight">
               {mode === 'register' ? 'Create your account' : 'Welcome back'}
             </h1>
-            <p className="mt-1 text-sm font-semibold text-muted">
+            <p className="mt-1 text-[15px] font-semibold text-muted">
               {mode === 'register'
                 ? 'Takes thirty seconds, then the diagnostic finds your starting point.'
                 : 'Pick up where you left off, streaks are waiting.'}
@@ -186,7 +181,7 @@ export function AuthForm({ mode, stats }: { mode: 'login' | 'register'; stats?: 
           <form onSubmit={submit} className="qf-card p-6 space-y-4 w-full">
             {mode === 'register' && (
               <div>
-                <label htmlFor="name" className="text-sm font-extrabold">Name</label>
+                <label htmlFor="name" className="text-[15px] font-extrabold">Name</label>
                 <div className="relative mt-1.5">
                   <User className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-faint" aria-hidden />
                   <input
@@ -200,7 +195,7 @@ export function AuthForm({ mode, stats }: { mode: 'login' | 'register'; stats?: 
               </div>
             )}
             <div>
-              <label htmlFor="email" className="text-sm font-extrabold">Email</label>
+              <label htmlFor="email" className="text-[15px] font-extrabold">Email</label>
               <div className="relative mt-1.5">
                 <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-faint" aria-hidden />
                 <input
@@ -213,11 +208,11 @@ export function AuthForm({ mode, stats }: { mode: 'login' | 'register'; stats?: 
                 />
               </div>
               {mode === 'register' && touched.email && email.length > 0 && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) && (
-                <p className="mt-1 text-xs font-bold text-danger">That does not look like an email address yet.</p>
+                <p className="mt-1 text-[13px] font-bold text-danger">That does not look like an email address yet.</p>
               )}
             </div>
             <div>
-              <label htmlFor="password" className="text-sm font-extrabold">Password</label>
+              <label htmlFor="password" className="text-[15px] font-extrabold">Password</label>
               <div className="relative mt-1.5">
                 <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-faint" aria-hidden />
                 <input
@@ -254,27 +249,27 @@ export function AuthForm({ mode, stats }: { mode: 'login' | 'register'; stats?: 
                       ))}
                     </span>
                     {strengthLabel && (
-                      <span className={`text-[11px] font-black ${strength >= 65 ? 'text-accent-deep dark:text-accent' : strength >= 35 ? 'text-info-strong dark:text-info' : 'text-danger'}`}>
+                      <span className={`text-[12px] font-black ${strength >= 65 ? 'text-accent-deep dark:text-accent' : strength >= 35 ? 'text-info-strong dark:text-info' : 'text-danger'}`}>
                         {strengthLabel}
                       </span>
                     )}
                   </div>
-                  <p id="pw-hint" className="mt-1.5 text-xs font-bold text-muted">At least 8 characters.</p>
+                  <p id="pw-hint" className="mt-1.5 text-[13px] font-bold text-muted">At least 8 characters.</p>
                 </>
               )}
             </div>
             {error && (
-              <p role="alert" className="text-sm font-bold text-danger bg-danger-soft rounded-xl px-3 py-2 anim-shake">{error}</p>
+              <p role="alert" className="text-[15px] font-bold text-danger bg-danger-soft rounded-xl px-3 py-2 anim-shake">{error}</p>
             )}
             <button type="submit" disabled={busy} className="btn3d w-full !py-3.5 text-base">
               {busy ? 'Working…' : mode === 'register' ? 'Create account' : 'Sign in'}
             </button>
             {mode === 'register' && (
               <div className="pt-1">
-                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-faint">Your first five minutes</p>
+                <p className="text-[12px] font-black uppercase tracking-[0.14em] text-faint">Your first five minutes</p>
                 <ul className="mt-2 space-y-2">
                   {firstFive.map(f => (
-                    <li key={f.text} className="flex items-center gap-2.5 text-xs font-bold">
+                    <li key={f.text} className="flex items-center gap-2.5 text-[13px] font-bold">
                       <span className="icon-tile-sm icon-tile-accent !h-7 !w-7"><f.icon className="!h-3.5 !w-3.5" aria-hidden /></span>
                       {f.text}
                     </li>
@@ -282,7 +277,7 @@ export function AuthForm({ mode, stats }: { mode: 'login' | 'register'; stats?: 
                 </ul>
               </div>
             )}
-            <p className="text-sm text-center font-semibold text-muted">
+            <p className="text-[15px] text-center font-semibold text-muted">
               {mode === 'register' ? (
                 <>Already have an account? <Link href="/login" className="text-accent-deep dark:text-accent hover:underline font-extrabold">Sign in</Link></>
               ) : (
@@ -290,7 +285,7 @@ export function AuthForm({ mode, stats }: { mode: 'login' | 'register'; stats?: 
               )}
             </p>
           </form>
-          <p className="mt-4 text-center text-xs font-semibold text-muted max-w-xs">
+          <p className="mt-4 text-center text-[13px] font-semibold text-muted max-w-xs">
             No card needed. Your progress stays on your device and syncs when you are online.
           </p>
         </div>
@@ -299,7 +294,7 @@ export function AuthForm({ mode, stats }: { mode: 'login' | 'register'; stats?: 
 
       {/* anchored footer bar instead of links floating mid-page */}
       <footer className="relative border-t-2 border-border/70 py-4 mt-auto">
-        <p className="text-center text-xs font-semibold text-muted">
+        <p className="text-center text-[13px] font-semibold text-muted">
           <Link href="/about" className="hover:text-foreground transition-colors">About</Link>
           <span className="mx-2 text-faint" aria-hidden>·</span>
           <Link href="/methodology" className="hover:text-foreground transition-colors">Methodology</Link>

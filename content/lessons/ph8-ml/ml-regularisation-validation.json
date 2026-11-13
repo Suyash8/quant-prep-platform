@@ -1,0 +1,259 @@
+{
+  "id": "ml-regularisation-validation",
+  "moduleId": "ph8-ml",
+  "title": "Regularisation and Time-Aware Validation",
+  "estMinutes": 35,
+  "difficulty": "advanced",
+  "prereqs": [
+    "ml-pitfalls-deployment"
+  ],
+  "objectives": [
+    "Compare ridge and lasso penalties and scaling requirements",
+    "Build time-ordered training and validation splits",
+    "Identify leakage in preprocessing and model selection"
+  ],
+  "motivation": "You fit many signals to daily returns and discover an excellent in-sample score. That score mixes genuine structure, noise and choices made after looking at the answers. Regularisation limits how aggressively a model fits its training data; validation estimates how the entire modelling procedure behaves on information it did not use. They are complementary, not interchangeable. A regularised model can still leak future information. A carefully separated test can still reveal that every candidate is poor. Start with a simple baseline, a clear prediction timestamp and a definition of when each label becomes observable.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "A good fit can be a bad forecast"
+    },
+    {
+      "type": "p",
+      "md": "You fit many signals to daily returns and discover an excellent in-sample score. That score mixes genuine structure, noise and choices made after looking at the answers. Regularisation limits how aggressively a model fits its training data; validation estimates how the entire modelling procedure behaves on information it did not use. They are complementary, not interchangeable. A regularised model can still leak future information. A carefully separated test can still reveal that every candidate is poor. Start with a simple baseline, a clear prediction timestamp and a definition of when each label becomes observable."
+    },
+    {
+      "type": "h2",
+      "text": "Bias, variance and the objective"
+    },
+    {
+      "type": "p",
+      "md": "For squared-error regression, ridge adds an L2 penalty proportional to the sum of squared coefficients. Lasso adds an L1 penalty proportional to the sum of their absolute values. Ridge shrinks correlated predictors together; lasso may set some coefficients exactly to zero, but its selected set can be unstable among correlated variables. Neither guarantees causality or a useful trading strategy. State the loss normalisation because software packages use different factors of sample size and one half. Usually leave the intercept unpenalised. Scale features using training-only statistics so a penalty does not favour a variable merely because its measurement units are larger."
+    },
+    {
+      "type": "h2",
+      "text": "Worked example: one ridge coefficient"
+    },
+    {
+      "type": "p",
+      "md": "Use the explicitly stated objective sum((y-w*x)^2) + lambda*w^2 with no intercept. For x=[1,2], y=[2,4] and lambda=5, the optimum is sum(x*y)/(sum(x*x)+lambda). The numerator is 10 and the unpenalised denominator is 5, so w=1 after adding the penalty. Without regularisation w=2. This shrinkage accepts training error to reduce sensitivity to noisy samples. It does not mean that one is the universally best penalty. Choosing lambda uses a validation procedure, while the final untouched period remains reserved for evaluating the whole selection rule."
+    },
+    {
+      "type": "math",
+      "tex": "\\min_w\\sum_i(y_i-wx_i)^2+\\lambda w^2,\\qquad w^*=\\frac{\\sum_i x_i y_i}{\\sum_i x_i^2+\\lambda}",
+      "caption": "Formula under the assumptions stated in the surrounding explanation."
+    },
+    {
+      "type": "h2",
+      "text": "Walk forward instead of shuffling time"
+    },
+    {
+      "type": "p",
+      "md": "Random folds assume an exchangeable sampling structure that many financial data sets lack. A walk-forward scheme trains on earlier observations and validates on a later block. An expanding window retains all earlier data; a rolling window drops old history to control regime relevance. Choose the window policy before comparing final results. If labels cover overlapping future horizons, remove training labels whose outcome windows overlap the validation boundary. An additional gap may help when features, execution assumptions or dependence require it. Do not describe a generic gap as a proof that every possible source of temporal leakage is gone."
+    },
+    {
+      "type": "h2",
+      "text": "Worked example: train-only scaling"
+    },
+    {
+      "type": "p",
+      "md": "Suppose training values are [1,2,3] and the next value is 100. The training mean is 2. A transform fitted on all four observations would use 26.5, allowing the future outlier to affect the representation of past data. Fitting the scaler on the training block and applying it unchanged to validation avoids that channel. The example prints both means so the error is visible. The same rule applies to imputation, feature selection, principal components and target encoders. A pipeline must refit each learned preprocessing step inside each training fold rather than cache one globally fitted transform."
+    },
+    {
+      "type": "h2",
+      "text": "Selection needs its own boundary"
+    },
+    {
+      "type": "p",
+      "md": "Trying hundreds of hyperparameters on one validation period overfits that period, even if no individual model saw its labels during gradient fitting. Use nested or clearly separated tuning and evaluation stages when the question requires an unbiased estimate of model selection. Report all material choices, transaction costs and a baseline. Predictive MSE and trading utility are different metrics; turnover and capacity can reverse rankings. Keep observations from one event, issuer or overlapping label window together where the sampling design requires it. Grouping and time order solve different leakage risks, so a good split may need both constraints."
+    },
+    {
+      "type": "h2",
+      "text": "Evaluate the process, not a lucky model"
+    },
+    {
+      "type": "p",
+      "md": "Store split boundaries, feature availability times, fitted transforms and selected penalties for reproducibility. Watch for revised economic data, survivorship-selected universes and labels accidentally included among predictors. A small holdout score improvement is not automatically statistically or economically meaningful. Use a final period once, then treat any changes inspired by its results as new research requiring new evidence. The regression lab helps you see fit and residual behaviour; it does not implement every walk-forward choice in this lesson. In production, monitor feature drift and realised errors, and keep a rollback baseline when the selected model degrades. Keep a written chronology of the split and every transform fitted within it. Rebuilding that chronology from saved artefacts is a useful leakage audit: a reviewer should be able to identify exactly which observations influenced each prediction."
+    },
+    {
+      "type": "h2",
+      "text": "Worked example: run and check"
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "x,y=[1,2],[2,4]\nlam=5\nw=sum(a*b for a,b in zip(x,y))/(sum(a*a for a in x)+lam)\nassert w == 1.0\ntrain=[1,2,3]\nfuture=[100]\nprint(f\"{w:.1f}\")\nprint(f\"{sum(train)/len(train):.1f}\")\nprint(f\"{sum(train+future)/len(train+future):.1f}\")",
+      "caption": "Complete Python 3.11+ example"
+    },
+    {
+      "type": "p",
+      "md": "The exact output is `1.0; 2.0; 26.5`. Run the example before changing a parameter, then predict the direction of the change. The assertions encode the stated checks; a failed assertion means that the implementation and the claimed result disagree."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Check this misconception",
+      "md": "Training-only fitting keeps future observations out of learned transforms. Applying the fitted transform to validation is fine; fitting it there changes the information boundary."
+    },
+    {
+      "type": "interactive",
+      "component": "RegressionLab",
+      "params": {},
+      "caption": "Related concept lab. The lab illustrates the named building block; it is not a full implementation of every model in this lesson."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Compute a no-intercept ridge coefficient with lambda=0 and lambda=5. Success check: The coefficients are 2 and 1.",
+    "hints": [
+      "Compute sum(x*y).",
+      "Compute sum(x*x).",
+      "Add lambda only to the denominator for this objective."
+    ],
+    "solution": "\n```python\nx,y=[1,2],[2,4]\nxy=sum(a*b for a,b in zip(x,y))\nxx=sum(a*a for a in x)\nassert xy/xx==2\nassert xy/(xx+5)==1\nprint(2,1)\n```\nExpected output: `2 1`.",
+    "successCheck": "The coefficients are 2 and 1."
+  },
+  "independentExercise": {
+    "prompt": "Create an expanding-window split over indices 0 through 7. Success check: Training ends before validation starts and the sets do not overlap.",
+    "hints": [
+      "Choose a boundary at index 5.",
+      "Use indices 0 through 4 for training.",
+      "Validate on indices 5 through 7."
+    ],
+    "solution": "\n```python\ntrain=list(range(5))\nvalid=list(range(5,8))\nassert max(train)<min(valid)\nassert not set(train)&set(valid)\nprint(train,valid)\n```\nExpected output: `[0, 1, 2, 3, 4] [5, 6, 7]`.",
+    "successCheck": "Training ends before validation starts and the sets do not overlap."
+  },
+  "commonMistakes": [
+    "Training-only fitting keeps future observations out of learned transforms. Applying the fitted transform to validation is fine; fitting it there changes the information boundary.",
+    "The L1 penalty has a kink at zero and can yield sparse coefficients. Ridge generally shrinks without exact zeros, and sparsity does not establish causal relevance."
+  ],
+  "realWorldApplication": "Use the assumptions and checks above when reviewing regularisation and time-aware validation. Record inputs, state the failure conditions and compare the result with a simple independent calculation.",
+  "quantFinanceApplication": "For a trading or risk workflow, validate the model and timestamp conventions before using regularisation and time-aware validation. The worked result is conditional on its assumptions, not a return promise.",
+  "summary": [
+    "Compare ridge and lasso penalties and scaling requirements",
+    "Build time-ordered training and validation splits",
+    "Identify leakage in preprocessing and model selection"
+  ],
+  "quiz": [
+    {
+      "type": "mcq",
+      "prompt": "Which preprocessing choice avoids this temporal leakage?",
+      "options": [
+        "Fit scaling on training values only",
+        "Fit scaling on every available date",
+        "Select features using final test labels",
+        "Impute with the whole future sample"
+      ],
+      "answerIndex": 0,
+      "explanation": "Training-only fitting keeps future observations out of learned transforms. Applying the fitted transform to validation is fine; fitting it there changes the information boundary.",
+      "id": "q1",
+      "objective": 2
+    },
+    {
+      "type": "mcq",
+      "prompt": "Which penalty can set coefficients exactly to zero?",
+      "options": [
+        "L2 ridge under every finite penalty",
+        "L1 lasso under suitable conditions",
+        "A larger validation set by itself",
+        "An unpenalised least-squares fit always"
+      ],
+      "answerIndex": 1,
+      "explanation": "The L1 penalty has a kink at zero and can yield sparse coefficients. Ridge generally shrinks without exact zeros, and sparsity does not establish causal relevance.",
+      "id": "q2",
+      "objective": 0
+    },
+    {
+      "type": "numeric",
+      "prompt": "For sum((y-w*x)^2)+5*w^2 with x=[1,2], y=[2,4], no intercept, what is w?",
+      "answer": 1,
+      "tolerance": 1e-06,
+      "explanation": "The stationary condition gives w=sum(x*y)/(sum(x*x)+5)=10/10=1. Another loss normalisation would require a correspondingly adjusted penalty.",
+      "id": "q3",
+      "objective": 0
+    },
+    {
+      "type": "code-output",
+      "prompt": "What mean is fitted from this training block?",
+      "code": "train=[1,2,3]\nprint(sum(train)/len(train))",
+      "language": "python",
+      "answer": "2.0",
+      "explanation": "Only the three training values enter the transform, so the mean is 2. Future observations must not change this fitted quantity.",
+      "id": "q4",
+      "objective": 2
+    },
+    {
+      "type": "short",
+      "prompt": "Why purge overlapping outcome windows at a validation boundary?",
+      "modelAnswer": "Training labels may incorporate returns realised inside the validation horizon, so removing overlapping windows prevents that outcome-information leak.",
+      "keywords": [
+        "overlap|horizon",
+        "label|outcome|return",
+        "leak|future|validation"
+      ],
+      "explanation": "A timestamp split alone is insufficient if earlier labels use later prices. Purging removes those overlaps; it does not automatically address every other feature or selection leak.",
+      "id": "q5",
+      "objective": 1
+    },
+    {
+      "type": "ms",
+      "prompt": "Which claims are valid?",
+      "options": [
+        "Feature scaling must be fitted within folds",
+        "Repeated tuning can overfit validation",
+        "Ridge guarantees a profitable strategy",
+        "A random shuffle always respects time"
+      ],
+      "answerIndices": [
+        0,
+        1
+      ],
+      "explanation": "Fold-local transforms preserve the information boundary, while repeated tuning can exploit validation noise. Neither regularisation nor shuffled data guarantees a useful forecast.",
+      "id": "q6",
+      "objective": 2
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "Which preprocessing choice avoids this temporal leakage?",
+      "back": "Fit scaling on training values only"
+    },
+    {
+      "type": "concept",
+      "front": "Which penalty can set coefficients exactly to zero?",
+      "back": "L1 lasso under suitable conditions"
+    },
+    {
+      "type": "concept",
+      "front": "For sum((y-w*x)^2)+5*w^2 with x=[1,2], y=[2,4], no intercept, what is w?",
+      "back": "The result is 1 under the stated inputs."
+    },
+    {
+      "type": "concept",
+      "front": "Why purge overlapping outcome windows at a validation boundary?",
+      "back": "Training labels may incorporate returns realised inside the validation horizon, so removing overlapping windows prevents that outcome-information leak."
+    },
+    {
+      "type": "concept",
+      "front": "Which claims are valid?",
+      "back": "Feature scaling must be fitted within folds, Repeated tuning can overfit validation"
+    }
+  ],
+  "references": [
+    {
+      "label": "scikit-learn: linear models",
+      "url": "https://scikit-learn.org/stable/modules/linear_model.html"
+    },
+    {
+      "label": "scikit-learn: cross-validation",
+      "url": "https://scikit-learn.org/stable/modules/cross_validation.html"
+    },
+    {
+      "label": "scikit-learn: common pitfalls",
+      "url": "https://scikit-learn.org/stable/common_pitfalls.html"
+    }
+  ],
+  "skills": [
+    "machine-learning"
+  ]
+}

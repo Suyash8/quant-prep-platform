@@ -2,8 +2,8 @@
   "id": "assess-systems-design",
   "title": "Systems Design Assessment",
   "kind": "assessment",
-  "timeLimitMinutes": 35,
-  "description": "Systems design check for trading-technology roles: matching engine design, feed handler normalisation, exactly-once semantics, idempotent order submission, latency budget decomposition, backtesting biases, tick storage layout and failure/reconciliation strategy. 35 minutes, mostly short answers scored on key concepts, name the mechanisms, not just the buzzwords.",
+  "timeLimitMinutes": 24,
+  "description": "Eight trading-systems design questions covering deterministic replay, feed normalisation, delivery semantics, uncertain order status, latency, data bias, tick storage and reconciliation. Allow about three minutes per question. Some answers require several distinct mechanisms.",
   "sections": [
     {
       "title": "Trading Systems Design",
@@ -14,30 +14,36 @@
           "prompt": "Sketch the design of a price-time-priority matching engine: what data structures hold the order book, what invariant must hold after every processed event, and why must the engine's event application be deterministic and replayable?",
           "modelAnswer": "Per side of the book, keep a price-ordered structure (a balanced tree / sorted map of price levels, or a heap keyed by price) holding FIFO queues of orders at each level, the tree gives fast best-bid/ask access and level insertion, the queues give time priority. Invariant: after every incoming event the book must not be crossed (best bid < best ask); matching logic generates trades precisely to restore that invariant, and each event application is a pure, deterministic transformation so replaying the recorded event stream from a snapshot reproduces the exact book state and trade sequence, which is what makes debugging, dispute resolution and disaster recovery possible.",
           "keywords": [
-            "fifo",
+            "fifo|queue",
             "price",
             "priority",
             "heap",
             "tree",
             "invariant",
             "crossed",
-            "replay",
-            "deterministic"
+            "replaying|replay|reconstruct",
+            "deterministic|repeatable"
           ],
-          "explanation": "Two structures cooperate: order across price levels (tree/heap/sorted map) and order within a level (FIFO queue for time priority). The no-cross invariant is the correctness contract, a crossed book means an executable trade was missed. Determinism matters because the exchange's event log IS the truth: if replaying it reproduces state bit-for-bit, you can audit any historical moment and recover from crashes by replay, without inventing ad-hoc state recovery."
+          "explanation": "Two structures cooperate: order across price levels (tree/heap/sorted map) and order within a level (FIFO queue for time priority). The no-cross invariant is the correctness contract, a crossed book means an executable trade was missed. Determinism matters because the exchange's event log IS the truth: if replaying it reproduces state bit-for-bit, you can audit any historical moment and recover from crashes by replay, without inventing ad-hoc state recovery.",
+          "lessonId": "tsmd-matching-strategy",
+          "lessonUrl": "/learn/tsmd-matching-strategy",
+          "objective": 0
         },
         {
           "id": "sd-q2",
           "type": "mcq",
           "prompt": "What is the purpose of the normalisation stage in a multi-venue market data feed handler?",
           "options": [
-            "Compressing market data to reduce network bandwidth between venues",
-            "Translating venue-specific wire formats, field conventions, price scalings and timestamp clocks into one canonical internal representation, so downstream strategy logic is venue-agnostic",
-            "Decoding client orders before they are sent to the exchange",
-            "Dropping duplicate quotes to save CPU on the strategy thread"
+            "Translate venue encodings and scales into a canonical internal schema",
+            "Discard every duplicate without maintaining any ordering or gap state",
+            "Compress every packet without interpreting any venue field semantics",
+            "Encode strategy orders for outbound transmission to the trading venue"
           ],
-          "answerIndex": 1,
-          "explanation": "Each venue speaks its own dialect: different field layouts, integer price scales, side conventions, message taxonomies and clocks (with different latencies and sync quality). Normalisation maps all of it into one internal schema with consistent, corrected timestamps, the single place venue quirks are handled, so the strategy consumes one clean stream. Compression, order routing and dedup are concerns of other stages."
+          "answerIndex": 0,
+          "explanation": "Each venue speaks its own dialect: different field layouts, integer price scales, side conventions, message taxonomies and clocks (with different latencies and sync quality). Normalisation maps all of it into one internal schema with consistent, corrected timestamps, the single place venue quirks are handled, so the strategy consumes one clean stream. Compression, order routing and dedup are concerns of other stages.",
+          "lessonId": "tsmd-market-data-path",
+          "lessonUrl": "/learn/tsmd-market-data-path",
+          "objective": 1
         },
         {
           "id": "sd-q3",
@@ -51,35 +57,42 @@
             "sequence",
             "dedup"
           ],
-          "explanation": "The impossibility lives in the window between 'did the work' and 'confirmed the work': no message can tell you whether the receiver processed it before dying. Rather than pay for distributed transactions everywhere, systems choose at-least-once (never lose) and push the burden to the consumer, whose sequence-number/dedup-key check turns possible duplicates into harmless no-ops. The same pattern appears in every fill-processing and position-update path."
+          "explanation": "The impossibility lives in the window between 'did the work' and 'confirmed the work': no message can tell you whether the receiver processed it before dying. Rather than pay for distributed transactions everywhere, systems choose at-least-once (never lose) and push the burden to the consumer, whose sequence-number/dedup-key check turns possible duplicates into harmless no-ops. The same pattern appears in every fill-processing and position-update path.",
+          "lessonId": "ds-fault-tolerance",
+          "lessonUrl": "/learn/ds-fault-tolerance",
+          "objective": 2
         },
         {
           "id": "sd-q4",
           "type": "short",
-          "prompt": "Your order gateway sends a new order and times out waiting for the exchange acknowledgement. Explain why resubmitting with the SAME ClOrdID is safe, and what can go wrong if you instead generate a fresh ClOrdID for the retry.",
-          "modelAnswer": "The venue treats the client-assigned ClOrdID as the identity of the order: a resend carrying the same ClOrdID is recognised as a duplicate of the already-live order and is rejected or ignored (or treated as a status query, per venue rules) rather than booked again, so the worst case is one live order. A fresh ClOrdID makes the retry look like a brand-new order; if the original actually arrived and is live, you now have TWO live orders, double the intended position and PnL. The ClOrdID convention converts an ambiguous network timeout into a safe, idempotent retry.",
+          "prompt": "An order gateway times out waiting for an exchange acknowledgement. Why is order status uncertain, why can a fresh client order ID duplicate exposure, and how should retry or reconciliation be chosen?",
+          "modelAnswer": "The first order may already be live despite the missing acknowledgement. A new client order ID may create a second order. Follow the specific venue session and duplicate-ID rules, use a supported status query or reconciliation, and preserve the original intent identity rather than assuming a universal resend guarantee.",
           "keywords": [
-            "clorderid",
-            "identity",
-            "duplicate",
-            "resend",
-            "timeout",
-            "two orders"
+            "uncertain|uncertainty|timeout|acknowledgement|acknowledge",
+            "duplicate|second|two",
+            "venue|protocol|session",
+            "status|reconciliation|reconcile|query"
           ],
-          "explanation": "Idempotency by client-side key: the venue, which KNOWS whether the first order arrived, resolves the ambiguity on your behalf if you reuse the key. This is why gateways generate ClOrdIDs deterministically per order intent and never regenerate on retry, and why positions mysteriously double after 'harmless' gateway restarts when this convention is broken."
+          "explanation": "An acknowledgement timeout is not a rejection. Some protocols support idempotent requests, while others require session-level resend or status handling. Reusing an identifier is not universally safe without checking its venue-defined semantics; generating a new ID can duplicate a live order.",
+          "lessonId": "tsmd-oms-positions",
+          "lessonUrl": "/learn/tsmd-oms-positions",
+          "objective": 3
         },
         {
           "id": "sd-q5",
           "type": "mcq",
           "prompt": "A tick-to-trade latency budget of 5 microseconds must be decomposed across the pipeline. Which decomposition approach is most useful in practice?",
           "options": [
-            "One average execution time per function call, summed to a total",
-            "Per-stage budgets (NIC/kernel-bypass receive, feed parse and normalise, strategy decision, order encode and emit, wire) measured at the tail (p99/p99.9), because tail behaviour dominates trading outcomes",
-            "Splitting the budget equally between hardware and software components",
-            "Measuring only the strategy decision time, since the other stages are negligible"
+            "Split the target equally across components without observing workloads",
+            "Measure end-to-end tails and stage distributions with their dependence",
+            "Sum one mean per function and treat the sum as the pipeline p99 value",
+            "Measure only strategy arithmetic because network and queues are free"
           ],
           "answerIndex": 1,
-          "explanation": "End-to-end latency is a sum of stage times, but tails compose multiplicatively: p99.9 of the pipeline is driven by each stage's worst behaviour (cache misses, jitter, queueing), not its average. Budgeting per stage at the tail localises exactly which stage to optimise, while averages hide the rare slow events that actually cost fills. 'Only strategy matters' fails because a 2-microsecond jitter in parsing is invisible in the mean and decisive in the tail."
+          "explanation": "Pipeline latency is a sum of stage times. Percentiles do not generally add or multiply: dependence, queueing and workload determine the end-to-end tail. Instrument both full-path latency and stage distributions; a mean-only budget hides slow events.",
+          "lessonId": "ll-latency-budgets",
+          "lessonUrl": "/learn/ll-latency-budgets",
+          "objective": 4
         },
         {
           "id": "sd-q6",
@@ -93,22 +106,25 @@
             "delisted",
             "look-ahead"
           ],
-          "explanation": "Any backtest built on a list selected using future information inherits a tilted universe. Survivorship inflates returns and understates drawdowns; the cure is reconstructing history as it was known at each point (constituents, listings, corporate actions). It pairs with look-ahead bias, using data at time $t$ that was only published after $t$ - and both are caught by the same discipline: simulate only with information available at decision time."
+          "explanation": "Any backtest built on a list selected using future information inherits a tilted universe. Survivorship inflates returns and understates drawdowns; the cure is reconstructing history as it was known at each point (constituents, listings, corporate actions). It pairs with look-ahead bias, using data at time $t$ that was only published after $t$ - and both are caught by the same discipline: simulate only with information available at decision time.",
+          "lessonId": "bt-data-biases",
+          "lessonUrl": "/learn/bt-data-biases",
+          "objective": 5
         },
         {
           "id": "sd-q7",
           "type": "short",
-          "prompt": "Why are tick data stores typically designed as append-only, time-ordered, columnar storage rather than row-oriented OLTP tables with updates?",
-          "modelAnswer": "Ticks are written once and never mutated, so an append-only layout gives fast sequential writes with no update/index-maintenance overhead and enables aggressive compression. Analytical queries scan large time ranges and aggregate over a few fields (price, size, flags), so a columnar layout reads only the needed columns sequentially and compresses each column far better (similar values are adjacent) than row storage, where every scan drags whole rows through cache and disk.",
+          "prompt": "Why can an immutable raw tick-event log benefit from append-only, time-ordered, columnar analytical storage, and why should corrections remain distinguishable from the original events?",
+          "modelAnswer": "Sequential appends preserve an auditable event history. Columnar layout supports scans over selected fields and compression. Corrections can be appended as explicit new events or represented in a separate derived view, rather than silently erasing the raw event history.",
           "keywords": [
-            "append-only",
-            "columnar",
-            "compression",
-            "sequential",
-            "scan",
-            "immutable"
+            "append|sequential",
+            "columnar|column|scan|compression|compress",
+            "correct|audit|history"
           ],
-          "explanation": "The workload profile dictates the design: write-once, read-many, range-scan-heavy. Append-only + time-ordered turns writes into streaming I/O and makes time-range predicates nearly free; columnar turns 'give me every trade price in March' into one contiguous read instead of jumping across row widths. OLTP row tables optimise for the opposite pattern (random single-row reads/writes) and pay for it in both write and scan performance on tick data."
+          "explanation": "Raw event logs and corrected analytical views serve different purposes. Appending preserves audit and replay, while columnar scans can reduce I/O. Real feeds can contain corrections, so saying all ticks are never revised in every storage layer is too broad.",
+          "lessonId": "di-tick-storage",
+          "lessonUrl": "/learn/di-tick-storage",
+          "objective": 6
         },
         {
           "id": "sd-q8",
@@ -117,14 +133,53 @@
           "modelAnswer": "First flag the break and treat the internal position as unreliable until resolved, no trading on an unvalidated book. Reconcile all three ledgers (internal expected positions, venue/clearing records, and the trade history) across positions, cash and transactions. Root-cause by replaying both event streams (orders sent, fills received, cancels, corrections, position transfers) from a common known-good starting snapshot, stepping forward in timestamp order until the states diverge: the first divergent event is the culprit (typically a missed fill report, an unapplied correction, or a duplicate). Then repair the state, document the break and resolution in an audit trail, and harden the process (e.g. missing-message detection) so that class of break is caught intraday next time.",
           "keywords": [
             "break",
-            "replay",
+            "replaying|replay|reconstruct",
             "event",
             "diverge",
             "snapshot",
             "audit"
           ],
-          "explanation": "Reconciliation is a systematic diff, not a shrug: expected vs actual vs history. The replay-to-divergence technique is the general tool for state mismatch, because every system is a deterministic function of its event history, the first event where two replays disagree is necessarily where the bug or missing message lives. Post-trade integrity is what lets a desk trust its own PnL, which is why break handling is treated as a first-class engineering workflow rather than a manual chore."
+          "explanation": "Reconciliation is a systematic diff, not a shrug: expected vs actual vs history. The replay-to-divergence technique is the general tool for state mismatch, because every system is a deterministic function of its event history, the first event where two replays disagree is necessarily where the bug or missing message lives. Post-trade integrity is what lets a desk trust its own PnL, which is why break handling is treated as a first-class engineering workflow rather than a manual chore.",
+          "lessonId": "tsmd-oms-positions",
+          "lessonUrl": "/learn/tsmd-oms-positions",
+          "objective": 7
         }
+      ]
+    }
+  ],
+  "passMark": 80,
+  "passMarkPercent": 80,
+  "scoreBands": [
+    {
+      "minPercent": 0,
+      "maxPercent": 49,
+      "title": "Rebuild the foundations",
+      "text": "Review the linked lessons for missed questions, then retry without a timer.",
+      "lessonIds": [
+        "tsmd-matching-strategy",
+        "tsmd-market-data-path",
+        "ds-fault-tolerance"
+      ]
+    },
+    {
+      "minPercent": 50,
+      "maxPercent": 79,
+      "title": "Practise the weak areas",
+      "text": "Rework missed examples and explain the mechanism before another timed attempt.",
+      "lessonIds": [
+        "tsmd-oms-positions",
+        "ll-latency-budgets",
+        "bt-data-biases"
+      ]
+    },
+    {
+      "minPercent": 80,
+      "maxPercent": 100,
+      "title": "Ready for a harder check",
+      "text": "You passed this practice threshold. Review any remaining misses; this is not a hiring prediction.",
+      "lessonIds": [
+        "bt-data-biases",
+        "di-tick-storage"
       ]
     }
   ]

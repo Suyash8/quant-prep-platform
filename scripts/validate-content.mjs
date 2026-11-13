@@ -62,6 +62,11 @@ function validateBlocks(blocks, file, ctx) {
     if (b.type === 'p' || b.type === 'callout') { checkInlineMath(b.md, file, ctx); if (b.md == null) err(file, `${ctx}: ${b.type} missing md`); }
     if (b.type === 'math' && (!b.tex || typeof b.tex !== 'string')) err(file, `${ctx}: math block missing tex`);
     if (b.type === 'code' && (typeof b.code !== 'string' || !b.code.trim())) err(file, `${ctx}: code block empty or missing`);
+    if (b.type === 'code') {
+      if (b.snippet !== undefined && typeof b.snippet !== 'boolean') err(file, `${ctx}: snippet must be boolean`);
+      if (b.file !== undefined && (typeof b.file !== 'string' || b.file.startsWith('/') || b.file.split(/[\\/]/).includes('..'))) err(file, `${ctx}: file must be a safe relative path`);
+      if (b.requires !== undefined && (!Array.isArray(b.requires) || b.requires.some(p => typeof p !== 'string' || !p.trim()))) err(file, `${ctx}: requires must list package names`);
+    }
     if (b.type === 'interactive') {
       if (!INTERACTIVE_COMPONENTS.has(b.component)) err(file, `${ctx}: unregistered interactive component "${b.component}"`);
       if (b.params && typeof b.params !== 'object') err(file, `${ctx}: interactive params must be object`);
@@ -82,6 +87,7 @@ function validateQuiz(quiz, file, ctx) {
     checked++;
     if (!QUIZ_TYPES.has(q.type)) { err(file, `${ctx}: bad quiz type "${q.type}"`); continue; }
     if (!q.prompt) err(file, `${ctx}: quiz ${q.id} missing prompt`);
+    if (q.objective !== undefined && (!Number.isInteger(q.objective) || q.objective < 0)) err(file, `${ctx}: quiz ${q.id} objective must be a non-negative index`);
     if (!q.explanation) err(file, `${ctx}: quiz ${q.id} missing explanation (required)`);
     if (q.type === 'mcq') {
       if (!Array.isArray(q.options) || q.options.length < 3) err(file, `${ctx}: mcq ${q.id} needs >= 3 options`);
@@ -92,7 +98,7 @@ function validateQuiz(quiz, file, ctx) {
       for (const i of q.answerIndices || []) if (i >= (q.options?.length ?? 0)) err(file, `${ctx}: ms ${q.id} answerIndex out of range`);
     }
     if (q.type === 'numeric' && typeof q.answer !== 'number') err(file, `${ctx}: numeric ${q.id} answer must be number`);
-    if (q.type === 'short' && (!q.modelAnswer || !Array.isArray(q.keywords))) err(file, `${ctx}: short ${q.id} needs modelAnswer + keywords`);
+    if (q.type === 'short' && (!q.modelAnswer || !Array.isArray(q.keywords) || q.keywords.length < 3 || q.keywords.some(g => typeof g !== 'string' || !g.split('|').every(s => s.trim())))) err(file, `${ctx}: short ${q.id} needs modelAnswer + keywords`);
     if (q.type === 'code-output' && (typeof q.code !== 'string' || typeof q.answer !== 'string')) err(file, `${ctx}: code-output ${q.id} needs code + exact answer string`);
   }
 }
@@ -102,6 +108,8 @@ function validateExercises(ex, file, ctx, required) {
   if (!ex) return;
   if (!ex.prompt) err(file, `${ctx}: exercise missing prompt`);
   if (!ex.solution) err(file, `${ctx}: exercise missing solution`);
+  if (ex.snippet !== undefined && typeof ex.snippet !== 'boolean') err(file, `${ctx}: snippet must be boolean`);
+  if (ex.requires !== undefined && (!Array.isArray(ex.requires) || ex.requires.some(p => typeof p !== 'string'))) err(file, `${ctx}: requires must list package names`);
 }
 
 function validateLesson(file, map) {
@@ -128,6 +136,9 @@ function validateLesson(file, map) {
   validateExercises(L.guidedExercise, file, 'guidedExercise', true);
   validateExercises(L.independentExercise, file, 'independentExercise', true);
   validateQuiz(L.quiz, file, 'quiz');
+  for (const q of L.quiz ?? []) if (q.objective !== undefined && q.objective >= (L.objectives?.length ?? 0)) err(file, `quiz ${q.id}: objective index out of range`);
+  for (const q of L.quiz ?? []) if (q.objective === undefined) err(file, `quiz ${q.id}: missing objective index`);
+  for (let i=0; i<(L.objectives?.length ?? 0); i++) if (!(L.quiz ?? []).some(q => q.objective === i)) err(file, `objective ${i}: no quiz question tests it`);
   if (!Array.isArray(L.summary) || L.summary.length < 3) err(file, 'summary needs >= 3 points');
   if (!Array.isArray(L.flashcards) || L.flashcards.length < 3) err(file, 'needs >= 3 flashcards');
   for (const c of L.flashcards || []) if (!CARD_TYPES.has(c.type)) err(file, `bad flashcard type "${c.type}"`);
@@ -136,12 +147,13 @@ function validateLesson(file, map) {
   checkInlineMath(L.motivation || '', file, 'motivation');
 }
 
-function validateProblem(file) {
+function validateProblem(file, map) {
   const P = loadJson(file);
   if (!P) return;
   checked++;
   if (path.basename(file, '.json') !== P.slug) err(file, 'slug must match filename');
   if (!['easy', 'medium', 'hard'].includes(P.difficulty)) err(file, 'bad difficulty');
+  if (P.lessons !== undefined && (!Array.isArray(P.lessons) || P.lessons.some(id => typeof id !== 'string' || !map.lessonIndex.has(id)))) err(file, 'lessons must list known lesson ids');
   if (!Array.isArray(P.tests) || P.tests.length < 5) err(file, 'needs >= 5 tests');
   for (const t of P.tests) {
     if (typeof t.input !== 'string' || typeof t.expected !== 'string') err(file, 'test missing input/expected');
@@ -203,7 +215,7 @@ const skills = new Set(map.skills);
 
 // ---- validate authored content ----
 walk(path.join(CONTENT, 'lessons'), f => validateLesson(f, { moduleIndex, lessonIndex, skills }));
-walk(path.join(CONTENT, 'problems'), f => validateProblem(f));
+walk(path.join(CONTENT, 'problems'), f => validateProblem(f, { lessonIndex }));
 walk(path.join(CONTENT, 'assessments'), f => validateAssessment(f));
 walk(path.join(CONTENT, 'projects'), f => validateProject(f));
 walk(path.join(CONTENT, 'companies'), f => {
@@ -225,7 +237,7 @@ for (const [id] of lessonIndex) {
 
 console.log(`Checked items: ${checked}`);
 console.log(`Curriculum map: ${totalMapLessons} planned lessons across ${moduleIndex.size} modules`);
-console.log(`Authored & valid: ${authoredCount} lessons (${Math.round(authoredCount / totalMapLessons * 100)}% of map)`);
+console.log(`Authored files: ${authoredCount} lessons (${Math.round(authoredCount / totalMapLessons * 100)}% of map)`);
 for (const [ph, s] of Object.entries(byPhase)) console.log(`  ${ph}: ${s.authored}/${s.total}`);
 
 if (process.argv.includes('--registry')) {

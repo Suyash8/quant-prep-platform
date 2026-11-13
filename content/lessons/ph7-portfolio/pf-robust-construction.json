@@ -1,0 +1,259 @@
+{
+  "id": "pf-robust-construction",
+  "moduleId": "ph7-portfolio",
+  "title": "Shrinkage, Risk Budgets and Cost-Aware Portfolios",
+  "estMinutes": 35,
+  "difficulty": "advanced",
+  "prereqs": [
+    "pf-position-sizing-kelly"
+  ],
+  "objectives": [
+    "Explain covariance estimation error and shrinkage",
+    "Distinguish risk parity from equal capital weights",
+    "Combine views, turnover and costs without promising stability"
+  ],
+  "motivation": "A mean-variance optimiser treats its input estimates as if they were the correct future means and covariances. Small errors can produce large, concentrated positions, especially when assets are nearly redundant. A mathematically optimal solution can therefore be operationally fragile. Begin with a feasible benchmark and inspect how weights change when inputs move within plausible estimation error. Constraints, shrinkage and trading costs can reduce sensitivity, but none guarantees the estimated model describes tomorrow. Report the optimisation objective and constraints together; showing only a high backtested Sharpe ratio hides what assumptions generated the allocation.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "Optimisation amplifies uncertain inputs"
+    },
+    {
+      "type": "p",
+      "md": "A mean-variance optimiser treats its input estimates as if they were the correct future means and covariances. Small errors can produce large, concentrated positions, especially when assets are nearly redundant. A mathematically optimal solution can therefore be operationally fragile. Begin with a feasible benchmark and inspect how weights change when inputs move within plausible estimation error. Constraints, shrinkage and trading costs can reduce sensitivity, but none guarantees the estimated model describes tomorrow. Report the optimisation objective and constraints together; showing only a high backtested Sharpe ratio hides what assumptions generated the allocation."
+    },
+    {
+      "type": "h2",
+      "text": "Shrink a noisy covariance estimate"
+    },
+    {
+      "type": "p",
+      "md": "A simple estimator is Sigma_hat=(1-delta)*S+delta*T, where S is a sample covariance, T a structured target and delta lies between zero and one. A diagonal target retains individual variances while shrinking cross-asset covariances towards zero. A scaled identity target shrinks variances as well. Positive semidefiniteness is preserved when both inputs are positive semidefinite and weights are non-negative. The best intensity depends on estimation error and the chosen loss, not a universal fixed percentage. Shrinkage introduces bias to reduce variance; a target that erases genuine shared risk can still produce misleading diversification."
+    },
+    {
+      "type": "h2",
+      "text": "Worked example: two covariance matrices"
+    },
+    {
+      "type": "p",
+      "md": "Let S=[[0.04,0.018],[0.018,0.09]] and choose its diagonal as T. With delta=0.5, diagonal entries stay 0.04 and 0.09 while off-diagonal entries become 0.009. For equal capital weights [0.5,0.5], variance changes from 0.0415 to 0.037. These are values under two different estimates, not evidence that actual portfolio risk fell merely because a formula reported a smaller number. The executable example recomputes both quadratic forms. Compare realised outcomes and estimator stability out of sample, and inspect sensitivity to targets instead of selecting whichever covariance estimate makes a preferred allocation look safest."
+    },
+    {
+      "type": "math",
+      "tex": "\\widehat\\Sigma=(1-\\delta)S+\\delta T,\\qquad \\operatorname{RC}_i=\\frac{w_i(\\Sigma w)_i}{\\sqrt{w^\\top\\Sigma w}}",
+      "caption": "Formula under the assumptions stated in the surrounding explanation."
+    },
+    {
+      "type": "h2",
+      "text": "Risk parity is about contributions"
+    },
+    {
+      "type": "p",
+      "md": "Portfolio volatility is sqrt(w_transpose*Sigma*w). The marginal contribution of weight i is (Sigma*w)_i divided by portfolio volatility. Multiplying by w_i gives an additive volatility contribution; these sum to total volatility for this homogeneous risk measure. Equal-risk-contribution portfolios aim to equalise these contributions, not capital weights. For uncorrelated assets with volatilities 20% and 10%, inverse-volatility weights [1/3,2/3] equalise volatility contributions. With correlations, naive inverse-volatility weighting need not achieve risk parity. Constraints, exposure multiplier, negative correlations and a singular covariance can complicate existence, uniqueness and numerical solution."
+    },
+    {
+      "type": "h2",
+      "text": "Worked example: a risk budget"
+    },
+    {
+      "type": "p",
+      "md": "With independent assets, variances are 0.04 and 0.01. At weights 1/3 and 2/3, each variance contribution w_i^2*sigma_i^2 equals 0.004444. At equal capital weights, the higher-volatility asset contributes four times the variance. This example shows why equal capital is not equal risk. It also shows a limitation: independence is an assumption, not a measured constant forever. If the assets become strongly positively correlated, diversification shrinks. Stress the contribution calculation using alternate correlation regimes and factor scenarios rather than assuming a stable estimate guarantees balanced future losses."
+    },
+    {
+      "type": "h2",
+      "text": "Views and the cost of changing weights"
+    },
+    {
+      "type": "p",
+      "md": "Black-Litterman combines an equilibrium-style prior for expected returns with explicit investor views and uncertainty about those views. A view should state its portfolio mapping and confidence; it is not an unexplained replacement mean. The posterior then depends on the covariance and confidence conventions, so documentation matters. A cost-aware allocation also penalises changes from current holdings, using a stated turnover norm and a cost model. Linear fees, spreads and nonlinear market impact are different terms. Adding a penalty changes the optimal trade; it does not guarantee the actual execution cost matches the assumed coefficient."
+    },
+    {
+      "type": "h2",
+      "text": "A feasible portfolio before a precise one"
+    },
+    {
+      "type": "p",
+      "md": "Enforce concentration, exposure multiplier, liquidity and sector constraints before interpreting optimiser precision. Account for lot sizes and check the rounded portfolio still respects limits. Keep a no-trade region when expected benefit is smaller than cost and uncertainty, if that policy matches the mandate. The covariance lab visualises co-movement, not a full allocation recommendation. Recompute weights on rolling training windows, evaluate with causal inputs and compare against simple equal-weight and capped baselines. Record realised turnover and stress losses. A portfolio is more than its estimated covariance matrix, and a stable-looking allocation can still carry concentrated economic risk. Check the covariance matrix numerically before optimisation: symmetry, finite entries and non-negative eigenvalues within a documented tolerance. Silently replacing a materially indefinite matrix with a nearby valid one changes the model and should be reported. A tiny round-off repair is different from concealing a large data problem. Keep the original estimate for diagnosis and compare how much the repair changes the resulting risk contributions."
+    },
+    {
+      "type": "h2",
+      "text": "Worked example: run and check"
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "S=[[0.04,0.018],[0.018,0.09]]\nT=[[0.04,0],[0,0.09]]\nA=[[0.5*S[i][j]+0.5*T[i][j] for j in range(2)] for i in range(2)]\ndef var(M,w):\n    return sum(w[i]*M[i][j]*w[j] for i in range(2) for j in range(2))\nassert abs(var(S,[0.5,0.5])-0.0415)<1e-12\nprint(f\"{var(A,[0.5,0.5]):.6f}\")\nw=[1/3,2/3]\nc=[w[0]**2*0.04,w[1]**2*0.01]\nassert abs(c[0]-c[1])<1e-12\nprint(f\"{c[0]:.6f} {c[1]:.6f}\")",
+      "caption": "Complete Python 3.11+ example"
+    },
+    {
+      "type": "p",
+      "md": "The exact output is `0.037000; 0.004444 0.004444`. Run the example before changing a parameter, then predict the direction of the change. The assertions encode the stated checks; a failed assertion means that the implementation and the claimed result disagree."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Check this misconception",
+      "md": "Shrinkage pulls a noisy estimate towards a structured target, adding bias to reduce estimation variability. It does not create a guaranteed reduction in actual future risk."
+    },
+    {
+      "type": "interactive",
+      "component": "CovarianceLab",
+      "params": {},
+      "caption": "Related concept lab. The lab illustrates the named building block; it is not a full implementation of every model in this lesson."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Shrink covariance 0.018 halfway towards zero. Success check: The result is 0.009.",
+    "hints": [
+      "Use a convex combination.",
+      "The target off-diagonal entry is zero.",
+      "Multiply the sample entry by one half."
+    ],
+    "solution": "\n```python\ndelta,sample,target=0.5,0.018,0.0\na=(1-delta)*sample+delta*target\nassert abs(a-0.009)<1e-12\nprint(f\"{a:.3f}\")\n```\nExpected output: `0.009`.",
+    "successCheck": "The result is 0.009."
+  },
+  "independentExercise": {
+    "prompt": "Check independent-asset risk contributions for weights [1/3,2/3] and volatilities [0.2,0.1]. Success check: The two variance contributions are equal.",
+    "hints": [
+      "Square each weighted volatility.",
+      "Independence removes cross terms.",
+      "Compare the two contributions numerically."
+    ],
+    "solution": "\n```python\nc1=(1/3*0.2)**2\nc2=(2/3*0.1)**2\nassert abs(c1-c2)<1e-12\nprint(f\"{c1:.6f} {c2:.6f}\")\n```\nExpected output: `0.004444 0.004444`.",
+    "successCheck": "The two variance contributions are equal."
+  },
+  "commonMistakes": [
+    "Shrinkage pulls a noisy estimate towards a structured target, adding bias to reduce estimation variability. It does not create a guaranteed reduction in actual future risk.",
+    "Risk parity concerns contributions computed from weights and a risk model. Equal capital is a different objective and does not generally produce equal risk contributions."
+  ],
+  "realWorldApplication": "Use the assumptions and checks above when reviewing shrinkage, risk budgets and cost-aware portfolios. Record inputs, state the failure conditions and compare the result with a simple independent calculation.",
+  "quantFinanceApplication": "For a trading or risk workflow, validate the model and timestamp conventions before using shrinkage, risk budgets and cost-aware portfolios. The worked result is conditional on its assumptions, not a return promise.",
+  "summary": [
+    "Explain covariance estimation error and shrinkage",
+    "Distinguish risk parity from equal capital weights",
+    "Combine views, turnover and costs without promising stability"
+  ],
+  "quiz": [
+    {
+      "type": "mcq",
+      "prompt": "What does covariance shrinkage explicitly trade off?",
+      "options": [
+        "Guaranteed profit against no market risk",
+        "Future observations against past prices",
+        "Estimator bias against sampling variance",
+        "Capital weights against accounting identity"
+      ],
+      "answerIndex": 2,
+      "explanation": "Shrinkage pulls a noisy estimate towards a structured target, adding bias to reduce estimation variability. It does not create a guaranteed reduction in actual future risk.",
+      "id": "q1",
+      "objective": 0
+    },
+    {
+      "type": "mcq",
+      "prompt": "What does equal-risk-contribution allocation target?",
+      "options": [
+        "Equal capital weights in every covariance model",
+        "Equal realised returns in every period",
+        "Zero exposure to every common market factor",
+        "Equal contributions to the chosen risk measure"
+      ],
+      "answerIndex": 3,
+      "explanation": "Risk parity concerns contributions computed from weights and a risk model. Equal capital is a different objective and does not generally produce equal risk contributions.",
+      "id": "q2",
+      "objective": 1
+    },
+    {
+      "type": "numeric",
+      "prompt": "With off-diagonal sample covariance 0.018, diagonal target and delta=0.5, what is the shrunk covariance?",
+      "answer": 0.009,
+      "tolerance": 1e-06,
+      "explanation": "The target off-diagonal is zero, so the mixture is 0.5*0.018+0.5*0=0.009. The diagonal entries are unchanged for this target.",
+      "id": "q3",
+      "objective": 0
+    },
+    {
+      "type": "code-output",
+      "prompt": "What inverse-volatility weights are printed for volatilities 0.2 and 0.1?",
+      "code": "a,b=1/0.2,1/0.1\nprint(f\"{a/(a+b):.3f} {b/(a+b):.3f}\")",
+      "language": "python",
+      "answer": "0.333 0.667",
+      "explanation": "Normalising inverse volatilities gives one third and two thirds. Equal-risk interpretation here assumes uncorrelated assets; it is not a general correlated-portfolio solution.",
+      "id": "q4",
+      "objective": 1
+    },
+    {
+      "type": "short",
+      "prompt": "Why include turnover and transaction costs in an allocation objective?",
+      "modelAnswer": "Changing holdings costs money, so a cost-aware objective weighs forecast benefit against the cost and uncertainty of trading from current positions.",
+      "keywords": [
+        "turnover|change|changing|trade|trading",
+        "cost|spread|impact",
+        "current|holding|position"
+      ],
+      "explanation": "An allocation far from current holdings may lose its expected advantage during execution. Penalising turnover makes that trade-off explicit, but the assumed cost model still needs validation.",
+      "id": "q5",
+      "objective": 2
+    },
+    {
+      "type": "ms",
+      "prompt": "Which statements are valid?",
+      "options": [
+        "Black-Litterman views need uncertainty assumptions",
+        "Rounded holdings need constraint rechecks",
+        "Shrinkage guarantees lower realised drawdowns",
+        "Inverse volatility always solves correlated risk parity"
+      ],
+      "answerIndices": [
+        0,
+        1
+      ],
+      "explanation": "View confidence and post-rounding feasibility are part of the model contract. Shrinkage does not guarantee realised outcomes, and correlations alter risk contributions.",
+      "id": "q6",
+      "objective": 2
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "What does covariance shrinkage explicitly trade off?",
+      "back": "Estimator bias against sampling variance"
+    },
+    {
+      "type": "concept",
+      "front": "What does equal-risk-contribution allocation target?",
+      "back": "Equal contributions to the chosen risk measure"
+    },
+    {
+      "type": "concept",
+      "front": "With off-diagonal sample covariance 0.018, diagonal target and delta=0.5, what is the shrunk covariance?",
+      "back": "The result is 0.009 under the stated inputs."
+    },
+    {
+      "type": "concept",
+      "front": "Why include turnover and transaction costs in an allocation objective?",
+      "back": "Changing holdings costs money, so a cost-aware objective weighs forecast benefit against the cost and uncertainty of trading from current positions."
+    },
+    {
+      "type": "concept",
+      "front": "Which statements are valid?",
+      "back": "Black-Litterman views need uncertainty assumptions, Rounded holdings need constraint rechecks"
+    }
+  ],
+  "references": [
+    {
+      "label": "scikit-learn: covariance estimation",
+      "url": "https://scikit-learn.org/stable/modules/covariance.html"
+    },
+    {
+      "label": "Stanford: portfolio optimisation",
+      "url": "https://web.stanford.edu/~boyd/papers/pdf/portfolio.pdf"
+    },
+    {
+      "label": "CFA Institute: portfolio management",
+      "url": "https://www.cfainstitute.org/insights/professional-learning/refresher-readings"
+    }
+  ],
+  "skills": [
+    "portfolio"
+  ]
+}

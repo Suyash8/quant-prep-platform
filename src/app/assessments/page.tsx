@@ -71,12 +71,20 @@ export default async function AssessmentsPage() {
     take: 20,
   });
 
+  // Server-graded attempts and device-reported (offline-synced) scores are kept apart. "Best" is the server verdict;
+  // a higher device claim is shown separately as unverified.
+  const isDevice = (d: string | null) => { try { return JSON.parse(d ?? '{}').source === 'offline-sync'; } catch { return false; } };
   const bestById = new Map<string, number>();
-  for (const a of attempts) bestById.set(a.assessmentId, Math.max(bestById.get(a.assessmentId) ?? 0, a.scorePct));
+  const deviceById = new Map<string, number>();
+  for (const a of attempts) {
+    const m = isDevice(a.detail) ? deviceById : bestById;
+    m.set(a.assessmentId, Math.max(m.get(a.assessmentId) ?? 0, a.scorePct));
+  }
 
-  const completedCount = bestById.size;
-  const bestOverall = attempts.length ? Math.max(...attempts.map(a => a.scorePct)) : null;
-  const bestDisplay = bestOverall === null ? '—' : Math.round(bestOverall) + '%';
+  const completedCount = new Set([...bestById.keys(), ...deviceById.keys()]).size;
+  const serverScores = [...bestById.values()];
+  const bestOverall = serverScores.length ? Math.max(...serverScores) : null;
+  const bestDisplay = bestOverall === null ? 'None yet' : Math.round(bestOverall) + '%';
 
   // per-card copy: each assessment's own description (registry read, no queries)
   const descriptions = new Map<string, string>();
@@ -138,7 +146,10 @@ export default async function AssessmentsPage() {
               const best = bestById.get(a.id);
               const attempted = best !== undefined;
               const bestPct = attempted ? Math.round(best) : 0;
-              const passed = attempted && bestPct >= 70;
+              const passMark = getAssessment(a.id)?.passMarkPercent ?? 70;
+              const passed = attempted && bestPct >= passMark;
+              const dev = deviceById.get(a.id);
+              const deviceAhead = dev !== undefined && dev > (best ?? 0);
               const delay = i * 60 + 'ms';
               const minutesLabel = a.timeLimitMinutes > 0 ? a.timeLimitMinutes + ' min' : 'untimed';
               const topic = topicIcon(a.id, meta.icon, meta.tile);
@@ -150,18 +161,21 @@ export default async function AssessmentsPage() {
                     {attempted && (
                       <span className={'chip tnum shrink-0 ' + (passed ? 'chip-success' : 'chip-warning')}>Best {bestPct}%</span>
                     )}
+                    {deviceAhead && (
+                      <span className="chip tnum shrink-0" title="Scored on this device while offline. The server has not graded it.">Device {Math.round(dev as number)}% · not verified</span>
+                    )}
                   </div>
                   <h3 className="mt-3.5 text-lg font-extrabold tracking-tight">{a.title}</h3>
                   <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5">
                     <span className={KIND_CHIP[a.kind] ?? 'chip'}>{meta.label}</span>
-                    <span className="inline-flex items-center gap-1 text-xs font-semibold text-faint tnum">
+                    <span className="inline-flex items-center gap-1 text-[13px] font-semibold text-faint tnum">
                       <ListChecks className="h-3.5 w-3.5" aria-hidden /> {a.questionCount} questions
                     </span>
-                    <span className="inline-flex items-center gap-1 text-xs font-semibold text-faint tnum">
+                    <span className="inline-flex items-center gap-1 text-[13px] font-semibold text-faint tnum">
                       <Clock className="h-3.5 w-3.5" aria-hidden /> {minutesLabel}
                     </span>
                   </div>
-                  <p className="mt-2.5 text-sm font-medium text-muted line-clamp-2">{descriptions.get(a.id) ?? meta.desc}</p>
+                  <p className="mt-2.5 text-[15px] font-medium text-muted line-clamp-2">{descriptions.get(a.id) ?? meta.desc}</p>
                   <div className="flex-1" />
                   {attempted && bestPct > 0 && (
                     <div className="prog-track h-2.5 mt-3.5">
@@ -170,7 +184,7 @@ export default async function AssessmentsPage() {
                   )}
                   <div className="mt-4 flex items-center justify-between gap-3">
                     {!attempted ? (
-                      <span className="text-xs font-bold text-faint">Not started</span>
+                      <span className="text-[13px] font-bold text-faint">Not started</span>
                     ) : passed ? (
                       <span className="chip chip-success">Passed</span>
                     ) : (
@@ -197,7 +211,7 @@ export default async function AssessmentsPage() {
               <div className="qf-empty">
                 <span className="empty-emoji" role="img" aria-label="open mailbox">📭</span>
                 <p className="text-lg font-extrabold">No attempts yet</p>
-                <p className="mx-auto mt-1 max-w-md text-sm font-semibold text-muted">
+                <p className="mx-auto mt-1 max-w-md text-[15px] font-semibold text-muted">
                   Start with the diagnostic, it maps your strongest and weakest areas in one sitting.
                 </p>
               </div>
@@ -213,8 +227,8 @@ export default async function AssessmentsPage() {
                         <ClipboardList strokeWidth={2.5} />
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-bold">{title}</span>
-                        <span className="block text-xs font-semibold text-faint tnum">
+                        <span className="block truncate text-[15px] font-bold">{title}</span>
+                        <span className="block text-[13px] font-semibold text-faint tnum">
                           {a.submittedAt
                             ? new Date(a.submittedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
                               + ' · ' + new Date(a.submittedAt).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })

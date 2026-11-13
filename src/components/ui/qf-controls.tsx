@@ -58,7 +58,7 @@ export function QfCheck({
   return (
     <label htmlFor={id} className="flex items-center gap-2.5 cursor-pointer select-none">
       {input}
-      <span className="text-sm font-bold">{label}</span>
+      <span className="text-[15px] font-bold">{label}</span>
     </label>
   );
 }
@@ -81,12 +81,12 @@ export function QfField({
 }) {
   return (
     <div className={cn('space-y-1.5', className)}>
-      <label htmlFor={htmlFor} className="block text-sm font-extrabold">
+      <label htmlFor={htmlFor} className="block text-[15px] font-extrabold">
         {label}
       </label>
       {children}
-      {hint && !error ? <p className="text-xs font-semibold text-muted">{hint}</p> : null}
-      {error ? <p className="text-xs font-bold text-danger">{error}</p> : null}
+      {hint && !error ? <p className="text-[13px] font-semibold text-muted">{hint}</p> : null}
+      {error ? <p className="text-[13px] font-bold text-danger">{error}</p> : null}
     </div>
   );
 }

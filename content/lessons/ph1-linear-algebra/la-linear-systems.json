@@ -2,7 +2,7 @@
   "id": "la-linear-systems",
   "moduleId": "ph1-linear-algebra",
   "title": "Systems of Linear Equations and Gaussian Elimination",
-  "estMinutes": 28,
+  "estMinutes": 35,
   "difficulty": "core",
   "prereqs": [
     "la-matrices-operations"
@@ -34,6 +34,10 @@
     },
     {
       "type": "p",
+      "md": "The augmented matrix for the displayed system starts with rows[1,1,1|6],[1,2,2|9],[2,1,3|11]. Subtracting row 1 from row 2 gives[0,1,1|3], and subtracting twice row 1 from row 3 gives[0,-1,1|-1]. Adding the new row 2 to row 3 then gives[0,0,2|2]. Each operation includes the target column: leaving that column unchanged would solve a different system. Pivots are now in all three unknown columns, and no contradiction row occurs, so back-substitution determines one solution. For a numerical computation, verify the residual against the original unmodified matrix, not merely the transformed rows."
+    },
+    {
+      "type": "p",
       "md": "The strategy is to combine equations so that variables disappear one at a time, leaving a triangular system that can be solved from the bottom up (**back-substitution**). Three legal moves, called **elementary row operations**, never change the solution set: swap two equations; multiply an equation by a nonzero constant; add a multiple of one equation to another. We work on the **augmented matrix** (coefficients with the $b$ column attached) so the targets travel with their equations."
     },
     {
@@ -41,8 +45,8 @@
       "title": "Worked example: elimination on a 3-variable system",
       "items": [
         "System: $x + y + z = 6$; $x + 2y + 2z = 9$; $2x + y + 3z = 11$.",
-        "Kill $x$ from equation 2: R2 $\\leftarrow$ R2. R1 gives $y + z = 3$.",
-        "Kill $x$ from equation 3: R3 $\\leftarrow$ R3, 2R1 gives $-y + z = -1$.",
+        "Kill $x$ from equation 2: R2 $\\leftarrow$ R2 - R1 gives $y + z = 3$.",
+        "Kill $x$ from equation 3: R3 $\\leftarrow$ R3 - 2R1 gives $-y + z = -1$.",
         "Kill $y$ from the new R3: R3 $\\leftarrow$ R3 + R2 gives $2z = 2$, so $z = 1$.",
         "Back-substitute: $y + 1 = 3$ gives $y = 2$; then $x + 2 + 1 = 6$ gives $x = 3$.",
         "Check all three original equations: $3+2+1 = 6$ ✓; $3 + 4 + 2 = 9$ ✓; $6 + 2 + 3 = 11$ ✓. Solution: $(x, y, z) = (3, 2, 1)$."
@@ -53,15 +57,15 @@
       "component": "FunctionPlotter",
       "params": {
         "expressions": [
-          "2, x",
-          "2*x, 4"
+          "2-x",
+          "2*x-4"
         ],
         "xmin": -2,
         "xmax": 6,
         "ymin": -6,
         "ymax": 6
       },
-      "caption": "A 2-variable system as geometry: y = 2, x and y = 2x, 4 cross at exactly one point, x = 2, y = 0. Each equation is a line; the solution is the intersection."
+      "caption": "The lines y=2-x and y=2x-4 intersect at(x,y)=(2,0): both give 0 at x=2. This 2-variable picture is a separate illustration from the 3-variable elimination example above."
     },
     {
       "type": "h2",
@@ -69,7 +73,7 @@
     },
     {
       "type": "p",
-      "md": "Elimination ends in one of three situations, and reading them off the echelon form is a skill in itself. If every variable ends up with a pivot (a leading nonzero), the system has exactly one solution. If elimination produces a row like $0 = 5$ - a **contradiction** - no solution exists: the system is **inconsistent**. If a variable ends up with no pivot (a **free variable**), solutions form a whole family: the system is **singular but consistent**. The $2 \\times 2$ examples make it vivid: $x + y = 2$ with $2x + 2y = 4$ has infinitely many solutions (the second equation is just the first doubled, determinant zero), while $x + y = 2$ with $2x + 2y = 5$ has none, two parallel lines that never meet."
+      "md": "For an echelon augmented matrix, first check for a contradiction row 0=nonzero: it means no solution regardless of pivots elsewhere. Otherwise the system is consistent. If every unknown column has a pivot, the solution is unique; if at least one unknown is free, there are infinitely many solutions over the reals. A zero row 0=0 alone is not a contradiction. For rectangular matrices use rank and consistency rather than the square-only word singular."
     },
     {
       "type": "h2",
@@ -77,36 +81,40 @@
     },
     {
       "type": "p",
-      "md": "Elimination costs roughly $\\tfrac{2}{3}n^3$ floating-point operations for an $n \\times n$ system, fast for hundreds of unknowns, and industrial solvers exploit sparsity to go far bigger. Two practical issues matter. First, **pivoting**: dividing by a tiny pivot amplifies rounding error, so solid implementations swap rows to always divide by the largest available coefficient; `np.linalg.solve` does this automatically (it runs LU factorisation with partial pivoting). Second, **conditioning**: if $A$ is nearly singular, tiny errors in $b$ produce huge errors in $x$ - the classic symptom of highly correlated inputs. And one habit to unlearn immediately: never form $A^{-1}$ to solve $Ax = b$ by computing $A^{-1}b$. It is slower, less accurate, and unnecessary, the LU factorisation already encodes everything the inverse would."
+      "md": "Dense LU factorisation of an n-by-n matrix costs about(2/3)n^3 operations, with another O(n^2) per right-hand side. Partial pivoting selects the largest-magnitude available entry in the current column, not the largest entry anywhere in the remaining matrix. NumPy solve uses LAPACK gesv and requires a square full-rank matrix. Conditioning measures sensitivity of the problem itself: near-singularity can amplify data and roundoff errors. Prefer solving to explicitly forming the inverse; residual and conditioning checks are still needed, since a small residual alone does not guarantee a small solution error."
     },
     {
       "type": "callout",
       "variant": "quant",
       "title": "Why this matters for finance",
-      "md": "Ordinary least squares solves the normal equations $X^\\top X \\beta = X^\\top y$ - a linear system whose matrix is symmetric and positive definite, so production code uses the specialised (and stabler) Cholesky factorisation. A near-singular $X^\\top X$ means your factors are nearly collinear, and the resulting betas swing wildly on tiny data changes: linear algebra diagnostics are risk diagnostics."
+      "md": "The normal equations for ordinary least squares are X^T*X*beta=X^T*y. X^T*X is always positive semidefinite, but positive definite only when X has full column rank. Forming this Gram matrix squares the 2-norm condition number, so QR or SVD-based least-squares methods are often preferable, especially near collinearity. Cholesky can solve suitable well-conditioned positive-definite normal equations, but is not a universal more-stable choice. NumPy lstsq accepts rectangular/rank-deficient problems and returns a minimum-norm least-squares solution when minimisers are not unique."
     },
     {
       "type": "code",
       "lang": "python",
       "code": "import numpy as np\nA = np.array([[2.0, 3.0], [1.0, -2.0]])\nb = np.array([13.0, -4.0])\nprint(np.linalg.solve(A, b))    # [2. 3.]\nprint(np.linalg.det(A))         # -7.0 - nonzero, so unique solution exists",
-      "caption": "The system 2x + 3y = 13, x, 2y = -4 solves to x = 2, y = 3. Check: 4 + 9 = 13 and 2, 6 = -4."
+      "caption": "For 2x+3y=13 and x-2y=-4, the solution is x=2,y=3. Substitution gives 4+9=13 and 2-6=-4."
     }
   ],
   "guidedExercise": {
     "prompt": "Solve by elimination: $\\;2x + 3y = 13\\;$ and $\\;x - 2y = -4$. State each row operation you use, then verify the solution in both original equations.",
     "hints": [
       "Scale the second equation so its x-coefficient matches the first's, then subtract.",
-      "Once one variable is gone, solve the remaining 1-variable equation and back-substitute."
+      "Once one variable is gone, solve the remaining 1-variable equation and back-substitute.",
+      "Apply each row operation to the right-hand side too, and retain both original equations for verification."
     ],
-    "solution": "R2 $\\leftarrow$ 2R2: $2x - 4y = -8$. Subtract from R1: $(2x + 3y) - (2x - 4y) = 7y = 13 - (-8) = 21$, so $y = 3$. Back-substitute into $x - 2y = -4$: $x = -4 + 6 = 2$. Check: $2(2) + 3(3) = 13$ ✓ and $2 - 6 = -4$ ✓. Solution: $x = 2$, $y = 3$."
+    "solution": "R2 $\\leftarrow$ 2R2: $2x - 4y = -8$. Subtract from R1: $(2x + 3y) - (2x - 4y) = 7y = 13 - (-8) = 21$, so $y = 3$. Back-substitute into $x - 2y = -4$: $x = -4 + 6 = 2$. Check: $2(2) + 3(3) = 13$ ✓ and $2 - 6 = -4$ ✓. Solution: $x = 2$, $y = 3$.",
+    "successCheck": "The pair(2,3) gives 2*2+3*3=13 and 2-2*3=-4."
   },
   "independentExercise": {
-    "prompt": "A fund must buy $x$ shares of asset A at \\$50 and $y$ shares of asset B at $25 so that total capital spent is exactly \\$5,000 and a delta-exposure target $0.9x + 0.4y = 86$ is met. Solve the system for $x$ and $y$ by elimination and verify both equations.",
+    "prompt": "A fund must buy $x$ shares of asset A at \\$50 and $y$ shares of asset B at \\$25 so that total capital spent is exactly \\$5,000 and a delta-exposure target $0.9x + 0.4y = 86$ is met. Solve the system for $x$ and $y$ by elimination and verify both equations.",
     "hints": [
       "Divide the first equation by 25 to simplify it first, row operations include scaling.",
-      "Substitute the simplified relation into the exposure equation."
+      "Substitute the simplified relation into the exposure equation.",
+      "The solution should have nonnegative whole share counts. Substitute into both dollar-capital and delta-exposure constraints, whose units are different."
     ],
-    "solution": "Scale R1 by $\\tfrac{1}{25}$: $2x + y = 200$, so $y = 200 - 2x$. Substitute into R2: $0.9x + 0.4(200 - 2x) = 86 \\Rightarrow 0.9x + 80 - 0.8x = 86 \\Rightarrow 0.1x = 6 \\Rightarrow x = 60$. Then $y = 200 - 120 = 80$. Check: $50(60) + 25(80) = 3000 + 2000 = 5000$ ✓ and $0.9(60) + 0.4(80) = 54 + 32 = 86$ ✓. The fund holds **60 shares of A and 80 of B**."
+    "solution": "Scale R1 by $\\tfrac{1}{25}$: $2x + y = 200$, so $y = 200 - 2x$. Substitute into R2: $0.9x + 0.4(200 - 2x) = 86 \\Rightarrow 0.9x + 80 - 0.8x = 86 \\Rightarrow 0.1x = 6 \\Rightarrow x = 60$. Then $y = 200 - 120 = 80$. Check: $50(60) + 25(80) = 3000 + 2000 = 5000$ ✓ and $0.9(60) + 0.4(80) = 54 + 32 = 86$ ✓. The fund holds **60 shares of A and 80 of B**.",
+    "successCheck": "x=60 and y=80 gives capital 5,000 dollars and stated exposure 86; both counts are nonnegative integers."
   },
   "commonMistakes": [
     "Multiplying an equation by zero (illegal, it destroys information) or forgetting to apply the same operation to the right-hand side.",
@@ -114,12 +122,12 @@
     "Computing A^{-1} and multiplying, instead of calling a solver, slower and numerically worse.",
     "Solving a nearly singular system without checking conditioning, then blaming the data when results swing."
   ],
-  "realWorldApplication": "Circuit simulators, structural engineering solvers, logistics planners and every statistical fitting routine reduce their core computation to one large sparse linear solve, typically using the same elimination idea with aggressive pivoting and parallelism.",
-  "quantFinanceApplication": "Fitting a multi-factor return model, bootstrapping a yield curve from bond prices, and rebalancing a portfolio to target exposures are all linear systems: coefficients from the data, targets from the mandate, solution from Gaussian elimination (via LU or Cholesky).",
+  "realWorldApplication": "Circuit and structural models often lead to sparse linear systems. Other optimisation and statistical problems can be nonlinear, iterative or least-squares problems; Gaussian elimination is not the core algorithm of every fitting routine.",
+  "quantFinanceApplication": "Exposure matching can produce linear systems; regression is generally a least-squares problem, and yield-curve construction can be nonlinear depending on instruments and conventions. Choose LU, QR, SVD or specialised methods according to the actual matrix shape, rank and structure.",
   "summary": [
     "Write systems as $Ax = b$: solving means building $b$ as a linear combination of the columns of $A$.",
     "Gaussian elimination uses row operations to reach a triangular form, then back-substitutes; cost is $\\sim \\tfrac{2}{3}n^3$.",
-    "Outcomes: pivots in every row give a unique solution; a contradiction row gives none; a free variable gives infinitely many.",
+    "First rule out contradiction rows. For a consistent system, pivots in every unknown column give uniqueness; free unknowns give infinitely many real solutions. Pivots in every row alone do not guarantee uniqueness for rectangular systems.",
     "Use np.linalg.solve (LU with pivoting), not explicit inverses; near-singular matrices make solutions hypersensitive to input errors."
   ],
   "quiz": [
@@ -130,38 +138,42 @@
       "options": [
         "The system has infinitely many solutions",
         "The system is inconsistent, no solution exists",
-        "The solution is z = 5",
-        "The system has exactly one solution"
+        "The system has exactly one solution",
+        "The solution is z = 5"
       ],
       "answerIndex": 1,
-      "explanation": "The row reads $0x + 0y = 5$, i.e. $0 = 5$, which is false for every choice of $x, y$. A contradiction row means no solution. (A free variable, not a contradiction, gives infinitely many.)"
+      "explanation": "The row reads $0x + 0y = 5$, i.e. $0 = 5$, which is false for every choice of $x, y$. A contradiction row means no solution. (A free variable, not a contradiction, gives infinitely many.)",
+      "objective": 2
     },
     {
       "id": "q2",
       "type": "numeric",
       "prompt": "Solve $2x + 3y = 13$, $x - 2y = -4$. What is $x$?",
       "answer": 2,
-      "explanation": "Doubling the second equation and subtracting gives $7y = 21$, so $y = 3$; then $x = -4 + 2 \\times 3 = 2$."
+      "explanation": "Doubling the second equation and subtracting gives $7y = 21$, so $y = 3$; then $x = -4 + 2 \\times 3 = 2$.",
+      "objective": 1
     },
     {
       "id": "q3",
       "type": "numeric",
       "prompt": "For the same system, what is $y$?",
       "answer": 3,
-      "explanation": "$7y = 21$ after elimination, so $y = 3$. Verification: $2(2) + 3(3) = 13$ ✓."
+      "explanation": "Elimination gives 7y=21 and hence y=3. Then x=2 from the second original equation. Verify both equations:2*2+3*3=13 and 2-2*3=-4. A value satisfying only one equation is not enough to establish a solution of the system.",
+      "objective": 1
     },
     {
       "id": "q4",
       "type": "mcq",
       "prompt": "A square system has coefficient matrix with determinant exactly 0. Which conclusion is safe?",
       "options": [
-        "There is no solution",
-        "There are infinitely many solutions",
-        "There is no *unique* solution, either zero solutions or infinitely many",
-        "The solution is x = 0"
+        "There must be infinitely many solutions for every possible target vector",
+        "The only possible solution is the zero vector regardless of the targets",
+        "A unique solution is impossible: there are either none or infinitely many",
+        "The system must be inconsistent for every possible right-hand side"
       ],
       "answerIndex": 2,
-      "explanation": "A zero determinant means the columns are dependent, so $A$ cannot invert and uniqueness fails. Whether you get zero or infinitely many solutions depends on $b$: $x + y = 2$, $2x + 2y = 4$ has infinitely many; $x + y = 2$, $2x + 2y = 5$ has none."
+      "explanation": "A zero determinant means the columns are dependent, so $A$ cannot invert and uniqueness fails. Whether you get zero or infinitely many solutions depends on $b$: $x + y = 2$, $2x + 2y = 4$ has infinitely many; $x + y = 2$, $2x + 2y = 5$ has none.",
+      "objective": 2
     },
     {
       "id": "q5",
@@ -170,13 +182,14 @@
       "language": "python",
       "code": "import numpy as np\nA = np.array([[2.0, 3.0], [1.0, -2.0]])\nb = np.array([13.0, -4.0])\nprint(np.linalg.solve(A, b))",
       "answer": "[2. 3.]",
-      "explanation": "np.linalg.solve returns the solution as a 1-D float array: x = 2, y = 3, printed as [2. 3.]."
+      "explanation": "np.linalg.solve returns the solution as a 1-D float array: x = 2, y = 3, printed as [2. 3.].",
+      "objective": 3
     },
     {
       "id": "q6",
       "type": "short",
       "prompt": "Why do numerical libraries solve Ax = b by factorisation (LU) rather than by computing the explicit inverse A^{-1}?",
-      "modelAnswer": "Factorisation is cheaper (roughly half the work, no need to solve for all columns of the inverse) and numerically more accurate, especially with pivoting; the inverse is never needed to get x.",
+      "modelAnswer": "Solving through factorisation is cheaper than explicitly constructing every column of the inverse and avoids extra numerical work. Pivoting helps numerical stability, but conditioning still limits solution accuracy and the residual should be checked.",
       "keywords": [
         "cheaper",
         "accurate",
@@ -184,7 +197,26 @@
         "pivot",
         "inverse"
       ],
-      "explanation": "Solving via LU with pivoting costs less arithmetic and accumulates less rounding error than forming $A^{-1}$ and multiplying; accuracy of $x$ is what matters, not having the inverse."
+      "explanation": "Factorisation solves directly for the needed right-hand side and avoids the extra arithmetic/storage of an explicit inverse. It is a standard default, not a promise of accuracy for ill-conditioned data. Check both numerical residuals and sensitivity to perturbations.",
+      "objective": 3
+    },
+    {
+      "id": "q7",
+      "type": "ms",
+      "objective": 0,
+      "prompt": "For x+y+z=6, x+2y+2z=9,2x+y+3z=11, which representations are correct?",
+      "options": [
+        "The coefficient matrix rows are[1,1,1],[1,2,2],[2,1,3]",
+        "The right-hand vector is[6,9,11]",
+        "The augmented matrix appends[6,9,11] as a last column",
+        "The right-hand targets replace the z coefficients in the coefficient matrix"
+      ],
+      "answerIndices": [
+        0,
+        1,
+        2
+      ],
+      "explanation": "Choose a fixed unknown order x,y,z and record the coefficient of each in every row. The target vector stays separate in Ax=b, or is appended as a new column in the augmented matrix. Replacing a coefficient column with b changes the original equations."
     }
   ],
   "flashcards": [
@@ -201,7 +233,7 @@
     {
       "type": "concept",
       "front": "How to read the outcome of elimination",
-      "back": "Full pivots: unique solution. Contradiction row (0 = nonzero): inconsistent. Free variable: infinitely many solutions."
+      "back": "Check consistency first: any 0=nonzero row means no solution. If consistent, one pivot per unknown column gives a unique solution; a free unknown gives infinitely many real solutions."
     },
     {
       "type": "concept",

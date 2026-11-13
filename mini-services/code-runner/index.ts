@@ -80,6 +80,9 @@ function runOnce(cmd: string[], cwd: string, stdin: string, wallMs: number, memM
     });
 
     const stdinStr = stdin.length > MAX_STDIN_BYTES ? stdin.slice(0, MAX_STDIN_BYTES) : stdin;
+    // A program that exits without reading stdin closes the pipe (EPIPE). That is a normal
+    // outcome for a wrong answer and must never crash the runner.
+    child.stdin.on('error', () => { /* ignored: the program did not read its input */ });
     child.stdin.write(stdinStr);
     child.stdin.end();
 
@@ -116,7 +119,7 @@ async function runProgram(dir: string, kind: 'cpp' | 'python', stdin: string, wa
   return runOnce([PYTHON_PATH, '-I', 'main.py'], dir, stdin, wallMs, memMB, Math.ceil(wallMs / 1000) + 2);
 }
 
-interface TestSpec { input: string; expected: string }
+interface TestSpec { input: string; expected: string; hidden?: boolean }
 interface SubmitBody {
   language: 'cpp17' | 'cpp20' | 'python' | 'sql';
   code: string;
@@ -204,9 +207,13 @@ Bun.serve({
               killedByLimit: r.killedByLimit,
               exitCode: r.exitCode,
               timeMs: r.timeMs,
-              stderr: r.stderr.slice(0, 4000),
-              actual: r.actual.slice(0, 8000),
-              expected: (tests[i].expected ?? '').slice(0, 8000),
+              hidden: !!tests[i].hidden,
+              // hidden tests report only the verdict: no expected output, actual output or stderr
+              ...(tests[i].hidden ? {} : {
+                stderr: r.stderr.slice(0, 4000),
+                actual: r.actual.slice(0, 8000),
+                expected: (tests[i].expected ?? '').slice(0, 8000),
+              }),
             });
           }
           const verdict = early === 'timeout' ? 'timeout' : early === 'output_limit' ? 'output_limit' : passed === tests.length ? 'passed' : 'failed';

@@ -1,4 +1,4 @@
-# QuantFoundry — v3.2 visual refinement pass
+# QuantFoundry, v3.2 visual refinement pass
 
 This pass takes the v3.1 baseline through a full third polish loop: a fresh
 single-page vision-model audit of all 25 routes, a systemic fix pass driven by
@@ -17,7 +17,7 @@ that audit, and a re-run of every static gate.
   darkened to comfortable ratios on white; `.prose-qf` gained
   `overflow-wrap: break-word` so long inline math/code cannot shove the page
   sideways on 390px screens.
-- **Phase palette (curriculum path) retuned to jewel tones** — same playful
+- **Phase palette (curriculum path) retuned to jewel tones**, same playful
   identity, comfortably readable white text on every banner.
 
 ## Curriculum path (learning-path.tsx)
@@ -28,7 +28,7 @@ that audit, and a re-run of every static gate.
 - Phase banner restructured: gradient now runs deep→full for depth, the ghost
   watermark icon was removed (it read as a crop), and the progress block is
   one bordered lockup (big %, count, bar) instead of floating parts.
-- Locked-phase preview cards show their own first modules and hours —
+- Locked-phase preview cards show their own first modules and hours :
   no more eleven rows of identical "unlocks as you clear…" copy.
 - Trail spacing tightened (node gaps, band padding); the sticky rail gains a
   "Next up" card for the recommended lesson; pluralisation helper added.
@@ -36,7 +36,7 @@ that audit, and a re-run of every static gate.
 ## Practice
 
 - Pack builder now ships `xp` (30/50/80 by difficulty) and a one-line
-  statement summary per problem — the list middle column is no longer empty,
+  statement summary per problem, the list middle column is no longer empty,
   and the reward system reads as real data instead of a flat "30 XP" on all
   28 rows.
 - Rows carry status colouring: solved rows tint + accent edge, attempted rows
@@ -48,7 +48,7 @@ that audit, and a re-run of every static gate.
 
 ## Auth (login + register)
 
-- The page is now a full-height column with an anchored footer bar — the
+- The page is now a full-height column with an anchored footer bar, the
   "About · Methodology · Peek at the curriculum" links no longer float
   mid-page over a dead right channel.
 - Register's password strength meter is a labelled 4-segment meter with

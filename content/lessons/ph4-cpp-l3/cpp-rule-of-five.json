@@ -2,7 +2,7 @@
   "id": "cpp-rule-of-five",
   "moduleId": "ph4-cpp-l3",
   "title": "Rule of Three, Five and Zero",
-  "estMinutes": 27,
+  "estMinutes": 30,
   "difficulty": "core",
   "prereqs": [
     "cpp-shared-weak-ptr"
@@ -183,7 +183,7 @@
       "(b) The destructor body is the only hand-written member; everything else is a policy statement.",
       "(c) unique_ptr with a function-pointer deleter calls fclose at destruction, what is left is construction policy, not cleanup."
     ],
-    "solution": "(a) The implicit copy constructor/assignment copy `f_` - two Tickets closing one FILE* in their destructors (double close, UB). The implicit moves are not generated at all (destructor declared), so a moved Ticket actually copies - aliasing again. (b) ```cpp\n#include <cstdio>\n#include <stdexcept>\n\nclass Ticket {\n    std::FILE* f_;\npublic:\n    explicit Ticket(const char* path) : f_(std::fopen(path, \"r\")) {\n        if (!f_) throw std::runtime_error(\"open failed\");\n    }\n    ~Ticket() { if (f_) std::fclose(f_); }\n    Ticket(const Ticket&) = delete;                 // one owner\n    Ticket& operator=(const Ticket&) = delete;\n    Ticket(Ticket&& other) noexcept : f_(std::exchange(other.f_, nullptr)) {}  // steal, leave empty\n    Ticket& operator=(Ticket&& other) noexcept {\n        if (this != &other) {\n            if (f_) std::fclose(f_);\n            f_ = std::exchange(other.f_, nullptr);\n        }\n        return *this;\n    }\n};\n``` Copies are deleted (ownership is exclusive), moves steal the handle and null the source - valid but empty. (c) ```cpp\nstruct Ticket {\n std::unique_ptr<std::FILE, decltype(&fclose)> f_;\n explicit Ticket(const char* path)\n : f_(std::fopen(path, \"r\"), &fclose) {\n if (!f_) throw std::runtime_error(\"open failed\");\n }\n};\n``` Nothing special is declared: unique_ptr's destructor calls fclose, moves are automatically correct, copies are automatically deleted. Only the constructor policy (open-or-throw) remains hand-written."
+    "solution": "(a) The implicit copy constructor/assignment copy `f_` - two Tickets closing one FILE* in their destructors (double close, UB). The implicit moves are not generated at all (destructor declared), so a moved Ticket actually copies - aliasing again. (b) ```cpp\n#include <utility>\n#include <memory>\n#include <cstdio>\n#include <stdexcept>\n#include <cstdio>\n#include <stdexcept>\n\nclass Ticket {\n    std::FILE* f_;\npublic:\n    explicit Ticket(const char* path) : f_(std::fopen(path, \"r\")) {\n        if (!f_) throw std::runtime_error(\"open failed\");\n    }\n    ~Ticket() { if (f_) std::fclose(f_); }\n    Ticket(const Ticket&) = delete;                 // one owner\n    Ticket& operator=(const Ticket&) = delete;\n    Ticket(Ticket&& other) noexcept : f_(std::exchange(other.f_, nullptr)) {}  // steal, leave empty\n    Ticket& operator=(Ticket&& other) noexcept {\n        if (this != &other) {\n            if (f_) std::fclose(f_);\n            f_ = std::exchange(other.f_, nullptr);\n        }\n        return *this;\n    }\n};\n``` Copies are deleted (ownership is exclusive), moves steal the handle and null the source - valid but empty. (c) ```cpp\n#include <utility>\n#include <memory>\n#include <cstdio>\n#include <stdexcept>\nstruct Ticket {\n std::unique_ptr<std::FILE, decltype(&fclose)> f_;\n explicit Ticket(const char* path)\n : f_(std::fopen(path, \"r\"), &fclose) {\n if (!f_) throw std::runtime_error(\"open failed\");\n }\n};\n``` Nothing special is declared: unique_ptr's destructor calls fclose, moves are automatically correct, copies are automatically deleted. Only the constructor policy (open-or-throw) remains hand-written."
   },
   "commonMistakes": [
     "Declaring a destructor (even just for logging) and unknowingly losing implicit move operations, copies silently take over in vector reallocation.",
@@ -205,7 +205,7 @@
     {
       "id": "q1",
       "type": "code-output",
-      "prompt": "What does this program print?",
+      "prompt": "What does this copy and destruction trace example print?",
       "language": "cpp",
       "code": "#include <iostream>\nstruct A {\n    A() { std::cout << \"d\"; }\n    A(const A&) { std::cout << \"c\"; }\n    A& operator=(const A&) { std::cout << \"ca\"; return *this; }\n    ~A() { std::cout << \"~\"; }\n};\nint main() {\n    A a;\n    A b = a;\n    b = a;\n}",
       "answer": "dcca~~",
@@ -216,12 +216,12 @@
       "type": "mcq",
       "prompt": "A class gains a user-declared destructor. What happens to its implicit copy and move operations (C++17)?",
       "options": [
-        "Copies and moves both remain implicit",
         "Copies remain implicit (deprecated), move operations are not generated, apparent moves become copies",
         "Copies are deleted, moves remain implicit",
+        "Copies and moves both remain implicit",
         "Both copies and moves are deleted"
       ],
-      "answerIndex": 1,
+      "answerIndex": 0,
       "explanation": "Declaring any of the five suppresses implicit moves; implicit copies are still generated for a destructor-only declaration (deprecated behaviour). This is why a 'harmless' logging destructor can quietly replace moves with copies in containers."
     },
     {
@@ -257,7 +257,7 @@
     {
       "id": "q5",
       "type": "code-output",
-      "prompt": "What does this program print?",
+      "prompt": "What does this copy and move special members example print?",
       "language": "cpp",
       "code": "#include <iostream>\n#include <utility>\nstruct B {\n    B() = default;\n    B(const B&) { std::cout << \"C\"; }\n    B(B&&) noexcept { std::cout << \"M\"; }\n    B& operator=(const B&) { std::cout << \"A\"; return *this; }\n    B& operator=(B&&) noexcept { std::cout << \"X\"; return *this; }\n};\nint main() {\n    B a;\n    B b = a;\n    B c = std::move(a);\n    b = a;\n    b = std::move(c);\n}",
       "answer": "CMAX",

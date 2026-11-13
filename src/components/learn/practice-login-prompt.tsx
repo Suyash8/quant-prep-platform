@@ -14,7 +14,7 @@ export function PracticeLoginPrompt() {
       <div className="qf-empty bg-dots">
         <span className="empty-emoji" role="img" aria-label="locked">🔐</span>
         <p className="text-lg font-extrabold">Sign in to start solving</p>
-        <p className="mx-auto mt-1 max-w-md text-sm font-semibold text-muted">
+        <p className="mx-auto mt-1 max-w-md text-[15px] font-semibold text-muted">
           Progress, submissions and the code editor need an account, it takes about 20 seconds.
         </p>
         <div className="mt-5 flex flex-wrap items-center justify-center gap-3">

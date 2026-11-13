@@ -23,7 +23,7 @@ export default async function AdminPage() {
                 <ShieldAlert className="h-8 w-8 text-danger" />
               </span>
               <h1 className="mt-4 text-xl font-black tracking-tight">Administrators only</h1>
-              <p className="mt-2 text-sm font-semibold text-muted max-w-sm mx-auto">
+              <p className="mt-2 text-[15px] font-semibold text-muted max-w-sm mx-auto">
                 This panel manages curriculum content and requires the admin role. The first registered account
                 becomes the admin, ask that account to grant access.
               </p>

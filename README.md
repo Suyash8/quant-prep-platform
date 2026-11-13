@@ -1,6 +1,6 @@
 # QuantFoundry
 
-**The complete Zero-to-Quantitative-Developer learning platform. v3: works fully offline.**
+**Zero-to-Quantitative-Developer learning platform (v4.2 checkpoint). Offline support is best effort; see CHECKPOINT-v4.2.md.**
 
 An interactive, prerequisite-sequenced curriculum that takes a learner from absolute zero, no programming, no mathematics beyond arithmetic, to professional-level quantitative software engineering: mathematics through stochastic calculus, modern C++ through lock-free concurrency, Python through scientific computing, finance from first principles, and the systems engineering that binds them.
 
@@ -13,12 +13,12 @@ An interactive, prerequisite-sequenced curriculum that takes a learner from abso
 bun install
 
 # 2. Configure the database (PostgreSQL; see VERCEL_DEPLOY.md for hosted setup)
-echo 'DATABASE_URL="postgresql://qf:qf@localhost:5433/quantfoundry?schema=public"' > .env
+cp .env.example .env   # then set DATABASE_URL and SESSION_SECRET (see SETUP.md)
 
 # 3. Push the schema
 bun run db:push
 
-# 4. Validate the curriculum content (283 lessons, 28 problems, 9 assessments, 12 projects, 15 company profiles)
+# 4. Validate the curriculum content (counts are in content/registry.json)
 node scripts/validate-content.mjs --registry
 
 # 5. Start the app
@@ -42,7 +42,7 @@ Every keystroke of the learning loop now runs on the device. Nothing waits on a 
 - **Instant scoring.** Quizzes grade in the browser with the exact same grader the server uses. No round trip, no spinner, works on a plane.
 - **Instant lessons.** Lessons render client-side from versioned content packs (static JSON under `/packs/v3/`). Moving between lessons is immediate after the first visit.
 - **Local-first progress.** XP, streaks, mastery status and revision scheduling are written to local storage first, then synced to the server in the background through `/api/sync`. Events are idempotent, so double-sends and reconnects never double-count.
-- **Download everything.** Settings → Offline saves all 283 lessons, every problem, assessment and project plus the app pages themselves. After that the whole platform opens and scores with zero network.
+- **Download everything.** Settings → Offline saves all lessons, every problem, assessment and project plus the app pages themselves. After that the whole platform opens and scores with zero network.
 - **PWA.** Install it from the browser, work offline for weeks, sync when you reconnect. The service worker rewrites the cached lesson shell per URL so any lesson route hydrates offline.
 
 What still needs the network: compiling and running your practice code (that is a real compiler in a sandbox) and account management. Everything else is local.
@@ -51,7 +51,7 @@ What still needs the network: compiling and running your practice code (that is 
 
 | Area | Details |
 |---|---|
-| Curriculum | 283 fully-authored lessons across 11 phases and 65 modules (`content/lessons/`), validated by `scripts/validate-content.mjs` |
+| Curriculum | Lessons across 11 phases (see content/registry.json for the count) (`content/lessons/`), validated by `scripts/validate-content.mjs` |
 | Interactive labs | 33 client-side visualisation engines (derivative/integral labs, Black-Scholes, order books, memory layout, Monte Carlo and more) embedded in lessons and browsable at `/lab` |
 | Coding practice | 28 judged problems with genuine C++17/C++20 compilation (g++) and Python 3 execution in an isolated runner service |
 | Assessments | Placement diagnostic (7 areas x 4 questions), timed subject assessments and a screening simulation, graded locally, synced server-side |

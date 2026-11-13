@@ -2,7 +2,7 @@
   "id": "py-oop",
   "moduleId": "ph3-python-foundations",
   "title": "Object-Oriented Python",
-  "estMinutes": 26,
+  "estMinutes": 30,
   "difficulty": "foundation",
   "prereqs": [
     "py-files-errors"
@@ -39,13 +39,13 @@
     },
     {
       "type": "p",
-      "md": "The dict version of a position works, until it does not. Dicts accept any typo as a new key, nothing stops a negative quantity, and the PnL formula lives wherever it was copy-pasted. A class fixes all three at once: attributes are checked by name at development time, __init__ can validate, and every rule lives in exactly one method."
+      "md": "The dict version of a position works, until it does not. Dicts accept any typo as a new key, nothing stops a negative quantity, and the PnL formula lives wherever it was copy-pasted. A class fixes all three at once: type checkers can check declared attributes, although plain Python instances still permit new attributes, __init__ can validate, and every rule lives in exactly one method."
     },
     {
       "type": "code",
       "lang": "python",
-      "code": "position = {'symbol': 'AAPL', 'qty': 250, 'avg_cost': 41.75}\nposition['qtyy'] = 300    # typo: silently creates a NEW key\nprint(position['qty'])    # still 250 - the bug hides\n\nclass Position:\n    def __init__(self, symbol, qty, avg_cost):\n        if qty <= 0:\n            raise ValueError('qty must be positive')\n        self.symbol = symbol\n        self.qty = qty\n        self.avg_cost = avg_cost\n\nsafe = Position('AAPL', 250, 41.75)    # fine\nbad = Position('AAPL', -100, 41.75)    # raises ValueError: qty must be positive",
-      "caption": "Run the block and read the traceback: the invalid position now fails at construction, not three days later in a report."
+      "code": "position = {'symbol': 'AAPL', 'qty': 250, 'avg_cost': 41.75}\nposition['qtyy'] = 300    # typo: silently creates a NEW key\nprint(position['qty'])    # still 250 - the bug hides\n\nclass Position:\n    def __init__(self, symbol, qty, avg_cost):\n        if qty <= 0:\n            raise ValueError('qty must be positive')\n        self.symbol = symbol\n        self.qty = qty\n        self.avg_cost = avg_cost\n\nsafe = Position('AAPL', 250, 41.75)    # fine\ntry:\n    Position('AAPL', -100, 41.75)\nexcept ValueError as error:\n    print(error)  # qty must be positive",
+      "caption": "The invalid position is rejected at construction. The exception is caught so this demonstration ends successfully."
     },
     {
       "type": "h2",
@@ -89,6 +89,28 @@
     {
       "type": "p",
       "md": "You now write objects that own their data and their rules, extend them cleanly, and know the shared-attribute trap that bites most newcomers. The final lesson in this module adds the tools that make Python code elegant at scale: iterators, generators, decorators and context managers."
+    },
+    {
+      "type": "p",
+      "md": "Construction-time validation has a limit: an ordinary Python object still allows later assignment to its public attributes. After building a valid position, a caller could set qty to a negative value. If the rule must hold throughout the object's lifetime, keep the stored quantity behind a property or expose a method that validates every change. Classes organise rules; the class keyword alone does not enforce them. Type annotations help tools catch mistakes, but Python does not automatically check annotated values at runtime."
+    },
+    {
+      "type": "p",
+      "md": "Work through a second position before running the code. Buy 40 shares at 25 and value them at 27.50. Market value is 40 times 27.50, or 1,100. Cost is 40 times 25, or 1,000. The difference is 100, matching quantity times the price change. A separate position of 10 shares has its own quantity and does not change the first object. Comparing these two instances tests the distinction between class behaviour and instance state more directly than printing a single object."
+    },
+    {
+      "type": "p",
+      "md": "Choose composition when an object has another object rather than being a special kind of it. A portfolio has positions, so keeping a collection of Position instances is clearer than making Portfolio inherit from Position. A method that totals those positions can call each instance's market_value method. The portfolio need not know how every position is represented internally. This separation makes tests smaller: test a position's arithmetic first, then test that the portfolio sums the returned values correctly."
+    },
+    {
+      "type": "p",
+      "md": "When you test an object, check its public behaviour and the relevant invalid inputs. For this example, use a positive quantity, zero and a negative quantity; verify that invalid construction raises ValueError. Do not rely only on the printed representation, because an attractive string can hide incorrect arithmetic. Also remember that financial positions can be short in real systems. This teaching class deliberately represents long-only holdings; a general trading position needs a signed-quantity contract rather than a blanket positive-quantity rule."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "class Position:\n    def __init__(self, qty, cost):\n        if qty <= 0:\n            raise ValueError(\"qty must be positive\")\n        self.qty, self.cost = qty, cost\n\n    def market_value(self, price):\n        return self.qty * price\n\n    def pnl(self, price):\n        return self.qty * (price - self.cost)\n\nlarge, small = Position(40, 25.0), Position(10, 25.0)\nassert large.market_value(27.5) == 1100.0\nassert large.pnl(27.5) == 100.0\nassert small.pnl(27.5) == 25.0\nprint(large.pnl(27.5), small.pnl(27.5))  # 100.0 25.0",
+      "caption": "Two independently stored quantities produce different PnL without shared mutable state."
     }
   ],
   "guidedExercise": {
@@ -98,16 +120,18 @@
       "Iterate self.positions.items() to get symbol and position dict together.",
       "Hand check: 250 x 42.25 = 10562.5 and 100 x 43.50 = 4350.0."
     ],
-    "solution": "```python\nclass Portfolio:\n    def __init__(self):\n        self.positions = {}\n\n    def add(self, symbol, qty, avg_cost):\n        self.positions[symbol] = {'qty': qty, 'avg_cost': avg_cost}\n\n    def market_value(self, prices):\n        total = 0\n        for symbol, pos in self.positions.items():\n            total += pos['qty'] * prices[symbol]\n        return total\n\nbook = Portfolio()\nbook.add('AAPL', 250, 41.75)\nbook.add('MSFT', 100, 43.00)\nprint(book.market_value({'AAPL': 42.25, 'MSFT': 43.50}))   # 14912.5\n```\nThe two legs are 10562.5 and 4350.0, so the book is worth \\$14,912.50."
+    "solution": "```python\nclass Portfolio:\n    def __init__(self):\n        self.positions = {}\n\n    def add(self, symbol, qty, avg_cost):\n        self.positions[symbol] = {'qty': qty, 'avg_cost': avg_cost}\n\n    def market_value(self, prices):\n        total = 0\n        for symbol, pos in self.positions.items():\n            total += pos['qty'] * prices[symbol]\n        return total\n\nbook = Portfolio()\nbook.add('AAPL', 250, 41.75)\nbook.add('MSFT', 100, 43.00)\nprint(book.market_value({'AAPL': 42.25, 'MSFT': 43.50}))   # 14912.5\n```\nThe two legs are 10562.5 and 4350.0, so the book is worth \\$14,912.50.",
+    "successCheck": "The portfolio market value prints 14912.5."
   },
   "independentExercise": {
     "prompt": "Extend the Portfolio class from the guided exercise with (1) a `pnl(prices)` method returning the total PnL across positions using each stored avg_cost, and (2) a `__str__` method returning 'Portfolio with N positions'. Then construct the same book (AAPL 250 @ 41.75, MSFT 100 @ 43.00), print its PnL against prices AAPL 42.25 / MSFT 43.50, and print the portfolio itself.",
     "hints": [
-      "PnL per position is (price, avg_cost) * qty; sum them with the same loop shape as market_value.",
+      "PnL per position is (price - avg_cost) * qty; sum them with the same loop shape as market_value.",
       "len(self.positions) is the position count for __str__.",
-      "Hand check MSFT: (43.50, 43.00) x 100 = 50.0."
+      "Hand check MSFT: (43.50 - 43.00) x 100 = 50.0."
     ],
-    "solution": "```python\nclass Portfolio:\n    def __init__(self):\n        self.positions = {}\n\n    def add(self, symbol, qty, avg_cost):\n        self.positions[symbol] = {'qty': qty, 'avg_cost': avg_cost}\n\n    def pnl(self, prices):\n        total = 0\n        for symbol, pos in self.positions.items():\n            total += (prices[symbol] - pos['avg_cost']) * pos['qty']\n        return total\n\n    def __str__(self):\n        return f'Portfolio with {len(self.positions)} positions'\n\nbook = Portfolio()\nbook.add('AAPL', 250, 41.75)\nbook.add('MSFT', 100, 43.00)\nprint(book.pnl({'AAPL': 42.25, 'MSFT': 43.50}))   # 175.0\nprint(book)                                        # Portfolio with 2 positions\n```\nAAPL contributes (42.25 - 41.75) x 250 = 125.0 and MSFT contributes (43.50 - 43.00) x 100 = 50.0, for a total unrealised PnL of \\$175.00."
+    "solution": "```python\nclass Portfolio:\n    def __init__(self):\n        self.positions = {}\n\n    def add(self, symbol, qty, avg_cost):\n        self.positions[symbol] = {'qty': qty, 'avg_cost': avg_cost}\n\n    def pnl(self, prices):\n        total = 0\n        for symbol, pos in self.positions.items():\n            total += (prices[symbol] - pos['avg_cost']) * pos['qty']\n        return total\n\n    def __str__(self):\n        return f'Portfolio with {len(self.positions)} positions'\n\nbook = Portfolio()\nbook.add('AAPL', 250, 41.75)\nbook.add('MSFT', 100, 43.00)\nprint(book.pnl({'AAPL': 42.25, 'MSFT': 43.50}))   # 175.0\nprint(book)                                        # Portfolio with 2 positions\n```\nAAPL contributes (42.25 - 41.75) x 250 = 125.0 and MSFT contributes (43.50 - 43.00) x 100 = 50.0, for a total unrealised PnL of \\$175.00.",
+    "successCheck": "PnL prints 175.0 and the string reports 2 positions."
   },
   "commonMistakes": [
     "Forgetting self as the first parameter of every method, or calling it something else, pos.market_value(p) passes pos automatically.",
@@ -127,68 +151,73 @@
     {
       "id": "q1",
       "type": "code-output",
-      "prompt": "What does this script print?",
+      "prompt": "What does this instance state and method calls example print?",
       "language": "python",
       "code": "class Position:\n    def __init__(self, symbol, qty):\n        self.symbol = symbol\n        self.qty = qty\n\n    def doubled(self):\n        return self.qty * 2\n\np = Position('AAPL', 250)\nprint(p.symbol)\nprint(p.doubled())",
       "answer": "AAPL\n500",
-      "explanation": "__init__ stores the attributes at construction; p.symbol reads one back, and doubled() multiplies self.qty by 2."
+      "explanation": "__init__ stores the attributes at construction; p.symbol reads one back, and doubled() multiplies self.qty by 2.",
+      "objective": 0
     },
     {
       "id": "q2",
       "type": "code-output",
-      "prompt": "What does this script print?",
+      "prompt": "What does this overridden method calling super example print?",
       "language": "python",
       "code": "class Base:\n    def label(self):\n        return 'base'\n\nclass Child(Base):\n    def label(self):\n        return 'child-' + super().label()\n\nprint(Child().label())",
       "answer": "child-base",
-      "explanation": "Child overrides label() but calls super().label(), which runs the parent's version; the strings concatenate to child-base."
+      "explanation": "Child overrides label() but calls super().label(), which runs the parent's version; the strings concatenate to child-base.",
+      "objective": 2
     },
     {
       "id": "q3",
       "type": "code-output",
-      "prompt": "What does this script print?",
+      "prompt": "What does this explicit and implicit string conversion example print?",
       "language": "python",
       "code": "class Trade:\n    def __init__(self, symbol, qty):\n        self.symbol = symbol\n        self.qty = qty\n\n    def __str__(self):\n        return f'{self.symbol} x{self.qty}'\n\nt = Trade('MSFT', 100)\nprint(str(t))\nprint(t)",
       "answer": "MSFT x100\nMSFT x100",
-      "explanation": "str(t) calls __str__ explicitly, and print(t) calls it implicitly, both show the string __str__ returns."
+      "explanation": "str(t) calls __str__ explicitly, and print(t) calls it implicitly, both show the string __str__ returns.",
+      "objective": 1
     },
     {
       "id": "q4",
       "type": "mcq",
       "prompt": "In a method body, what is `self`?",
       "options": [
+        "The instance the method was called on",
         "The class itself",
         "The module the class is defined in",
-        "The instance the method was called on",
         "A reserved keyword like if"
       ],
-      "answerIndex": 2,
-      "explanation": "Python passes the instance automatically: pos.market_value(p) calls market_value with self = pos. self is a convention, not a keyword, but you should never break it."
+      "answerIndex": 0,
+      "explanation": "Python passes the instance automatically: pos.market_value(p) calls market_value with self = pos. self is a convention, not a keyword, but you should never break it.",
+      "objective": 0
     },
     {
       "id": "q5",
       "type": "mcq",
       "prompt": "Given `class Portfolio: positions = []` with instances p1 and p2, what happens after `p1.positions.append('AAPL')`?",
       "options": [
+        "It raises an AttributeError",
         "Only p1 gains the symbol",
         "p2.positions also contains 'AAPL'",
-        "It raises an AttributeError",
         "Python copies the list for p2"
       ],
-      "answerIndex": 1,
-      "explanation": "positions is a class attribute, so both instances share one list; the append through p1 is visible through p2. Initialise self.positions = [] in __init__ instead."
+      "answerIndex": 2,
+      "explanation": "positions is a class attribute, so both instances share one list; the append through p1 is visible through p2. Initialise self.positions = [] in __init__ instead.",
+      "objective": 3
     },
     {
       "id": "q6",
-      "type": "mcq",
-      "prompt": "What is the role of __init__ in a class?",
-      "options": [
-        "It destroys instances when they are deleted",
-        "It initialises the instance's attributes when the class is called with Position(...)",
-        "It converts the object to a string for printing",
-        "It imports the class into other modules"
+      "type": "short",
+      "prompt": "Explain when __init__ runs, what object it prepares and what it usually assigns.",
+      "keywords": [
+        "construction|construct|initialis",
+        "instance|object",
+        "attribute|state|self"
       ],
-      "answerIndex": 1,
-      "explanation": "__init__ runs automatically at construction and sets up the instance's attributes; __str__ handles printing, and ordinary garbage collection handles teardown."
+      "modelAnswer": "__init__ runs during construction to initialise the new instance, usually assigning its attributes through self.",
+      "explanation": "__init__ prepares a new instance and stores its initial state. It does not print the object by default; __str__ controls a readable string representation.",
+      "objective": 1
     }
   ],
   "flashcards": [

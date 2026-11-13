@@ -43,12 +43,12 @@ export default async function CurriculumPage({ searchParams }: { searchParams: P
     <div className="max-w-5xl mx-auto px-4 lg:px-6 py-8">
       <header className="mb-6">
         <h1 className="text-3xl font-black tracking-tight">The path</h1>
-        <p className="mt-2 text-muted text-sm max-w-3xl leading-relaxed font-semibold">
+        <p className="mt-2 text-muted text-[15px] max-w-3xl leading-relaxed font-semibold">
           {reg.lessons.length} published lessons across {map.phases.length} phases, roughly {Math.round(totalEst / 60)} hours of core lesson time,
           sequenced by a prerequisite graph. Every lesson is fully authored: intuition, formal treatment, interactive labs, exercises and a server-scored knowledge check.
         </p>
         {user && (
-          <p className="mt-3 text-sm font-bold">
+          <p className="mt-3 text-[15px] font-bold">
             <span className="tnum text-accent-deep dark:text-accent">{done.size}</span>
             <span className="text-muted"> passed of </span>
             <span className="tnum">{published.size}</span>
@@ -104,11 +104,11 @@ export default async function CurriculumPage({ searchParams }: { searchParams: P
                     <h2 className="text-xl font-black tracking-tight">
                       <span className="text-faint tnum mr-2">Phase {phase.order}</span>{phase.title}
                     </h2>
-                    <span className="text-xs font-bold text-faint">
+                    <span className="text-[13px] font-bold text-faint">
                       {pubCount}/{phaseLessons.length} published{user ? ` · ${phaseDone} done` : ''}
                     </span>
                   </div>
-                  <p className="mt-1.5 text-sm font-semibold text-muted max-w-3xl">{phase.summary}</p>
+                  <p className="mt-1.5 text-[15px] font-semibold text-muted max-w-3xl">{phase.summary}</p>
 
                   <div className="mt-5 grid md:grid-cols-2 gap-4">
                     {phase.modules.map(module => {
@@ -118,11 +118,11 @@ export default async function CurriculumPage({ searchParams }: { searchParams: P
                         <div key={module.id} id={`module-${module.id}`} className="qf-card-flat overflow-hidden flex flex-col">
                           <div className="px-4 py-3 border-b-2 bg-surface-2/40">
                             <div className="flex items-center justify-between gap-2">
-                              <h3 className="font-extrabold text-sm">{module.title}</h3>
+                              <h3 className="font-extrabold text-[15px]">{module.title}</h3>
                               <span className="chip">{module.difficulty}</span>
                             </div>
-                            <p className="text-xs font-semibold text-faint mt-1">{module.summary}</p>
-                            <div className="mt-2 flex items-center gap-2 text-[11px] font-bold text-faint">
+                            <p className="text-[13px] font-semibold text-faint mt-1">{module.summary}</p>
+                            <div className="mt-2 flex items-center gap-2 text-[12px] font-bold text-faint">
                               <span>Tracks: {module.tracks.join(' · ')}</span>
                               {user && <span>· {modDone}/{module.lessons.length} done</span>}
                             </div>
@@ -140,7 +140,7 @@ export default async function CurriculumPage({ searchParams }: { searchParams: P
                               const unlocked = user ? (node ? node.prereqs.every(p => done.has(p)) : false) : li === 0;
                               const Icon = st === 'mastered' ? Award : (st === 'passed' ? CheckCircle2 : st || !user ? CircleDot : Circle);
                               return (
-                                <li key={l.id} className="px-4 py-2.5 flex items-center gap-3 text-sm font-semibold">
+                                <li key={l.id} className="px-4 py-2.5 flex items-center gap-3 text-[15px] font-semibold">
                                   {isPub ? (
                                     Icon === Circle ? <Circle className="h-4 w-4 text-faint shrink-0" /> :
                                     Icon === CircleDot ? <CircleDot className="h-4 w-4 text-accent shrink-0" /> :
@@ -152,16 +152,16 @@ export default async function CurriculumPage({ searchParams }: { searchParams: P
                                   {isPub && (unlocked || done.has(l.id)) ? (
                                     <Link href={`/learn/${l.id}`} className="flex-1 hover:text-accent transition-colors">
                                       {l.title}
-                                      <span className="ml-2 text-[11px] text-faint tnum">{l.estMinutes}m</span>
+                                      <span className="ml-2 text-[12px] text-faint tnum">{l.estMinutes}m</span>
                                     </Link>
                                   ) : isPub ? (
                                     <span className="flex-1 text-faint flex items-center gap-1.5" title="Complete the prerequisites first">
                                       {l.title} <Lock className="h-3 w-3" />
                                     </span>
                                   ) : (
-                                    <span className="flex-1 text-faint">{l.title} <span className="text-[11px]">(in development)</span></span>
+                                    <span className="flex-1 text-faint">{l.title} <span className="text-[12px]">(in development)</span></span>
                                   )}
-                                  <span className="text-[11px] text-faint w-24 text-right truncate">{l.skills[0]?.replace(/-/g, ' ')}</span>
+                                  <span className="text-[12px] text-faint w-24 text-right truncate">{l.skills[0]?.replace(/-/g, ' ')}</span>
                                 </li>
                               );
                             })}

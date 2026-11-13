@@ -2,7 +2,7 @@
   "id": "cpp-concepts-traits",
   "moduleId": "ph4-cpp-l5",
   "title": "Concepts, Type Traits and SFINAE",
-  "estMinutes": 28,
+  "estMinutes": 30,
   "difficulty": "advanced",
   "prereqs": [
     "cpp-templates"
@@ -146,7 +146,7 @@
       "For the C++17 gate the default template argument `= 0` follows the enable_if_t type in the parameter list.",
       "With no viable overload, the failure is reported at the call, compare the quality of the two diagnostics."
     ],
-    "solution": "C++17:\n\n```cpp\n// C++17\ntemplate<typename T, std::enable_if_t<std::is_floating_point_v<T>, int> = 0>\nT midpoint(T bid, T ask) { return (bid + ask) / 2; }\n```\n\nC++20:\n\n```cpp\n// C++20\ntemplate<std::floating_point T>\nT midpoint(T bid, T ask) { return (bid + ask) / 2; }\n```\n\nOn `midpoint(99, 101)` both versions produce **no viable overload**: C++17 kills the candidate because `enable_if_t<false, int>` is an invalid type in the signature (SFINAE), and C++20 rejects it because `int` violates `std::floating_point` - with a message naming the violated concept at the call site.\n\nThe C++20-only pieces are the concept name `std::floating_point` (from `<concepts>`) as a template-parameter constraint and that requires a C++20 compiler; the C++17 version needs only `<type_traits>` and `enable_if_t` (C++14)."
+    "solution": "C++17:\n\n```cpp\n#include <type_traits>\n#include <concepts>\n// C++17\ntemplate<typename T, std::enable_if_t<std::is_floating_point_v<T>, int> = 0>\nT midpoint(T bid, T ask) { return (bid + ask) / 2; }\n```\n\nC++20:\n\n```cpp\n#include <type_traits>\n#include <concepts>\n// C++20\ntemplate<std::floating_point T>\nT midpoint(T bid, T ask) { return (bid + ask) / 2; }\n```\n\nOn `midpoint(99, 101)` both versions produce **no viable overload**: C++17 kills the candidate because `enable_if_t<false, int>` is an invalid type in the signature (SFINAE), and C++20 rejects it because `int` violates `std::floating_point` - with a message naming the violated concept at the call site.\n\nThe C++20-only pieces are the concept name `std::floating_point` (from `<concepts>`) as a template-parameter constraint and that requires a C++20 compiler; the C++17 version needs only `<type_traits>` and `enable_if_t` (C++14)."
   },
   "commonMistakes": [
     "Reaching for C++20 concepts while compiling with -std=c++17: requires clauses and std::integral/std::floating_point are C++20; the C++17 tools are traits, enable_if_t and if constexpr.",
@@ -168,7 +168,7 @@
     {
       "id": "q1",
       "type": "code-output",
-      "prompt": "What does this C++17 program print?",
+      "prompt": "What does this integral type trait example print?",
       "language": "cpp",
       "code": "#include <iostream>\n#include <type_traits>\ntemplate<typename T> int kind(T) { return std::is_integral_v<T> ? 1 : 0; }\nint main() { std::cout << kind(7) << kind(7.0) << kind('a'); }",
       "answer": "101",
@@ -177,7 +177,7 @@
     {
       "id": "q2",
       "type": "code-output",
-      "prompt": "What does this C++17 program print?",
+      "prompt": "What does this SFINAE overload selection example print?",
       "language": "cpp",
       "code": "#include <iostream>\n#include <type_traits>\n\ntemplate<typename T, std::enable_if_t<std::is_integral_v<T>, int> = 0>\nconst char* pick(T) { return \"integral\"; }\n\ntemplate<typename T, std::enable_if_t<std::is_floating_point_v<T>, int> = 0>\nconst char* pick(T) { return \"floating\"; }\n\nint main() { std::cout << pick(3) << \" \" << pick(3.5); }",
       "answer": "integral floating",
@@ -189,11 +189,11 @@
       "prompt": "What exactly does SFINAE do when a substitution fails?",
       "options": [
         "Compilation stops with an error pointing into the template",
-        "That template is removed from the candidate set for this call, and overload resolution continues",
         "The substitution is retried at runtime",
-        "The template is deleted for the entire program"
+        "The template is deleted for the entire program",
+        "That template is removed from the candidate set for this call, and overload resolution continues"
       ],
-      "answerIndex": 1,
+      "answerIndex": 3,
       "explanation": "Substitution Failure Is Not An Error: an invalid substitution in a template signature merely drops that candidate from the current overload resolution. Only if every candidate fails does the compiler complain."
     },
     {
@@ -203,8 +203,8 @@
       "options": [
         "It is compiled and evaluated at runtime as usual",
         "It is discarded: never compiled for this instantiation at all",
-        "It is compiled but removed later at link time",
-        "It causes a compile error"
+        "It causes a compile error",
+        "It is compiled but removed later at link time"
       ],
       "answerIndex": 1,
       "explanation": "if constexpr evaluates its condition at compile time and discards the untaken branch from the instantiation, code that would not compile for this T never participates."
@@ -214,12 +214,12 @@
       "type": "mcq",
       "prompt": "(C++20) Two viable overloads match a call: one constrained by concepts, one unconstrained. Which is selected?",
       "options": [
-        "The unconstrained one, always",
-        "Ambiguous: compile error",
+        "Whichever was declared first",
         "The more constrained one wins",
-        "Whichever was declared first"
+        "The unconstrained one, always",
+        "Ambiguous: compile error"
       ],
-      "answerIndex": 2,
+      "answerIndex": 1,
       "explanation": "C++20 partial ordering of constraints: between equally viable candidates the more constrained one is preferred. This is what lets constrained specialisations compose instead of colliding."
     },
     {

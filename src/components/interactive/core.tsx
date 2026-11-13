@@ -31,6 +31,7 @@ export function compileExpression(expr: string): (x: number) => number {
         while (j < s.length && /[a-zA-Z_0-9]/.test(s[j])) j++;
         out.push(s.slice(i, j)); i = j; continue;
       }
+      if (c === '*' && s[i + 1] === '*') { out.push('^'); i += 2; continue; } // Python-style power
       if ('+-*/^(),'.includes(c)) { out.push(c); i++; continue; }
       throw new Error(`unexpected char ${c}`);
     }
@@ -85,7 +86,7 @@ export function compileExpression(expr: string): (x: number) => number {
   function parseAtom(): (x: number) => number {
     const t = next();
     if (typeof t === 'number') return () => t;
-    if (t === 'x' || t === 'y' || t === 't' || t === 'q') return x => x;
+    if (t === 'x' || t === 'y' || t === 't' || t === 'q' || t === 'n') return x => x;
     if (t === 'pi') return () => Math.PI;
     if (t === 'e') return () => Math.E;
     if (t === '(') {
@@ -116,11 +117,14 @@ export function compileExpression(expr: string): (x: number) => number {
   return x => fn(x);
 }
 
-export function safeFn(expr: string, fallback = (x: number) => x): (x: number) => number {
+/** Compile an expression for a lab. An unreadable expression yields NaN everywhere (nothing is drawn); it never
+ *  substitutes a different curve. `_fallback` is kept only so existing call sites compile. */
+export function safeFn(expr: string, _fallback?: (x: number) => number): (x: number) => number {
   try {
     return compileExpression(expr);
   } catch {
-    return fallback;
+    if (typeof console !== 'undefined') console.warn(`[lab] cannot read expression: ${expr}`);
+    return () => NaN;
   }
 }
 
@@ -173,7 +177,7 @@ export function Slider({ label, value, min, max, step = 0.01, onChange, format }
   onChange: (v: number) => void; format?: (v: number) => string;
 }) {
   return (
-    <label className="flex items-center gap-3 text-xs">
+    <label className="flex items-center gap-3 text-[13px]">
       <span className="text-muted w-28 shrink-0">{label}</span>
       <input
         type="range" min={min} max={max} step={step} value={value}
@@ -190,14 +194,14 @@ export function LabFrame({ title, caption, children, note }: { title?: string; c
   return (
     <figure className="my-6 qf-card-flat overflow-hidden not-prose">
       {title && (
-        <figcaption className="px-4 py-2.5 border-b bg-surface-2/50 text-sm font-extrabold flex items-center gap-2">
+        <figcaption className="px-4 py-2.5 border-b bg-surface-2/50 text-[15px] font-extrabold flex items-center gap-2">
           <span className="h-2 w-2 rounded-full bg-accent inline-block" aria-hidden />
           {title}
         </figcaption>
       )}
       <div className="p-4">{children}</div>
       {(caption || note) && (
-        <figcaption className="px-4 py-2.5 border-t text-xs text-faint font-semibold">{caption}{note ? ` ${note}` : ''}</figcaption>
+        <figcaption className="px-4 py-2.5 border-t text-[13px] text-faint font-semibold">{caption}{note ? ` ${note}` : ''}</figcaption>
       )}
     </figure>
   );
@@ -217,8 +221,8 @@ export function PlotArea({ width = 560, height = 300, padding = 34, children, xL
   return (
     <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto" role="img">
       {children(m)}
-      {xLabel && <text x={width - padding} y={height - 8} textAnchor="end" fontSize="10" fill="var(--foreground-faint)">{xLabel}</text>}
-      {yLabel && <text x={10} y={padding - 12} fontSize="10" fill="var(--foreground-faint)">{yLabel}</text>}
+      {xLabel && <text x={width - padding} y={height - 8} textAnchor="end" fontSize="12" fill="var(--foreground-faint)">{xLabel}</text>}
+      {yLabel && <text x={10} y={padding - 12} fontSize="12" fill="var(--foreground-faint)">{yLabel}</text>}
     </svg>
   );
 }
@@ -233,3 +237,18 @@ export const INK = 'var(--foreground)';
 export const MUTED = 'var(--foreground-muted)';
 export const FAINT = 'var(--foreground-faint)';
 export const ACCENT = 'var(--accent)';
+
+/** Returns the expressions that cannot be read, so a lab can say so instead of drawing nothing. */
+export function unreadable(exprs: string[]): string[] {
+  return exprs.filter(e => { try { compileExpression(e); return false; } catch { return true; } });
+}
+
+export function ExprNotice({ exprs }: { exprs: string[] }) {
+  const bad = unreadable(exprs);
+  if (bad.length === 0) return null;
+  return (
+    <p role="alert" className="mb-2 rounded-lg border-2 border-warning bg-warning-soft px-3 py-2 text-[13px] font-bold">
+      Could not read: {bad.join(', ')}. That curve is not drawn.
+    </p>
+  );
+}

@@ -2,7 +2,7 @@
   "id": "py-asyncio",
   "moduleId": "ph3-advanced-python",
   "title": "Asyncio and Concurrent I/O",
-  "estMinutes": 26,
+  "estMinutes": 30,
   "difficulty": "advanced",
   "prereqs": [
     "py-gil-threading"
@@ -121,7 +121,7 @@
       "Sequential awaits do not overlap waits.",
       "gather returns results in submission order, regardless of who finishes first."
     ],
-    "solution": "(a) $0.5 + 1.0 + 0.3 = 1.8$ s. (b) About **1.0 s**, all waits start together, so wall time is the maximum delay. (c) Submission order: the results appear as vendor-a, vendor-b, vendor-c (the 0.3 s coroutine finishing first does not jump the queue).\n\n(d)\n```python\nprices = await asyncio.gather(*[fetch(sym) for sym in symbols])\n```"
+    "solution": "(a) $0.5 + 1.0 + 0.3 = 1.8$ s. (b) About **1.0 s**, all waits start together, so wall time is the maximum delay. (c) Submission order: the results appear as vendor-a, vendor-b, vendor-c (the 0.3 s coroutine finishing first does not jump the queue).\n\n(d)\n```python\nimport asyncio\n\nasync def fetch(symbol):\n    delays = {\"vendor-a\": 0.5, \"vendor-b\": 1.0, \"vendor-c\": 0.3}\n    await asyncio.sleep(delays[symbol])\n    return symbol\n\nasync def main():\n    symbols = [\"vendor-a\", \"vendor-b\", \"vendor-c\"]\n    prices = await asyncio.gather(*[fetch(sym) for sym in symbols])\n    print(prices)  # ['vendor-a', 'vendor-b', 'vendor-c']\n\nasyncio.run(main())\n```"
   },
   "independentExercise": {
     "prompt": "An order router must submit to four venues whose acknowledgement latencies are 0.2, 0.5, 0.1 and 0.4 seconds. Write an `async def route()` that starts all four submissions with `create_task`, prints each acknowledgement **as it arrives** (use `asyncio.as_completed`), and prints total elapsed time. State the exact expected print order and the expected elapsed time.",
@@ -150,7 +150,7 @@
     {
       "id": "q1",
       "type": "code-output",
-      "prompt": "What does this print?",
+      "prompt": "What does this gather result order example print?",
       "language": "python",
       "code": "import asyncio\n\nasync def fetch_quote(symbol, ms):\n    await asyncio.sleep(ms / 1000)\n    return (symbol, ms)\n\nasync def main():\n    quotes = await asyncio.gather(\n        fetch_quote(\"AAPL\", 300),\n        fetch_quote(\"MSFT\", 100),\n        fetch_quote(\"NVDA\", 200),\n    )\n    print(quotes)\n\nasyncio.run(main())",
       "answer": "[('AAPL', 300), ('MSFT', 100), ('NVDA', 200)]",
@@ -159,7 +159,7 @@
     {
       "id": "q2",
       "type": "code-output",
-      "prompt": "What does this print?",
+      "prompt": "What does this coroutine completion order example print?",
       "language": "python",
       "code": "import asyncio\n\nasync def f(tag, delay):\n    await asyncio.sleep(delay)\n    print(tag)\n\nasync def main():\n    await asyncio.gather(f(\"A\", 0.3), f(\"B\", 0.1), f(\"C\", 0.2))\n\nasyncio.run(main())",
       "answer": "B\nC\nA",
@@ -168,7 +168,7 @@
     {
       "id": "q3",
       "type": "code-output",
-      "prompt": "What does this print?",
+      "prompt": "What does this gather with returned exceptions example print?",
       "language": "python",
       "code": "import asyncio\n\nasync def work(n):\n    await asyncio.sleep(0.01 * n)\n    if n == 2:\n        raise ValueError(\"venue down\")\n    return n * 10\n\nasync def main():\n    res = await asyncio.gather(work(1), work(2), work(3),\n                               return_exceptions=True)\n    print(res)\n\nasyncio.run(main())",
       "answer": "[10, ValueError('venue down'), 30]",
@@ -186,12 +186,12 @@
       "type": "mcq",
       "prompt": "A coroutine calls `time.sleep(5)` in the middle of a busy service. What happens?",
       "options": [
+        "Only coroutines on other threads continue",
         "The event loop reschedules the coroutine and continues serving others",
-        "The whole event loop, every coroutine, is frozen for 5 seconds",
         "asyncio automatically converts it to asyncio.sleep",
-        "Only coroutines on other threads continue"
+        "The whole event loop, every coroutine, is frozen for 5 seconds"
       ],
-      "answerIndex": 1,
+      "answerIndex": 3,
       "explanation": "time.sleep blocks the single loop thread; task switching happens only at await points, so everything stalls. Use asyncio.sleep, async libraries, or run_in_executor."
     },
     {

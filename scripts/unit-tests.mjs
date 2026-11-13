@@ -276,8 +276,11 @@ test('content: registry exists and covers the map', () => {
   const reg = JSON.parse(readFileSync(path.join(ROOT, 'content/registry.json'), 'utf8'));
   const map = JSON.parse(readFileSync(path.join(ROOT, 'content/map/curriculum.json'), 'utf8'));
   const mapLessons = map.phases.flatMap(p => p.modules.flatMap(m => m.lessons.map(l => l.id)));
-  assert.equal(mapLessons.length, 283);
+  assert.ok(mapLessons.length > 0, 'curriculum must contain lessons');
+  assert.equal(new Set(mapLessons).size, mapLessons.length, 'mapped lesson ids must be unique');
   const authored = new Set(reg.lessons.map(l => l.id));
+  assert.equal(authored.size, reg.lessons.length, 'registry lesson ids must be unique');
+  assert.equal(authored.size, mapLessons.length, 'registry and map must cover the same number of lessons');
   const missing = mapLessons.filter(id => !authored.has(id));
   assert.deepEqual(missing, [], `all mapped lessons must be authored; missing: ${missing.slice(0, 5)}`);
 });
@@ -307,7 +310,9 @@ test('content: every authored lesson has quiz answers server-side', () => {
     }
   };
   walk(dir);
-  assert.equal(count, 283);
+  const map = JSON.parse(readFileSync(path.join(ROOT, 'content/map/curriculum.json'), 'utf8'));
+  const mapped = map.phases.flatMap(p => p.modules.flatMap(m => m.lessons.map(l => l.id)));
+  assert.equal(count, mapped.length, 'all mapped lessons must have authored quiz material');
 });
 
 test('content: problems have valid reference tests (spot check pnl-calc)', () => {
@@ -466,4 +471,63 @@ test('lesson-cards: all real lessons produce sane decks (10-40 cards)', () => {
     }
   }
   assert.ok(checked > 100, `sampled enough lessons (${checked})`);
+});
+
+
+// Execute the actual TypeScript grader, not a duplicated implementation.
+import ts from 'typescript';
+import vm from 'node:vm';
+const gradingSource = readFileSync(path.join(ROOT, 'src/lib/grading.ts'), 'utf8');
+const gradingJs = ts.transpileModule(gradingSource, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText;
+const actualGrading = {};
+vm.runInNewContext(gradingJs, { exports: actualGrading });
+
+test('actual grader: alternative groups accept synonyms and inflection', () => {
+  const q = { type: 'short', keywords: ['latency|delay', 'quote|order|price', 'stale|old|outdated'] };
+  assert.equal(actualGrading.gradeAnswer(q, 'The quotes were delayed and outdated.'), true);
+  assert.equal(actualGrading.keywordsHit('latencies quotes stale', q.keywords), 1);
+});
+test('actual grader: keyword groups count once and require 60 percent', () => {
+  const q = { type: 'short', keywords: ['latency|delay', 'quote|order', 'stale|outdated'] };
+  assert.equal(actualGrading.gradeAnswer(q, 'latency delay'), false);
+  assert.equal(actualGrading.gradeAnswer(q, 'delayed quotes'), true);
+});
+test('actual grader: matching uses token boundaries, not accidental substrings', () => {
+  assert.equal(actualGrading.keywordsHit('concatenate', ['cat']), 0);
+  assert.equal(actualGrading.keywordsHit('shorder', ['order']), 0);
+});
+test('actual grader: technical symbols and phrases are literal', () => {
+  assert.equal(actualGrading.keywordsHit('int& is an lvalue reference', ['int&', 'lvalue', 'reference']), 1);
+  assert.equal(actualGrading.keywordsHit('A branch target buffer predicts the target', ['branch target buffer|BTB', 'predict|prediction', 'target']), 1);
+});
+test('actual grader: blank and non-finite numeric answers are rejected', () => {
+  const q = { type: 'numeric', answer: 0, tolerance: 1e-6 };
+  for (const value of ['', ' ', 'Infinity', 'NaN']) assert.equal(actualGrading.gradeAnswer(q, value), false);
+  assert.equal(actualGrading.gradeAnswer(q, '0.0000005'), true);
+});
+test('actual grader: output normalisation keeps line breaks', () => {
+  assert.equal(actualGrading.gradeAnswer({type:'code-output',answer:'A B\nC'}, ' A   B\r\nC\n'), true);
+  assert.equal(actualGrading.gradeAnswer({type:'code-output',answer:'A B\nC'}, 'A B C'), false);
+});
+test('actual grader: client sanitisation removes all answer material', () => {
+  const safe = actualGrading.sanitizedForClient({id:'q1',type:'short',prompt:'Explain',answer:1,answerIndex:0,answerIndices:[0],tolerance:1,keywords:['a'],modelAnswer:'secret',explanation:'feedback'});
+  for (const key of ['answer','answerIndex','answerIndices','tolerance','keywords','modelAnswer']) assert.equal(key in safe, false);
+  assert.equal(safe.prompt,'Explain');
+});
+
+
+test('actual grader: every authored lesson model answer passes its own rubric', () => {
+  const walk = dir => {
+    for (const name of readdirSync(dir)) {
+      const file = path.join(dir, name);
+      if (statSync(file).isDirectory()) walk(file);
+      else if (file.endsWith('.json')) {
+        const lesson = JSON.parse(readFileSync(file, 'utf8'));
+        for (const q of lesson.quiz ?? []) if (q.type === 'short') {
+          assert.equal(actualGrading.gradeAnswer(q, q.modelAnswer), true, `${lesson.id}:${q.id} modelAnswer rejected`);
+        }
+      }
+    }
+  };
+  walk(path.join(ROOT, 'content/lessons'));
 });

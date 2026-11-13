@@ -21,9 +21,11 @@
   "inputFormat": "First line: number of legs $t$ ($1 \\le t \\le 10$). Then $t$ lines: `TYPE SIDE K QTY PREMIUM`. TYPE is `C` or `P`, SIDE is `BUY` or `SELL`, K and PREMIUM are decimals, QTY an integer. Then a line with $q$ ($1 \\le q \\le 1000$), then $q$ terminal prices, one per line.",
   "outputFormat": "For each terminal price, the total strategy P&L, printed with exactly 2 decimal places.",
   "constraints": [
+    "$1 \\le t \\le 10$",
     "$0 < K, S \\le 10^6$",
     "$1 \\le \\text{QTY} \\le 1000$",
-    "$0 \\le \\text{PREMIUM} \\le 10^5$"
+    "$0 \\le \\text{PREMIUM} \\le 10^5$",
+    "K, PREMIUM and the terminal prices are written with at most two decimal digits, so every P&L is an exact number of cents"
   ],
   "examples": [
     {
@@ -47,8 +49,8 @@
     }
   ],
   "solutions": {
-    "python": "import sys\ndata = sys.stdin.read().split()\nt = int(data[0])\nidx = 1\nlegs = []\nfor _ in range(t):\n typ, side, k, qty, prem = data[idx], data[idx+1], float(data[idx+2]), int(data[idx+3]), float(data[idx+4]); idx += 5\n legs.append((typ, side, k, qty, prem))\nq = int(data[idx]); idx += 1\nfor _ in range(q):\n S = float(data[idx]); idx += 1\n total = 0.0\n for typ, side, k, qty, prem in legs:\n intrinsic = max(0.0, S, k) if typ == \"C\" else max(0.0, k. S)\n sign = 1 if side == \"BUY\" else -1\n total += sign * (intrinsic, prem) * qty\n print(f\"{total:.2f}\")",
-    "cpp": "#include <bits/stdc++.h>\nusing namespace std;\nint main(){int t; cin>>t;\n vector<tuple<char,char,double,long long,double>> legs(t);\n for(int i=0;i<t;i++){ string ty, sd; double k; long long q; double pr;\n cin>>ty>>sd>>k>>q>>pr;\n legs[i]={ty[0], sd[0], k, q, pr}; }\n int Q; cin>>Q; cout<<fixed<<setprecision(2);\n while(Q--){ double S; cin>>S; double total=0;\n for(auto&L:legs){ auto[ty,sd,k,q,pr]=L;\n double intr = (ty=='C') ? max(0.0, S-k) : max(0.0, k-S);\n double sign = (sd=='B') ? 1.0 : -1.0;\n total += sign*(intr-pr)*(double)q; }\n printf(\"%.2f\\n\", total); }\n return 0;}"
+    "python": "import sys\nfrom decimal import Decimal\n\n\ndef cents(text):\n    return int(Decimal(text) * 100)\n\n\ndef main():\n    tok = sys.stdin.read().split()\n    t = int(tok[0])\n    legs = []\n    pos = 1\n    for _ in range(t):\n        kind, side, strike, qty, prem = tok[pos:pos + 5]\n        legs.append((kind, 1 if side == 'BUY' else -1, cents(strike), int(qty), cents(prem)))\n        pos += 5\n    q = int(tok[pos])\n    out = []\n    for s in tok[pos + 1:pos + 1 + q]:\n        spot = cents(s)\n        total = 0\n        for kind, sign, strike, qty, prem in legs:\n            intrinsic = max(0, spot - strike) if kind == 'C' else max(0, strike - spot)\n            total += sign * (intrinsic - prem) * qty\n        out.append(('-' if total < 0 else '') + f\"{abs(total) // 100}.{abs(total) % 100:02d}\")\n    print('\\n'.join(out))\n\n\nmain()",
+    "cpp": "#include <cmath>\n#include <cstdio>\n#include <cstdlib>\n#include <string>\n#include <vector>\nusing namespace std;\n\n// Prices have at most two decimals, so llround(x * 100) is the exact number of cents.\nstatic long long toCents(double x) { return llround(x * 100.0); }\n\nstruct Leg {\n    char kind;\n    int sign;\n    long long strike, qty, prem;\n};\n\nint main() {\n    int t;\n    if (scanf(\"%d\", &t) != 1) return 1;\n    vector<Leg> legs;\n    for (int i = 0; i < t; i++) {\n        char kind[4], side[8];\n        double k, p;\n        long long q;\n        if (scanf(\"%3s %7s %lf %lld %lf\", kind, side, &k, &q, &p) != 5) return 1;\n        legs.push_back({kind[0], string(side) == \"BUY\" ? 1 : -1, toCents(k), q, toCents(p)});\n    }\n    int m;\n    if (scanf(\"%d\", &m) != 1) return 1;\n    while (m--) {\n        double s;\n        if (scanf(\"%lf\", &s) != 1) return 1;\n        long long spot = toCents(s), total = 0;\n        for (const Leg& g : legs) {\n            long long intrinsic = g.kind == 'C' ? max(0LL, spot - g.strike) : max(0LL, g.strike - spot);\n            total += g.sign * (intrinsic - g.prem) * g.qty;\n        }\n        printf(\"%s%lld.%02lld\\n\", total < 0 ? \"-\" : \"\", llabs(total) / 100, llabs(total) % 100);\n    }\n    return 0;\n}"
   },
   "tests": [
     {
@@ -94,6 +96,31 @@
     {
       "input": "2\nC BUY 50 1 2.00\nP SELL 50 1 1.00\n2\n50 60\n",
       "expected": "-1.00\n9.00\n",
+      "hidden": true
+    },
+    {
+      "input": "1\nC SELL 100 1 5.00\n3\n100\n105\n90\n",
+      "expected": "5.00\n0.00\n5.00\n",
+      "hidden": true
+    },
+    {
+      "input": "2\nP BUY 50.50 2 1.25\nC BUY 50.50 2 1.25\n3\n50.50\n50.50\n0.01\n",
+      "expected": "-5.00\n-5.00\n95.98\n",
+      "hidden": true
+    },
+    {
+      "input": "1\nC BUY 1000000 1000 100000\n2\n1000000\n1000000\n",
+      "expected": "-100000000.00\n-100000000.00\n",
+      "hidden": true
+    },
+    {
+      "input": "2\nC BUY 100 1 3.00\nC SELL 100 1 3.00\n2\n80\n120\n",
+      "expected": "0.00\n0.00\n",
+      "hidden": true
+    },
+    {
+      "input": "4\nC BUY 90 1 12.00\nC SELL 100 2 6.00\nC BUY 110 1 2.00\nP SELL 80 1 0.50\n5\n70\n90\n100\n110\n130\n",
+      "expected": "-11.50\n-1.50\n8.50\n-1.50\n-1.50\n",
       "hidden": true
     }
   ],

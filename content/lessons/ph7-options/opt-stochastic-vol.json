@@ -1,0 +1,269 @@
+{
+  "id": "opt-stochastic-vol",
+  "moduleId": "ph7-options",
+  "title": "Local Volatility, Heston and SABR",
+  "estMinutes": 35,
+  "difficulty": "advanced",
+  "prereqs": [
+    "opt-exotics-american"
+  ],
+  "objectives": [
+    "Distinguish local and stochastic volatility models",
+    "Interpret Heston variance dynamics and correlation",
+    "Explain SABR smile parameters and calibration uncertainty"
+  ],
+  "motivation": "Black-Scholes assigns one constant volatility to a simple diffusion. Markets quote options across strikes and expiries, and their implied volatilities need not agree. Implied volatility is the number that reproduces a price within that formula, not a direct observation of tomorrow's realised volatility. A richer model tries to connect prices across contracts and through time. Choose the modelling task first: interpolating today's surface, hedging tomorrow's smile movement and pricing a path-dependent contract are not identical problems. A model can match a static surface closely while predicting unhelpful dynamics when spot moves.",
+  "blocks": [
+    {
+      "type": "h2",
+      "text": "A volatility surface is a set of prices"
+    },
+    {
+      "type": "p",
+      "md": "Black-Scholes assigns one constant volatility to a simple diffusion. Markets quote options across strikes and expiries, and their implied volatilities need not agree. Implied volatility is the number that reproduces a price within that formula, not a direct observation of tomorrow's realised volatility. A richer model tries to connect prices across contracts and through time. Choose the modelling task first: interpolating today's surface, hedging tomorrow's smile movement and pricing a path-dependent contract are not identical problems. A model can match a static surface closely while predicting unhelpful dynamics when spot moves."
+    },
+    {
+      "type": "h2",
+      "text": "Local volatility uses the current state"
+    },
+    {
+      "type": "p",
+      "md": "A local-volatility model makes instantaneous volatility a deterministic function of time and underlying price. Given a sufficiently smooth arbitrage-consistent European call surface and modelling assumptions, the Dupire construction links that function to surface derivatives. Numerical differentiation amplifies noisy quotes, so cleaning, interpolation and extrapolation choices matter. The model has one source of Brownian randomness for the underlying; volatility varies because time and spot vary. It is not the same as fitting an independent constant volatility to each option and then claiming one consistent process. Boundary behaviour and sparse long-dated quotes can dominate exotic prices."
+    },
+    {
+      "type": "h2",
+      "text": "Heston adds a random variance process"
+    },
+    {
+      "type": "p",
+      "md": "In the risk-neutral Heston model, spot diffusion uses sqrt(v), while variance follows a mean-reverting square-root process. Its parameters include long-run variance theta, reversion speed kappa, volatility of variance xi, initial variance v0 and correlation rho between the spot and variance shocks. Negative correlation can generate the familiar equity downside skew. The Feller condition 2*kappa*theta >= xi^2 is sufficient for strict positivity under the usual positive initial conditions, but failing it does not automatically invalidate the continuous-time non-negative process. A naive Euler simulation can still generate negative variance and needs a deliberate discretisation policy."
+    },
+    {
+      "type": "math",
+      "tex": "dS_t=(r-q)S_t\\,dt+\\sqrt{v_t}S_t\\,dW_t^S,\\qquad dv_t=\\kappa(\\theta-v_t)\\,dt+\\xi\\sqrt{v_t}\\,dW_t^v",
+      "caption": "Formula under the assumptions stated in the surrounding explanation."
+    },
+    {
+      "type": "h2",
+      "text": "Worked example: conditional mean variance"
+    },
+    {
+      "type": "p",
+      "md": "Use kappa=2, theta=0.04 and v0=0.09. The expected variance after one year is theta+(v0-theta)*exp(-kappa), about 0.046767. Taking its square root gives about 0.216256, but that is not generally the expected volatility: expectation and a nonlinear square root do not commute. The example prints the expected variance and separately checks a Feller case with xi=0.3, where 2*2*0.04=0.16 exceeds 0.09. These calculations check parameter interpretation, not an option-pricing implementation. To price an exotic, you still need a verified transition scheme, discounting and payoff conventions."
+    },
+    {
+      "type": "h2",
+      "text": "SABR describes another smile family"
+    },
+    {
+      "type": "p",
+      "md": "SABR models a forward F with a volatility factor alpha: dF=alpha*F^beta*dW and dAlpha=nu*alpha*dZ, with shock correlation rho. Beta controls the backbone, nu controls volatility-of-volatility and rho influences asymmetry. With beta=1, the forward diffusion is lognormal in its level; beta=0 gives a normal-style diffusion. Shifted variants can accommodate rate domains that otherwise conflict with fractional powers. The widely used implied-volatility formulas are asymptotic approximations with regimes of validity, not exact prices for every maturity and strike. Specify normal versus lognormal quoted volatility and units before comparing calibration errors."
+    },
+    {
+      "type": "h2",
+      "text": "Worked example: correlated shocks"
+    },
+    {
+      "type": "p",
+      "md": "To build correlated standard-normal shocks, take independent z1 and z2 and form w2=rho*z1+sqrt(1-rho^2)*z2. With rho=-0.6, z1=1 and z2=0, w2=-0.6. Algebra gives Var(w2)=rho^2+(1-rho^2)=1 and Cov(z1,w2)=rho. Multiplying both model equations by the same shock instead would force perfect correlation and eliminate a degree of freedom. This deterministic worked value checks the transformation, while a larger seeded simulation can verify its empirical correlation. Sampling error means an estimated correlation will not equal the input exactly in a finite run."
+    },
+    {
+      "type": "h2",
+      "text": "Calibration is an inverse problem"
+    },
+    {
+      "type": "p",
+      "md": "Choose a loss with clear quote weighting, such as bid-ask-scaled price errors, and constrain parameters to admissible domains. Different parameter combinations can fit observed vanilla prices similarly yet give different future smile dynamics or exotic values. Report residuals by strike and expiry, parameter stability and sensitivity to starting points. Avoid interpreting an excellent numerical fit as evidence that the process is physically true or that risk-neutral parameters predict realised returns. The smile lab illustrates strike-dependent implied volatility, not full Heston or SABR calibration. Test limiting cases, compare independent pricing methods and distinguish market-data uncertainty from numerical tolerance before quoting a model result. For finite-difference Greeks, bump one parameter at a time and compare several bump sizes. A noisy Monte Carlo estimate can overwhelm a tiny bump, producing a precise-looking but unstable hedge ratio. Reuse random numbers across paired bumps when the estimator permits it, and report the uncertainty rather than only the central sensitivity. Also compare the near-zero volatility-of-volatility limit with a constant-variance benchmark where the remaining assumptions match."
+    },
+    {
+      "type": "h2",
+      "text": "Worked example: run and check"
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import math\nkappa,theta,v0,xi=2.0,0.04,0.09,0.3\nmean=theta+(v0-theta)*math.exp(-kappa)\nassert 2*kappa*theta >= xi*xi\nprint(f\"{mean:.6f}\")\nrho,z1,z2=-0.6,1.0,0.0\nw2=rho*z1+math.sqrt(1-rho*rho)*z2\nassert abs(w2+0.6)<1e-12\nprint(f\"{w2:.3f}\")",
+      "caption": "Complete Python 3.11+ example"
+    },
+    {
+      "type": "p",
+      "md": "The exact output is `0.046767; -0.600`. Run the example before changing a parameter, then predict the direction of the change. The assertions encode the stated checks; a failed assertion means that the implementation and the claimed result disagree."
+    },
+    {
+      "type": "callout",
+      "variant": "pitfall",
+      "title": "Check this misconception",
+      "md": "Stochastic volatility adds a random state for volatility or variance. Local volatility is a deterministic function of time and spot, even though spot itself is random."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import math\n# Hagan lognormal SABR approximation for beta=1, positive F and K.\ndef sabr(F, K, T, alpha, rho, nu):\n    z = nu / alpha * math.log(F / K)\n    if abs(z) < 1e-8:\n        ratio = 1.0\n    else:\n        x = math.log((math.sqrt(1-2*rho*z+z*z)+z-rho)/(1-rho))\n        ratio = z / x\n    correction = 1 + (rho*nu*alpha/4 + (2-3*rho*rho)*nu*nu/24)*T\n    return alpha*ratio*correction\nstrikes = [90.0, 100.0, 110.0]\n# Synthetic quotes generated from a known member of the approximation family.\ntruth = (0.2, -0.4, 0.4)\nquotes = [sabr(100, k, 1, *truth) for k in strikes]\ngrid = [(a,r,n) for a in [0.18,0.2,0.22]\n        for r in [-0.4,0.0,0.4] for n in [0.2,0.4,0.6]]\ndef error(parameters):\n    return sum((sabr(100,k,1,*parameters)-q)**2 for k,q in zip(strikes,quotes))\nfit = min(grid,key=error)\nassert fit == truth and error(fit) < 1e-20\nprint(fit)\n",
+      "caption": "Complete synthetic beta=1 SABR smile-fit example. Output: (0.2, -0.4, 0.4)"
+    },
+    {
+      "type": "p",
+      "md": "This restricted grid fit recovers alpha=0.2, rho=-0.4 and nu=0.4 from three synthetic one-year quotes generated by the same beta=1 Hagan approximation. It checks calibration plumbing, not identification from real markets. The grid contains the generating parameters by design. Use bid-ask-aware weighting, wider diagnostics and independent price checks for real quotes; do not extrapolate this approximate formula beyond a tested regime."
+    },
+    {
+      "type": "interactive",
+      "component": "VolatilitySmile",
+      "params": {},
+      "caption": "Related concept lab. The lab illustrates the named building block; it is not a full implementation of every model in this lesson."
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Compute the one-year conditional mean variance with kappa=2, theta=0.04 and v0=0.09. Success check: It is approximately 0.046767.",
+    "hints": [
+      "The deviation from theta decays exponentially.",
+      "Multiply 0.05 by exp(-2).",
+      "Add the result to 0.04."
+    ],
+    "solution": "\n```python\nimport math\nv=0.04+0.05*math.exp(-2)\nassert 0.04<v<0.09\nprint(f\"{v:.6f}\")\n```\nExpected output: `0.046767`.",
+    "successCheck": "It is approximately 0.046767."
+  },
+  "independentExercise": {
+    "prompt": "Check the variance of the correlated-shock construction algebraically at rho=-0.6. Success check: The two squared weights sum to 1.",
+    "hints": [
+      "The weights are rho and sqrt(1-rho squared).",
+      "Independent unit-variance shocks add weighted variances.",
+      "Sum the squared weights."
+    ],
+    "solution": "\n```python\nimport math\nr=-0.6\na,b=r,math.sqrt(1-r*r)\nassert abs(a*a+b*b-1)<1e-12\nprint(f\"{a*a+b*b:.3f}\")\n```\nExpected output: `1.000`.",
+    "successCheck": "The two squared weights sum to 1."
+  },
+  "commonMistakes": [
+    "Stochastic volatility adds a random state for volatility or variance. Local volatility is a deterministic function of time and spot, even though spot itself is random.",
+    "Rho links the Brownian shocks driving spot and variance. It is not a correlation between contract labels or a statement that a calibrated model guarantees returns."
+  ],
+  "realWorldApplication": "Use the assumptions and checks above when reviewing local volatility, heston and sabr. Record inputs, state the failure conditions and compare the result with a simple independent calculation.",
+  "quantFinanceApplication": "For a trading or risk workflow, validate the model and timestamp conventions before using local volatility, heston and sabr. The worked result is conditional on its assumptions, not a return promise.",
+  "summary": [
+    "Distinguish local and stochastic volatility models",
+    "Interpret Heston variance dynamics and correlation",
+    "Explain SABR smile parameters and calibration uncertainty"
+  ],
+  "quiz": [
+    {
+      "type": "mcq",
+      "prompt": "What distinguishes stochastic volatility from local volatility?",
+      "options": [
+        "An implied volatility quoted in percent",
+        "A guaranteed exact fit to future prices",
+        "A separate random volatility state",
+        "An absence of model calibration risk"
+      ],
+      "answerIndex": 2,
+      "explanation": "Stochastic volatility adds a random state for volatility or variance. Local volatility is a deterministic function of time and spot, even though spot itself is random.",
+      "id": "q1",
+      "objective": 0
+    },
+    {
+      "type": "mcq",
+      "prompt": "What does Heston correlation rho connect?",
+      "options": [
+        "Strike and expiry quotation units",
+        "The realised return and a guaranteed profit",
+        "The interest rate and every option payoff",
+        "Spot and variance Brownian shocks"
+      ],
+      "answerIndex": 3,
+      "explanation": "Rho links the Brownian shocks driving spot and variance. It is not a correlation between contract labels or a statement that a calibrated model guarantees returns.",
+      "id": "q2",
+      "objective": 1
+    },
+    {
+      "type": "numeric",
+      "prompt": "With kappa=2, theta=0.04 and xi=0.3, what is 2*kappa*theta - xi^2?",
+      "answer": 0.07,
+      "tolerance": 1e-06,
+      "explanation": "The expression is 0.16-0.09=0.07. A positive result satisfies this sufficient positivity condition; it does not certify that a discretisation or calibration is accurate.",
+      "id": "q3",
+      "objective": 1
+    },
+    {
+      "type": "code-output",
+      "prompt": "What correlated-shock value is printed?",
+      "code": "rho=-0.6\nz1,z2=1.0,0.0\nprint(f'{rho*z1+(1-rho*rho)**0.5*z2:.3f}')",
+      "language": "python",
+      "answer": "-0.600",
+      "explanation": "The independent second shock is zero in this worked input, leaving rho times the first shock. A full simulation still requires two independent normal sequences.",
+      "id": "q4",
+      "objective": 1
+    },
+    {
+      "type": "short",
+      "prompt": "Why can two well-fitting volatility calibrations give different exotic prices?",
+      "modelAnswer": "Vanilla data may not identify parameters or future path dynamics uniquely; exotics depend on that unobserved dynamics.",
+      "keywords": [
+        "identify|identification|parameter",
+        "path|dynamic|dynamics",
+        "vanilla|surface|calibration|calibrate"
+      ],
+      "explanation": "Matching today's vanilla surface constrains marginal prices, not every future path property. Path-dependent products can expose model differences that a static fit leaves unresolved.",
+      "id": "q5",
+      "objective": 2
+    },
+    {
+      "type": "ms",
+      "prompt": "Which calibration practices are defensible?",
+      "options": [
+        "Inspect residuals across strikes and expiries",
+        "Test parameter stability and starting points",
+        "Treat an exact fit as proof of model truth",
+        "Ignore quote conventions and volatility units"
+      ],
+      "answerIndices": [
+        0,
+        1
+      ],
+      "explanation": "Residual structure and stability reveal weaknesses in an inverse problem. A fit is conditional on data and assumptions; mixing normal and lognormal quotation conventions corrupts comparisons.",
+      "id": "q6",
+      "objective": 2
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "What distinguishes stochastic volatility from local volatility?",
+      "back": "A separate random volatility state"
+    },
+    {
+      "type": "concept",
+      "front": "What does Heston correlation rho connect?",
+      "back": "Spot and variance Brownian shocks"
+    },
+    {
+      "type": "concept",
+      "front": "With kappa=2, theta=0.04 and xi=0.3, what is 2*kappa*theta - xi^2?",
+      "back": "The result is 0.07 under the stated inputs."
+    },
+    {
+      "type": "concept",
+      "front": "Why can two well-fitting volatility calibrations give different exotic prices?",
+      "back": "Vanilla data may not identify parameters or future path dynamics uniquely; exotics depend on that unobserved dynamics."
+    },
+    {
+      "type": "concept",
+      "front": "Which calibration practices are defensible?",
+      "back": "Inspect residuals across strikes and expiries, Test parameter stability and starting points"
+    }
+  ],
+  "references": [
+    {
+      "label": "QuantLib: Heston model",
+      "url": "https://www.quantlib.org/reference/class_quant_lib_1_1_heston_model.html"
+    },
+    {
+      "label": "QuantLib: SABR source implementation",
+      "url": "https://github.com/lballabio/QuantLib/blob/master/ql/termstructures/volatility/sabr.cpp"
+    },
+    {
+      "label": "MIT OCW: analytics of finance",
+      "url": "https://ocw.mit.edu/courses/15-450-analytics-of-finance-fall-2010/"
+    }
+  ],
+  "skills": [
+    "options"
+  ]
+}

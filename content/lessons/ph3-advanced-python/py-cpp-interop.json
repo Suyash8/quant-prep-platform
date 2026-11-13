@@ -2,7 +2,7 @@
   "id": "py-cpp-interop",
   "moduleId": "ph3-advanced-python",
   "title": "C Extensions and pybind11",
-  "estMinutes": 27,
+  "estMinutes": 35,
   "difficulty": "advanced",
   "prereqs": [
     "py-profiling"
@@ -70,20 +70,27 @@
     {
       "type": "code",
       "lang": "cpp",
-      "code": "#include <pybind11/pybind11.h>\n#include <vector>\n\ndouble compound(const std::vector<double>& r) {\n    double v = 1.0;\n    for (double x : r) {\n        v *= (1.0 + x);\n    }\n    return v;\n}\n\nnamespace py = pybind11;\nPYBIND11_MODULE(fastmath, m) {\n    m.def(\"compound\", &compound, \"Compound a vector of simple returns\");\n}",
-      "caption": "fastmath.cpp, a sequential accumulation bound in a dozen lines."
+      "code": "#include <pybind11/pybind11.h>\n#include <vector>\n#include <pybind11/stl.h>\n\ndouble compound(const std::vector<double>& r) {\n    double v = 1.0;\n    for (double x : r) {\n        v *= (1.0 + x);\n    }\n    return v;\n}\n\nnamespace py = pybind11;\nPYBIND11_MODULE(fastmath, m) {\n    m.def(\"compound\", &compound, \"Compound a vector of simple returns\");\n}",
+      "caption": "fastmath.cpp, a sequential accumulation bound in a dozen lines.",
+      "requires": [
+        "pybind11"
+      ]
     },
     {
       "type": "code",
       "lang": "bash",
-      "code": "c++ -O3 -shared -std=c++17 -fPIC fastmath.cpp \\\n    -I\"$(python3 -c 'import sysconfig; print(sysconfig.get_paths()[\"include\"])')\" \\\n    -o fastmath\"$(python3-config --extension-suffix)\"",
+      "code": "c++ -O3 -shared -std=c++17 -fPIC fastmath.cpp \\\n    $(python3 -m pybind11 --includes) \\\n    -o fastmath\"$(python3-config --extension-suffix)\"",
       "caption": "One command builds the module; the suffix makes the filename importable on your interpreter (e.g. fastmath.cpython-312-x86_64-linux-gnu.so)."
     },
     {
       "type": "code",
       "lang": "python",
       "code": "import fastmath\nfrom functools import reduce\n\nr = [0.1, -0.1, 0.05]\nprint(round(fastmath.compound(r), 4))                      # 1.0395\nprint(round(reduce(lambda v, x: v * (1 + x), r, 1.0), 4))  # 1.0395",
-      "caption": "Same answer, different cost profile: the C++ loop runs compiled instructions; the reduce runs interpreted bytecodes. On large inputs the gap is 10-100x."
+      "caption": "Same answer, different cost profile: the C++ loop runs compiled instructions; the reduce runs interpreted bytecodes. On large inputs the gap is 10-100x.",
+      "requires": [
+        "fastmath"
+      ],
+      "file": "demo.py"
     },
     {
       "type": "h2",
@@ -96,8 +103,11 @@
     {
       "type": "code",
       "lang": "cpp",
-      "code": "#include <pybind11/pybind11.h>\n#include <pybind11/numpy.h>\n\ndouble slow_sum(py::array_t<double> arr) {   // borrows the numpy buffer\n    auto buf = arr.request();\n    double* p = static_cast<double*>(buf.ptr);\n    double s = 0.0;\n    for (py::ssize_t i = 0; i < buf.size; ++i) {\n        s += p[i];\n    }\n    return s;\n}\n\nPYBIND11_MODULE(fastmath, m) {\n    m.def(\"slow_sum\", &slow_sum,\n          py::call_guard<py::gil_scoped_release>(),\n          \"Sums a float64 array without holding the GIL\");\n}",
-      "caption": "py::array_t borrows the buffer (no copy) and call_guard releases the GIL for the duration of the call, so other Python threads keep running."
+      "code": "#include <pybind11/pybind11.h>\n#include <pybind11/numpy.h>\n\nnamespace py = pybind11;\n\ndouble slow_sum(py::array_t<double> arr) {   // borrows the numpy buffer\n    auto buf = arr.request();\n    double* p = static_cast<double*>(buf.ptr);\n    double s = 0.0;\n    py::gil_scoped_release release;\n    for (py::ssize_t i = 0; i < buf.size; ++i) {\n        s += p[i];\n    }\n    return s;\n}\n\nPYBIND11_MODULE(fastmath, m) {\n    m.def(\"slow_sum\", &slow_sum,\n          \"Sums a float64 array without holding the GIL\");\n}",
+      "caption": "py::array_t borrows the buffer (no copy) and call_guard releases the GIL for the duration of the call, so other Python threads keep running. Read array metadata while holding the GIL, then release it only around the numeric loop.",
+      "requires": [
+        "pybind11"
+      ]
     },
     {
       "type": "p",
@@ -142,7 +152,10 @@
       "type": "code",
       "lang": "cpp",
       "code": "// pricer.cpp - the C++ side of a pybind11 binding\n#include <pybind11/pybind11.h>\n#include <pybind11/numpy.h>\n#include <cmath>\nnamespace py = pybind11;\n\n// Takes NumPy arrays in, returns a new NumPy array: ONE boundary crossing for N options\npy::array_t<double> price_calls(py::array_t<double> S, py::array_t<double> K,\n                                 double r, double sigma, double T) {\n    auto Sb = S.unchecked<1>(), Kb = K.unchecked<1>();\n    const size_t n = Sb.size();\n    py::array_t<double> out(n);\n    auto ob = out.mutable_unchecked<1>();\n    const double sqrtT = std::sqrt(T);\n    for (size_t i = 0; i < n; ++i) {\n        const double d1 = (std::log(Sb(i)/Kb(i)) + (r + 0.5*sigma*sigma)*T) / (sigma*sqrtT);\n        const double d2 = d1 - sigma*sqrtT;\n        // erf-based N(d) (see the numerical lesson for why this form)\n        auto N = [](double x){ return 0.5*std::erfc(-x / std::sqrt(2.0)); };\n        ob(i) = Sb(i)*N(d1) - Kb(i)*std::exp(-r*T)*N(d2);\n    }\n    return out;\n}\n\nPYBIND11_MODULE(pricer, m) {\n    m.def(\"price_calls\", &price_calls, \"Batch Black-Scholes calls\");\n}",
-      "caption": "One crossing for the whole batch, the cardinal rule of interop performance."
+      "caption": "One crossing for the whole batch, the cardinal rule of interop performance.",
+      "requires": [
+        "pybind11"
+      ]
     },
     {
       "type": "p",
@@ -187,7 +200,10 @@
       "type": "code",
       "lang": "cpp",
       "code": "// pricer.cpp - the C++ side of a pybind11 binding\n#include <pybind11/pybind11.h>\n#include <pybind11/numpy.h>\n#include <cmath>\nnamespace py = pybind11;\n\n// Takes NumPy arrays in, returns a new NumPy array: ONE boundary crossing for N options\npy::array_t<double> price_calls(py::array_t<double> S, py::array_t<double> K,\n                                 double r, double sigma, double T) {\n    auto Sb = S.unchecked<1>(), Kb = K.unchecked<1>();\n    const size_t n = Sb.size();\n    py::array_t<double> out(n);\n    auto ob = out.mutable_unchecked<1>();\n    const double sqrtT = std::sqrt(T);\n    for (size_t i = 0; i < n; ++i) {\n        const double d1 = (std::log(Sb(i)/Kb(i)) + (r + 0.5*sigma*sigma)*T) / (sigma*sqrtT);\n        const double d2 = d1 - sigma*sqrtT;\n        // erf-based N(d) (see the numerical lesson for why this form)\n        auto N = [](double x){ return 0.5*std::erfc(-x / std::sqrt(2.0)); };\n        ob(i) = Sb(i)*N(d1) - Kb(i)*std::exp(-r*T)*N(d2);\n    }\n    return out;\n}\n\nPYBIND11_MODULE(pricer, m) {\n    m.def(\"price_calls\", &price_calls, \"Batch Black-Scholes calls\");\n}",
-      "caption": "One crossing for the whole batch, the cardinal rule of interop performance."
+      "caption": "One crossing for the whole batch, the cardinal rule of interop performance.",
+      "requires": [
+        "pybind11"
+      ]
     },
     {
       "type": "interactive",
@@ -276,7 +292,10 @@
       "One loop, two variables, no arrays allocated.",
       "Compare floating-point results with a tolerance, not exact equality."
     ],
-    "solution": "```cpp\ndouble max_drawdown(const std::vector<double>& equity) {\n    double peak = equity.empty() ? 0.0 : equity[0];\n    double worst = 0.0;\n    for (double px : equity) {\n        if (px > peak) peak = px;\n        double dd = px / peak - 1.0;\n        if (dd < worst) worst = dd;\n    }\n    return worst;\n}\n\nPYBIND11_MODULE(fastmath, m) {\n    m.def(\"max_drawdown\", &max_drawdown, \"Worst peak-to-trough drawdown\");\n}\n```\nBuild: `c++ -O3 -shared -std=c++17 -fPIC fastmath.cpp -I$(python3 -c 'import sysconfig; print(sysconfig.get_paths()[\"include\"])') -o fastmath$(python3-config --extension-suffix)`. Verify: `fastmath.max_drawdown([100, 120, 90, 110])` returns $-0.25$ (the trough 90 against the peak 120), matching the numpy reference. Complexity: $O(n)$ time, $O(1)$ extra space."
+    "solution": "```cpp\n#include <vector>\n#include <pybind11/pybind11.h>\n#include <pybind11/stl.h>\ndouble max_drawdown(const std::vector<double>& equity) {\n    double peak = equity.empty() ? 0.0 : equity[0];\n    double worst = 0.0;\n    for (double px : equity) {\n        if (px > peak) peak = px;\n        double dd = px / peak - 1.0;\n        if (dd < worst) worst = dd;\n    }\n    return worst;\n}\n\nPYBIND11_MODULE(fastmath, m) {\n    m.def(\"max_drawdown\", &max_drawdown, \"Worst peak-to-trough drawdown\");\n}\n```\nBuild: `c++ -O3 -shared -std=c++17 -fPIC fastmath.cpp $(python3 -m pybind11 --includes) -o fastmath$(python3-config --extension-suffix)`. Verify: `fastmath.max_drawdown([100, 120, 90, 110])` returns $-0.25$ (the trough 90 against the peak 120), matching the numpy reference. Complexity: $O(n)$ time, $O(1)$ extra space.",
+    "requires": [
+      "pybind11"
+    ]
   },
   "commonMistakes": [
     "Writing a C extension before profiling, binding the wrong 5% of the code buys nothing.",
@@ -300,10 +319,10 @@
       "type": "mcq",
       "prompt": "You need to call an existing C shared library from Python with the smallest possible build effort. Which tool fits best?",
       "options": [
-        "CPython C-API",
+        "Rewriting the library in Python",
         "ctypes",
-        "Cython",
-        "Rewriting the library in Python"
+        "CPython C-API",
+        "Cython"
       ],
       "answerIndex": 1,
       "explanation": "ctypes loads a compiled .so/.dll at runtime and calls it with hand-declared signatures, no compilation step of your own. Cython and pybind11 need a build; the C-API is maximal boilerplate."
@@ -322,12 +341,12 @@
       "type": "mcq",
       "prompt": "A pybind11 function declared to take `std::vector<double>` (with stl.h) receives a 1,000,000-element Python list on every call. What is the main per-call cost?",
       "options": [
-        "The GIL is acquired 1,000,000 times",
         "An O(n) copy that converts every element from a boxed PyObject float to a raw C double",
-        "Nothing, std::vector borrows the list's memory",
-        "A JIT compilation of the loop"
+        "The GIL is acquired 1,000,000 times",
+        "A JIT compilation of the loop",
+        "Nothing, std::vector borrows the list's memory"
       ],
-      "answerIndex": 1,
+      "answerIndex": 0,
       "explanation": "stl.h performs a value conversion: it allocates a vector and copies/converts each element. For large arrays called often, use py::array_t to borrow the numpy buffer with zero copy."
     },
     {
@@ -352,12 +371,12 @@
       "type": "mcq",
       "prompt": "What does py::call_guard<py::gil_scoped_release>() on an m.def registration do?",
       "options": [
+        "Converts the function to a coroutine",
         "Makes the function release the GIL for the duration of the call, letting other Python threads run",
-        "Disables the GIL permanently while the module is loaded",
         "Pickles the arguments so the call can run in a subprocess",
-        "Converts the function to a coroutine"
+        "Disables the GIL permanently while the module is loaded"
       ],
-      "answerIndex": 0,
+      "answerIndex": 1,
       "explanation": "The guard releases the Global Interpreter Lock on entry and re-acquires it on exit, so a long C++ computation no longer blocks every other Python thread. While released, the code must not touch the Python API."
     },
     {

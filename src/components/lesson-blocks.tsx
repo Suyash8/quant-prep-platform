@@ -16,7 +16,7 @@ export function BlockRenderer({ block }: { block: Block }) {
       return (
         <figure className="my-5">
           <div className="overflow-x-auto thin-scroll py-1" dangerouslySetInnerHTML={{ __html: renderMath(block.tex, true) }} />
-          {block.caption && <figcaption className="mt-1 text-xs text-faint text-center">{mathText(block.caption)}</figcaption>}
+          {block.caption && <figcaption className="mt-1 text-[13px] text-faint text-center">{mathText(block.caption)}</figcaption>}
         </figure>
       );
     case 'code':
@@ -25,7 +25,7 @@ export function BlockRenderer({ block }: { block: Block }) {
           <div className="code-block" role="figure" aria-label={block.caption ?? 'code example'}>
             <code>{block.code}</code>
           </div>
-          {block.caption && <figcaption className="mt-1.5 text-xs text-faint">{mathText(block.caption)}</figcaption>}
+          {block.caption && <figcaption className="mt-1.5 text-[13px] text-faint">{mathText(block.caption)}</figcaption>}
         </figure>
       );
     case 'callout': {
@@ -38,8 +38,8 @@ export function BlockRenderer({ block }: { block: Block }) {
       const s = styles[block.variant] ?? styles.info;
       return (
         <aside className="my-5 border-l-4 rounded-r-lg px-4 py-3" style={{ borderColor: s.border, background: s.bg }}>
-          <p className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: s.border }}>{block.title || s.label}</p>
-          <div className="prose-qf text-sm">{markdownBlocks(block.md)}</div>
+          <p className="text-[13px] font-semibold uppercase tracking-wide mb-1" style={{ color: s.border }}>{block.title || s.label}</p>
+          <div className="prose-qf text-[15px]">{markdownBlocks(block.md)}</div>
         </aside>
       );
     }
@@ -56,7 +56,7 @@ export function BlockRenderer({ block }: { block: Block }) {
     case 'table':
       return (
         <div className="my-5 overflow-x-auto thin-scroll">
-          <table className="w-full text-sm border rounded-lg overflow-hidden">
+          <table className="w-full text-[15px] border rounded-lg overflow-hidden">
             <thead>
               <tr className="bg-surface-2">
                 {block.headers.map((h, i) => <th key={i} className="px-3 py-2 text-left font-semibold border-b">{mathText(h)}</th>)}
@@ -75,11 +75,11 @@ export function BlockRenderer({ block }: { block: Block }) {
     case 'steps':
       return (
         <figure className="my-5 border rounded-xl bg-surface overflow-hidden">
-          {block.title && <figcaption className="px-4 py-2.5 border-b bg-surface-2/50 text-sm font-medium">{mathText(block.title)}</figcaption>}
+          {block.title && <figcaption className="px-4 py-2.5 border-b bg-surface-2/50 text-[15px] font-medium">{mathText(block.title)}</figcaption>}
           <ol className="px-4 py-3 space-y-2">
             {block.items.map((item, i) => (
-              <li key={i} className="flex gap-3 text-sm">
-                <span className="h-6 w-6 rounded-full bg-accent-soft text-accent text-xs font-semibold flex items-center justify-center shrink-0 mt-0.5">{i + 1}</span>
+              <li key={i} className="flex gap-3 text-[15px]">
+                <span className="h-6 w-6 rounded-full bg-accent-soft text-accent text-[13px] font-semibold flex items-center justify-center shrink-0 mt-0.5">{i + 1}</span>
                 <div className="prose-qf flex-1 text-[0.95rem]">{mathText(item)}</div>
               </li>
             ))}
@@ -91,8 +91,8 @@ export function BlockRenderer({ block }: { block: Block }) {
     case 'ref':
       return (
         <div className="my-5 border rounded-xl p-4 bg-surface-2/40">
-          <p className="text-xs font-semibold uppercase tracking-wide text-faint mb-2">References</p>
-          <ul className="space-y-1 text-sm">
+          <p className="text-[13px] font-semibold uppercase tracking-wide text-faint mb-2">References</p>
+          <ul className="space-y-1 text-[15px]">
             {block.items.map((r, i) => (
               <li key={i}>· <a href={r.url} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">{r.label}</a></li>
             ))}

@@ -14,7 +14,7 @@
  *  - QF3_CLEAR_PACKS             : drop pack + page caches
  */
 
-const VERSION = 'qf3-v3';
+const VERSION = 'qf3-v2';
 const STATIC_CACHE = `${VERSION}-static`;
 const PACK_CACHE = `${VERSION}-packs`;
 const PAGE_CACHE = `${VERSION}-pages`;
@@ -35,7 +35,7 @@ const DEV_MODE = new URL(self.location.href).searchParams.get('mode') === 'dev';
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(STATIC_CACHE)
-      .then((cache) => cache.addAll(PRECACHE))
+      .then((cache) => Promise.all(PRECACHE.map((u) => cache.add(u).catch(() => undefined))))
       .then(() => (DEV_MODE ? undefined : self.skipWaiting()))
   );
 });
@@ -214,7 +214,8 @@ self.addEventListener('fetch', (event) => {
 
 // ---------- download-all ----------
 
-let dlState = { running: false, done: 0, total: 0, phase: '', error: null, finishedAt: null };
+let dlState = { running: false, done: 0, cached: 0, failed: 0, failedFiles: [], total: 0, phase: '', error: null, finishedAt: null };
+function markFailed(name) { dlState.failed++; if (dlState.failedFiles.length < 20) dlState.failedFiles.push(name); }
 
 async function broadcast(msg) {
   const clients = await self.clients.matchAll({ includeUncontrolled: true });
@@ -223,7 +224,7 @@ async function broadcast(msg) {
 
 async function downloadAll() {
   if (dlState.running) return;
-  dlState = { running: true, done: 0, total: 0, phase: 'manifest', error: null, finishedAt: null };
+  dlState = { running: true, done: 0, cached: 0, failed: 0, failedFiles: [], total: 0, phase: 'manifest', error: null, finishedAt: null };
   broadcast({ type: 'QF3_DL_PROGRESS', ...dlState });
   try {
     const cache = await caches.open(PACK_CACHE);
@@ -244,9 +245,9 @@ async function downloadAll() {
       await Promise.all(slice.map(async (f) => {
         try {
           const r = await fetch(f, { cache: 'reload' });
-          if (r.ok) await cache.put(f, r.clone());
+          if (r.ok) { await cache.put(f, r.clone()); dlState.cached++; } else markFailed(f);
         } catch {
-          /* skip broken file, keep going */
+          markFailed(f); /* keep going, but report it: a missing file means offline is incomplete */
         }
         dlState.done++;
       }));
@@ -277,9 +278,10 @@ async function downloadAll() {
           const body = await r.text();
           await cacheRouteChunks(body);
           await pageCache.put(route, new Response(body, { headers: r.headers }));
-        }
+          dlState.cached++;
+        } else markFailed(route);
       } catch {
-        /* route may require auth; skip */
+        markFailed(route); /* offline or blocked: counted, not hidden */
       }
       try {
         const rr = await fetch(route, { cache: 'reload', headers: { RSC: '1' } });
@@ -311,7 +313,12 @@ async function downloadAll() {
       }
     }
 
-    dlState.phase = 'done';
+    if (dlState.failed > 0) {
+      dlState.phase = 'partial';
+      dlState.error = `${dlState.failed} of ${dlState.total} files could not be saved, so offline use is incomplete. Retry the download.`;
+    } else {
+      dlState.phase = 'done';
+    }
     dlState.finishedAt = Date.now();
   } catch (e) {
     dlState.error = String(e && e.message || e);
@@ -333,7 +340,7 @@ self.addEventListener('message', (event) => {
     event.waitUntil((async () => {
       await caches.delete(PACK_CACHE);
       await caches.delete(PAGE_CACHE);
-      dlState = { running: false, done: 0, total: 0, phase: '', error: null, finishedAt: null };
+      dlState = { running: false, done: 0, cached: 0, failed: 0, failedFiles: [], total: 0, phase: '', error: null, finishedAt: null };
       broadcast({ type: 'QF3_DL_PROGRESS', ...dlState });
     })());
   }

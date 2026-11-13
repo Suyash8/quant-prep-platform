@@ -62,8 +62,8 @@ export function ProbabilitySimulator({ params }: { params: Record<string, unknow
             return (
               <g key={k}>
                 <rect x={x} y={140 - bh} width={bw} height={bh} fill={ACCENT} opacity={0.75} />
-                <text x={x + bw / 2} y={136} textAnchor="middle" fontSize="10" fill={MUTED}>{k}</text>
-                <text x={x + bw / 2} y={132 - bh} textAnchor="middle" fontSize="10" fill={MUTED}>{((result.counts[k] / trials) * 100).toFixed(1)}%</text>
+                <text x={x + bw / 2} y={136} textAnchor="middle" fontSize="12" fill={MUTED}>{k}</text>
+                <text x={x + bw / 2} y={132 - bh} textAnchor="middle" fontSize="12" fill={MUTED}>{((result.counts[k] / trials) * 100).toFixed(1)}%</text>
               </g>
             );
           })}
@@ -71,7 +71,7 @@ export function ProbabilitySimulator({ params }: { params: Record<string, unknow
       </div>
       <div className="mt-2 grid sm:grid-cols-2 gap-3 items-end">
         <Slider label="trials" value={trials} min={10} max={20000} step={10} onChange={setTrials} format={v => v.toFixed(0)} />
-        <button onClick={() => setSeed(s => s + 1)} className="text-xs px-3 py-1.5 border rounded-md hover:bg-surface-2 w-fit">Resample (seed {seed})</button>
+        <button onClick={() => setSeed(s => s + 1)} className="text-[13px] px-3 py-1.5 border rounded-md hover:bg-surface-2 w-fit">Resample (seed {seed})</button>
       </div>
     </LabFrame>
   );
@@ -106,7 +106,7 @@ export function DistributionViewer({ params }: { params: Record<string, unknown>
         <polygon points={`${toX(mu - shade * sigma)},${toY(0)} ${bandPts.join(' ')} ${toX(mu + shade * sigma)},${toY(0)}`} fill={ACCENT} opacity={0.18} />
         <polyline fill="none" stroke={INK} strokeWidth={2} points={pts.join(' ')} />
         <line x1={toX(mu)} y1={toY(0)} x2={toX(mu)} y2={toY(normPdf(mu, mu, sigma))} stroke={MUTED} strokeDasharray="3 3" />
-        <text x={toX(mu)} y={toY(normPdf(mu, mu, sigma)) - 6} textAnchor="middle" fontSize="10" fill={MUTED}>μ</text>
+        <text x={toX(mu)} y={toY(normPdf(mu, mu, sigma)) - 6} textAnchor="middle" fontSize="12" fill={MUTED}>μ</text>
       </svg>
       <div className="mt-2 grid sm:grid-cols-3 gap-3">
         <Slider label="μ" value={mu} min={-5} max={5} step={0.1} onChange={setMu} />
@@ -155,7 +155,7 @@ export function RandomWalk({ params }: { params: Record<string, unknown> }) {
       <div className="mt-2 grid sm:grid-cols-3 gap-3">
         <Slider label="paths" value={paths} min={1} max={20} step={1} onChange={setPaths} format={v => v.toFixed(0)} />
         <Slider label="step vol" value={vol} min={0.2} max={3} step={0.1} onChange={setVol} />
-        <button onClick={() => setSeed(s => s + 1)} className="text-xs px-3 py-1.5 border rounded-md hover:bg-surface-2 w-fit self-center">Resample</button>
+        <button onClick={() => setSeed(s => s + 1)} className="text-[13px] px-3 py-1.5 border rounded-md hover:bg-surface-2 w-fit self-center">Resample</button>
       </div>
     </LabFrame>
   );
@@ -190,12 +190,12 @@ export function BrownianMotion({ params }: { params: Record<string, unknown> }) 
         <line x1={P} y1={H - P} x2={W - P} y2={H - P} stroke={FAINT} />
         <polyline fill="none" stroke={ACCENT} strokeWidth={1.8}
           points={data.map((v, i) => `${toX(i)},${toY(v)}`).join(' ')} />
-        <text x={toX(steps) - 4} y={toY(data[steps - 1])} textAnchor="end" fontSize="11" fill={ACCENT}>{fmt(data[steps - 1], 1)}</text>
+        <text x={toX(steps) - 4} y={toY(data[steps - 1])} textAnchor="end" fontSize="12" fill={ACCENT}>{fmt(data[steps - 1], 1)}</text>
       </svg>
       <div className="mt-2 grid sm:grid-cols-3 gap-3">
         <Slider label="drift μ" value={drift} min={-0.1} max={0.3} step={0.01} onChange={setDrift} />
         <Slider label="vol σ" value={vol} min={0.02} max={0.6} step={0.01} onChange={setVol} />
-        <button onClick={() => setSeed(s => s + 1)} className="text-xs px-3 py-1.5 border rounded-md hover:bg-surface-2 w-fit self-center">Resample</button>
+        <button onClick={() => setSeed(s => s + 1)} className="text-[13px] px-3 py-1.5 border rounded-md hover:bg-surface-2 w-fit self-center">Resample</button>
       </div>
     </LabFrame>
   );
@@ -220,12 +220,12 @@ export function ConfidenceIntervalLab({ params }: { params: Record<string, unkno
       <svg viewBox={`0 0 ${W} 110`} className="w-full h-auto">
         <line x1={P} y1={62} x2={W - P} y2={62} stroke={FAINT} />
         <line x1={toX(0)} y1={30} x2={toX(0)} y2={94} stroke={MUTED} strokeDasharray="3 3" />
-        <text x={toX(0)} y={24} textAnchor="middle" fontSize="10" fill={MUTED}>0</text>
+        <text x={toX(0)} y={24} textAnchor="middle" fontSize="12" fill={MUTED}>0</text>
         <line x1={toX(diff - half)} y1={62} x2={toX(diff + half)} y2={62} stroke={ACCENT} strokeWidth={3} />
         <line x1={toX(diff - half)} y1={52} x2={toX(diff - half)} y2={72} stroke={ACCENT} strokeWidth={2} />
         <line x1={toX(diff + half)} y1={52} x2={toX(diff + half)} y2={72} stroke={ACCENT} strokeWidth={2} />
         <circle cx={toX(diff)} cy={62} r={4.5} fill={ACCENT} />
-        <text x={toX(diff)} y={92} textAnchor="middle" fontSize="10" fill={INK}>{fmt(diff, 4)}</text>
+        <text x={toX(diff)} y={92} textAnchor="middle" fontSize="12" fill={INK}>{fmt(diff, 4)}</text>
       </svg>
       <div className="mt-2 grid sm:grid-cols-3 gap-3">
         <Slider label="estimate" value={diff} min={-0.03} max={0.03} step={0.0005} onChange={setDiff} format={v => v.toFixed(4)} />
@@ -269,12 +269,12 @@ export function MarkovChainSim({ params }: { params: Record<string, unknown> }) 
             <g key={i}>
               {i > 0 && <line x1={20 + ((i - 1) * (W - 40)) / Math.max(run.length - 1, 1)} y1={60 + (((i - 1) % 2) * 16 - 8)} x2={x} y2={y} stroke={MUTED} />}
               <circle cx={x} cy={y} r={11} fill={i === 0 ? ACCENT : 'var(--surface)'} stroke={ACCENT} />
-              <text x={x} y={y + 3.5} textAnchor="middle" fontSize="8.5" fill={i === 0 ? '#fff' : INK}>{s.slice(0, 4)}</text>
+              <text x={x} y={y + 3.5} textAnchor="middle" fontSize="12" fill={i === 0 ? '#fff' : INK}>{s.slice(0, 4)}</text>
             </g>
           );
         })}
       </svg>
-      <button onClick={() => setSeed(s => s + 1)} className="mt-2 text-xs px-3 py-1.5 border rounded-md hover:bg-surface-2">Resample</button>
+      <button onClick={() => setSeed(s => s + 1)} className="mt-2 text-[13px] px-3 py-1.5 border rounded-md hover:bg-surface-2">Resample</button>
     </LabFrame>
   );
 }
@@ -324,7 +324,7 @@ export function NormalConvergence({ params }: { params: Record<string, unknown> 
       </svg>
       <div className="mt-2 grid sm:grid-cols-2 gap-3">
         <Slider label="trials" value={trials} min={200} max={8000} step={100} onChange={setTrials} format={v => v.toFixed(0)} />
-        <button onClick={() => setSeed(s => s + 1)} className="text-xs px-3 py-1.5 border rounded-md hover:bg-surface-2 w-fit self-center">Resample</button>
+        <button onClick={() => setSeed(s => s + 1)} className="text-[13px] px-3 py-1.5 border rounded-md hover:bg-surface-2 w-fit self-center">Resample</button>
       </div>
     </LabFrame>
   );
@@ -391,7 +391,7 @@ export function RegressionLab({ params }: { params: Record<string, unknown> }) {
       </svg>
       <div className="mt-2 grid sm:grid-cols-2 gap-3">
         <Slider label="poly degree" value={deg} min={1} max={12} step={1} onChange={setDeg} format={v => v.toFixed(0)} />
-        <button onClick={() => setSeed(s => s + 1)} className="text-xs px-3 py-1.5 border rounded-md hover:bg-surface-2 w-fit self-center">New sample</button>
+        <button onClick={() => setSeed(s => s + 1)} className="text-[13px] px-3 py-1.5 border rounded-md hover:bg-surface-2 w-fit self-center">New sample</button>
       </div>
     </LabFrame>
   );
@@ -432,7 +432,7 @@ export function TimeSeriesDecompose({ params }: { params: Record<string, unknown
       </svg>
       <div className="mt-2 grid sm:grid-cols-2 gap-3">
         <Slider label="trend slope" value={trend} min={-1} max={1.5} step={0.05} onChange={() => {}} />
-        <button onClick={() => setSeed(s => s + 1)} className="text-xs px-3 py-1.5 border rounded-md hover:bg-surface-2 w-fit self-center">Resample noise</button>
+        <button onClick={() => setSeed(s => s + 1)} className="text-[13px] px-3 py-1.5 border rounded-md hover:bg-surface-2 w-fit self-center">Resample noise</button>
       </div>
     </LabFrame>
   );
