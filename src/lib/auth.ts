@@ -112,13 +112,37 @@ export async function requireUser() {
   return user;
 }
 
-// ---------- simple in-memory rate limiter ----------
+// ---------- bounded rate limiter with automatic TTL eviction ----------
 
-
+const MAX_RATE_LIMIT_BUCKETS = 5000;
 const buckets = new Map<string, { tokens: number; last: number }>();
+
+function pruneBuckets(now: number) {
+  for (const [k, v] of buckets.entries()) {
+    // If inactive for > 15 minutes, remove it
+    if (now - v.last > 15 * 60 * 1000) {
+      buckets.delete(k);
+    }
+  }
+  // Hard cap safeguard if under a massive distributed scan
+  if (buckets.size > MAX_RATE_LIMIT_BUCKETS) {
+    const toDelete = buckets.size - MAX_RATE_LIMIT_BUCKETS;
+    let count = 0;
+    for (const k of buckets.keys()) {
+      buckets.delete(k);
+      if (++count >= toDelete) break;
+    }
+  }
+}
+
+let lastPrune = 0;
 
 export function rateLimit(key: string, capacity = 10, refillPerSec = 0.2): boolean {
   const now = Date.now();
+  if (now - lastPrune > 60_000 || buckets.size > MAX_RATE_LIMIT_BUCKETS) {
+    pruneBuckets(now);
+    lastPrune = now;
+  }
   const b = buckets.get(key) ?? { tokens: capacity, last: now };
   b.tokens = Math.min(capacity, b.tokens + ((now - b.last) / 1000) * refillPerSec);
   b.last = now;

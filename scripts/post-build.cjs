@@ -39,9 +39,15 @@ if (fs.existsSync(publicSrc)) {
   console.log('[post-build] copied public -> .next/standalone/public');
 }
 
-// Content JSONs are needed at runtime by src/lib/content.ts (fs reads).
+// Content JSONs are needed at runtime by src/lib/content.ts and v5 preview routes (fs reads).
 const contentSrc = path.join(root, 'content');
 if (fs.existsSync(contentSrc)) {
   copyDir(contentSrc, path.join(standalone, 'content'));
   console.log('[post-build] copied content -> .next/standalone/content');
+}
+
+const contentV5Src = path.join(root, 'content-v5');
+if (fs.existsSync(contentV5Src)) {
+  copyDir(contentV5Src, path.join(standalone, 'content-v5'));
+  console.log('[post-build] copied content-v5 -> .next/standalone/content-v5');
 }

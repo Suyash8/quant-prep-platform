@@ -14,9 +14,19 @@ const RUNNER_URL = process.env.CODE_RUNNER_URL ?? 'http://127.0.0.1:3010';
 const IS_SERVERLESS = process.env.VERCEL === '1';
 let starting = false;
 
+function runnerHeaders(extra?: Record<string, string>): Record<string, string> {
+  const h: Record<string, string> = { ...extra };
+  const token = process.env.CODE_RUNNER_AUTH_TOKEN;
+  if (token) h['Authorization'] = `Bearer ${token}`;
+  return h;
+}
+
 async function ping(): Promise<boolean> {
   try {
-    const res = await fetch(`${RUNNER_URL}/health`, { signal: AbortSignal.timeout(1200) });
+    const res = await fetch(`${RUNNER_URL}/health`, {
+      headers: runnerHeaders(),
+      signal: AbortSignal.timeout(1200),
+    });
     return res.ok;
   } catch {
     return false;
@@ -65,7 +75,7 @@ export async function runnerPost<T>(endpoint: '/submit' | '/run', body: unknown)
   if (!ok) throw new Error('RUNNER_UNAVAILABLE');
   const res = await fetch(`${RUNNER_URL}${endpoint}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: runnerHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(180_000),
   });
@@ -86,7 +96,7 @@ export async function judgeRuntimeStatus(): Promise<{ ok: boolean; reason?: stri
   else if (!(await ensureRunner())) v = { ok: false, reason: 'The code runner is not running.' };
   else {
     try {
-      const h = (await (await fetch(`${RUNNER_URL}/health`, { signal: AbortSignal.timeout(2500) })).json()) as { sandbox?: { active?: boolean }; toolchain?: { pythonMeetsBaseline?: boolean; gppMeetsBaseline?: boolean } };
+      const h = (await (await fetch(`${RUNNER_URL}/health`, { headers: runnerHeaders(), signal: AbortSignal.timeout(2500) })).json()) as { sandbox?: { active?: boolean }; toolchain?: { pythonMeetsBaseline?: boolean; gppMeetsBaseline?: boolean } };
       if (h.sandbox?.active !== true) v = { ok: false, reason: 'The code runner is not isolated on this machine (bubblewrap sandbox unavailable), so code is not run.' };
       else if (h.toolchain?.pythonMeetsBaseline !== true || h.toolchain?.gppMeetsBaseline !== true) v = { ok: false, reason: 'The runner toolchain is below Python 3.12 / g++ 12.4, so code is not judged. Point PYTHON_BIN and CXX_BIN at supported versions.' };
       else v = { ok: true };

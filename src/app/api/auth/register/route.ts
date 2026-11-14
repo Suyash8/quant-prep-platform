@@ -25,13 +25,22 @@ export async function POST(req: NextRequest) {
   if (existing) {
     return NextResponse.json({ error: 'An account with this email already exists. Try signing in.' }, { status: 409 });
   }
-  const count = await db.user.count();
+  const normalizedEmail = email.toLowerCase();
+  const initialAdmin = (process.env.INITIAL_ADMIN_EMAIL || '').trim().toLowerCase();
+  let role = 'learner';
+  if (initialAdmin && normalizedEmail === initialAdmin) {
+    role = 'admin';
+  } else if (!initialAdmin) {
+    const count = await db.user.count();
+    if (count === 0) role = 'admin';
+  }
+
   const user = await db.user.create({
     data: {
       name,
-      email: email.toLowerCase(),
+      email: normalizedEmail,
       passwordHash: hashPassword(password),
-      role: count === 0 ? 'admin' : 'learner',
+      role,
     },
   });
   await createSession(user.id);

@@ -22,7 +22,8 @@ import { tmpdir, totalmem } from 'node:os';
 import path from 'node:path';
 
 const PORT = Number(process.env.QF_RUNNER_PORT) || 3010;   // NOT the generic PORT variable: the web app passes its own PORT to a runner it spawns
-const HOST = '127.0.0.1';
+const HOST = process.env.QF_RUNNER_HOST || '127.0.0.1';
+const AUTH_TOKEN = process.env.CODE_RUNNER_AUTH_TOKEN;
 const MAX_CONCURRENT = 2;
 const MAX_CODE_BYTES = 128 * 1024;
 const MAX_OUTPUT_BYTES = 4 * 1024 * 1024;   // KILL threshold for stdout while judging: stored v5 expected outputs reach 1.22 MB, so a 256 KiB cap failed correct solutions (output_limit). A runaway printer is still killed.
@@ -219,6 +220,12 @@ Bun.serve({
   hostname: HOST,
   async fetch(req) {
     const url = new URL(req.url);
+    if (AUTH_TOKEN) {
+      const auth = req.headers.get('authorization');
+      if (auth !== `Bearer ${AUTH_TOKEN}`) {
+        return Response.json({ error: 'unauthorized' }, { status: 401 });
+      }
+    }
     if (req.method === 'GET' && url.pathname === '/health') {
       return Response.json({ ok: true, active, admission: { memBudgetMb: MEM_BUDGET_MB, reservedMb, queued: waiters.length, maxQueue: MAX_QUEUE, maxConcurrent: MAX_CONCURRENT, maxBodyBytes: MAX_BODY_BYTES }, sandbox: { requested: SANDBOX_REQUESTED, active: SANDBOX_ACTIVE, detail: SANDBOX_PROBE }, toolchain: { ...TOOLCHAIN, baseline: 'Python >= 3.12 and g++ >= 12.4', pythonMeetsBaseline: BASELINE.python, gppMeetsBaseline: BASELINE.gpp } });
     }

@@ -3,7 +3,7 @@ import Link from 'next/link';
 import {
   Check, Star, Lock, BookOpen, Sigma, TrendingUp, Code2, Cpu,
   BrainCircuit, Compass, Percent, Database, Layers, Play, ChevronDown,
-  Clock, Target, Binary, Puzzle, Coins, ArrowRight, 
+  Clock, Target, Binary, Puzzle, Coins, ArrowRight, X, Sparkles,
 } from 'lucide-react';
 import type { CurriculumMap } from '@/lib/content';
 import { buildCurriculumGraph, isUnlockedInGraph } from '@/lib/curriculum-graph';
@@ -573,12 +573,15 @@ function ModuleTrail({
         <span className="chip tnum shrink-0">{modDone}/{mod.lessons.length}</span>
       </div>
       {/* trail sits on a soft band so the winding path reads as intentional, band width hugs the zigzag so there are no dead margins */}
-      <div className="relative flex flex-col items-center rounded-[44px] bg-surface-2/45 dark:bg-surface-2/25 border-2 border-dashed border-border/70 px-4 sm:px-6 py-5 max-w-[300px] sm:max-w-[560px] mx-auto w-full">
+      <div className="relative flex flex-col items-center rounded-[36px] bg-surface-2/30 dark:bg-surface-2/15 border border-border/60 p-4 sm:p-8 max-w-[440px] mx-auto w-full overflow-visible">
         <Trail mod={mod} graph={graph} progress={progress} passed={passed} phaseColor={phaseColor} currentLessonId={currentLessonId} />
       </div>
     </div>
   );
 }
+
+const TRACK_WIDTH = 380;
+const PITCH = 130;
 
 function Trail({
   mod, graph, progress, passed, phaseColor, currentLessonId,
@@ -590,25 +593,116 @@ function Trail({
   phaseColor: string;
   currentLessonId?: string;
 }) {
+  const [selectedLesson, setSelectedLesson] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setSelectedLesson(null);
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, []);
+
+  const totalHeight = mod.lessons.length * PITCH + 60;
+  const coords = mod.lessons.map((_, i) => ({
+    cx: TRACK_WIDTH / 2 + 95 * Math.sin(i * 0.9),
+    cy: 65 + i * PITCH,
+  }));
+
   return (
-    <>
+    <div
+      className="relative w-full max-w-[380px] mx-auto select-none overflow-visible"
+      style={{ height: totalHeight }}
+      onClick={(e) => {
+        if (!(e.target as HTMLElement).closest('.path-node-wrapper')) {
+          setSelectedLesson(null);
+        }
+      }}
+    >
+      {/* Background SVG connecting spline trail */}
+      <svg
+        className="absolute inset-0 w-full h-full pointer-events-none overflow-visible"
+        viewBox={`0 0 ${TRACK_WIDTH} ${totalHeight}`}
+      >
+        <defs>
+          <filter id={`glow-${mod.id}`} x="-20%" y="-20%" width="140%" height="140%">
+            <feDropShadow dx="0" dy="2" stdDeviation="4" floodColor={phaseColor} floodOpacity="0.45" />
+          </filter>
+        </defs>
+
+        {/* Path segments */}
+        {mod.lessons.map((lesson, i) => {
+          if (i === mod.lessons.length - 1) return null;
+          const p1 = coords[i];
+          const p2 = coords[i + 1];
+          const dy = p2.cy - p1.cy;
+          const d = `M ${p1.cx} ${p1.cy} C ${p1.cx} ${p1.cy + dy * 0.5}, ${p2.cx} ${p2.cy - dy * 0.5}, ${p2.cx} ${p2.cy}`;
+          const isPassed = passed.has(lesson.id);
+          const nextUnlocked = isUnlockedInGraph(graph, mod.lessons[i + 1].id, passed);
+
+          return (
+            <g key={`track-${lesson.id}`}>
+              {/* Outer track groove */}
+              <path
+                d={d}
+                stroke="var(--border)"
+                strokeWidth="16"
+                strokeLinecap="round"
+                fill="none"
+                opacity="0.5"
+              />
+              {/* Inner track channel */}
+              <path
+                d={d}
+                stroke="var(--surface-3)"
+                strokeWidth="10"
+                strokeLinecap="round"
+                fill="none"
+              />
+              {/* Active / completed progress fill */}
+              {isPassed ? (
+                <path
+                  d={d}
+                  stroke={phaseColor}
+                  strokeWidth="10"
+                  strokeLinecap="round"
+                  fill="none"
+                  filter={`url(#glow-${mod.id})`}
+                />
+              ) : nextUnlocked ? (
+                <path
+                  d={d}
+                  stroke={phaseColor}
+                  strokeWidth="6"
+                  strokeDasharray="8 8"
+                  strokeLinecap="round"
+                  fill="none"
+                  opacity="0.8"
+                />
+              ) : null}
+            </g>
+          );
+        })}
+      </svg>
+
+      {/* Nodes layer */}
       {mod.lessons.map((lesson, i) => {
+        const coord = coords[i];
         const st = progress.get(lesson.id)?.status ?? 'not_started';
         const unlocked = isUnlockedInGraph(graph, lesson.id, passed);
         const isCurrent = lesson.id === currentLessonId;
-        const last = i === mod.lessons.length - 1;
+        const isSelected = selectedLesson === lesson.id;
+
         return (
           <div
             key={lesson.id}
-            className={cn('relative flex flex-col items-center transition-transform duration-200', OFFSETS[i % 8], isCurrent && 'mt-7')}
+            className="path-node-wrapper absolute -translate-x-1/2 -translate-y-1/2"
+            style={{
+              left: coord.cx,
+              top: coord.cy,
+              zIndex: isSelected ? 40 : isCurrent ? 25 : 15,
+            }}
           >
-            {!last && (
-              <span
-                aria-hidden
-                className={cn('absolute top-[82px] bottom-0 w-[26px] rounded-full', passed.has(lesson.id) ? '' : 'bg-surface-3')}
-                style={passed.has(lesson.id) ? { background: phaseColor, opacity: 0.55 } : undefined}
-              />
-            )}
             <PathNode
               lessonId={lesson.id}
               title={lesson.title}
@@ -617,17 +711,28 @@ function Trail({
               unlocked={unlocked}
               isCurrent={!!isCurrent}
               color={phaseColor}
+              isSelected={isSelected}
+              onToggle={() => setSelectedLesson(prev => prev === lesson.id ? null : lesson.id)}
+              onClose={() => setSelectedLesson(null)}
             />
-            {!last && <div className="h-3" />}
           </div>
         );
       })}
-    </>
+    </div>
   );
 }
 
 function PathNode({
-  lessonId, title, minutes, status, unlocked, isCurrent, color,
+  lessonId,
+  title,
+  minutes,
+  status,
+  unlocked,
+  isCurrent,
+  color,
+  isSelected,
+  onToggle,
+  onClose,
 }: {
   lessonId: string;
   title: string;
@@ -636,8 +741,11 @@ function PathNode({
   unlocked: boolean;
   isCurrent: boolean;
   color: string;
+  isSelected: boolean;
+  onToggle: () => void;
+  onClose: () => void;
 }) {
-  const size = isCurrent ? 'h-[94px] w-[94px]' : 'h-[74px] w-[74px]';
+  const size = isCurrent ? 'h-[86px] w-[86px]' : 'h-[72px] w-[72px]';
   const ring = isCurrent ? 'anim-pulse-ring' : '';
 
   let inner: React.ReactNode;
@@ -655,45 +763,102 @@ function PathNode({
   } else if (!unlocked) {
     bg = 'var(--surface-3)';
     shadow = 'var(--border-strong)';
-    inner = <Lock className="h-7 w-7 text-faint" />;
+    inner = <Lock className="h-6 w-6 text-faint" />;
   } else {
     bg = `linear-gradient(160deg, ${color} 0%, ${hexToRgba(color, 0.72)} 100%)`;
     shadow = hexToRgba(color, 0.5);
     inner = <Play className="h-8 w-8 text-white fill-white" />;
   }
 
-  const body = (
-    <span className={cn('path-node relative flex flex-col items-center select-none', !unlocked && 'cursor-default')}>
+  return (
+    <div className="relative flex flex-col items-center">
+      {/* START Callout Badge */}
       {isCurrent && (
-        <span className="absolute -top-11 left-1/2 -translate-x-1/2 z-20 whitespace-nowrap rounded-xl bg-foreground px-4 py-2 text-[12px] font-black tracking-wide text-background anim-bob shadow-md">
+        <span className="absolute -top-11 left-1/2 -translate-x-1/2 z-30 whitespace-nowrap rounded-xl bg-foreground px-3.5 py-1.5 text-[11px] font-black tracking-wider text-background uppercase anim-bob shadow-lg border border-border">
           START
         </span>
       )}
-      <span
-        className={cn(size, 'relative z-10 rounded-full flex items-center justify-center border-[3.5px] border-white dark:border-[#0f1622]', ring)}
+
+      {/* Node Circle Button */}
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-label={`${title} (${status})`}
+        aria-expanded={isSelected}
+        className={cn(
+          'path-node relative z-10 rounded-full flex items-center justify-center border-[3.5px] border-white dark:border-[#0f1622] transition-transform duration-200 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-accent',
+          size,
+          ring,
+          unlocked ? 'cursor-pointer hover:scale-105 active:scale-95' : 'cursor-default opacity-85'
+        )}
         style={{ background: bg, boxShadow: `0 6px 0 0 ${shadow}` }}
       >
         {inner}
-      </span>
-      <span
-        className={cn(
-          'relative z-10 mt-2 text-center text-[13px] font-extrabold leading-tight bg-background px-2 py-0.5 rounded-lg',
-          unlocked ? 'text-foreground' : 'text-faint',
-        )}
-        style={{ maxWidth: 200 }}
-      >
-        {title}
-      </span>
-      <span className="relative z-10 text-[12px] font-bold text-faint tnum bg-background px-1.5 rounded">{minutes} min</span>
-    </span>
-  );
+      </button>
 
-  if (!unlocked) {
-    return <span aria-label={`${title} (locked)`} title={`${title}, locked until prerequisites are passed`}>{body}</span>;
-  }
-  return (
-    <Link href={`/learn/${lessonId}`} className="group">
-      {body}
-    </Link>
+      {/* Node Label underneath */}
+      <div className="absolute top-[44px] left-1/2 -translate-x-1/2 w-[160px] text-center pointer-events-none z-10 mt-1">
+        <p
+          className={cn(
+            'text-[13px] font-extrabold leading-snug line-clamp-2',
+            unlocked ? 'text-foreground' : 'text-faint'
+          )}
+        >
+          {title}
+        </p>
+        <span className="text-[11px] font-bold text-muted tnum">{minutes} min</span>
+      </div>
+
+      {/* Duolingo-Grade Interactive Popover Card */}
+      {isSelected && (
+        <div
+          className="absolute z-50 bottom-[95px] left-1/2 -translate-x-1/2 w-[260px] sm:w-[280px] p-4 rounded-2xl bg-surface/95 dark:bg-[#161f2e]/95 backdrop-blur-md border-2 border-border shadow-[0_16px_36px_rgba(0,0,0,0.35)] anim-pop-in text-left select-text"
+        >
+          <div className="flex items-center justify-between gap-2 mb-1.5">
+            <span
+              className="text-[11px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md"
+              style={{ background: hexToRgba(color, 0.15), color }}
+            >
+              {status === 'mastered' ? 'Mastered' : status === 'passed' ? 'Completed' : unlocked ? 'Up Next' : 'Locked'}
+            </span>
+            <button
+              type="button"
+              onClick={onClose}
+              className="h-6 w-6 rounded-lg text-muted hover:text-foreground hover:bg-surface-2 flex items-center justify-center transition-colors"
+              aria-label="Close"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+
+          <h4 className="text-[15px] font-black text-foreground tracking-tight leading-snug">{title}</h4>
+          <p className="text-[12px] font-semibold text-muted mt-1 flex items-center gap-2">
+            <span>⏱ ~{minutes} min</span>
+            <span>·</span>
+            <span className="text-warning font-bold flex items-center gap-0.5">
+              <Sparkles className="h-3 w-3" /> +50 XP
+            </span>
+          </p>
+
+          <div className="mt-3.5 pt-3 border-t border-border">
+            {unlocked ? (
+              <Link
+                href={`/learn/${lessonId}`}
+                className="btn3d btn3d-primary w-full py-2.5 text-center text-[13px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 shadow-md"
+              >
+                {status === 'passed' || status === 'mastered' ? 'Review Lesson' : 'Start Lesson'} <ArrowRight className="h-4 w-4" />
+              </Link>
+            ) : (
+              <p className="text-[12px] font-bold text-faint text-center py-1">
+                🔒 Complete prerequisite lessons above to unlock.
+              </p>
+            )}
+          </div>
+
+          {/* Bottom Arrow Pointer */}
+          <div className="absolute -bottom-2.5 left-1/2 -translate-x-1/2 w-4 h-4 rotate-45 bg-surface dark:bg-[#161f2e] border-r-2 border-b-2 border-border pointer-events-none" />
+        </div>
+      )}
+    </div>
   );
 }
