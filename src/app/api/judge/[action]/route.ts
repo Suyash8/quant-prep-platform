@@ -32,7 +32,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ action: st
   const problem = getProblem(slug);
   if (!problem) return NextResponse.json({ error: 'Unknown problem.' }, { status: 404 });
 
-  // Same fail-closed gate as /api/v5/code: nothing runs unless the runner is isolated on a supported toolchain (QF_V5_CODE_DEV=1 waives in development).
+  // Fail-closed gate: nothing runs unless the runner is isolated on a supported toolchain.
   { const rt = await judgeRuntimeStatus(); if (!rt.ok) return NextResponse.json({ state: 'runtime-unavailable', error: 'Code execution is not available right now. Nothing was run or judged and this is not counted as incorrect.', reason: rt.reason }, { status: 503 }); }
 
   if (language === 'sql') {

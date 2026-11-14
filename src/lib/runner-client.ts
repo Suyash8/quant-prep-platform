@@ -87,12 +87,12 @@ export async function runnerPost<T>(endpoint: '/submit' | '/run', body: unknown)
 }
 
 /** The judge may run learners' code only on an ISOLATED runner on a supported toolchain. FAIL CLOSED: if the runner cannot be reached or does not say so, nothing is judged.
- *  Production needs sandbox.active and Python >= 3.12 / g++ >= 12.4 (the qualification baseline). QF_V5_CODE_DEV=1 (development and tests only) waives both. Cached for 5 s. */
+ *  Production needs sandbox.active and Python >= 3.12 / g++ >= 12.4 (the qualification baseline). CODE_RUNNER_DEV=1 (development and tests only) waives both. Cached for 5 s. */
 let rtCache: { at: number; v: { ok: boolean; reason?: string } } | null = null;
 export async function judgeRuntimeStatus(): Promise<{ ok: boolean; reason?: string }> {
   if (rtCache && Date.now() - rtCache.at < 5000) return rtCache.v;
   let v: { ok: boolean; reason?: string };
-  if (process.env.QF_V5_CODE_DEV === '1') v = { ok: true };
+  if (process.env.CODE_RUNNER_DEV === '1') v = { ok: true };
   else if (!(await ensureRunner())) v = { ok: false, reason: 'The code runner is not running.' };
   else {
     try {

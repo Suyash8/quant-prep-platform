@@ -149,11 +149,12 @@ export function listProblems(): { slug: string; title: string; difficulty: strin
 
 const problemCache = new Map<string, Problem>();
 export function getProblem(slug: string): Problem | null {
-  if (problemCache.has(slug)) return problemCache.get(slug)!;
-  const p = path.join(CONTENT_DIR, 'problems', `${slug}.json`);
+  const cleanSlug = slug.replace(/^qfp-/, '');
+  if (problemCache.has(cleanSlug)) return problemCache.get(cleanSlug)!;
+  const p = path.join(CONTENT_DIR, 'problems', `${cleanSlug}.json`);
   if (!fs.existsSync(p)) return null;
   const P = JSON.parse(fs.readFileSync(p, 'utf8')) as Problem;
-  problemCache.set(slug, P);
+  problemCache.set(cleanSlug, P);
   return P;
 }
 

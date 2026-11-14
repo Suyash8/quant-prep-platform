@@ -26,10 +26,10 @@ const HOST = process.env.QF_RUNNER_HOST || '127.0.0.1';
 const AUTH_TOKEN = process.env.CODE_RUNNER_AUTH_TOKEN;
 const MAX_CONCURRENT = 2;
 const MAX_CODE_BYTES = 128 * 1024;
-const MAX_OUTPUT_BYTES = 4 * 1024 * 1024;   // KILL threshold for stdout while judging: stored v5 expected outputs reach 1.22 MB, so a 256 KiB cap failed correct solutions (output_limit). A runaway printer is still killed.
+const MAX_OUTPUT_BYTES = 4 * 1024 * 1024;   // KILL threshold for stdout while judging: large test expected outputs reach 1.22 MB, so a 256 KiB cap failed correct solutions (output_limit). A runaway printer is still killed.
 const MAX_STDERR_BYTES = 256 * 1024;
 const MAX_DISPLAY_BYTES = 256 * 1024;      // what /run returns to the client
-const MAX_STDIN_BYTES = 4 * 1024 * 1024;   // v5 problem tests include a ~1.06 MB input; a 1 MiB cap silently truncated it and failed correct solutions
+const MAX_STDIN_BYTES = 4 * 1024 * 1024;   // problem tests include a ~1.06 MB input; a 1 MiB cap silently truncated it and failed correct solutions
 
 
 // ---- Sandbox (bubblewrap) -------------------------------------------------------------------------

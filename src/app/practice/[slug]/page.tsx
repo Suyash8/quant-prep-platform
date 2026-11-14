@@ -34,12 +34,14 @@ export default async function ProblemPage({ params }: { params: Promise<{ slug: 
   const timeLimitS = (problem.timeLimitMs / 1000).toFixed(0);
 
   const stubs: Record<string, string> = {};
-  if (problem.solutions.cpp) {
-    stubs.cpp17 = `#include <bits/stdc++.h>\nusing namespace std;\n\nint main() {\n    ios::sync_with_stdio(false);\n    cin.tie(nullptr);\n    // TODO: solve - read from stdin, print to stdout\n    return 0;\n}\n`;
-    stubs.cpp20 = stubs.cpp17;
+  const probAny = problem as Record<string, any>;
+  if (problem.solutions?.cpp || probAny.starter?.cpp) {
+    const starterCpp = probAny.starter?.cpp || `#include <bits/stdc++.h>\nusing namespace std;\n\nint main() {\n    ios::sync_with_stdio(false);\n    cin.tie(nullptr);\n    // TODO: solve - read from stdin, print to stdout\n    return 0;\n}\n`;
+    stubs.cpp17 = starterCpp;
+    stubs.cpp20 = starterCpp;
   }
-  if (problem.solutions.python) {
-    stubs.python = `import sys\n\ndef main():\n    data = sys.stdin.read().split()\n    # TODO: solve - parse from data, print answers\n    pass\n\nmain()\n`;
+  if (problem.solutions?.python || probAny.starter?.python) {
+    stubs.python = probAny.starter?.python || `import sys\n\ndef main():\n    data = sys.stdin.read().split()\n    # TODO: solve - parse from data, print answers\n    pass\n\nmain()\n`;
   }
 
   // Only lessons that exist: an unresolved id is dropped, never shown as a dead link.

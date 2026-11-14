@@ -1,60 +1,149 @@
 'use client';
-import { signOutEverywhere } from '@/lib/v5/signout';
 
-import { SyncErrorNotice } from '@/components/sync-error-notice';
 import * as React from 'react';
 import { useTheme } from 'next-themes';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
-import { Target, UserRound, Palette, ShieldCheck, LogOut, Monitor, Sun, Moon, Flame, Check, Accessibility } from 'lucide-react';
+import {
+  Target, UserRound, Palette, ShieldCheck, LogOut, Monitor, Sun, Moon,
+  Flame, Check, Accessibility, KeyRound, Download, Trash2, AlertTriangle,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { SyncErrorNotice } from '@/components/sync-error-notice';
 
 export function SettingsForm({ user }: { user: { name: string; email: string; role: string; memberSince?: string | Date } }) {
   const { theme: storedTheme, setTheme } = useTheme();
-  // next-themes reads localStorage on the client only; render the server's answer (no active option) until mounted, so hydration matches.
-  const [themeMounted, setThemeMounted] = React.useState(false); React.useEffect(() => setThemeMounted(true), []);
+  const [themeMounted, setThemeMounted] = React.useState(false);
+  React.useEffect(() => setThemeMounted(true), []);
   const theme = themeMounted ? storedTheme : undefined;
   const router = useRouter();
+
+  // Name state
   const [name, setName] = React.useState(user.name);
   const [busy, setBusy] = React.useState(false);
+
+  // Password state
+  const [currentPassword, setCurrentPassword] = React.useState('');
+  const [newPassword, setNewPassword] = React.useState('');
+  const [confirmPassword, setConfirmPassword] = React.useState('');
+  const [pwBusy, setPwBusy] = React.useState(false);
+
+  // Delete account state
+  const [deleteConfirm, setDeleteConfirm] = React.useState(false);
+  const [deleteBusy, setDeleteBusy] = React.useState(false);
+
+  // Gamification state
+  const [gamed, setGamed] = React.useState<{ xp: number; level: number; streakCount: number; longestStreak: number; dailyGoalXp: number; todayXp: number } | null>(null);
+  const [goalBusy, setGoalBusy] = React.useState(false);
+
+  React.useEffect(() => {
+    fetch('/api/gamification').then(r => (r.ok ? r.json() : null)).then(setGamed).catch(() => {});
+  }, []);
 
   async function saveName() {
     setBusy(true);
     try {
       const res = await fetch('/api/settings', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name }),
       });
-      if (!res.ok) { toast.error('Save failed.'); return; }
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        toast.error(d.error || 'Save failed.');
+        return;
+      }
       toast.success('Profile saved.');
       router.refresh();
-    } finally { setBusy(false); }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function changePassword(e: React.FormEvent) {
+    e.preventDefault();
+    if (!currentPassword) {
+      toast.error('Enter your current password.');
+      return;
+    }
+    if (newPassword.length < 8) {
+      toast.error('New password must be at least 8 characters.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast.error('New passwords do not match.');
+      return;
+    }
+
+    setPwBusy(true);
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentPassword, newPassword }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data.error || 'Failed to update password.');
+        return;
+      }
+      toast.success('Password updated successfully.');
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+    } finally {
+      setPwBusy(false);
+    }
+  }
+
+  async function deleteAccount() {
+    if (!deleteConfirm) {
+      setDeleteConfirm(true);
+      return;
+    }
+
+    setDeleteBusy(true);
+    try {
+      const res = await fetch('/api/settings', { method: 'DELETE' });
+      if (!res.ok) {
+        toast.error('Could not delete account. Please try again.');
+        return;
+      }
+      toast.success('Your account and all associated data have been deleted.');
+      router.push('/register');
+      router.refresh();
+    } finally {
+      setDeleteBusy(false);
+    }
   }
 
   async function logout() {
-    const r = await signOutEverywhere();
-    if (r === 'pending') { window.location.assign('/v5/learn'); return; }
-    router.push('/');
+    await fetch('/api/auth/logout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirmCurrent: true }),
+    }).catch(() => {});
+    router.push('/login');
     router.refresh();
   }
-
-  const [gamed, setGamed] = React.useState<{ xp: number; level: number; streakCount: number; longestStreak: number; dailyGoalXp: number; todayXp: number } | null>(null);
-  const [goalBusy, setGoalBusy] = React.useState(false);
-  React.useEffect(() => {
-    fetch('/api/gamification').then(r => (r.ok ? r.json() : null)).then(setGamed).catch(() => {});
-  }, []);
 
   async function setGoal(xp: number) {
     setGoalBusy(true);
     try {
       const res = await fetch('/api/gamification', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ dailyGoalXp: xp }),
       });
-      if (!res.ok) { toast.error('Could not save goal.'); return; }
+      if (!res.ok) {
+        toast.error('Could not save goal.');
+        return;
+      }
       setGamed(g => (g ? { ...g, dailyGoalXp: xp } : g));
       toast.success(`Daily goal set to ${xp} XP.`);
-    } finally { setGoalBusy(false); }
+    } finally {
+      setGoalBusy(false);
+    }
   }
 
   const themeOptions = [
@@ -66,7 +155,8 @@ export function SettingsForm({ user }: { user: { name: string; email: string; ro
   return (
     <div className="grid grid-cols-1 gap-5 lg:grid-cols-2 max-w-4xl min-w-0">
       <div className="lg:col-span-2 empty:hidden"><SyncErrorNotice /></div>
-      {/* gamification summary + daily goal */}
+
+      {/* Gamification summary + daily goal */}
       {gamed && (
         <section className="qf-card p-5 lg:col-span-2">
           <div>
@@ -76,7 +166,6 @@ export function SettingsForm({ user }: { user: { name: string; email: string; ro
                 <h2 className="font-black">Daily goal</h2>
                 <p className="text-[13px] font-semibold text-muted">How much XP do you want to chase each day?</p>
               </div>
-              {/* one highlighted chip, the rest are quiet text stats */}
               <div className="flex items-center gap-x-4 gap-y-1.5 flex-wrap">
                 <span className="chip chip-warning tnum"><Flame className="h-3 w-3" /> {gamed.streakCount}-day streak</span>
                 <span className="text-[15px] font-semibold text-muted whitespace-nowrap">Level <span className="font-black text-foreground tnum">{gamed.level}</span></span>
@@ -117,23 +206,28 @@ export function SettingsForm({ user }: { user: { name: string; email: string; ro
         </section>
       )}
 
-      {/* profile */}
+      {/* Profile */}
       <section className="qf-card p-5 flex flex-col">
         <div className="flex items-center gap-3">
           <span className="icon-tile icon-tile-neutral h-11 w-11"><UserRound className="h-6 w-6" /></span>
           <div>
             <h2 className="font-black">Profile</h2>
-            <p className="text-[13px] font-semibold text-muted">How your name appears across the app</p>
+            <p className="text-[13px] font-semibold text-muted">How your identity appears across the platform</p>
           </div>
         </div>
         <label className="block mt-4">
           <span className="text-[13px] font-extrabold text-muted uppercase tracking-wide">Display name</span>
           <div className="flex flex-wrap sm:flex-nowrap gap-2 mt-1.5">
-            <input value={name} onChange={e => setName(e.target.value)} className="qf-input min-w-0 flex-1" aria-label="Display name" />
+            <input
+              value={name}
+              onChange={e => setName(e.target.value)}
+              className="qf-input min-w-0 flex-1"
+              aria-label="Display name"
+            />
             <button
               onClick={saveName}
               disabled={busy || name === user.name}
-              className='btn3d btn3d-sm shrink-0'
+              className="btn3d btn3d-sm shrink-0"
             >
               {busy ? 'Saving…' : name === user.name ? (<><Check className="h-3.5 w-3.5" /> Saved</>) : 'Save'}
             </button>
@@ -141,27 +235,29 @@ export function SettingsForm({ user }: { user: { name: string; email: string; ro
         </label>
         <dl className="mt-4 space-y-2 text-[15px] font-semibold flex-1">
           <div className="flex items-center justify-between gap-3 rounded-xl bg-surface-2/60 px-3 py-2">
-            <dt className="text-muted">Email</dt><dd className="truncate">{user.email}</dd>
+            <dt className="text-muted">Email</dt>
+            <dd className="truncate">{user.email}</dd>
           </div>
           <div className="flex items-center justify-between gap-3 rounded-xl bg-surface-2/60 px-3 py-2">
-            <dt className="text-muted">Role</dt><dd><span className="chip chip-info">{user.role}</span></dd>
+            <dt className="text-muted">Role</dt>
+            <dd><span className="chip chip-info">{user.role}</span></dd>
           </div>
           {user.memberSince && (
             <div className="flex items-center justify-between gap-3 rounded-xl bg-surface-2/60 px-3 py-2">
-              <dt className="text-muted">Learning since</dt>
+              <dt className="text-muted">Member since</dt>
               <dd className="tnum">{new Date(user.memberSince).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}</dd>
             </div>
           )}
         </dl>
       </section>
 
-      {/* appearance */}
+      {/* Appearance */}
       <section className="qf-card p-5">
         <div className="flex items-center gap-3">
           <span className="icon-tile icon-tile-violet h-11 w-11"><Palette className="h-6 w-6" /></span>
           <div>
             <h2 className="font-black">Appearance</h2>
-            <p className="text-[13px] font-semibold text-muted">Pick the theme that is easy on your eyes</p>
+            <p className="text-[13px] font-semibold text-muted">Pick the color mode that matches your focus</p>
           </div>
         </div>
         <div className="mt-4 grid grid-cols-3 gap-2.5" role="radiogroup" aria-label="Theme">
@@ -184,74 +280,153 @@ export function SettingsForm({ user }: { user: { name: string; email: string; ro
             );
           })}
         </div>
-        {/* one compact note instead of three identical full-width rows */}
         <p className="mt-4 flex items-start gap-2.5 rounded-xl bg-surface-2/60 border border-border/50 px-3 py-2.5 text-[13px] font-semibold text-muted leading-relaxed">
           <Accessibility className="h-4 w-4 text-violet shrink-0 mt-0.5" aria-hidden />
-          <span>Reduced-motion preferences are respected and animations tone down automatically. Everything is keyboard-navigable with visible focus rings, and mathematics stays selectable, copyable and searchable.</span>
+          <span>Reduced-motion preferences are respected. Keyboard navigation, visible focus indicators, and accessible math rendering are active throughout.</span>
         </p>
       </section>
 
-      {/* privacy */}
+      {/* Security: Password change */}
+      <section className="qf-card p-5 flex flex-col">
+        <div className="flex items-center gap-3">
+          <span className="icon-tile icon-tile-accent h-11 w-11"><KeyRound className="h-6 w-6" /></span>
+          <div>
+            <h2 className="font-black">Security</h2>
+            <p className="text-[13px] font-semibold text-muted">Update your account password</p>
+          </div>
+        </div>
+        <form onSubmit={changePassword} className="mt-4 space-y-3">
+          <div>
+            <label className="text-[12px] font-extrabold text-muted uppercase tracking-wide block mb-1">Current Password</label>
+            <input
+              type="password"
+              value={currentPassword}
+              onChange={e => setCurrentPassword(e.target.value)}
+              className="qf-input w-full"
+              placeholder="••••••••••••"
+              required
+            />
+          </div>
+          <div>
+            <label className="text-[12px] font-extrabold text-muted uppercase tracking-wide block mb-1">New Password (min 8 chars)</label>
+            <input
+              type="password"
+              value={newPassword}
+              onChange={e => setNewPassword(e.target.value)}
+              className="qf-input w-full"
+              placeholder="••••••••••••"
+              minLength={8}
+              required
+            />
+          </div>
+          <div>
+            <label className="text-[12px] font-extrabold text-muted uppercase tracking-wide block mb-1">Confirm New Password</label>
+            <input
+              type="password"
+              value={confirmPassword}
+              onChange={e => setConfirmPassword(e.target.value)}
+              className="qf-input w-full"
+              placeholder="••••••••••••"
+              minLength={8}
+              required
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={pwBusy || !currentPassword || !newPassword}
+            className="btn3d btn3d-sm w-full mt-2"
+          >
+            {pwBusy ? 'Updating password…' : 'Update password'}
+          </button>
+        </form>
+      </section>
+
+      {/* Data & privacy / Export */}
       <section className="qf-card p-5 flex flex-col">
         <div className="flex items-center gap-3">
           <span className="icon-tile icon-tile-info h-11 w-11"><ShieldCheck className="h-6 w-6" /></span>
           <div>
             <h2 className="font-black">Data &amp; privacy</h2>
-            <p className="text-[13px] font-semibold text-muted">How your data is handled</p>
+            <p className="text-[13px] font-semibold text-muted">Your rights under GDPR &amp; CCPA</p>
           </div>
         </div>
-        {/* two-column definition grid: labels left on a shared column, values right with consistent padding */}
-        <dl className="mt-4 flex-1 grid grid-cols-1 sm:grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-0.5 sm:gap-y-2.5 content-start rounded-2xl border border-border/60 bg-surface-2/60 p-3.5 text-[15px] font-semibold">
-          {[
-            { k: 'Storage', v: 'Account and progress are kept in this deployment’s database. Drafts and the offline library are also kept on this device.' },
-            { k: 'Code you run', v: 'Sent to the code runner this deployment is set up with, to be run or checked.' },
-            { k: 'Passwords', v: 'Salted scrypt hashes, never plain text' },
-            { k: 'Sessions', v: 'httpOnly cookies with signed ids' },
-            { k: 'Third parties', v: 'This app loads no analytics, trackers, ads or outside fonts and scripts. The host and any code runner are chosen by whoever runs the deployment.' },
-          ].map(row => (
-            <React.Fragment key={row.k}>
-              <dt className="text-muted sm:pt-0 pt-2">{row.k}</dt>
-              <dd className="sm:text-right sm:pr-2 min-w-0">{row.v}</dd>
-            </React.Fragment>
-          ))}
-        </dl>
-        <p className="mt-3 text-[12px] font-semibold text-faint leading-relaxed">
-          To erase your data, contact the deployment administrator.
+        <p className="mt-3 text-[14px] font-semibold text-muted leading-relaxed">
+          You own your data. You can download an entire machine-readable JSON archive of your account, attempts, and XP ledger at any time.
         </p>
+        <div className="mt-4">
+          <a
+            href="/api/settings/export"
+            download
+            className="btn3d btn3d-sm btn3d-ghost w-full flex items-center justify-center gap-2"
+          >
+            <Download className="h-4 w-4" /> Export my personal data (JSON)
+          </a>
+        </div>
       </section>
 
-      {/* session */}
+      {/* Session */}
       <section className="qf-card p-5 flex flex-col">
         <div className="flex items-center gap-3">
-          <span className="icon-tile icon-tile-danger h-11 w-11"><LogOut className="h-6 w-6" /></span>
+          <span className="icon-tile icon-tile-neutral h-11 w-11"><LogOut className="h-6 w-6" /></span>
           <div>
-            <h2 className="font-black">Session</h2>
-            <p className="text-[13px] font-semibold text-muted">Done for now? Your streak will wait for you.</p>
+            <h2 className="font-black">Active session</h2>
+            <p className="text-[13px] font-semibold text-muted">Signed in as {user.email}</p>
           </div>
         </div>
-        <dl className="mt-4 space-y-2 text-[15px] font-semibold flex-1">
-          <div className="flex items-center justify-between gap-3 rounded-xl bg-surface-2/60 px-3 py-2">
-            <dt className="text-muted">Signed in as</dt>
-            <dd className="truncate max-w-[180px]">{user.email}</dd>
-          </div>
-          {gamed && (
-            <div className="flex items-start justify-between gap-3 rounded-xl bg-surface-2/60 px-3 py-2">
-              <dt className="text-muted">Today</dt>
-              <dd className="tnum min-w-[7.5rem] text-right">
-                {gamed.todayXp} / {gamed.dailyGoalXp} XP
-                <span className="prog-track mt-2 block">
-                  <span
-                    className={cn('prog-fill block', gamed.todayXp >= gamed.dailyGoalXp ? 'prog-fill-gold' : '')}
-                    style={{ width: `${Math.min(100, Math.round((gamed.todayXp / Math.max(gamed.dailyGoalXp, 1)) * 100))}%` }}
-                  />
-                </span>
-              </dd>
-            </div>
-          )}
-        </dl>
-        <button onClick={logout} className="btn3d btn3d-sm btn3d-ghost !border-danger/40 !text-danger hover:!bg-danger-soft mt-4 w-full">
+        <div className="mt-4 flex-1">
+          <p className="text-[14px] font-semibold text-muted">
+            Logging out ends your authenticated session on this browser. Your progress and streaks remain saved.
+          </p>
+        </div>
+        <button
+          onClick={logout}
+          className="btn3d btn3d-sm btn3d-ghost mt-4 w-full"
+        >
           <LogOut className="h-4 w-4" /> Sign out
         </button>
+      </section>
+
+      {/* Danger Zone: Account Deletion */}
+      <section className="qf-card p-5 border-danger/30 lg:col-span-2">
+        <div className="flex items-center gap-3">
+          <span className="icon-tile icon-tile-danger h-11 w-11"><Trash2 className="h-6 w-6 text-danger" /></span>
+          <div>
+            <h2 className="font-black text-danger">Danger zone</h2>
+            <p className="text-[13px] font-semibold text-muted">Permanent account removal</p>
+          </div>
+        </div>
+        <div className="mt-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 rounded-xl border border-danger/20 bg-danger/5 p-4">
+          <div>
+            <p className="font-bold text-[14px]">Delete account and all learning data</p>
+            <p className="text-[13px] text-muted">
+              Once deleted, your profile, test submissions, streaks, and mastery progress cannot be recovered.
+            </p>
+          </div>
+          {deleteConfirm ? (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setDeleteConfirm(false)}
+                className="btn3d btn3d-sm btn3d-ghost"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={deleteAccount}
+                disabled={deleteBusy}
+                className="btn3d btn3d-sm !bg-danger !text-white !border-danger"
+              >
+                {deleteBusy ? 'Deleting…' : 'Yes, delete permanently'}
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setDeleteConfirm(true)}
+              className="btn3d btn3d-sm !border-danger/50 !text-danger hover:!bg-danger-soft shrink-0"
+            >
+              <Trash2 className="h-4 w-4" /> Delete account
+            </button>
+          )}
+        </div>
       </section>
     </div>
   );

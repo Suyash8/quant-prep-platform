@@ -114,8 +114,6 @@ export function DashboardClient({ name }: { name: string }) {
           </div>
         </div>
 
-        <section className="qf-card mt-6 p-5 sm:p-6" aria-labelledby="rebuilt-path-heading"><p className="text-xs font-extrabold uppercase tracking-wide text-accent-ink">Rebuilt workspace</p><h2 id="rebuilt-path-heading" className="text-xl font-black mt-2">Learn with the rebuilt curriculum</h2><p className="text-muted leading-relaxed mt-2">Step-by-step lessons, focused checks and coding practice. Your classic lessons and tools remain available below. Progress in the two workspaces is tracked separately.</p><div className="flex flex-wrap gap-3 mt-4"><Link href="/v5/learn" className="btn3d">Open rebuilt learning path <ArrowRight className="h-4 w-4" /></Link><Link href="/v5/practice" className="btn3d btn3d-ghost">Rebuilt coding practice</Link></div></section>
-
         {/* Continue hero */}
         {nextLesson ? (
           <section className="mt-6">

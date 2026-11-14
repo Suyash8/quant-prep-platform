@@ -58,6 +58,8 @@ export async function createSession(userId: string): Promise<void> {
   const id = randomBytes(24).toString('hex');
   const expiresAt = new Date(Date.now() + SESSION_DAYS * 86400_000);
   await db.session.create({ data: { id, userId, expiresAt } });
+  // Opportunistic background pruning of expired sessions
+  db.session.deleteMany({ where: { expiresAt: { lt: new Date() } } }).catch(() => {});
   const jar = await cookies();
   jar.set(SESSION_COOKIE, sessionIdToCookie(id), {
     httpOnly: true,

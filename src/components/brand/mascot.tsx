@@ -1,13 +1,12 @@
 import * as React from 'react';
 
-/**
- * QuantFoundry mascot: an original "sigma creature".
- * Built only from SVG primitives and design tokens (no copied brand shapes):
- * a rounded green body, a darker belly edge, a small sigma mark, big eyes,
- * stubby limbs. Geometric on purpose so it scales and themes cleanly.
- */
 export type MascotPose = 'wave' | 'think' | 'cheer' | 'sleep' | 'lost' | 'offline' | 'celebrate';
 
+/**
+ * QuantFoundry Brand Emblem:
+ * A sleek, modern mathematical medallion featuring a precision-crafted
+ * Sigma symbol, jewel gradients, and subtle institutional finish.
+ */
 export function Mascot({
   pose = 'wave',
   size = 96,
@@ -20,132 +19,81 @@ export function Mascot({
   label?: string;
 }) {
   const w = size;
-  const h = size * 1.05;
-  const eyeClosed = pose === 'sleep';
-  const title = label ?? (pose === 'lost' ? 'The mascot looks lost' : 'QuantFoundry mascot');
+  const h = size;
+  const title = label ?? 'QuantFoundry Signature Emblem';
 
   return (
     <svg
       width={w}
       height={h}
-      viewBox="0 0 100 105"
-      fill="none"
-      role={label ? 'img' : undefined}
-      aria-hidden={label ? undefined : true}
+      viewBox="0 0 100 100"
       className={className}
+      role="img"
+      aria-label={title}
     >
       <title>{title}</title>
+      <defs>
+        <linearGradient id="qf-emblem-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="var(--accent-strong, #10b981)" />
+          <stop offset="100%" stopColor="var(--accent-deep, #047857)" />
+        </linearGradient>
+        <linearGradient id="qf-emblem-sheen" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stopColor="#ffffff" stopOpacity="0.28" />
+          <stop offset="100%" stopColor="#ffffff" stopOpacity="0" />
+        </linearGradient>
+        <filter id="qf-emblem-shadow" x="-20%" y="-20%" width="140%" height="140%">
+          <feDropShadow dx="0" dy="4" stdDeviation="6" floodColor="var(--accent-deep, #047857)" floodOpacity="0.4" />
+        </filter>
+      </defs>
 
-      {/* soft ground shadow */}
-      <ellipse cx="50" cy="97" rx="26" ry="5" fill="var(--shadow-hard)" opacity="0.35" />
-
-      {/* legs */}
-      <rect x="34" y="80" width="10" height="12" rx="5" fill="var(--accent-deep)" />
-      <rect x="56" y="80" width="10" height="12" rx="5" fill="var(--accent-deep)" />
-
-      {/* arms: pose-dependent */}
-      {pose === 'cheer' || pose === 'celebrate' ? (
-        <>
-          <rect x="8" y="42" width="9" height="22" rx="4.5" fill="var(--accent-strong)" transform="rotate(-24 12 52)" />
-          <rect x="83" y="42" width="9" height="22" rx="4.5" fill="var(--accent-strong)" transform="rotate(24 88 52)" />
-        </>
-      ) : pose === 'wave' ? (
-        <>
-          <rect x="9" y="46" width="9" height="20" rx="4.5" fill="var(--accent-strong)" transform="rotate(32 13 56)" />
-          <rect x="83" y="52" width="9" height="16" rx="4.5" fill="var(--accent-strong)" />
-        </>
-      ) : pose === 'think' ? (
-        <>
-          <rect x="10" y="54" width="9" height="16" rx="4.5" fill="var(--accent-strong)" transform="rotate(14 14 62)" />
-          <rect x="82" y="54" width="9" height="16" rx="4.5" fill="var(--accent-strong)" />
-        </>
-      ) : pose === 'offline' ? (
-        <>
-          <rect x="10" y="58" width="9" height="14" rx="4.5" fill="var(--accent-strong)" />
-          <rect x="82" y="58" width="9" height="14" rx="4.5" fill="var(--accent-strong)" />
-        </>
-      ) : (
-        <>
-          <rect x="10" y="54" width="9" height="16" rx="4.5" fill="var(--accent-strong)" />
-          <rect x="82" y="54" width="9" height="16" rx="4.5" fill="var(--accent-strong)" />
-        </>
-      )}
-
-      {/* body: rounded blob with darker belly edge */}
-      <path
-        d="M50 12c22 0 34 14 34 34 0 20-12 34-34 34S16 66 16 46c0-20 12-34 34-34z"
-        fill="var(--accent)"
-        stroke="var(--accent-deep)"
-        strokeWidth="3"
-      />
-      {/* belly */}
-      <path d="M50 34c13 0 20 8 20 18 0 10-7 18-20 18s-20-8-20-18c0-10 7-18 20-18z" fill="var(--accent-soft)" opacity="0.9" />
-
-      {/* sigma mark on the belly (the brand shape) */}
-      <path
-        d="M57 42v4l-9 8 9 8v4h-13v-4l8-8-8-8v-4h13z"
-        fill="var(--accent-deep)"
+      {/* Outer Glow Shield */}
+      <rect
+        x="8"
+        y="8"
+        width="84"
+        height="84"
+        rx="26"
+        fill="url(#qf-emblem-bg)"
+        filter="url(#qf-emblem-shadow)"
       />
 
-      {/* eyes */}
-      {eyeClosed ? (
-        <>
-          <path d="M36 48c2 3 6 3 8 0" stroke="var(--foreground)" strokeWidth="3" strokeLinecap="round" />
-          <path d="M56 48c2 3 6 3 8 0" stroke="var(--foreground)" strokeWidth="3" strokeLinecap="round" />
-        </>
-      ) : (
-        <>
-          <circle cx="39" cy="47" r="6.5" fill="#ffffff" />
-          <circle cx="61" cy="47" r="6.5" fill="#ffffff" />
-          <circle cx={pose === 'think' ? 41 : 39} cy={pose === 'think' ? 49 : 48} r="3" fill="var(--foreground)" />
-          <circle cx={pose === 'think' ? 63 : 61} cy={pose === 'think' ? 49 : 48} r="3" fill="var(--foreground)" />
-        </>
-      )}
+      {/* Inner Bevel Border */}
+      <rect
+        x="10"
+        y="10"
+        width="80"
+        height="80"
+        rx="24"
+        fill="none"
+        stroke="rgba(255, 255, 255, 0.45)"
+        strokeWidth="2.5"
+      />
 
-      {/* mouth */}
-      {pose === 'celebrate' || pose === 'cheer' ? (
-        <path d="M43 58c3 5 11 5 14 0" stroke="var(--accent-deep)" strokeWidth="3" strokeLinecap="round" fill="none" />
-      ) : pose === 'lost' ? (
-        <path d="M45 59c2 2 8 2 10 0" stroke="var(--accent-deep)" strokeWidth="3" strokeLinecap="round" />
-      ) : (
-        <path d="M44 57c3 4 9 4 12 0" stroke="var(--accent-deep)" strokeWidth="3" strokeLinecap="round" />
-      )}
+      {/* Top Glass Sheen */}
+      <path
+        d="M 10 34 C 10 20.7 20.7 10 34 10 L 66 10 C 79.3 10 90 20.7 90 34 L 90 42 C 60 52 40 40 10 48 Z"
+        fill="url(#qf-emblem-sheen)"
+        opacity="0.75"
+      />
 
-      {/* pose accessories */}
-      {pose === 'think' && (
-        <>
-          <circle cx="82" cy="26" r="3" fill="var(--info)" />
-          <circle cx="89" cy="17" r="4" fill="var(--info)" opacity="0.75" />
-          <circle cx="95" cy="7" r="5" fill="var(--info)" opacity="0.5" />
-        </>
-      )}
-      {pose === 'sleep' && (
-        <text x="72" y="22" fontSize="12" fontWeight="900" fill="var(--info)" fontFamily="var(--font-sans)">z</text>
-      )}
-      {pose === 'lost' && (
-        <text x="78" y="24" fontSize="16" fontWeight="900" fill="var(--warning)" fontFamily="var(--font-sans)">?</text>
-      )}
-      {pose === 'offline' && (
-        <g stroke="var(--info)" strokeWidth="3" strokeLinecap="round" fill="none">
-          <path d="M74 20c6 0 10 4 10 9 0 5-4 9-9 9H60" />
-          <path d="M66 31l-6 7 6 7" strokeLinejoin="round" />
-          <path d="M70 45l6 6" />
-        </g>
-      )}
+      {/* Bold Mathematical Sigma Mark */}
+      <path
+        d="M 33 28 L 67 28 C 68.5 28 69.5 29.5 69 31 L 64 40 L 49 40 L 59 50 L 49 60 L 64 60 L 69 69 C 69.5 70.5 68.5 72 67 72 L 33 72 C 31.5 72 30.5 70.5 31.5 69 L 47 50 L 31.5 31 C 30.5 29.5 31.5 28 33 28 Z"
+        fill="#ffffff"
+        style={{ filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.25))' }}
+      />
+
+      {/* Pose Special Accents */}
       {pose === 'celebrate' && (
-        <g stroke="var(--gold)" strokeWidth="3" strokeLinecap="round">
-          <path d="M12 26l3-6 3 6" />
-          <path d="M82 24l3-6 3 6" />
-          <path d="M50 4v6" stroke="var(--violet)" />
-          <circle cx="20" cy="12" r="2.5" fill="var(--flame)" stroke="none" />
-          <circle cx="80" cy="10" r="2.5" fill="var(--flame)" stroke="none" />
+        <g stroke="#ffd700" strokeWidth="2.5" strokeLinecap="round" fill="none">
+          <circle cx="88" cy="18" r="3" fill="#ffd700" stroke="none" />
+          <circle cx="12" cy="20" r="2.5" fill="#ffd700" stroke="none" />
+          <path d="M 85 30 L 92 24 M 82 12 L 87 6" />
         </g>
       )}
-      {pose === 'wave' && (
-        <g stroke="var(--info)" strokeWidth="3" strokeLinecap="round">
-          <path d="M4 30c1-3 3-5 6-6" />
-          <path d="M2 38c2-2 4-3 6-3" opacity="0.6" />
-        </g>
+
+      {pose === 'think' && (
+        <circle cx="82" cy="22" r="4.5" fill="var(--info, #38bdf8)" stroke="#ffffff" strokeWidth="2" />
       )}
     </svg>
   );

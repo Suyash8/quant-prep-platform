@@ -1,5 +1,4 @@
 'use client';
-import { signOutEverywhere } from '@/lib/v5/signout';
 
 import { APP_VERSION } from '@/lib/version';
 import Link from 'next/link';
@@ -125,8 +124,9 @@ function UserMenu({ name, isAdmin }: { name: string; isAdmin?: boolean }) {
     return () => document.removeEventListener('mousedown', close);
   }, []);
   const signOut = async () => {
-    const r = await signOutEverywhere();
-    if (r === 'pending') { window.location.assign('/v5/learn'); return; }   // locked locally; the /v5 screen explains that server sign-out is still pending
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } catch {}
     router.push('/');
     router.refresh();
   };
@@ -252,8 +252,6 @@ export function AppShell({ user, children, isAdmin }: { user: { name: string; em
           </div>
         </div>
       </header>
-
-      <nav aria-label="Workspace switcher" className="border-b border-border bg-surface-2"><div className="max-w-6xl mx-auto px-4 lg:px-6 py-3 flex flex-wrap items-center gap-x-5 gap-y-1 text-sm"><span className="font-extrabold text-muted">Classic workspace</span><Link href="/v5/learn" className="min-h-11 inline-flex items-center font-extrabold text-accent-ink underline underline-offset-4">Rebuilt learning path →</Link><Link href="/v5/practice" className="min-h-11 inline-flex items-center font-extrabold text-accent-ink underline underline-offset-4">Rebuilt coding practice →</Link><span className="text-muted text-xs leading-relaxed">Classic and rebuilt progress are tracked separately.</span></div></nav>
 
       <main id="content" className="flex-1 w-full pb-24 lg:pb-0">{children}</main>
 

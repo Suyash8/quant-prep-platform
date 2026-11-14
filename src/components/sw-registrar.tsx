@@ -13,6 +13,15 @@ export function ServiceWorkerRegistrar() {
     if (!('serviceWorker' in navigator)) return;
     const isDev = process.env.NODE_ENV !== 'production';
     const onLoad = () => {
+      // Unregister any stale legacy scoped service workers
+      navigator.serviceWorker.getRegistrations().then(regs => {
+        for (const reg of regs) {
+          if (reg.scope !== window.location.origin + '/' && reg.scope !== window.location.origin) {
+            reg.unregister();
+          }
+        }
+      }).catch(() => {});
+
       navigator.serviceWorker
         .register(`/sw.js${isDev ? '?mode=dev' : ''}`, { scope: '/' })
         .catch(() => {
