@@ -11,6 +11,11 @@ It is NOT a git archive and carries no .git history. Commit hashes above refer t
 - src/lib/v5/server-problems/ and public/v5/ are generated artifacts (gitignored): `npm run build` regenerates them deterministically from the shipped problems-src.
 - content-v5/_build/code-readiness.json ships POPULATED: all 78 problems, python + cpp each, written by scripts/populate-readiness.mjs from the shipped qualification evidence (content-v5/_evidence/qualification-9b32061-runner-59868d2a.json: qualified=true, 156/156 reference runs, 0 skipped, 30/30 isolation probes, sandbox active, target toolchain Python 3.12.15 / g++ 12.4.0). At run time the judge still fails closed unless the runner reports an active sandbox on Python >= 3.12 and g++ >= 12.4.
 
+## Legacy v3 problem catalog (content/problems) - restored 2026-11-14 (r2)
+The first package (r1) omitted content/problems entirely: the trimmed source snapshot it was built from had dropped that directory. This r2 restores all 28 legacy problem JSON files from the user's own original application upload (28 problems, 259 tests, 203 hidden) - the legacy judge at /api/judge/submit and the code-workspace UI work again. Two caveats:
+- The developer's working repo reportedly held an EXPANDED legacy catalog (48 files). Those extra ~20 problems existed only in that repo, which was lost when its host was rebuilt, and are not in any surviving artifact. The 28 files here are exactly the user's original catalog - no original functionality is missing.
+- Legacy judge route note for production: /api/judge/submit and /api/judge/run do not consult the v5 runner-readiness gate. With the catalog restored they run code whenever the runner is up. Recommended minimal fix (not applied here - review produces findings, not product patches): add the same judgeRuntimeStatus fail-closed check used by /api/v5/code to the legacy route.
+
 ## Independent review checks PASSED (executed, not just read)
 - Runner isolation probes 29/29 reproduced; memory/fd/fork bounds measured; fail-closed behavior confirmed.
 - Admission gate 30/30 reproduced on the target runner; 413/200 body-size boundary verified.
@@ -19,12 +24,20 @@ It is NOT a git archive and carries no .git history. Commit hashes above refer t
 - Cross-account draft isolation: no carry-over (dedicated race harnesses, incl. short-window variant).
 - QF_V5_READY_ONLY test hook: narrowing-only verified by live execution; cannot elevate unknown ids; unset = unchanged behavior.
 
+## Checks completed on this exact tree after the r1 package shipped
+- Clean install (bun) + full production build: SUCCESS, 0 errors, standalone output produced.
+- Fresh Postgres schema push: OK.
+- verify-v5-code (dev mode, fresh account): ALL PASS - not-ready 403, both 409 problem-changed paths, wrong-answer no-hidden-leak, compile-error path, stdin/output boundaries, output_limit kill, stdout truncation flag.
+- verify-v5-practice (real UI, mobile 390px, dev mode): ALL PASS - draft save/restore, older-draft confirm, language-switch guard, failed-save handling, offline honesty, no horizontal overflow.
+- Sync suites: provenance PASS; quarantine rejects poisoned events; retry queues then clears with notice; atomicity has no double-apply; passmark gates at 75/85; invalid event kinds are rejected per-event with HTTP 200 batch semantics.
+- Legacy judge spot check after the r2 catalog restore: anagram-groups judged 1/10 failed on a wrong answer; hidden tests return no expected output (no leak).
+
 ## Checks NOT finished - do not read this package as fully tested
-- The paced hidden-test privacy run across all 78 problems x Python/C++ (about 16 minutes) was lost when the test host rebooted. It has NOT passed on this exact tree. Earlier legacy-scope run (old 48-problem v3 suite) passed but does not cover these.
+- The paced hidden-test privacy run across all 78 problems x Python/C++ (about 16 minutes) was lost when the test host rebooted. It is re-running now; result follows separately.
 - Performance profiles P0/P1/P2: not run.
-- Final clean `npm ci` + production build of this exact tree: not run.
-- Final normal-mode UI screenshot review (incl. mobile) of this exact tree: not done.
-- Legacy sync/security suites were rerun by the developer on ef6047b (7 suites rc 0) but the logs were lost with the host; not independently re-verified.
+- A strict `npm ci` lockfile variant build: not run (bun install was used).
+- Final normal-mode (production, non-dev) UI review of this exact tree: in progress.
+- Legacy runner-epipe suite: pending rerun now that the catalog is restored.
 These rerun in the background after delivery; results follow separately.
 
 ## Setup
