@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getCurrentUser, rateLimit } from '@/lib/auth';
 import { getProblem } from '@/lib/content';
-import { runnerPost } from '@/lib/runner-client';
+import { runnerPost, judgeRuntimeStatus } from '@/lib/runner-client';
 import { db } from '@/lib/db';
 import { awardXp, XP_TABLE } from '@/lib/gamification';
 
@@ -31,6 +31,9 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ action: st
 
   const problem = getProblem(slug);
   if (!problem) return NextResponse.json({ error: 'Unknown problem.' }, { status: 404 });
+
+  // Same fail-closed gate as /api/v5/code: nothing runs unless the runner is isolated on a supported toolchain (QF_V5_CODE_DEV=1 waives in development).
+  { const rt = await judgeRuntimeStatus(); if (!rt.ok) return NextResponse.json({ state: 'runtime-unavailable', error: 'Code execution is not available right now. Nothing was run or judged and this is not counted as incorrect.', reason: rt.reason }, { status: 503 }); }
 
   if (language === 'sql') {
     return NextResponse.json({ error: 'SQL execution is not enabled in this deployment - C++17, C++20 and Python 3 are fully supported.' }, { status: 400 });
