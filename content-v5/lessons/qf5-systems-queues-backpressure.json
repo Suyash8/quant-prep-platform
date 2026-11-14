@@ -1,6 +1,6 @@
 {
   "id": "qf5-systems-queues-backpressure",
-  "revision": 2,
+  "revision": 3,
   "title": "Producer-consumer queues and backpressure",
   "module": "qf5-systems",
   "order": 6,
@@ -34,10 +34,10 @@
       "title": "Track accepted, rejected and drained separately",
       "steps": [
         {
-          "text": "Capacity 2 starts open/empty. Push 0 and push 2 are accepted, giving FIFO(0,2). Push 3 when full is rejected by the nonblocking model, leaving(0,2). It was not accepted and cannot be counted as delivered."
+          "text": "Capacity 2 starts open/empty. Push 0 and push 2 are accepted, giving FIFO (0,2). Push 3 when full is rejected by the nonblocking model, leaving (0,2). It was not accepted and cannot be counted as delivered."
         },
         {
-          "text": "Close leaves(0,2)queued and makes the closed flag true. Push 4 is rejected as closed. Pop returns 0, then 2; zero is a valid value, not the end marker."
+          "text": "Close leaves (0,2) queued and makes the closed flag true. Push 4 is rejected as closed. Pop returns 0, then 2; zero is a valid value, not the end marker."
         },
         {
           "text": "The next pop reports closed-and-drained. Repeating close changes nothing. At each point accepted pushes minus popped items equals current size; rejected pushes contribute neither queued nor popped items."
@@ -70,7 +70,7 @@
     {
       "type": "text",
       "id": "wait-predicates",
-      "markdown": "The native monitor below waits for push permission with closed||count<capacity, and for pop permission with closed||count>0. The queue fields, closed flag and predicate checks use the SAME mutex. wait(unique_lock,predicate)checks before sleeping and repeats after waking; it atomically releases the mutex and blocks, then reacquires before checking. Spurious wakeups and another worker consuming the opportunity are allowed, so a notification is a hint to recheck, not an item or a stored permit. Ordinary push/pop notify the opposite class of waiter; close notifies ALL producers and consumers so each can observe closure."
+      "markdown": "The native monitor below waits for push permission with closed||count<capacity, and for pop permission with closed||count>0. The queue fields, closed flag and predicate checks use the SAME mutex. wait(unique_lock,predicate) checks before sleeping and repeats after waking; it atomically releases the mutex and blocks, then reacquires before checking. Spurious wakeups and another worker consuming the opportunity are allowed, so a notification is a hint to recheck, not an item or a stored permit. Ordinary push/pop notify the opposite class of waiter; close notifies ALL producers and consumers so each can observe closure."
     },
     {
       "type": "code",
@@ -113,7 +113,7 @@
     {
       "type": "text",
       "id": "transfer",
-      "markdown": "Independent transfer: enumerate short push/pop/close sequences at capacities1..3 and compare accepted/popped histories to a separate list reference. Include duplicate numeric values and zero; reason by acceptance history rather than deduplicating values. For a native variant, explicitly arrange a waiting consumer and close-empty, then arrange a waiting producer and close-full using test coordination, not a sleep as proof. Keep queue alive until every worker finishes and never destroy its mutex/condition variables while in use."
+      "markdown": "Independent transfer: enumerate short push/pop/close sequences at capacities 1..3 and compare accepted/popped histories to a separate list reference. Include duplicate numeric values and zero; reason by acceptance history rather than deduplicating values. For a native variant, explicitly arrange a waiting consumer and close-empty, then arrange a waiting producer and close-full using test coordination, not a sleep as proof. Keep queue alive until every worker finishes and never destroy its mutex/condition variables while in use."
     },
     {
       "type": "check",
@@ -128,22 +128,22 @@
     {
       "type": "text",
       "id": "one-empty-slot-ring-0",
-      "markdown": "An alternative capacity contract\n\nHere c slots hold at most c-1 values because one slot is always unused. head is the NEXT READ index and tail the NEXT WRITE index,both initially 0. Empty means head==tail; full means(tail+1)%c==head. This differs from the earlier count-based monitor,which uses its full array capacity and has a close/drain policy. The Linux circular-buffer document uses the opposite head/tail naming convention,so translate by role rather than copying names."
+      "markdown": "An alternative capacity contract\n\nHere c slots hold at most c-1 values because one slot is always unused. head is the NEXT READ index and tail the NEXT WRITE index, both initially 0. Empty means head==tail; full means (tail+1)%c==head. This differs from the earlier count-based monitor, which uses its full array capacity and has a close/drain policy. The Linux circular-buffer document uses the opposite head/tail naming convention, so translate by role rather than copying names."
     },
     {
       "type": "text",
       "id": "one-empty-slot-ring-1",
-      "markdown": "Transitions preserve accepted FIFO order\n\nPUSH computes next_tail before writing. If full,emit FULL and change neither slot nor index; otherwise write at tail,advance tail,and emit OK. POP on empty emits EMPTY without state changes; otherwise read at head,advance head,and print the stored integer. Zero and negative values are ordinary payloads,not empty sentinels. The code may clear a consumed slot for clarity,but occupancy is determined by indexes,not None values."
+      "markdown": "Transitions preserve accepted FIFO order\n\nPUSH computes next_tail before writing. If full, emit FULL and change neither slot nor index; otherwise write at tail, advance tail, and emit OK. POP on empty emits EMPTY without state changes; otherwise read at head, advance head, and print the stored integer. Zero and negative values are ordinary payloads, not empty sentinels. The code may clear a consumed slot for clarity, but occupancy is determined by indexes, not None values."
     },
     {
       "type": "text",
       "id": "one-empty-slot-ring-2",
-      "markdown": "Derive size and trace wraparound\n\nAlways0<=size<=c-1,and size=(tail-head)%c under the one-empty-slot convention. At c=3:push 7, push 8 fill the usable 2 slots;push 9 rejects unchanged;pop returns 7 and head=1;push 9writes slot 2 and wraps tail=0. Stored FIFO is [8,9], size=(0-1)%3=2. Rejected operations do not consume data or advance indexes. Final output includes HEAD,TAIL,SIZE after all operations; the original starter provides push values as strings,so int(op[1]) is explicit."
+      "markdown": "Derive size and trace wraparound\n\nAlways 0<=size<=c-1, and size=(tail-head)%c under the one-empty-slot convention. At c=3: push 7, push 8 fill the usable 2 slots; push 9 rejects unchanged; pop returns 7 and head=1; push 9 writes slot 2 and wraps tail=0. Stored FIFO is [8,9], size=(0-1)%3=2. Rejected operations do not consume data or advance indexes. Final output includes HEAD,TAIL,SIZE after all operations; the original starter provides push values as strings, so int(op[1]) is explicit."
     },
     {
       "type": "text",
       "id": "one-empty-slot-ring-3",
-      "markdown": "Sequential simulation is not a lock-free proof\n\nThe task applies operations strictly in input order. O(c) allocated slots plus O(t) returned strings,with O(1)state work per operation and O(c+t)initialization/scan,meet c<=1000000,t<=200000. This function does not run threads and proves no atomic publication,memory-ordering,progress or race guarantees. Real SPSC needs a documented ownership/publication protocol and correct acquire/release or other synchronization on its target memory model. Arbitrary c is valid here,so modulo is required; bitmask wraparound works only for power-of-two capacity. Compare accepted/popped values and final indexes with an independent bounded list queue for exhaustive short operations and many wraps."
+      "markdown": "Sequential simulation is not a lock-free proof\n\nThe task applies operations strictly in input order. O(c) allocated slots plus O(t) returned strings, with O(1) state work per operation and O(c+t) initialization/scan, meet c<=1000000,t<=200000. This function does not run threads and proves no atomic publication, memory-ordering, progress or race guarantees. Real SPSC needs a documented ownership/publication protocol and correct acquire/release or other synchronization on its target memory model. Arbitrary c is valid here, so modulo is required; bitmask wraparound works only for power-of-two capacity. Compare accepted/popped values and final indexes with an independent bounded list queue for exhaustive short operations and many wraps."
     },
     {
       "type": "code",
@@ -191,7 +191,7 @@
     {
       "type": "text",
       "id": "one-empty-slot-ring-sources",
-      "markdown": "References: [1](https://docs.kernel.org/core-api/circular-buffers.html), [2](https://docs.python.org/3.12/library/stdtypes.html). Public task hash 931fe0339a67f9923fa0a0cabe720368d3104c756fcbcd9fe08a7bf442046b02. These references establish language/container semantics; the exact task framing is the captured public contract. This extension preserves the earlier bounded examples and their policies rather than silently broadening those APIs."
+      "markdown": "The Linux circular-buffer reference supports the one-empty-slot idea and power-of-two optimization limits. Its head/tail naming is opposite to this exercise, and its concurrent publication discussion is not a proof for this sequential Python function. The exact modulo indexes, rejected-state policy, string-valued starter inputs and output lines are the captured exercise contract above. Public task hash 931fe0339a67f9923fa0a0cabe720368d3104c756fcbcd9fe08a7bf442046b02. No new parser, native SPSC, C++, runner or judge qualification is claimed."
     }
   ],
   "practice": {

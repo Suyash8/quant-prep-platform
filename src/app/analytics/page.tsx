@@ -259,7 +259,7 @@ export default async function AnalyticsPage() {
             {topSkills.length > 0 && (
               <p className="mt-4 pt-3.5 border-t-2 border-border text-[13px] font-bold text-muted flex items-center justify-between">
                 <span>{skillTotals.tracked} skills tracked · {skillTotals.mastered} fully mastered</span>
-                <Link href="/curriculum" className="text-info hover:underline">grow them →</Link>
+                <Link href="/curriculum" className="text-info-ink hover:underline">grow them →</Link>
               </p>
             )}
           </section>

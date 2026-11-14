@@ -1,10 +1,10 @@
 {
   "id": "qf5-cpp-ownership-raii",
-  "revision": 1,
+  "revision": 3,
   "title": "Lifetime, ownership and RAII",
   "module": "qf5-cpp",
   "order": 2,
-  "estMinutes": 22,
+  "estMinutes": 32,
   "objectives": [
     {
       "conceptId": "qf5-cpp-ownership-raii.object-lifetime",
@@ -40,15 +40,20 @@
       "title": "Count live ownership tokens without touching a dead object",
       "steps": [
         {
-          "text": "Initially live=0. Construct outer:1. Enter the nested block and construct inner:2."
+          "text": "Initially live=0. Construct outer: 1. Enter the nested block and construct inner: 2."
         },
         {
-          "text": "Leaving the nested block destroys inner and restores1. Throwing the stated exception then unwinds outer before reaching the surrounding catch, restoring0."
+          "text": "Leaving the nested block destroys inner and restores 1. Throwing the stated exception then unwinds outer before reaching the surrounding catch, restoring 0."
         },
         {
           "text": "The counter is synthetic bookkeeping, not an operating-system handle. Deleted copy/move operations prevent accidentally making multiple bookkeeping owners. The example demonstrates lifetime cleanup, not rollback of arbitrary external effects."
         }
       ]
+    },
+    {
+      "type": "text",
+      "id": "ownership-class-reading-bridge",
+      "markdown": "Read the class before tracing cleanup\n\n`class ScopeToken { ... };` defines a new type. The final semicolon belongs to the class definition. `public:` makes the following members accessible to callers; it is not a function. `ScopeToken outer;` later creates one local object of this type. Its constructor, `ScopeToken()`, has the same name as the class and no return type. Its body runs when that object is initialized. `++live` increments the counter. The destructor, `~ScopeToken()`, also has no return type; `--live` decrements it when that object's lifetime ends on the shown paths. Do not call the destructor by hand in this example. `noexcept` declares that no exception may escape that destructor; it does not mean every destructor body is automatically safe.\n\n`static int live;` declares one class-wide counter, rather than a separate counter in each token. `int ScopeToken::live = 0;` defines and initializes that shared counter outside the class; `ScopeToken::live` names it through the class. The counter is only this example's bookkeeping, not a built-in lifetime monitor or a thread-safe global statistic.\n\nThe four declarations ending in `= delete` forbid the listed copy/move construction and assignment operations. Here `delete` does not free memory. `const ScopeToken&` is a read-only lvalue-reference parameter in the copy forms; `ScopeToken&&` is the rvalue-reference parameter in the move forms. `operator=` names assignment, and its leading `ScopeToken&` is the declared return type. You need not implement these operations to follow the trace: an attempted matching copy/move is rejected by the compiler, which keeps this small counter example from acquiring accidental extra owners.\n\nRead `try { ... } catch (const std::runtime_error&) { ... }` as a protected block and a handler for that exception type by read-only reference. The handler does not need a parameter name. `throw std::runtime_error(\"synthetic failure\");` leaves the normal path. For this handled exception, fully constructed local tokens in the exited scopes are destroyed before the handler runs. Check your reading against the earlier worked trace and the program: explain the counter after construction of outer, construction/destruction of inner, and entry to catch. The trace already supplies these values; this is explanation practice, not an unseen prediction. This bridge explains the existing source; it adds no new runtime or production guarantee.\n\nSyntax references: [constructors](https://en.cppreference.com/w/cpp/language/constructor.html), [destructors](https://en.cppreference.com/w/cpp/language/destructor.html), [deleted functions](https://en.cppreference.com/w/cpp/language/function.html), [exception handlers](https://en.cppreference.com/w/cpp/language/try.html). Read only the C++20 behavior used here; the references also describe other language versions."
     },
     {
       "type": "code",
@@ -79,11 +84,16 @@
       "markdown": "std::unique_ptr<T> is a standard owning handle for a dynamically allocated T with its associated deleter. make_unique constructs the object and returns its owner. Copying the owner is disabled; moving transfers ownership. After moving the unique_ptr in this example, the source is empty and the destination owns the same Position object at the same address. std::move is a cast enabling move-aware operations, not itself a request to relocate the managed Position. Other moved-from types need their own contracts; do not generalize unique_ptr emptiness to every type."
     },
     {
+      "type": "text",
+      "id": "ownership-handle-reading-bridge",
+      "markdown": "Read the owning handle without confusing syntax and lifetime\n\n`struct Position { ... };` defines another type. Unlike `class`, its members are public by default. Each Position has its own `int shares`, while `static int destroyed` is one shared counter. `explicit Position(int value) : shares{value} {}` constructs the member directly from value before the empty constructor body runs. `explicit` prevents implicit conversions using this constructor; direct construction by `make_unique<Position>(7)` is still allowed. `~Position()` counts destruction of the Position, not destruction of every pointer that mentions it.\n\n`std::unique_ptr<Position>` is a library handle type parameterized by the managed type. `auto owner = std::make_unique<Position>(7);` deduces that handle type, constructs one Position with shares 7 and gives owner sole ownership. `Position* observer = owner.get();` declares a raw pointer to the same Position without transferring ownership. `observer->shares` reads the member through that pointer, so it requires a live target. The arrow does not check lifetime for you.\n\n`auto next_owner = std::move(owner);` enables the unique_ptr move constructor: ownership transfers, but this Position itself does not move. `nullptr` is the null-pointer value. Comparing owner with nullptr tests whether that handle is empty. `std::boolalpha` changes stream formatting so Boolean values print as true/false. `next_owner.reset()` disposes of its currently owned Position and makes the handle empty. The preceding `observer = nullptr;` only stops this particular observer from retaining the old address; other aliases would not change. Trace the two handles and the one Position separately before checking the caption.\n\nHandle reference: [unique_ptr operations and ownership](https://en.cppreference.com/w/cpp/memory/unique_ptr.html). The explicit constructor, static/member, pointer access and formatting syntax are reading aids for the unchanged example, not new mastery or practice mappings."
+    },
+    {
       "type": "code",
       "id": "cpp-unique-owner-observer",
       "language": "cpp",
       "source": "#include <iostream>\n#include <memory>\n#include <utility>\n\nstruct Position {\n    int shares;\n    static int destroyed;\n    explicit Position(int value) : shares{value} {}\n    ~Position() noexcept { ++destroyed; }\n};\nint Position::destroyed = 0;\n\nint main() {\n    std::cout << std::boolalpha;\n    {\n        auto owner = std::make_unique<Position>(7);\n        Position* observer = owner.get();\n        auto next_owner = std::move(owner);\n        std::cout << (owner == nullptr) << '\\n';\n        std::cout << observer->shares << '\\n';\n        observer = nullptr; // Stop observing before destruction; aliases do not auto-null.\n        next_owner.reset();\n        std::cout << (next_owner == nullptr) << '\\n';\n        std::cout << Position::destroyed << '\\n';\n    }\n    std::cout << Position::destroyed << '\\n';\n}\n",
-      "caption": "Expected output: true, 7, true, 1, 1 on separate lines. The observer remains valid across this unique_ptr ownership transfer because the Position object is not destroyed/moved. The program deliberately stops observing before reset destroys it. Other aliases would not be automatically nulled. Empty owners do not destroy the object again on scope exit, so the total destructor count stays1.",
+      "caption": "Expected output: true, 7, true, 1, 1 on separate lines. The observer remains valid across this unique_ptr ownership transfer because the Position object is not destroyed/moved. The program deliberately stops observing before reset destroys it. Other aliases would not be automatically nulled. Empty owners do not destroy the object again on scope exit, so the total destructor count stays 1.",
       "runnable": false
     },
     {
@@ -114,7 +124,7 @@
     {
       "type": "text",
       "id": "transfer",
-      "markdown": "Independent transfer: write a function with one scoped ScopeToken and two nested scopes, testing early return and a handled thrown exception. Verify live returns to0 on both paths. Add a make_unique Position, transfer its owner once and count exactly one destruction without dereferencing an expired observer. Then explain why a pointer/reference to a local variable is unsafe to return even if the compiler accepts the declaration."
+      "markdown": "Independent transfer: write a function with one scoped ScopeToken and two nested scopes, testing early return and a handled thrown exception. Verify live returns to 0 on both paths. Add a make_unique Position, transfer its owner once and count exactly one destruction without dereferencing an expired observer. Then explain why a pointer/reference to a local variable is unsafe to return even if the compiler accepts the declaration."
     },
     {
       "type": "check",

@@ -53,7 +53,7 @@ export default async function CurriculumPage({ searchParams }: { searchParams: P
             <span className="text-muted"> passed of </span>
             <span className="tnum">{published.size}</span>
             <span className="text-muted"> published · </span>
-            <Link href="/dashboard" className="text-info hover:underline">home</Link>
+            <Link href="/dashboard" className="text-info-ink hover:underline">home</Link>
           </p>
         )}
       </header>

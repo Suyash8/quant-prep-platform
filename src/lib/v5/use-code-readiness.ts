@@ -9,7 +9,7 @@ export function useCodeReadiness(): CodeReadiness {
   useEffect(() => {
     let dead = false;
     (async () => {
-      try { const res = await fetch('/api/v5/code', { cache: 'no-store', credentials: 'same-origin' }); if (!res.ok) throw new Error('x'); const j = (await res.json()) as { ready?: Record<string, string[]>; devTestOnly?: boolean; runtimeBlocked?: string };
+      try { const res = await fetch('/api/v5/code', { cache: 'no-store', credentials: 'same-origin', signal: AbortSignal.timeout(20_000) }); if (!res.ok) throw new Error('x'); const j = (await res.json()) as { ready?: Record<string, string[]>; devTestOnly?: boolean; runtimeBlocked?: string };
         if (!j.ready || typeof j.ready !== 'object') throw new Error('x');
         try { localStorage.setItem(KEY, JSON.stringify(j)); } catch { /* ignore */ }
         if (!dead) setR({ state: 'known', ready: j.ready, devTestOnly: !!j.devTestOnly, cached: false, runtimeBlocked: typeof j.runtimeBlocked === 'string' ? j.runtimeBlocked : undefined });

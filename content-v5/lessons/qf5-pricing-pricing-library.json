@@ -1,6 +1,6 @@
 {
   "id": "qf5-pricing-pricing-library",
-  "revision": 1,
+  "revision": 2,
   "title": "Build a validated pricing/risk library",
   "module": "qf5-pricing",
   "order": 8,
@@ -8,11 +8,11 @@
   "objectives": [
     {
       "conceptId": "qf5-pricing-pricing-library.pricing-invariants",
-      "text": "Compose a complete versioned bounded no-dividend European price/Greek batch facade with explicit currency,per-unit/position units,validation and all-or-error pure-result semantics."
+      "text": "Compose a complete versioned bounded no-dividend European price/Greek batch facade with explicit currency, per-unit/position units, validation and all-or-error pure-result semantics."
     },
     {
       "conceptId": "qf5-pricing-pricing-library.independent-validation",
-      "text": "Build a layered validation plan separating invariant/metamorphic/round-trip checks from independent numerical references,market model suitability and actual app/production qualification."
+      "text": "Build a layered validation plan separating invariant/metamorphic/round-trip checks from independent numerical references, market model suitability and actual app/production qualification."
     }
   ],
   "prerequisites": [
@@ -22,12 +22,12 @@
     {
       "type": "text",
       "id": "library-contract",
-      "markdown": "A usable library is more than a formula collection. Specify model/version,currency,contract/exercise/dividend convention,input types/ranges,year fraction,rate/vol units,position scaling,output units and error behavior. This full self-contained capstone embeds prior price/call-Greek definitions,then adds a batch facade with PUT Greeks via no-dividend parity derivatives. It returns prices and local sensitivities,not calibration/covariance/VaRor a promise that every preceding technique is exposed through one API. It uses no files/network/accounts."
+      "markdown": "A usable library is more than a formula collection. Specify model/version, currency, contract/exercise/dividend convention, input types/ranges, year fraction, rate/vol units, position scaling, output units and error behavior. This full self-contained capstone embeds prior price/call-Greek definitions, then adds a batch facade with PUT Greeks via no-dividend parity derivatives. It returns prices and local sensitivities, not calibration/covariance/VaR or a promise that every preceding technique is exposed through one API. It uses no files/network/accounts."
     },
     {
       "type": "text",
       "id": "request-schema",
-      "markdown": "Each request is(version1,kind call/put,S,K,r,T,sigma,signed_underlying_units). At most16requests,one fixed USDpricing currency,one no-dividend European stock model family. Units are already aggregated signed underlying-equivalent units,not number of option contracts;caller must apply contract multiplier/currency mapping BEFORE this boundary. Numeric domains inherit the earlier bounded float kernel. This RISKfacade requires positive smooth time/vol even though the price-only function has zero branches. A nonzero output risk for an unsupported boundary is not invented."
+      "markdown": "Each request is (version 1, kind call/put, S, K, r, T, sigma, signed_underlying_units). At most 16 requests, one fixed USD pricing currency, one no-dividend European stock model family. Units are already aggregated signed underlying-equivalent units, not number of option contracts; caller must apply contract multiplier/currency mapping BEFORE this boundary. Numeric domains inherit the earlier bounded float kernel. This RISK facade requires positive smooth time/vol even though the price-only function has zero branches. A nonzero output risk for an unsupported boundary is not invented."
     },
     {
       "type": "worked",
@@ -35,13 +35,13 @@
       "title": "A call-minus-put position reconciles to parity",
       "steps": [
         {
-          "text": "Long100underlying-unit call exposure and short100put units share S=K100,r5%,T1,sigma20%. Price difference is S-K*exp(-r*T),so total position value\u2248487.705755USD."
+          "text": "Long 100 underlying-unit call exposure and short 100 put units share S=K 100, r 5%, T 1, sigma 20%. Price difference is S-K*exp(-r*T), so total position value\u2248487.705755 USD."
         },
         {
-          "text": "No-dividend call-minus-put delta per unit=1,gamma/vega differences0. Therefore aggregate delta100,gamma0,vega0. Rho difference=K*T*D,so total rho per1.0\u22489512.294245. Calendar theta difference=-r*K*D,so total theta/year\u2248-475.614712."
+          "text": "No-dividend call-minus-put delta per unit=1, gamma/vega differences 0. Therefore aggregate delta 100, gamma 0, vega 0. Rho difference=K*T*D, so total rho per 1.0\u22489512.294245. Calendar theta difference=-r*K*D, so total theta/year\u2248-475.614712."
         },
         {
-          "text": "This is a deterministic model identity,not proof that a live synthetic forward has no funding,dividend,transaction,liquidity or counterparty risk. Position Greeks are local derivatives with the earlier unit conventions."
+          "text": "This is a deterministic model identity, not proof that a live synthetic forward has no funding, dividend, transaction, liquidity or counterparty risk. Position Greeks are local derivatives with the earlier unit conventions."
         }
       ]
     },
@@ -50,7 +50,7 @@
       "id": "versioned-price-risk-batch",
       "language": "python",
       "source": "import math\n\ndef normal_cdf(x):\n    return 0.5*math.erfc(-x/math.sqrt(2.0))\n\ndef european_pair(spot,strike,rate,years,vol):\n    # No dividends,European exercise,continuous annual rate and annualized vol.\n    for value,low,high in ((spot,1.0,10000.0),(strike,1.0,10000.0),(rate,-0.2,0.5),(years,0.0,10.0),(vol,0.0,2.0)):\n        if type(value) is not float or not math.isfinite(value) or not low<=value<=high:\n            raise ValueError(\"invalid bounded pricing input\")\n    if years==0.0:return max(spot-strike,0.0),max(strike-spot,0.0)\n    discounted_strike=strike*math.exp(-rate*years)\n    if vol==0.0:return max(spot-discounted_strike,0.0),max(discounted_strike-spot,0.0)\n    if years<1e-6 or vol<1e-6:\n        raise ValueError(\"positive time/vol below teaching numerical domain\")\n    width=vol*math.sqrt(years)\n    d1=(math.log(spot/strike)+(rate+0.5*vol*vol)*years)/width\n    d2=d1-width\n    if max(abs(d1),abs(d2))>8.0:\n        raise ValueError(\"normal tail outside teaching numerical domain\")\n    # Compute the out-of-money side directly,then parity for the other side.\n    if spot<=discounted_strike:\n        call=spot*normal_cdf(d1)-discounted_strike*normal_cdf(d2)\n        put=call+discounted_strike-spot\n    else:\n        put=discounted_strike*normal_cdf(-d2)-spot*normal_cdf(-d1)\n        call=put+spot-discounted_strike\n    return call,put\n\ndef call_greeks(spot,strike,rate,years,vol):\n    european_pair(spot,strike,rate,years,vol) # same finite/range checks\n    if years==0.0 or vol==0.0:raise ValueError(\"smooth Greeks require positive time and vol\")\n    root=math.sqrt(years)\n    d1=(math.log(spot/strike)+(rate+0.5*vol*vol)*years)/(vol*root)\n    d2=d1-vol*root\n    density=math.exp(-0.5*d1*d1)/math.sqrt(2.0*math.pi)\n    kd=strike*math.exp(-rate*years)\n    return {\"delta\":normal_cdf(d1),\"gamma\":density/(spot*vol*root),\n            \"vega_per_1\":spot*density*root,\"rho_per_1\":years*kd*normal_cdf(d2),\n            \"theta_per_year\":-spot*density*vol/(2.0*root)-rate*kd*normal_cdf(d2)}\n\ndef price_risk_batch(requests):\n    # Own schema:(version,kind,S,K,r,T,sigma,signed_underlying_units),USD only.\n    if type(requests) is not list or len(requests)>16:raise ValueError(\"invalid batch\")\n    for req in requests:\n        if type(req) is not tuple or len(req)!=8:raise ValueError(\"invalid request schema\")\n        version,kind,s,k,rate,t,v,units=req\n        if type(version) is not int or version!=1 or type(kind) is not str or kind not in (\"call\",\"put\"):\n            raise ValueError(\"unsupported schema or kind\")\n        if type(units) is not float or not math.isfinite(units) or not -1000.0<=units<=1000.0:\n            raise ValueError(\"invalid signed underlying units\")\n        european_pair(s,k,rate,t,v)\n        if t==0.0 or v==0.0:raise ValueError(\"risk batch requires smooth positive time and vol\")\n    rows=[]\n    for index,req in enumerate(requests):\n        _,kind,s,k,rate,t,v,units=req\n        prices=european_pair(s,k,rate,t,v)\n        g=call_greeks(s,k,rate,t,v)\n        if kind==\"put\":\n            kd=k*math.exp(-rate*t)\n            g[\"delta\"]-=1.0\n            g[\"rho_per_1\"]-=t*kd\n            g[\"theta_per_year\"]+=rate*kd\n        risk=tuple(units*g[key] for key in (\"delta\",\"gamma\",\"vega_per_1\",\"rho_per_1\",\"theta_per_year\"))\n        price=prices[0 if kind==\"call\" else 1]\n        rows.append((index,kind,price,units*price,risk))\n    totals=(math.fsum(row[3] for row in rows),tuple(math.fsum(row[4][j] for row in rows) for j in range(5)))\n    return \"BS-NODIV-EU-v1\",\"USD\",tuple(rows),totals\n\nbatch=[(1,\"call\",100.0,100.0,0.05,1.0,0.2,100.0),(1,\"put\",100.0,100.0,0.05,1.0,0.2,-100.0)]\nmodel,currency,rows,totals=price_risk_batch(batch)\nprint(model,currency)\nprint(f\"value={totals[0]:.6f}\")\nprint(\"risks\",tuple(round(x,6) for x in totals[1]))\nprint(price_risk_batch([])[3])\ntry:price_risk_batch(batch+[(1,\"call\",100.0,100.0,0.05,0.0,0.2,1.0)])\nexcept ValueError as error:print(error)",
-      "caption": "Expected model/currency BS-NODIV-EU-v1 USD;value=487.705755;risks (100.0, 0.0, 0.0, 9512.294245, -475.614712);empty totals (0.0, (0.0,0.0,0.0,0.0,0.0));risk batch requires smooth positive time and vol. Complete source,not a fragment. Validates every request before producing rows;no candidate returned on any error,caller list/tuples not mutated. This is not concurrent atomic publication,durable storage or actual app-runner verification.",
+      "caption": "Expected model/currency BS-NODIV-EU-v1 USD; value=487.705755; risks (100.0, 0.0, 0.0, 9512.294245, -475.614712); empty totals (0.0, (0.0,0.0,0.0,0.0,0.0)); risk batch requires smooth positive time and vol. Complete source, not a fragment. Validates every request before producing rows; no candidate returned on any error, caller list/tuples not mutated. This is not concurrent atomic publication, durable storage or actual app-runner verification.",
       "runnable": true
     },
     {
@@ -71,17 +71,17 @@
     {
       "type": "text",
       "id": "put-derivatives",
-      "markdown": "From C-P=S-K*Dderive put delta=call delta-1,put gamma=call gamma,put vega=call vega,put rho=call rho-K*T*Dand put calendar theta=call theta+r*K*D. The batch now IMPLEMENTSthese put conversions,unlike earlier transfer-only material. Verify both call and put independently with highprecision numerical derivatives,not only these same parity equalities. All five tuple positions are fixed(delta,gamma,vega_per_1,rho_per_1,theta_per_year);version the schema if order/meaning changes."
+      "markdown": "From C-P=S-K*D derive put delta=call delta-1, put gamma=call gamma, put vega=call vega, put rho=call rho-K*T*D and put calendar theta=call theta+r*K*D. The batch now IMPLEMENTS these put conversions, unlike earlier transfer-only material. Verify both call and put independently with high-precision numerical derivatives, not only these same parity equalities. All five tuple positions are fixed (delta,gamma,vega_per_1,rho_per_1,theta_per_year); version the schema if order/meaning changes."
     },
     {
       "type": "text",
       "id": "layered-tests",
-      "markdown": "Layer1:validate schema,nonfinite/types/ranges/supported numerical domain and zero/smooth boundary behavior. Layer2:known branch fixtures,price bounds,parity,Greek identities,positive scale/position aggregation,permutation behavior and no mutation. Layer3:independent highprecision normal expectation/derivative reference and another method where appropriate,with stated tolerances. Layer4:model/contract/data suitability,calibration/outcomes and use limits. Passing one layer does not imply the next,and a reference that calls the same kernel is not independent."
+      "markdown": "Layer 1: validate schema, nonfinite/types/ranges/supported numerical domain and zero/smooth boundary behavior. Layer 2: known branch fixtures, price bounds, parity, Greek identities, positive scale/position aggregation, permutation behavior and no mutation. Layer 3: independent high-precision normal expectation/derivative reference and another method where appropriate, with stated tolerances. Layer 4: model/contract/data suitability, calibration/outcomes and use limits. Passing one layer does not imply the next, and a reference that calls the same kernel is not independent."
     },
     {
       "type": "text",
       "id": "batch-boundary",
-      "markdown": "The function validates all requests before evaluating output rows,and returns only a final tuple;an invalid last request does not publish earlier rows. It does not send events or modify a global store. A server/UIstill needs revision-bound request/result identity,capability checks,resource limits,serialization,concurrent state/error handling and durable history policy. Do not show a cached success from different parameters after a failed evaluation. Include model/schema/version and actual input snapshot with reproducibility evidence;source hash alone proves neither correctness nor trusted input provenance."
+      "markdown": "The function validates all requests before evaluating output rows, and returns only a final tuple; an invalid last request does not publish earlier rows. It does not send events or modify a global store. A server/UI still needs revision-bound request/result identity, capability checks, resource limits, serialization, concurrent state/error handling and durable history policy. Do not show a cached success from different parameters after a failed evaluation. Include model/schema/version and actual input snapshot with reproducibility evidence; source hash alone proves neither correctness nor trusted input provenance."
     },
     {
       "type": "check",
@@ -101,12 +101,12 @@
     {
       "type": "text",
       "id": "release-evidence",
-      "markdown": "A source-level validated slice can record tested runtime,code hashes,exact fixtures,reference method/tolerances,known unsupported domains and remaining gates. App execution/rendering/mobile/a11y/offline/recovery tests and production review must run on the actual revision before sign-off. The current April2026SR26-2guidance emphasizes reliability/limitations,effective objective challenge,outcomes and monitoring with use-dependent rigor;it supersedes SR11-7and is not a universal enforceable standard. This educational artifact does not claim independent organizational approval or professional competence."
+      "markdown": "A source-level validated slice can record tested runtime, code hashes, exact fixtures, reference method/tolerances, known unsupported domains and remaining gates. App execution/rendering/mobile/a11y/offline/recovery tests and production review must run on the actual revision before sign-off. The current April 2026 SR26-2 guidance emphasizes reliability/limitations, effective objective challenge, outcomes and monitoring with use-dependent rigor; it supersedes SR11-7 and is not a universal enforceable standard. This educational artifact does not claim independent organizational approval or professional competence."
     },
     {
       "type": "text",
       "id": "transfer",
-      "markdown": "Independent transfer:enumerate small call/put signed-position batches,compare each value/risk with an independent highprecision reference,check totals and input permutation,then inject malformed final rows and confirm no result/mutation. Test unsupported version,wrong kind/currency assumptions,zero time/vol and numerical tail boundary. Design a versioned extension for dividends or another exercise style only after changing model/validation evidence,not by relabeling this no-dividend source. Keep live orders and money outside this library."
+      "markdown": "Independent transfer: enumerate small call/put signed-position batches, compare each value/risk with an independent high-precision reference, check totals and input permutation, then inject malformed final rows and confirm no result/mutation. Test unsupported version, wrong kind/currency assumptions, zero time/vol and numerical tail boundary. Design a versioned extension for dividends or another exercise style only after changing model/validation evidence, not by relabeling this no-dividend source. Keep live orders and money outside this library."
     },
     {
       "type": "check",
@@ -116,11 +116,11 @@
     {
       "type": "text",
       "id": "sources",
-      "markdown": "Sources:[current SR26-2model-risk guidance](https://www.federalreserve.gov/supervisionreg/srletters/SR2602.pdf),[current guidance web text](https://www.federalreserve.gov/frrs/guidance/supervisory-guidance-on-model-risk-management.htm),[NISTfit-versus-validation limits](https://www.itl.nist.gov/div898/handbook/pmd/section4/pmd44.htm),and the preceding independently checked Black-Scholes/Greek technical references. Model/domain/schema details here are own bounded design,not a production banking-control certification."
+      "markdown": "Sources: [current SR26-2 model-risk guidance](https://www.federalreserve.gov/supervisionreg/srletters/SR2602.pdf), [current guidance web text](https://www.federalreserve.gov/frrs/guidance/supervisory-guidance-on-model-risk-management.htm), [NIST fit-versus-validation limits](https://www.itl.nist.gov/div898/handbook/pmd/section4/pmd44.htm),and the preceding independently checked Black-Scholes/Greek technical references. Model/domain/schema details here are own bounded design, not a production banking-control certification."
     }
   ],
   "practice": {
     "problemIds": []
   },
-  "summary": "A versioned pure price/risk facade needs explicit model,units,domains and failure semantics plus layered independent tests. This bounded European no-dividend batch slice is source-verified,not a full-market model suite,concurrent/durable service,live trading system or app/production qualification."
+  "summary": "A versioned pure price/risk facade needs explicit model, units, domains and failure semantics plus layered independent tests. This bounded European no-dividend batch slice is source-verified, not a full-market model suite, concurrent/durable service, live trading system or app/production qualification."
 }

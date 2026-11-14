@@ -1,6 +1,6 @@
 {
   "id": "qf5-pricing-calibration",
-  "revision": 1,
+  "revision": 2,
   "title": "Calibration, identifiability and validation",
   "module": "qf5-pricing",
   "order": 7,
@@ -8,11 +8,11 @@
   "objectives": [
     {
       "conceptId": "qf5-pricing-calibration.calibration-objective",
-      "text": "Define a quote/units-aware inverse objective and a bounded bracketed implied-volatility solve with explicit residual,parameter-width and nonconvergence contracts."
+      "text": "Define a quote/units-aware inverse objective and a bounded bracketed implied-volatility solve with explicit residual, parameter-width and nonconvergence contracts."
     },
     {
       "conceptId": "qf5-pricing-calibration.identifiability",
-      "text": "Distinguish synthetic round-trip fit,parameter identifiability/sensitivity and independent out-of-sample/model validation,including nonunique multi-parameter objectives."
+      "text": "Distinguish synthetic round-trip fit, parameter identifiability/sensitivity and independent out-of-sample/model validation, including nonunique multi-parameter objectives."
     }
   ],
   "prerequisites": [
@@ -22,12 +22,12 @@
     {
       "type": "text",
       "id": "inverse-problem",
-      "markdown": "Calibration chooses model parameters to match specified observations under a declared objective. It is not a proof the model is true. For quotes q_iand model prices V_i(theta),one objective is sum(w_i*(V_i(theta)-q_i)^2),with meaningful units/weights,bounds and data policy. Price residuals,implied-volatility residuals and bid-ask-scaled residuals are different objectives. Record source/as-of,contract,currency,quote side/bid-ask,staleness,corporate-action/curve assumptions and exclusions before optimizing. A midquote is not automatically executable truth."
+      "markdown": "Calibration chooses model parameters to match specified observations under a declared objective. It is not a proof the model is true. For quotes q_i and model prices V_i(theta), one objective is sum(w_i*(V_i(theta)-q_i)^2), with meaningful units/weights, bounds and data policy. Price residuals, implied-volatility residuals and bid-ask-scaled residuals are different objectives. Record source/as-of, contract, currency, quote side/bid-ask, staleness, corporate-action/curve assumptions and exclusions before optimizing. A midquote is not automatically executable truth."
     },
     {
       "type": "text",
       "id": "one-dimensional-inverse",
-      "markdown": "For a fixed positive-time no-dividend European call,the smooth Black-Scholes vega is positive,so price is strictly increasing in positive volatility. A target bracketed by two supported prices admits a root within that continuous interval under the model. Our inverse fixes S=K100,r5%,T1and searches sigma[0.05,1.5]. This is an OWN restricted inverse,not a generic market implied-volatility service. A price can satisfy broad theoretical option bounds yet lie outside this narrower supported volatility bracket;report unsupported rather than silently extending/clipping it."
+      "markdown": "For a fixed positive-time no-dividend European call, the smooth Black-Scholes vega is positive, so price is strictly increasing in positive volatility. A target bracketed by two supported prices admits a root within that continuous interval under the model. Our inverse fixes S=K 100, r 5%, T 1 and searches sigma [0.05,1.5]. This is an OWN restricted inverse, not a generic market implied-volatility service. A price can satisfy broad theoretical option bounds yet lie outside this narrower supported volatility bracket; report unsupported rather than silently extending/clipping it."
     },
     {
       "type": "worked",
@@ -35,13 +35,13 @@
       "title": "Price residual and parameter width are different",
       "steps": [
         {
-          "text": "Generate a synthetic call price at sigma0.2from the already tested fixed contract. Bisection starts0.05..1.5and halves the bracket according to the sign of model_price-target."
+          "text": "Generate a synthetic call price at sigma 0.2 from the already tested fixed contract. Bisection starts 0.05..1.5 and halves the bracket according to the sign of model_price-target."
         },
         {
-          "text": "Require BOTH absolute price residual<=1e-8currency per underlying unit and volatility bracket width<=1e-8absolute decimal volatility. A small price error alone need not imply a small vol error when vega is tiny."
+          "text": "Require BOTH absolute price residual<=1e-8 currency per underlying unit and volatility bracket width<=1e-8 absolute decimal volatility. A small price error alone need not imply a small vol error when vega is tiny."
         },
         {
-          "text": "A synthetic forward/inverse round trip should recover about0.2,butcan share the same model/formula error on both sides. It tests internal inverse consistency,not independent market validity. One iteration is deliberately insufficient and raises nonconvergence,not a plausible-looking last iterate."
+          "text": "A synthetic forward/inverse round trip should recover about 0.2, but can share the same model/formula error on both sides. It tests internal inverse consistency, not independent market validity. One iteration is deliberately insufficient and raises nonconvergence, not a plausible-looking last iterate."
         }
       ]
     },
@@ -50,7 +50,7 @@
       "id": "fixed-contract-volatility-inverse",
       "language": "python",
       "source": "import math\n\ndef normal_cdf(x):\n    return 0.5*math.erfc(-x/math.sqrt(2.0))\n\ndef european_pair(spot,strike,rate,years,vol):\n    # No dividends,European exercise,continuous annual rate and annualized vol.\n    for value,low,high in ((spot,1.0,10000.0),(strike,1.0,10000.0),(rate,-0.2,0.5),(years,0.0,10.0),(vol,0.0,2.0)):\n        if type(value) is not float or not math.isfinite(value) or not low<=value<=high:\n            raise ValueError(\"invalid bounded pricing input\")\n    if years==0.0:return max(spot-strike,0.0),max(strike-spot,0.0)\n    discounted_strike=strike*math.exp(-rate*years)\n    if vol==0.0:return max(spot-discounted_strike,0.0),max(discounted_strike-spot,0.0)\n    if years<1e-6 or vol<1e-6:\n        raise ValueError(\"positive time/vol below teaching numerical domain\")\n    width=vol*math.sqrt(years)\n    d1=(math.log(spot/strike)+(rate+0.5*vol*vol)*years)/width\n    d2=d1-width\n    if max(abs(d1),abs(d2))>8.0:\n        raise ValueError(\"normal tail outside teaching numerical domain\")\n    # Compute the out-of-money side directly,then parity for the other side.\n    if spot<=discounted_strike:\n        call=spot*normal_cdf(d1)-discounted_strike*normal_cdf(d2)\n        put=call+discounted_strike-spot\n    else:\n        put=discounted_strike*normal_cdf(-d2)-spot*normal_cdf(-d1)\n        call=put+spot-discounted_strike\n    return call,put\n\ndef fixed_call_iv(target,maxiter=80):\n    # Inverse only for S=K100,r.05,T1,no dividends,European call.\n    if type(target) is not float or not math.isfinite(target) or not 0.0<=target<=100.0:\n        raise ValueError(\"invalid target price\")\n    if type(maxiter) is not int or not 1<=maxiter<=100:\n        raise ValueError(\"invalid iteration budget\")\n    def price(vol):return european_pair(100.0,100.0,0.05,1.0,vol)[0]\n    lo,hi=0.05,1.5\n    plo,phi=price(lo),price(hi)\n    if not plo<=target<=phi:raise ValueError(\"target outside supported volatility bracket\")\n    if target==plo:return lo,0.0,(lo,lo),0\n    if target==phi:return hi,0.0,(hi,hi),0\n    for iteration in range(1,maxiter+1):\n        mid=(lo+hi)/2.0\n        residual=price(mid)-target\n        if residual==0.0:lo=hi=mid\n        elif residual<0.0:lo=mid\n        else:hi=mid\n        if abs(residual)<=1e-8 and hi-lo<=1e-8:\n            return mid,residual,(lo,hi),iteration\n    raise RuntimeError(\"volatility solve did not converge\")\n\nsynthetic=european_pair(100.0,100.0,0.05,1.0,0.2)[0]\nvol,residual,bracket,iterations=fixed_call_iv(synthetic)\nprint(f\"vol={vol:.8f}\")\nprint(abs(residual)<=1e-8,bracket[1]-bracket[0]<=1e-8)\ntry:fixed_call_iv(0.0)\nexcept ValueError as error:print(error)\ntry:fixed_call_iv(synthetic,1)\nexcept RuntimeError as error:print(error)\n# Own identifiability counterexample:only the sum affects a single observation.\nprint([a+b for a,b in ((0.1,0.3),(0.2,0.2),(0.3,0.1))])",
-      "caption": "Expected:vol=0.20000000;True True;target outside supported volatility bracket;volatility solve did not converge;[0.4, 0.4, 0.4]. Full source embeds bounded price kernel. Own fixed price and width tolerances1e-8;iteration budget1..100;endpoints return their own zero-width numeric bracket. Exact float residual zero means equality in this numerical evaluator,not proof of physical exactness. No quote feed,weight fitting or multi-parameter optimizer is implemented.",
+      "caption": "Expected: vol=0.20000000; True True; target outside supported volatility bracket; volatility solve did not converge; [0.4, 0.4, 0.4]. Full source embeds bounded price kernel. Own fixed price and width tolerances 1e-8; iteration budget 1..100; endpoints return their own zero-width numeric bracket. Exact float residual zero means equality in this numerical evaluator, not proof of physical exactness. No quote feed, weight fitting or multi-parameter optimizer is implemented.",
       "runnable": true
     },
     {
@@ -71,17 +71,17 @@
     {
       "type": "text",
       "id": "identifiability",
-      "markdown": "If an observation depends only on a+b,then(a,b)=(0.1,0.3),(0.2,0.2),(0.3,0.1)allfit sum0.4. Zero residual does not identify each parameter. More generally,small/near-collinear Jacobian columns mean parameter changes can offset or have little observable effect;noise can cause large parameter changes with little residual change. Inspect sensitivity/rank/condition,profile objectives,multiple starts,parameter bounds and perturbations. Regularization or fixing a parameter can select one solution,butintroduces assumptions rather than creating new information."
+      "markdown": "If an observation depends only on a+b, then (a,b)=(0.1,0.3),(0.2,0.2),(0.3,0.1) all fit sum 0.4. Zero residual does not identify each parameter. More generally, small/near-collinear Jacobian columns mean parameter changes can offset or have little observable effect; noise can cause large parameter changes with little residual change. Inspect sensitivity/rank/condition, profile objectives, multiple starts, parameter bounds and perturbations. Regularization or fixing a parameter can select one solution, but introduces assumptions rather than creating new information."
     },
     {
       "type": "text",
       "id": "weights-and-constraints",
-      "markdown": "Weights can reflect a justified uncertainty scale or bid-ask tolerance,butarbitrary weighting can prioritize one contract/maturity at another's expense. Document whether weights are fixed or estimated and whether correlations across quote errors matter. Bounds and robust losses can improve behavior,butdo not certify global uniqueness or remove bad-data/model mismatch. Optimizer success often describes a local termination condition,not a global minimum or economic validity. SciPy documents local least-squares and warns about redundant parameters/ill-conditioned approximate covariance."
+      "markdown": "Weights can reflect a justified uncertainty scale or bid-ask tolerance, but arbitrary weighting can prioritize one contract/maturity at another's expense. Document whether weights are fixed or estimated and whether correlations across quote errors matter. Bounds and robust losses can improve behavior, but do not certify global uniqueness or remove bad-data/model mismatch. Optimizer success often describes a local termination condition, not a global minimum or economic validity. SciPy documents local least-squares and warns about redundant parameters/ill-conditioned approximate covariance."
     },
     {
       "type": "text",
       "id": "sensitivity-and-price-noise",
-      "markdown": "Locally d(sigma)\u2248dPrice/vega when vega is nonzero and the same model/conventions hold. If price noise is0.01and vega50per absolute1.0,vol uncertainty scale is about0.0002or0.02percentage points,not a full confidence interval. Near-zero vega makes inversion ill-conditioned;do not report ten confident decimal places just because bisection terminated. Bid-ask,staleness,parameter/curve uncertainty and model error can dominate solver tolerance."
+      "markdown": "Locally d(sigma)\u2248dPrice/vega when vega is nonzero and the same model/conventions hold. If price noise is 0.01 and vega 50 per absolute 1.0, vol uncertainty scale is about 0.0002 or 0.02 percentage points, not a full confidence interval. Near-zero vega makes inversion ill-conditioned; do not report ten confident decimal places just because bisection terminated. Bid-ask, staleness, parameter/curve uncertainty and model error can dominate solver tolerance."
     },
     {
       "type": "check",
@@ -101,12 +101,12 @@
     {
       "type": "text",
       "id": "validation-separation",
-      "markdown": "Use independent reference values/implementations,limit/parity/domain tests,held-out contracts/dates and residual patterns,not only in-sample fit. A highR\u00b2or tiny objective is not enough;NIST emphasizes residual analysis for model adequacy. Current USbanking guidance SR26-2(April2026)supersedes SR11-7and discusses conceptual soundness,outcomes analysis and ongoing monitoring with risk-based scope. It is supervisory guidance for relevant banking organizations,not a course certification or an enforceable checklist for every user. Our private educational library is not claimed compliant/production approved."
+      "markdown": "Use independent reference values/implementations, limit/parity/domain tests, held-out contracts/dates and residual patterns, not only in-sample fit. A high R\u00b2 or tiny objective is not enough; NIST emphasizes residual analysis for model adequacy. Current US banking guidance SR26-2 (April 2026) supersedes SR11-7 and discusses conceptual soundness, outcomes analysis and ongoing monitoring with risk-based scope. It is supervisory guidance for relevant banking organizations, not a course certification or an enforceable checklist for every user. Our private educational library is not claimed compliant/production approved."
     },
     {
       "type": "text",
       "id": "transfer",
-      "markdown": "Independent transfer:use highprecision independent forward prices at several known vols,solve,check root bracket/residual/width and reject out-of-bracket/nonfinite targets. Perturb a target by small known price increments and compare implied-vol shifts with the vega approximation where stable. Demonstrate a two-parameter ridge with identical predictions and explain what additional independent observations or restrictions could identify parameters. Keep synthetic round-trip evidence separate from held-out market/model assessment."
+      "markdown": "Independent transfer: use high-precision independent forward prices at several known vols, solve, check root bracket/residual/width and reject out-of-bracket/nonfinite targets. Perturb a target by small known price increments and compare implied-vol shifts with the vega approximation where stable. Demonstrate a two-parameter ridge with identical predictions and explain what additional independent observations or restrictions could identify parameters. Keep synthetic round-trip evidence separate from held-out market/model assessment."
     },
     {
       "type": "check",
@@ -116,11 +116,11 @@
     {
       "type": "text",
       "id": "sources",
-      "markdown": "Sources:[SciPy bisection](https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.bisect.html),[Brent bracket/tolerance contracts](https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.brentq.html),[least-squares local objective](https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.least_squares.html),[curve_fit redundant-parameter warnings](https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.curve_fit.html),[NISTfit validation](https://www.itl.nist.gov/div898/handbook/pmd/section4/pmd44.htm),[current SR26-2guidance](https://www.federalreserve.gov/supervisionreg/srletters/SR2602.pdf). SciPy is a conceptual reference,not a dependency of this own bisection implementation."
+      "markdown": "Sources: [SciPy bisection](https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.bisect.html), [Brent bracket/tolerance contracts](https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.brentq.html), [least-squares local objective](https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.least_squares.html), [curve_fit redundant-parameter warnings](https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.curve_fit.html), [NIST fit validation](https://www.itl.nist.gov/div898/handbook/pmd/section4/pmd44.htm), [current SR26-2 guidance](https://www.federalreserve.gov/supervisionreg/srletters/SR2602.pdf). SciPy is a conceptual reference, not a dependency of this own bisection implementation."
     }
   ],
   "practice": {
     "problemIds": []
   },
-  "summary": "Calibration solves a stated inverse objective under data/model assumptions. Bracket and residual/parameter tolerances need explicit failure semantics. Small residual does not prove identifiability,independent correctness or market fit;current validation guidance is scoped,not a course competence promise."
+  "summary": "Calibration solves a stated inverse objective under data/model assumptions. Bracket and residual/parameter tolerances need explicit failure semantics. Small residual does not prove identifiability, independent correctness or market fit; current validation guidance is scoped, not a course competence promise."
 }

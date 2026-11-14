@@ -692,7 +692,7 @@ function PathNode({
     return <span aria-label={`${title} (locked)`} title={`${title}, locked until prerequisites are passed`}>{body}</span>;
   }
   return (
-    <Link href={`/learn/${lessonId}`} aria-label={`${title} (${status.replace('_', ' ')})`} className="group">
+    <Link href={`/learn/${lessonId}`} className="group">
       {body}
     </Link>
   );

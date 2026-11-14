@@ -30,10 +30,10 @@ export function ClientBlock({ block }: { block: Block }) {
       );
     case 'callout': {
       const styles: Record<string, { fg: string; bg: string; label: string; icon: 'info' | 'warn' | 'pitfall' | 'quant' }> = {
-        info: { fg: 'var(--info)', bg: 'var(--info-soft)', label: 'Note', icon: 'info' },
-        warn: { fg: 'var(--warning-strong)', bg: 'var(--warning-soft)', label: 'Careful', icon: 'warn' },
-        pitfall: { fg: 'var(--danger)', bg: 'var(--danger-soft)', label: 'Pitfall', icon: 'pitfall' },
-        quant: { fg: 'var(--accent-deep)', bg: 'var(--accent-soft)', label: 'Finance link', icon: 'quant' },
+        info: { fg: 'var(--info-ink)', bg: 'var(--info-soft)', label: 'Note', icon: 'info' },
+        warn: { fg: 'var(--warning-ink)', bg: 'var(--warning-soft)', label: 'Careful', icon: 'warn' },
+        pitfall: { fg: 'var(--danger-ink)', bg: 'var(--danger-soft)', label: 'Pitfall', icon: 'pitfall' },
+        quant: { fg: 'var(--accent-ink)', bg: 'var(--accent-soft)', label: 'Finance link', icon: 'quant' },
       };
       const s = styles[block.variant] ?? styles.info;
       return (

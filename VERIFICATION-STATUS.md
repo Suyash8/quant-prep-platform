@@ -1,3 +1,5 @@
+> Historical record: the checks below were executed on the 2026-11-14 07:24 tree. Content and presentation fixes landed after that time; the current final state of this pack is in FINAL-STATUS-2026-11-14.md (validator and grader re-run, final build regression with axe, reading-example layout fix).
+
 # Verification status - QuantFoundry v5 package (reconstructed source tree)
 
 ## What this package is

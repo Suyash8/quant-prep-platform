@@ -1,6 +1,6 @@
 {
   "id": "qf5-algorithms-maps-two-pointers",
-  "revision": 3,
+  "revision": 6,
   "title": "Maps, sets and two-pointer scans",
   "module": "qf5-algorithms",
   "order": 3,
@@ -16,7 +16,7 @@
     },
     {
       "conceptId": "qf5-algorithms-maps-two-pointers.trie-pass-count",
-      "text": "Count occurrences passing through prefix nodes,including repeated whole words."
+      "text": "Count occurrences passing through prefix nodes, including repeated whole words."
     },
     {
       "conceptId": "qf5-algorithms-maps-two-pointers.trie-sparse-layout",
@@ -51,6 +51,14 @@
       "source": "def frequency_report(symbols, k):\n    if type(k) is not int or k < 0:\n        raise ValueError(\"expected nonnegative integer k\")\n    counts = {}\n    for symbol in symbols:\n        if type(symbol) is not str or not symbol or not symbol.isascii() or not symbol.isalnum():\n            raise ValueError(\"expected nonempty ASCII letters/digits\")\n        counts[symbol] = counts.get(symbol, 0) + 1\n    ordered = sorted(counts.items(), key=lambda pair: (-pair[1], pair[0]))\n    return ordered[:k]\n\nprint(frequency_report([\"B\", \"A\", \"B\", \"A\", \"a\"], 3))\nprint(frequency_report([], 2))",
       "caption": "Expected output: [('A', 2), ('B', 2), ('a', 1)], then []. The compound key (-count,symbol) orders count descending and ties by ASCII symbol ascending in this validated ASCII domain. Taking [:k] returns at most k distinct entries, not the first k input messages. A capital A and lowercase a are distinct keys.",
       "runnable": true
+    },
+    {
+      "type": "code",
+      "id": "word-frequency-public-bridge",
+      "language": "python",
+      "source": "def report(symbols, k):\n    return [f\"{symbol} {count}\" for symbol, count in frequency_report(symbols, k)]\n",
+      "caption": "Public word-frequency bridge. Keep the supplied main unchanged. frequency_report returns (symbol,count) tuples; report(symbols,k) converts them into the required output lines. Empty input returns no lines, not a count/header line. Keep the helper definition above, but omit its demonstration print calls when submitting.",
+      "runnable": false
     },
     {
       "type": "check",
@@ -131,34 +139,34 @@
     {
       "type": "text",
       "id": "counting-prefix-trie-0",
-      "markdown": "Prefix count invariant\n\nn,q1..100000,words/prefixes1..20lowercaseASCIIletters. Each distinct nonempty prefix is a trie node;root is empty prefix internally. Insert EVERY occurrence,not only distinct words. passed[node]counts occurrences beginning with its prefix. Increment after each character,including terminal node. A word is its own prefix. No terminal marker needed because this task does not ask exact-word membership,deletion or listing."
+      "markdown": "Prefix count invariant\n\nThere are 1 to 100000 words and queries; each word or prefix has 1 to 20 lowercase ASCII letters. Each distinct nonempty prefix is a trie node; the root represents the empty prefix internally. Insert every occurrence, not only distinct words. passed[node] counts occurrences beginning with that node's prefix. Increment after each character, including the terminal node. A word is its own prefix. No terminal marker is needed because this task does not ask exact-word membership, deletion or listing."
     },
     {
       "type": "text",
       "id": "counting-prefix-trie-1",
-      "markdown": "Sparse layout and transitions\n\nUp to2000001nodes makes26Pythonreferences/node expensive. Four typed arrays store head(first child),sibling(next child of same parent),passed(count),label(incoming letter0..25). -1means missing. To follow a letter,scan the parent child chain. Child labels are unique,so at most26checks. Missing insert creates one node and prepends it to head;missing query returns0. This is a real sparse trie,not a sorted-word shortcut."
+      "markdown": "Sparse layout and transitions\n\nUp to 2000001 nodes makes 26 Python references per node expensive. Four typed arrays store head (first child), sibling (next child of the same parent), passed (count), and label (incoming letter 0..25). -1 means missing. To follow a letter, scan the parent's child chain. Child labels are unique, so there are at most 26 checks. A missing insert creates one node and prepends it to head; a missing query returns 0. This is a sparse trie, not a sorted-word shortcut."
     },
     {
       "type": "text",
       "id": "counting-prefix-trie-2",
-      "markdown": "Proof and trace\n\nOne insertion increments precisely all prefixes of that occurrence,so induction preserves passed counts. Query walks its characters;missing transition means no such stored prefix,otherwise read final passed. For[spy,spyder,spy,aapl,amzn],spandspyboth3,a2,z0. Prefix nodes need not be whole words. Deduplicating spywould wrongly reduce3to2. For[a,ab,a],a3,ab1,abc0."
+      "markdown": "Proof and trace\n\nOne insertion increments precisely all prefixes of that occurrence, so induction preserves passed counts. A query walks its characters: a missing transition means no such stored prefix; otherwise read the final passed count. For [spy,spyder,spy,aapl,amzn], both sp and spy have count 3, a has count 2, and z has count 0. Prefix nodes need not be whole words. Deduplicating spy would wrongly reduce 3 to 2. For [a,ab,a], the counts are a: 3, ab: 1, abc: 0."
     },
     {
       "type": "text",
       "id": "counting-prefix-trie-3",
-      "markdown": "Bounds and typed-array semantics\n\nSinserted characters,Qquery characters,Udistinct nodes. Work O(26*(S+Q)),linear for FIXED26alphabet;space O(U+n+q)including supplied strings/output. S,Q<=2000000,U<=2000001. array iis only guaranteed minimum2bytes:use iwhen itemsize>=4,else l(minimum4). IDs<=2000000,counts<=100000fit signed32bit;labels use B. Payload U*(3*integer_itemsize+label_itemsize),PLUS capacities,objects,input/output;not exact process RAM. Array growth amortized,not hard realtime. Public prefixes nonempty,so root count need not be maintained."
+      "markdown": "Bounds and typed-array semantics\n\nLet S be inserted characters, Q query characters, and U distinct nodes including the root. Work is O(26*(S+Q)), linear for the fixed 26-letter alphabet. Space is O(U+n+q), including the supplied strings and output under the fixed length bound. S,Q<=2000000 and U<=2000001.\n\nArray type i is guaranteed only a 2-byte minimum: use i when itemsize>=4, otherwise l (minimum 4 bytes). Node IDs<=2000000 and counts<=100000 fit signed 32-bit integers; labels use B. Array element payload is U*(3*integer_itemsize+label_itemsize), plus allocated capacity, objects, input and output. That is not exact process RAM. Array growth is amortized, not hard real time. Public prefixes are nonempty, so the root count need not be maintained."
     },
     {
       "type": "text",
       "id": "counting-prefix-trie-4",
-      "markdown": "Independent transfer\n\nCompare with sum(word.startswith(prefix)for word in words),including repeats,whole words,missing deep branches and extensions beyond a word. Exercise100000twenty-letter words with MANY distinct prefixes and all-identical words,plus100000queries. Explain sibling label lookup separately from node indexes. No Unicode,empty-prefix,erase,autocomplete or remote judge memory acceptance claim."
+      "markdown": "Independent transfer\n\nCompare with sum(word.startswith(prefix) for word in words), including repeats, whole words, missing deep branches and extensions beyond a word. Exercise 100000 twenty-letter words with many distinct prefixes and all-identical words, plus 100000 queries. Explain sibling-label lookup separately from node indexes. This does not claim Unicode, empty-prefix, erase, autocomplete or remote judge memory acceptance."
     },
     {
       "type": "code",
       "id": "counting-prefix-trie-complete",
       "language": "python",
       "source": "MOD = 1000000007\n\ndef prefix_counts(words, prefixes):\n    from array import array\n    code = 'i' if array('i').itemsize >= 4 else 'l'\n    (head, sibling, passed) = (array(code, [-1]), array(code, [-1]), array(code, [0]))\n    label = array('B', [0])\n    for word in words:\n        node = 0\n        for char in word:\n            key = ord(char) - ord('a')\n            child = head[node]\n            while child != -1 and label[child] != key:\n                child = sibling[child]\n            if child == -1:\n                child = len(head)\n                head.append(-1)\n                sibling.append(head[node])\n                passed.append(0)\n                label.append(key)\n                head[node] = child\n            node = child\n            passed[node] += 1\n    out = []\n    for prefix in prefixes:\n        node = 0\n        for char in prefix:\n            key = ord(char) - ord('a')\n            child = head[node]\n            while child != -1 and label[child] != key:\n                child = sibling[child]\n            node = child\n            if node == -1:\n                break\n        out.append(str(passed[node] if node != -1 else 0))\n    return out\n\nprint(prefix_counts(['spy', 'spyder', 'spy', 'aapl', 'amzn'], ['sp', 'spy', 'a', 'z']))\nprint(prefix_counts(['a', 'ab', 'a'], ['a', 'ab', 'abc']))\n",
-      "caption": "Expected ['3', '3', '2', '0'],then ['3', '1', '0']. Compact sparse trie preserves multiplicity.",
+      "caption": "Expected ['3', '3', '2', '0'], then ['3', '1', '0']. The compact sparse trie preserves multiplicity.",
       "runnable": true
     },
     {
@@ -199,7 +207,7 @@
     {
       "type": "text",
       "id": "counting-prefix-trie-sources",
-      "markdown": "Sources: [1](https://algorung.com/dsa/tries/implement-trie-ll); [2](https://docs.python.org/3.12/library/array.html). Exact public task contract hash c2f48102d37bd220cc5a1fe20f2264ed357c73aceb09eac3e0c534a7dfd3a2f3. This is main algorithm/contract teaching,not current app or judge signoff."
+      "markdown": "Mechanism references: [trie prefix counters with duplicate insertion](https://algorung.com/dsa/tries/implement-trie-ll) and [Python array type widths/itemsize](https://docs.python.org/3.12/library/array.html). The tutorial uses a different layout and also covers terminal counters/deletion. Our first-child/next-sibling representation, fixed-alphabet scan bound and prefix-only output adapter are specified and proved above. Exact public task contract hash c2f48102d37bd220cc5a1fe20f2264ed357c73aceb09eac3e0c534a7dfd3a2f3. This is main teaching, not current app, memory-limit or judge sign-off."
     },
     {
       "type": "text",
@@ -262,7 +270,7 @@
     {
       "type": "text",
       "id": "canonical-anagram-families-sources",
-      "markdown": "References: [1](https://docs.python.org/3.12/library/stdtypes.html). Public task hash a27b593bb5ca02f88b5983a13ae26934ffe4b47762e63045db34deb0955d5be2. These references establish language/container semantics; the exact task framing is the captured public contract. This extension preserves the earlier bounded examples and their policies rather than silently broadening those APIs."
+      "markdown": "Language background: [sorting](https://docs.python.org/3/howto/sorting.html) and [Python strings, lists and mappings](https://docs.python.org/3.12/library/stdtypes.html). The canonical-key equivalence proof, occurrence retention, two-stage order and output framing are derived task choices, not guarantees supplied by a container reference. Public task hash a27b593bb5ca02f88b5983a13ae26934ffe4b47762e63045db34deb0955d5be2. Earlier bounded examples retain their own policies; this is not app or judge qualification."
     },
     {
       "type": "text",
@@ -325,7 +333,7 @@
     {
       "type": "text",
       "id": "prefix-pair-multiplicity-sources",
-      "markdown": "References: [1](https://docs.python.org/3.12/library/stdtypes.html). Public task hash 739f70658bc253f63512b49cf0e5cb99b34541f1b41809c89d433de75e95f0ab. These references establish language/container semantics; the exact task framing is the captured public contract. This extension preserves the earlier bounded examples and their policies rather than silently broadening those APIs."
+      "markdown": "Language background: [Python integers and mappings](https://docs.python.org/3.12/library/stdtypes.html). The query-before-insert prefix invariant and one-later-endpoint counting proof are derived here; the library page does not establish this pair-count algorithm. Public task hash 739f70658bc253f63512b49cf0e5cb99b34541f1b41809c89d433de75e95f0ab. Earlier bounded examples retain their own policies; this is not app or judge qualification."
     },
     {
       "type": "text",
@@ -340,7 +348,7 @@
     {
       "type": "text",
       "id": "lru-recency-state-2",
-      "markdown": "Trace, invariant and cost\n\nWith capacity2: PUT A1, PUT B2, GET A makes order B,A; PUT C3 evicts B; GET B is MISS; PUT A4 changes A and makes it MRU; GET A prints4. After every operation, key count<=capacity and recency order contains each live key exactly once. Expected hash/endpoint work is O(1) per operation under normal key assumptions, O(capacity) state and O(number of GETs) output for up to100000 operations. A vector search/shift would be linear. This is a single-threaded simulation, not a concurrent or distributed cache."
+      "markdown": "Trace, invariant and cost\n\nWith capacity 2: PUT A 1, PUT B 2, GET A makes order B,A; PUT C 3 evicts B; GET B is MISS; PUT A 4 changes A and makes it MRU; GET A prints 4. After every operation, key count<=capacity and recency order contains each live key exactly once. Expected hash/endpoint work is O(1) per operation under normal key assumptions, O(capacity) state and O(number of GETs) output for up to 100000 operations. A vector search/shift would be linear. This is a single-threaded simulation, not a concurrent or distributed cache."
     },
     {
       "type": "code",
@@ -388,7 +396,7 @@
     {
       "type": "text",
       "id": "lru-recency-state-sources",
-      "markdown": "References: [1](https://docs.python.org/3.12/library/collections.html). Public task hash eeed9e422fd2dd804fc80c9e82901f4c8f692aa8e43028a0a94e9d103132df8f. These references establish language/container semantics; the exact task framing is the captured public contract. This extension preserves the earlier bounded examples and their policies rather than silently broadening those APIs."
+      "markdown": "Mechanism reference: [OrderedDict.move_to_end and popitem](https://docs.python.org/3.12/library/collections.html). The GET/PUT refresh, miss behavior, integer parse and output adapter are declared by this sequential cache task. The container page does not provide a concurrency protocol for the simulation. Public task hash eeed9e422fd2dd804fc80c9e82901f4c8f692aa8e43028a0a94e9d103132df8f. Earlier bounded examples retain their own policies; this is not app or judge qualification."
     }
   ],
   "practice": {

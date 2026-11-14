@@ -131,9 +131,9 @@ export function PracticeFilters({ problems }: { problems: Row[] }) {
         if (!next) return null;
         const Icon = CATEGORY_ICON[next.category] ?? CirclePlay;
         return (
-          <Link href={`/practice/${next.slug}`} className="qf-card mt-5 flex flex-wrap items-center gap-4 p-5 sm:p-6 !border-accent !bg-accent-soft/50">
+          <Link href={`/practice/${next.slug}`} className="qf-card mt-5 flex flex-col sm:flex-row sm:flex-wrap items-start sm:items-center gap-4 p-5 sm:p-6 !border-accent !bg-accent-soft/50">
             <span className="icon-tile icon-tile-accent !h-16 !w-16"><Icon strokeWidth={2.5} /></span>
-            <span className="min-w-0 flex-1">
+            <span className="min-w-0 w-full sm:w-auto sm:flex-1">
               <span className="block text-[13px] font-black text-accent-deep dark:text-accent">{next.status === 'attempted' ? 'Pick up where you left off' : 'Up next for you'}</span>
               <span className="mt-0.5 block text-2xl font-black leading-tight">{next.title}</span>
               {next.summary && <span className="mt-1 block text-[15px] font-semibold text-muted line-clamp-2">{next.summary}</span>}

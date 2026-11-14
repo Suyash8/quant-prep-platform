@@ -9,7 +9,7 @@ import * as React from 'react';
 import Link from 'next/link';
 import {
   ArrowRight, BookOpenCheck, Code2, Timer, Undo2, FolderKanban, BarChart3,
-  CircleDot, Zap, Play, CheckCircle2, Trophy, Sparkles, Star,
+  Hand, CircleDot, Zap, Play, CheckCircle2, Trophy, Sparkles, Star,
 } from 'lucide-react';
 import type { CurriculumMap } from '@/lib/content';
 import { buildCurriculumGraph, type RegistryEntry } from '@/lib/curriculum-graph';
@@ -95,7 +95,7 @@ export function DashboardClient({ name }: { name: string }) {
         <div className="flex items-center gap-4 flex-wrap">
           <div className="flex-1 min-w-[240px]">
             <h1 className="text-2xl sm:text-3xl font-black tracking-tight">
-              Hey {name.split(' ')[0]} {passedSet.size === 0 && '👋'}
+              Hey {name.split(' ')[0]} {passedSet.size === 0 && <Hand className="inline-block h-7 w-7 align-text-bottom text-accent-ink" aria-hidden="true" />}
             </h1>
             <p className="mt-1 text-[15px] font-semibold text-muted">
               {nextLesson
@@ -113,6 +113,8 @@ export function DashboardClient({ name }: { name: string }) {
             <GoalRing pct={goalPct} level={gam.level} done={gam.goalReached} />
           </div>
         </div>
+
+        <section className="qf-card mt-6 p-5 sm:p-6" aria-labelledby="rebuilt-path-heading"><p className="text-xs font-extrabold uppercase tracking-wide text-accent-ink">Rebuilt workspace</p><h2 id="rebuilt-path-heading" className="text-xl font-black mt-2">Learn with the rebuilt curriculum</h2><p className="text-muted leading-relaxed mt-2">Step-by-step lessons, focused checks and coding practice. Your classic lessons and tools remain available below. Progress in the two workspaces is tracked separately.</p><div className="flex flex-wrap gap-3 mt-4"><Link href="/v5/learn" className="btn3d">Open rebuilt learning path <ArrowRight className="h-4 w-4" /></Link><Link href="/v5/practice" className="btn3d btn3d-ghost">Rebuilt coding practice</Link></div></section>
 
         {/* Continue hero */}
         {nextLesson ? (
@@ -233,7 +235,7 @@ export function DashboardClient({ name }: { name: string }) {
         <section className="mt-10" aria-label="Your learning path">
           <div className="flex items-baseline justify-between mb-4 flex-wrap gap-2">
             <h2 className="text-lg font-black tracking-tight">Your path</h2>
-            <Link href="/curriculum" className="text-[15px] font-extrabold text-info hover:underline flex items-center gap-1">
+            <Link href="/curriculum" className="text-[15px] font-extrabold text-info-ink hover:underline flex items-center gap-1">
               See the full curriculum <ArrowRight className="h-3.5 w-3.5" />
             </Link>
           </div>

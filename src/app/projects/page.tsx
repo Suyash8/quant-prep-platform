@@ -72,7 +72,7 @@ export default async function ProjectsPage() {
       </p>
 
       {/* stat row */}
-      <section className="grid grid-cols-3 gap-3">
+      <section className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         {statTiles.map((s, i) => (
           <div key={s.label} className="stat-tile min-w-0 anim-pop-in" style={{ animationDelay: POP_DELAYS[i] }}>
             <span className={`icon-tile icon-tile-sm ${s.tile}`}><s.icon /></span>

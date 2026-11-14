@@ -64,7 +64,7 @@ export function SettingsForm({ user }: { user: { name: string; email: string; ro
   ];
 
   return (
-    <div className="grid gap-5 lg:grid-cols-2 max-w-4xl">
+    <div className="grid grid-cols-1 gap-5 lg:grid-cols-2 max-w-4xl min-w-0">
       <div className="lg:col-span-2 empty:hidden"><SyncErrorNotice /></div>
       {/* gamification summary + daily goal */}
       {gamed && (
@@ -128,8 +128,8 @@ export function SettingsForm({ user }: { user: { name: string; email: string; ro
         </div>
         <label className="block mt-4">
           <span className="text-[13px] font-extrabold text-muted uppercase tracking-wide">Display name</span>
-          <div className="flex gap-2 mt-1.5">
-            <input value={name} onChange={e => setName(e.target.value)} className="qf-input flex-1" aria-label="Display name" />
+          <div className="flex flex-wrap sm:flex-nowrap gap-2 mt-1.5">
+            <input value={name} onChange={e => setName(e.target.value)} className="qf-input min-w-0 flex-1" aria-label="Display name" />
             <button
               onClick={saveName}
               disabled={busy || name === user.name}

@@ -90,7 +90,7 @@ export function Planner({ initialPlan }: { initialPlan: Plan | null }) {
   ] : [];
 
   return (
-    <div className="grid lg:grid-cols-[320px_1fr] gap-6 items-stretch">
+    <div className="grid grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)] gap-6 items-stretch">
       {/* constraints form: stretches with the plan column, filled by the plan summary below */}
       <div className="qf-card p-6 flex flex-col min-w-0 anim-slide-up">
         <div className="section-head">
@@ -177,7 +177,7 @@ export function Planner({ initialPlan }: { initialPlan: Plan | null }) {
       </div>
 
       {/* plan output */}
-      <div>
+      <div className="min-w-0">
         {plan ? (
           <div className="space-y-4">
             <div className="flex items-center gap-3 flex-wrap">
@@ -189,7 +189,7 @@ export function Planner({ initialPlan }: { initialPlan: Plan | null }) {
             </div>
 
             {stats && (
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                 {statTiles.map((s, i) => (
                   <div key={s.label} className="stat-tile anim-pop-in min-w-0" style={{ animationDelay: POP_DELAYS[i] }}>
                     <span className={`icon-tile icon-tile-sm ${s.tile}`}><s.icon /></span>
@@ -266,7 +266,7 @@ export function Planner({ initialPlan }: { initialPlan: Plan | null }) {
           </div>
         ) : (
           <div className="qf-empty anim-pop-in">
-            <span className="empty-emoji" aria-hidden>🗓️</span>
+            <CalendarDays className="mx-auto mb-4 h-14 w-14 text-muted" aria-hidden="true" />
             <h2 className="font-extrabold text-lg">No plan yet</h2>
             <p className="mt-1 text-[15px] text-muted max-w-md mx-auto leading-relaxed">
               Set your hours, days and pace on the left, we’ll sequence every lesson by prerequisites and fit it around your week.

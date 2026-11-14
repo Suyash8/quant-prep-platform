@@ -1,6 +1,6 @@
 {
   "id": "qf5-markets-fills-pnl",
-  "revision": 3,
+  "revision": 4,
   "title": "Fills, positions, cash and PnL",
   "module": "qf5-markets",
   "order": 3,
@@ -40,7 +40,7 @@
     {
       "type": "text",
       "id": "basis-policy",
-      "markdown": "Realized/unrealized decomposition requires a matching convention. This lesson uses moving average entry price on the open position, with transaction fees EXPENSED separately immediately, not capitalized into average cost. Adding to the same side sets average=(|q|*old_average+|\u0394q|*p)/(|q|+|\u0394q|). A partial close leaves that average unchanged. Closing c shares realizes c*(p-average)*sign(old_q). If the fill reverses direction, close the old side first and open the excess at the new fill price; flat state has average0. FIFO/specific-lot/tax systems can give different realized/unrealized splits, and broker displays may use other fee/basis policies."
+      "markdown": "Realized/unrealized decomposition requires a matching convention. This lesson uses moving average entry price on the open position, with transaction fees EXPENSED separately immediately, not capitalized into average cost. Adding to the same side sets average=(|q|*old_average+|\u0394q|*p)/(|q|+|\u0394q|). A partial close leaves that average unchanged. Closing c shares realizes c*(p-average)*sign(old_q). If the fill reverses direction, close the old side first and open the excess at the new fill price; flat state has average 0. FIFO/specific-lot/tax systems can give different realized/unrealized splits, and broker displays may use other fee/basis policies."
     },
     {
       "type": "worked",
@@ -48,16 +48,16 @@
       "title": "Close part of a position without confusing proceeds and profit",
       "steps": [
         {
-          "text": "Start cash100000cents, flat. Buy10at1000with fee5: position10, average1000, cash89995. Buy10at1200with fee5: position20, average1100, cash77990."
+          "text": "Start cash 100000 cents, flat. Buy 10 at 1000 with fee 5: position 10, average 1000, cash 89995. Buy 10 at 1200 with fee 5: position 20, average 1100, cash 77990."
         },
         {
-          "text": "Sell5at1300with fee3: position15, cash84487. Sale proceeds before fee6500are not profit. Matched basis is5*1100=5500, so gross realized PnL=1000cents; remaining average stays1100."
+          "text": "Sell 5 at 1300 with fee 3: position 15, cash 84487. Sale proceeds before fee 6500 are not profit. Matched basis is 5*1100=5500, so gross realized PnL=1000 cents; remaining average stays 1100."
         },
         {
-          "text": "Mark remaining15at1250: unrealized=15*(1250-1100)=2250. Total fees13. Equity=84487+15*1250=103237; equity-initial cash=3237=1000+2250-13."
+          "text": "Mark remaining 15 at 1250: unrealized=15*(1250-1100)=2250. Total fees 13. Equity=84487+15*1250=103237; equity-initial cash=3237=1000+2250-13."
         },
         {
-          "text": "A separate reversal: buy3at1000, then sell5at1100with no fees. Close3long for realized300; excess2opens short at1100. Mark1050gives unrealized(-2)*(1050-1100)=100, total PnL400."
+          "text": "A separate reversal: buy 3 at 1000, then sell 5 at 1100 with no fees. Close 3 long for realized 300; excess 2 opens short at 1100. Mark 1050 gives unrealized (-2)*(1050-1100)=100, total PnL 400."
         }
       ]
     },
@@ -87,14 +87,14 @@
     {
       "type": "text",
       "id": "independent-reconciliation",
-      "markdown": "Reconcile q_end=q_start+sum(\u0394q), and cash_end=cash_start-sum(\u0394q*p+fee) under the stated no-other-flows contract. Compare against an independent authoritative report/snapshot, not two copies generated from the same missing source. Retain execution IDs and order/account/instrument mappings; detect duplicates, missing events and corrections under their actual protocol. Classify breaks rather than changing one side until numbers match. A3centdifference might be a missing fee, but the amount alone does not prove its cause."
+      "markdown": "Reconcile q_end=q_start+sum(\u0394q), and cash_end=cash_start-sum(\u0394q*p+fee) under the stated no-other-flows contract. Compare against an independent authoritative report/snapshot, not two copies generated from the same missing source. Retain execution IDs and order/account/instrument mappings; detect duplicates, missing events and corrections under their actual protocol. Classify breaks rather than changing one side until numbers match. A 3 cent difference might be a missing fee, but the amount alone does not prove its cause."
     },
     {
       "type": "code",
       "id": "independent-fill-sum-reconciliation",
       "language": "python",
       "source": "from fractions import Fraction\n\ndef reconcile_position_cash(fills,initial_cash,reported_position,reported_cash):\n    if type(initial_cash) is not int or type(reported_position) is not int:\n        raise ValueError(\"expected integer starting cash and reported position\")\n    if type(reported_cash) not in (int,Fraction):\n        raise ValueError(\"expected exact reported cash\")\n    if type(fills) is not list or len(fills)>1000:\n        raise ValueError(\"expected at most1000validated signed-share/price/fee tuples\")\n    for row in fills:\n        if type(row) is not tuple or len(row)!=3 or any(type(x) is not int for x in row):\n            raise ValueError(\"expected integer signed-share,price,fee triples\")\n        delta,price,fee=row\n        if not 1<=abs(delta)<=1000000 or not 1<=price<=1000000 or not 0<=fee<=1000000:\n            raise ValueError(\"fill outside bounded synthetic range\")\n    expected_position=sum(delta for delta,price,fee in fills)\n    expected_cash=initial_cash-sum(delta*price+fee for delta,price,fee in fills)\n    return reported_position-expected_position,Fraction(reported_cash)-expected_cash\n\nfills=[(10,1000,5),(10,1200,5),(-5,1300,3)]\nprint(reconcile_position_cash(fills,100000,15,84487))\nprint(reconcile_position_cash(fills,100000,15,84490))\nprint(reconcile_position_cash(fills[:-1],100000,15,84487))",
-      "caption": "Expected output: (0, Fraction(0, 1)); (0, Fraction(3, 1)); then (-5, Fraction(6497, 1)). Differences are reported-minus-expected. A cash report3cents high is a break, not automatically a repaired fee. Omitting the final sell gives both quantity and cash breaks. The helper assumes its input fills have already been deduplicated/identified and starts flat; it does not authenticate reports or reconcile settled balances.",
+      "caption": "Expected output: (0, Fraction(0, 1)); (0, Fraction(3, 1)); then (-5, Fraction(6497, 1)). Differences are reported-minus-expected. A cash report 3 cents high is a break, not automatically a repaired fee. Omitting the final sell gives both quantity and cash breaks. The helper assumes its input fills have already been deduplicated/identified and starts flat; it does not authenticate reports or reconcile settled balances.",
       "runnable": true
     },
     {
@@ -135,7 +135,7 @@
     {
       "type": "text",
       "id": "sources",
-      "markdown": "References: [IBKR statement guide, matching-method/fee distinctions](https://ibkrguides.com/reportingreference/reportguide/realized_unrealizedperformancesummary_default.htm), [FINRA confirmation/reconciliation](https://www.finra.org/investors/insights/checking-trade-confirmations), and [GIPS2020trade-date/transaction-cost concepts](https://gipsstandards.org/wp-content/uploads/2021/03/2020_gips_standards_firms.pdf). The exact average-cost/expense-fee model is our declared synthetic policy, not a claim about any user account, broker display, tax jurisdiction or GIPS compliance."
+      "markdown": "References: [IBKR statement guide, matching-method/fee distinctions](https://ibkrguides.com/reportingreference/reportguide/realized_unrealizedperformancesummary_default.htm), [FINRA confirmation/reconciliation](https://www.finra.org/investors/insights/checking-trade-confirmations), and [GIPS 2020 trade-date/transaction-cost concepts](https://gipsstandards.org/wp-content/uploads/2021/03/2020_gips_standards_firms.pdf). The exact average-cost/expense-fee model is our declared synthetic policy, not a claim about any user account, broker display, tax jurisdiction or GIPS compliance."
     },
     {
       "type": "text",
@@ -198,7 +198,7 @@
     {
       "type": "text",
       "id": "symbol-position-netting-sources",
-      "markdown": "References: [1](https://docs.python.org/3.12/library/stdtypes.html). Public task hash 22e987e10b48daa5cff06e221c500a6bef22f535123fe4bf778dc25e57e9e1fc. These references establish language/container semantics; the exact task framing is the captured public contract. This extension preserves the earlier bounded examples and their policies rather than silently broadening those APIs."
+      "markdown": "Symbol netting: the recurrence, arithmetic, exact output format and bounds are derived above from the captured public contract (public task hash 22e987e10b48daa5cff06e221c500a6bef22f535123fe4bf778dc25e57e9e1fc). Python integer/string semantics support implementation, not a universal broker or tax policy. The complete function uses the captured Python starter adapter; it does not establish new parser, C++, runner or judge qualification."
     },
     {
       "type": "text",
@@ -213,7 +213,7 @@
     {
       "type": "text",
       "id": "flat-blotter-cash-profit-2",
-      "markdown": "Output and tests\n\nBuy 2 at 10.10, sell 2 at 9.95 gives -0.30. Extract sign from the total, then use abs(total)//100 and abs(total)%100 with two digits; zero has no negative sign. N<=100000,quantity<=10000,price<=1000.00 and total movement fits signed 64-bit under the task. O(N) scan, fixed accumulation state and one output line. Test losses smaller than a dollar, whole-dollar loss, exact zero and many 1 cent trades against a Decimal original-string cash-flow sum."
+      "markdown": "Output and tests\n\nBuy 2 at 10.10, sell 2 at 9.95 gives -0.30. Extract sign from the total, then use abs(total)//100 and abs(total)%100 with two digits; zero has no negative sign. N<=100000, quantity<=10000,price<=1000.00 and total movement fits signed 64-bit under the task. O(N) scan, fixed accumulation state and one output line. Test losses smaller than a dollar, whole-dollar loss, exact zero and many 1 cent trades against a Decimal original-string cash-flow sum."
     },
     {
       "type": "code",
@@ -261,7 +261,7 @@
     {
       "type": "text",
       "id": "flat-blotter-cash-profit-sources",
-      "markdown": "References: [1](https://docs.python.org/3.12/library/decimal.html), [2](https://docs.python.org/3.12/library/stdtypes.html). Public task hash cdce14b432cd87a30a1a4595741802da971231bad2c75d29dea80a7d9eaa285d. These references establish language/container semantics; the exact task framing is the captured public contract. This extension preserves the earlier bounded examples and their policies rather than silently broadening those APIs."
+      "markdown": "Flat blotter PnL: the recurrence, arithmetic, exact output format and bounds are derived above from the captured public contract (public task hash cdce14b432cd87a30a1a4595741802da971231bad2c75d29dea80a7d9eaa285d). Python integer/string semantics support implementation, not a universal broker or tax policy. The complete function uses the captured Python starter adapter; it does not establish new parser, C++, runner or judge qualification."
     }
   ],
   "practice": {

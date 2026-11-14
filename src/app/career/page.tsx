@@ -245,7 +245,7 @@ export default async function CareerPage() {
             ))}
             <span className="ml-auto text-faint font-semibold">Hover any cell for the full requirement wording</span>
           </div>
-          <div className="qf-card p-2 sm:p-4 overflow-x-auto thin-scroll">
+          <div tabIndex={0} role="region" aria-label="Career track comparison" className="qf-card p-2 sm:p-4 overflow-x-auto thin-scroll focus-visible:outline-2 focus-visible:outline-info-strong">
             <table className="qf-table text-[15px]">
               <thead>
                 <tr>

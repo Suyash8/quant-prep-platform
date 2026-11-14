@@ -1,6 +1,6 @@
 {
   "id": "qf5-trading-feed-state",
-  "revision": 2,
+  "revision": 4,
   "title": "Sequence gaps, duplicates and feed state",
   "module": "qf5-trading",
   "order": 2,
@@ -26,19 +26,19 @@
     {
       "type": "text",
       "id": "packet-versus-message",
-      "markdown": "A packet can contain several messages. In MoldUDP64, header is session10 octets, first-message sequence8 octets and message count2 octets, all numeric fields big-endian. Each data block has a2-octet payload length followed by that many bytes, not including its own length. Header sequence s and count k imply data message positions s through s+k-1. Lost packets can lose several message positions; counting packets is not message sequencing. A sequence is meaningful only with its configured stream/session/channel identity, not as a globally unique integer."
+      "markdown": "A packet can contain several messages. In MoldUDP64, header is session 10 octets, first-message sequence 8 octets and message count 2 octets, all numeric fields big-endian. Each data block has a 2-octet payload length followed by that many bytes, not including its own length. Header sequence s and count k imply data message positions s through s+k-1. Lost packets can lose several message positions; counting packets is not message sequencing. A sequence is meaningful only with its configured stream/session/channel identity, not as a globally unique integer."
     },
     {
       "type": "text",
       "id": "markers",
-      "markdown": "MoldUDP64 count0 is heartbeat; count65535 is end-of-session, not a packet containing65535 data blocks. These markers carry the next expected sequence according to the sender and consume no data message position. A heartbeat can reveal that our receiver is behind even when no new data packet arrives; it does not fill the missing messages. End-of-session may leave a final chance to request gaps under the service contract; it does not certify our local book is complete. The generic wrapper can carry zero-length message data, while a specific ITCH Add A decoder cannot accept an empty record."
+      "markdown": "MoldUDP64 count 0 is heartbeat; count 65535 is end-of-session, not a packet containing 65535 data blocks. These markers carry the next expected sequence according to the sender and consume no data message position. A heartbeat can reveal that our receiver is behind even when no new data packet arrives; it does not fill the missing messages. End-of-session may leave a final chance to request gaps under the service contract; it does not certify our local book is complete. The generic wrapper can carry zero-length message data, while a specific ITCH Add A decoder cannot accept an empty record."
     },
     {
       "type": "code",
       "id": "moldudp64-bounded-wrapper",
       "language": "python",
       "source": "def mold_subset(packet):\n    # Generic MoldUDP64 wrapper subset; message data is opaque, not assumed ITCH A.\n    if type(packet) is not bytes or not 20<=len(packet)<=256:\n        raise ValueError(\"invalid datagram bounds\")\n    if packet[:10]!=b\"SESSION001\":\n        raise ValueError(\"unexpected configured session\")\n    sequence=int.from_bytes(packet[10:18],\"big\")\n    count=int.from_bytes(packet[18:20],\"big\")\n    if not 1<=sequence<=1000:\n        raise ValueError(\"own sequence bound\")\n    if count in (0,65535):\n        if len(packet)!=20:raise ValueError(\"marker has trailing data\")\n        return \"heartbeat\" if count==0 else \"end\",sequence,[]\n    if count>4 or sequence+count-1>1000:\n        raise ValueError(\"own packet count or sequence bound\")\n    cursor=20\n    messages=[]\n    for index in range(count):\n        if cursor+2>len(packet):raise ValueError(\"truncated length\")\n        size=int.from_bytes(packet[cursor:cursor+2],\"big\")\n        cursor+=2\n        if size>64 or cursor+size>len(packet):raise ValueError(\"invalid message length\")\n        messages.append((sequence+index,packet[cursor:cursor+size]))\n        cursor+=size\n    if cursor!=len(packet):raise ValueError(\"trailing bytes\")\n    return \"data\",sequence,messages\n\nheader=b\"SESSION001\"+(7).to_bytes(8,\"big\")\nprint(mold_subset(header+(2).to_bytes(2,\"big\")+b\"\\x00\\x01A\\x00\\x01B\"))\nprint(mold_subset(header+b\"\\x00\\x00\"))\nprint(mold_subset(header+b\"\\xff\\xff\"))",
-      "caption": "Expected lines: ('data',7,[(7,b'A'),(8,b'B')]); ('heartbeat',7,[]); ('end',7,[]), with normal Python spacing. Fixed configured session SESSION001, sequence1..1000,<=4 data blocks,<=64 octets per message,<=256 per datagram are own teaching bounds, not universal protocol limits. Zero-length generic message blocks allowed. Opaque A/B one-octet payloads are wrapper fixtures, NOT valid ITCH records. Markers/lengths/trailing data checked before returning the packet; no partial application or live receive occurs.",
+      "caption": "Expected lines: ('data',7,[(7,b'A'),(8,b'B')]); ('heartbeat',7,[]); ('end',7,[]), with normal Python spacing. Fixed configured session SESSION001, sequence 1..1000, <=4 data blocks, <=64 octets per message, <=256 per datagram are own teaching bounds, not universal protocol limits. Zero-length generic message blocks allowed. Opaque A/B one-octet payloads are wrapper fixtures, NOT valid ITCH records. Markers/lengths/trailing data checked before returning the packet; no partial application or live receive occurs.",
       "runnable": true
     },
     {
@@ -59,7 +59,7 @@
     {
       "type": "text",
       "id": "state-contract",
-      "markdown": "Our next code is a deliberately separate normalized event policy: fixed configured session DAY1, initial next expected1, up to16 accepted contiguous positions and payload bytes1..16. History position i stores exactly the accepted payload for sequence i+1; we keep the whole tiny history, so no unbounded deduplication/eviction claim. A matching next sequence appends once. A lower sequence with exact same stored bytes is duplicate/no-op; same sequence with different bytes is conflict/pause. A higher sequence is gap/pause, preserving history and expected position. Foreign session is rejected unchanged, not silently adopted. Exact byte equality is the declared duplicate identity here, not a universal FIX resend rule."
+      "markdown": "Our next code is a deliberately separate normalized event policy: fixed configured session DAY1, initial next expected 1, up to 16 accepted contiguous positions and payload bytes 1..16. History position i stores exactly the accepted payload for sequence i+1; we keep the whole tiny history, so no unbounded deduplication/eviction claim. A matching next sequence appends once. A lower sequence with exact same stored bytes is duplicate/no-op; same sequence with different bytes is conflict/pause. A higher sequence is gap/pause, preserving history and expected position. Foreign session is rejected unchanged, not silently adopted. Exact byte equality is the declared duplicate identity here, not a universal FIX resend rule."
     },
     {
       "type": "worked",
@@ -67,13 +67,13 @@
       "title": "Do not skip a missing event to make the feed look live",
       "steps": [
         {
-          "text": "Start expected1. Accept seq1/A, so expected2 and history(A). Receiving seq1/A again is duplicate and expected stays2."
+          "text": "Start expected 1. Accept seq 1/A, so expected 2 and history(A). Receiving seq 1/A again is duplicate and expected stays 2."
         },
         {
-          "text": "Receive seq3/C while expecting2: mark gap, keep expected2/history(A), and do NOT apply seq3. This implementation intentionally does not buffer it."
+          "text": "Receive seq 3/C while expecting 2: mark gap, keep expected 2/history(A), and do NOT apply seq 3. This implementation intentionally does not buffer it."
         },
         {
-          "text": "Even if seq2/B arrives later, the paused policy does not resume by itself. Recover a consistent snapshot/replay under an explicit protocol before publishing live state. A gap-free integer counter manufactured by skipping2 would hide the missing event."
+          "text": "Even if seq 2/B arrives later, the paused policy does not resume by itself. Recover a consistent snapshot/replay under an explicit protocol before publishing live state. A gap-free integer counter manufactured by skipping 2 would hide the missing event."
         }
       ]
     },
@@ -88,7 +88,7 @@
     {
       "type": "text",
       "id": "real-session-distinction",
-      "markdown": "Real recovery policies are protocol-specific. FIX session resend handling can set PossDupFlag(43)=Y, update SendingTime(52), include OrigSendingTime(122)and recalculate framing; a valid retransmission need not be byte-identical. SequenceReset/GapFill have explicit conditions and are not permission to discard missing business events at will. MoldUDP64 request/response uses the requested session and sequence range with service retention/end-of-session constraints. Our DAY1 exact-byte policy intentionally does not implement either complete state machine. Dual-feed arbitration, out-of-order buffering, stale history eviction and reconnect/session resets require explicit additional contracts."
+      "markdown": "Real recovery policies are protocol-specific. FIX session resend handling can set PossDupFlag(43)=Y, update SendingTime(52), include OrigSendingTime(122) and recalculate framing; a valid retransmission need not be byte-identical. SequenceReset/GapFill have explicit conditions and are not permission to discard missing business events at will. MoldUDP64 request/response uses the requested session and sequence range with service retention/end-of-session constraints. Our DAY1 exact-byte policy intentionally does not implement either complete state machine. Dual-feed arbitration, out-of-order buffering, stale history eviction and reconnect/session resets require explicit additional contracts."
     },
     {
       "type": "check",
@@ -113,7 +113,7 @@
     {
       "type": "text",
       "id": "transfer",
-      "markdown": "Independent transfer: build a bounded two-message wrapper with first sequence10 and verify positions10/11, then truncate every byte and reject malformed counts/lengths. For the state model enumerate short applied/duplicate/conflict/gap/foreign-session streams and compare accepted history to a reference. Check that all paused transitions preserve history, exact duplicates do not count as applied and a new session number cannot reset state without explicit initialization/recovery. Explain why equal packet count is not equal feed completeness."
+      "markdown": "Independent transfer: build a bounded two-message wrapper with first sequence 10 and verify positions 10/11, then truncate every byte and reject malformed counts/lengths. For the state model enumerate short applied/duplicate/conflict/gap/foreign-session streams and compare accepted history to a reference. Check that all paused transitions preserve history, exact duplicates do not count as applied and a new session number cannot reset state without explicit initialization/recovery. Explain why equal packet count is not equal feed completeness."
     },
     {
       "type": "check",
@@ -123,7 +123,7 @@
     {
       "type": "text",
       "id": "sources",
-      "markdown": "Sources: [MoldUDP64 header/message/heartbeat/end/request definitions](https://www.nasdaqtrader.com/content/technicalSupport/specifications/dataproducts/moldudp64.pdf), [ITCH5 encoding and outbound feed scope](https://www.nasdaqtrader.com/content/technicalsupport/specifications/dataproducts/NQTVITCHSpecification_5.0.pdf), and [FIX Session Layer June2020 possible duplicates/resend/gap fill](https://www.fixtrading.org/wp-content/uploads/download-manager-files/FIX_Session_Layer_June_2020.pdf). These distinctions are why the exact-byte DAY1 model is labeled own policy, not certified FIX/MoldUDP64 recovery."
+      "markdown": "Sources: [MoldUDP64 header/message/heartbeat/end/request definitions](https://www.nasdaqtrader.com/content/technicalSupport/specifications/dataproducts/moldudp64.pdf), [ITCH5 encoding and outbound feed scope](https://www.nasdaqtrader.com/content/technicalsupport/specifications/dataproducts/NQTVITCHSpecification_5.0.pdf), and [FIX Session Layer June 2020 possible duplicates/resend/gap fill](https://www.fixtrading.org/wp-content/uploads/download-manager-files/FIX_Session_Layer_June_2020.pdf). These distinctions are why the exact-byte DAY1 model is labeled own policy, not certified FIX/MoldUDP64 recovery."
     },
     {
       "type": "text",
@@ -143,7 +143,7 @@
     {
       "type": "text",
       "id": "synthetic-packet-application-3",
-      "markdown": "Trace, guarantees and transfer\n\nThe visible stream adds id7 quantity 100 at sequence 1, executes 40 at 2, cancels60 at4 after GAP3 3, ignores older sequence 3, then errors on unknown id9 at5: BOOK 0, SHARES 40. A body error consumes the observed sequence position but changes no live-order quantity. Positive quantities and hex-digit syntax are public preconditions; no unspecified extra error category is invented. Up to 100000 packets and 64 hex digits each give linear byte parsing plus expected constant dictionary work per event, O(live ids) state and output-sized lines. Test truncation, duplicates with corrupted bodies, gaps followed by body errors, numeric ids above signed64-bit,over-cancels and removal/re-add against a separate record-based interpreter. The current contract explicitly resolves combined faults: unknown type precedes type-specific length; known-type wrong length precedes an invalid A side."
+      "markdown": "Trace, guarantees and transfer\n\nThe visible stream adds id 7 quantity 100 at sequence 1, executes 40 at 2, cancels 60 at 4 after GAP 3 3, ignores older sequence 3, and ends with BOOK 0, SHARES 40. An additional sequence-5 execute for unknown id 9 would emit ERR UNKNOWN 5 without changing those totals. A body error consumes the observed sequence position but changes no live-order quantity. Positive quantities and hex-digit syntax are public preconditions; no unspecified extra error category is invented. Up to 100000 packets and 64 hex digits each give linear byte parsing plus expected constant dictionary work per event, O(live ids) state and output-sized lines. Test truncation, duplicates with corrupted bodies, gaps followed by body errors, numeric ids above signed 64-bit, over-cancels and removal/re-add against a separate record-based interpreter. The current contract explicitly resolves combined faults: unknown type precedes type-specific length; known-type wrong length precedes an invalid A side."
     },
     {
       "type": "code",
@@ -191,7 +191,7 @@
     {
       "type": "text",
       "id": "synthetic-packet-application-sources",
-      "markdown": "References: [1](https://docs.python.org/3.12/library/stdtypes.html). Public task hash b2b39d18fe40e14c6da270bef623b75085e14d113cef3851e4863048c86fc61b. These references establish language/container semantics; the exact task framing is the captured public contract. This extension preserves the earlier bounded examples and their policies rather than silently broadening those APIs."
+      "markdown": "The exact synthetic layout, skip-forward sequence consumption, error priority and atomic business-rejection rules come from the explicit captured task contract above, not the Python bytes API. Public task hash b2b39d18fe40e14c6da270bef623b75085e14d113cef3851e4863048c86fc61b. This extension preserves earlier examples and their distinct fail-closed policy. No real ITCH/MoldUDP64 compatibility or independent parser/C++/runner/judge qualification is claimed."
     }
   ],
   "practice": {

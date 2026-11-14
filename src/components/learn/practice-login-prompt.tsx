@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Code2 } from 'lucide-react';
+import { Code2, LockKeyhole } from 'lucide-react';
 
 export function PracticeLoginPrompt() {
   return (
@@ -12,7 +12,7 @@ export function PracticeLoginPrompt() {
         </div>
       </header>
       <div className="qf-empty bg-dots">
-        <span className="empty-emoji" role="img" aria-label="locked">🔐</span>
+        <LockKeyhole className="mx-auto h-14 w-14 text-muted mb-4" role="img" aria-label="Locked" />
         <p className="text-lg font-extrabold">Sign in to start solving</p>
         <p className="mx-auto mt-1 max-w-md text-[15px] font-semibold text-muted">
           Progress, submissions and the code editor need an account, it takes about 20 seconds.

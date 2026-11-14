@@ -1,6 +1,6 @@
 {
   "id": "qf5-production-incident-recovery",
-  "revision": 1,
+  "revision": 2,
   "title": "Failure injection, recovery and runbooks",
   "module": "qf5-production",
   "order": 5,
@@ -12,7 +12,7 @@
     },
     {
       "conceptId": "qf5-production-incident-recovery.recovery-runbook",
-      "text": "Design scoped failure-injection/runbook evidence distinguishing detection,mitigation,unknown committed effects,recovery verification and post-incident learning without claiming actual recovery execution."
+      "text": "Design scoped failure-injection/runbook evidence distinguishing detection, mitigation, unknown committed effects, recovery verification and post-incident learning without claiming actual recovery execution."
     }
   ],
   "prerequisites": [
@@ -22,12 +22,12 @@
     {
       "type": "text",
       "id": "incident-work",
-      "markdown": "An incident is user impact plus an operational coordination problem. GoogleSREdescribes clear command/operations/communications roles,working records and mitigation before full root-cause analysis. Scope the blast radius,freeze unrelated changes,preserve evidence and communicate grounded impact/uncertainty. A suspected cause is not confirmed cause. Runbook actions need explicit owner authority/preconditions and expected effects;an incident is not permission to spend,deploy,delete data or expose secrets."
+      "markdown": "An incident is user impact plus an operational coordination problem. Google SRE describes clear command/operations/communications roles, working records and mitigation before full root-cause analysis. Scope the blast radius, freeze unrelated changes, preserve evidence and communicate grounded impact/uncertainty. A suspected cause is not confirmed cause. Runbook actions need explicit owner authority/preconditions and expected effects; an incident is not permission to spend, deploy, delete data or expose secrets."
     },
     {
       "type": "text",
       "id": "phase-contract",
-      "markdown": "Own pure state is(epoch,phase)with phases running,paused,reconciling,ready. Legal path:pause running,inspect paused,approve reconciling,resume ready. Approve/resume require current snapshot,invariants_okand NOunknown effects. Expected epoch must match;every accepted transition increments it. This is an immutable planner only:pause does not stop a process,resume does not start one,and caller booleans do not authenticate evidence. Actual atomic state publication and role authorization are not implemented."
+      "markdown": "Own pure state is (epoch,phase) with phases running, paused, reconciling, ready. Legal path: pause running, inspect paused, approve reconciling, resume ready. Approve/resume require current snapshot, invariants_ok and NO unknown effects. Expected epoch must match; every accepted transition increments it. This is an immutable planner only: pause does not stop a process, resume does not start one, and caller booleans do not authenticate evidence. Actual atomic state publication and role authorization are not implemented."
     },
     {
       "type": "worked",
@@ -35,13 +35,13 @@
       "title": "Unknown acknowledgment must be reconciled before resuming",
       "steps": [
         {
-          "text": "Begin(0,running). Pause yields(1,paused);inspect yields(2,reconciling). Consult authoritative inventory/idempotency records from the previous lesson,not only the failed caller acknowledgment."
+          "text": "Begin (0,running). Pause yields (1,paused); inspect yields (2,reconciling). Consult authoritative inventory/idempotency records from the previous lesson,not only the failed caller acknowledgment."
         },
         {
-          "text": "A precommit failure can have rolled back;an after-commit failure may already have reserved inventory. If effects are still unknown,approve must fail. Record what source/revision/timestamp establishes the real state."
+          "text": "A precommit failure can have rolled back; an after-commit failure may already have reserved inventory. If effects are still unknown, approve must fail. Record what source/revision/timestamp establishes the real state."
         },
         {
-          "text": "Only current reconciled evidence permits(3,ready),then a rechecked resume yields(4,running). A stale expected epoch0fails rather than applying an old operation to this new state."
+          "text": "Only current reconciled evidence permits (3,ready), then a rechecked resume yields (4,running). A stale expected epoch 0 fails rather than applying an old operation to this new state."
         }
       ]
     },
@@ -50,7 +50,7 @@
       "id": "recovery-phase-preconditions",
       "language": "python",
       "source": "def recovery_transition(state,expected_epoch,action,evidence):\n    # Own immutable state:(epoch,phase);trusted observation flags are toy inputs.\n    if type(state) is not tuple or len(state)!=2 or type(state[0]) is not int or state[0]<0 or state[1] not in ('running','paused','reconciling','ready'):\n        raise ValueError('invalid recovery state')\n    if type(expected_epoch) is not int or expected_epoch!=state[0]:raise ValueError('stale recovery epoch')\n    if type(action) is not str or action not in ('pause','inspect','approve','resume'):raise ValueError('invalid recovery action')\n    if type(evidence) is not dict or set(evidence)!={'snapshot_current','invariants_ok','unknown_effects'} or any(type(x) is not bool for x in evidence.values()):raise ValueError('invalid recovery evidence')\n    phase=state[1]\n    if action=='pause' and phase=='running':new='paused'\n    elif action=='inspect' and phase=='paused':new='reconciling'\n    elif action=='approve' and phase=='reconciling' and evidence['snapshot_current'] and evidence['invariants_ok'] and not evidence['unknown_effects']:new='ready'\n    elif action=='resume' and phase=='ready' and evidence['snapshot_current'] and evidence['invariants_ok'] and not evidence['unknown_effects']:new='running'\n    else:raise ValueError('unsafe or out-of-order recovery transition')\n    return state[0]+1,new\n\ne={'snapshot_current':True,'invariants_ok':True,'unknown_effects':False}\nstate=(0,'running')\nfor action in ('pause','inspect','approve','resume'):\n    state=recovery_transition(state,state[0],action,e);print(state)\ntry:recovery_transition(state,0,'pause',e)\nexcept ValueError as error:print(error)\ntry:recovery_transition((2,'reconciling'),2,'approve',{**e,'unknown_effects':True})\nexcept ValueError as error:print(error)",
-      "caption": "Expected(1,paused),(2,reconciling),(3,ready),(4,running);stale recovery epoch;unsafe or out-of-order recovery transition. Exact Python tuple output quotes phases. Complete pure source with strict evidence keys/booltypes. It does not execute rollback,restart,external reconciliation,authorization,concurrent compare-and-swap or durable recovery.",
+      "caption": "Expected (1,paused), (2,reconciling), (3,ready), (4,running); stale recovery epoch; unsafe or out-of-order recovery transition. Exact Python tuple output quotes phases. Complete pure source with strict evidence keys/bool types. It does not execute rollback, restart, external reconciliation, authorization, concurrent compare-and-swap or durable recovery.",
       "runnable": true
     },
     {
@@ -71,17 +71,17 @@
     {
       "type": "text",
       "id": "failure-injection",
-      "markdown": "Choose a stated hypothesis,failure point,allowed environment/blast radius,stop condition,owner,backup/restore and observation plan BEFOREinjecting. Test precommit/postcommit lost acknowledgments,timeout,dependency failure,corrupt/missing artifacts and recovery replay on local/staging fixtures. Caught Pythonexceptions are not process kill,disk loss,power failure,network partition or multi-writer concurrency. Never inject failure into real user systems merely because a classroom simulation passed."
+      "markdown": "Choose a stated hypothesis, failure point, allowed environment/blast radius, stop condition, owner, backup/restore and observation plan BEFORE injecting. Test precommit/postcommit lost acknowledgments, timeout, dependency failure, corrupt/missing artifacts and recovery replay on local/staging fixtures. Caught Python exceptions are not process kill, disk loss, power failure, network partition or multi-writer concurrency. Never inject failure into real user systems merely because a classroom simulation passed."
     },
     {
       "type": "text",
       "id": "runbook-fields",
-      "markdown": "A runbook should name symptom/impact,scope/version,required access,current authoritative checks,exact bounded action,expected result/time,stop/escalation and rollback/restore verification. Include how to handle unknown outcomes and avoid duplicate effects. Backups need tested restore and recovery-point/time objectives,not only a green backup job. Recovery may preserve recent committed data differently from reverting a binary;do not equate rollback,replay and restore."
+      "markdown": "A runbook should name symptom/impact, scope/version, required access, current authoritative checks, exact bounded action, expected result/time, stop/escalation and rollback/restore verification. Include how to handle unknown outcomes and avoid duplicate effects. Backups need tested restore and recovery-point/time objectives, not only a green backup job. Recovery may preserve recent committed data differently from reverting a binary; do not equate rollback, replay and restore."
     },
     {
       "type": "text",
       "id": "safe-resumption",
-      "markdown": "Verify reconciled business invariants,data freshness/pending effects,actual health/telemetry and user-critical flows,then restore traffic progressively under authority. readyis not automatic approval to operate:the toy flag assumes evidence supplied correctly. A pause may itself affect obligations or queued work;document and reconcile that impact. Do not erase corrupted/unknown evidence to make checks green. Preserve a timestamped action/owner/state log without credentials."
+      "markdown": "Verify reconciled business invariants, data freshness/pending effects, actual health/telemetry and user-critical flows, then restore traffic progressively under authority. ready is not automatic approval to operate: the toy flag assumes evidence supplied correctly. A pause may itself affect obligations or queued work; document and reconcile that impact. Do not erase corrupted/unknown evidence to make checks green. Preserve a timestamped action/owner/state log without credentials."
     },
     {
       "type": "check",
@@ -101,12 +101,12 @@
     {
       "type": "text",
       "id": "postincident",
-      "markdown": "Separate mitigation,root cause,contributing conditions and corrective work. A blameless review describes observed timeline,impact,detection/response gaps,what worked,and owned verifiable follow-ups. Avoid inventing certainty or promising recurrence impossible. Exercise the updated runbook and verify the fix under the original failure hypothesis. Actual incident communications are representation and must follow the user's approved scope;this lesson sends none."
+      "markdown": "Separate mitigation, root cause, contributing conditions and corrective work. A blameless review describes observed timeline, impact, detection/response gaps, what worked, and owned verifiable follow-ups. Avoid inventing certainty or promising recurrence impossible. Exercise the updated runbook and verify the fix under the original failure hypothesis. Actual incident communications are representation and must follow the user's approved scope; this lesson sends none."
     },
     {
       "type": "text",
       "id": "transfer",
-      "markdown": "Independent transfer:enumerate phases/actions/evidence flags and prove approval/resume impossible with unknown effects or stale snapshots. Replay an old epoch after every transition and reject it. Map prior SQLpre/postcommit failpoints to distinct runbook investigations. Then list actual process/concurrency/restore tests still absent. A boolean state machine is a teaching precondition check,not an incident-management or disaster-recovery platform."
+      "markdown": "Independent transfer: enumerate phases/actions/evidence flags and prove approval/resume impossible with unknown effects or stale snapshots. Replay an old epoch after every transition and reject it. Map prior SQL pre/postcommit failpoints to distinct runbook investigations. Then list actual process/concurrency/restore tests still absent. A boolean state machine is a teaching precondition check, not an incident-management or disaster-recovery platform."
     },
     {
       "type": "check",
@@ -116,11 +116,11 @@
     {
       "type": "text",
       "id": "sources",
-      "markdown": "Sources:[GoogleSREmanaging incidents](https://sre.google/sre-book/managing-incidents/),[incident response/mitigation](https://sre.google/workbook/incident-response/),[PythonSQLiterecovery semantics context](https://docs.python.org/3.12/library/sqlite3.html). Own phase machine and evidence flags are not the Googleincident system or a real recovery procedure."
+      "markdown": "Sources: [Google SRE managing incidents](https://sre.google/sre-book/managing-incidents/), [incident response/mitigation](https://sre.google/workbook/incident-response/), [Python SQLite recovery semantics context](https://docs.python.org/3.12/library/sqlite3.html). Own phase machine and evidence flags are not the Google incident system or a real recovery procedure."
     }
   ],
   "practice": {
     "problemIds": []
   },
-  "summary": "Coordinate impact/mitigation/evidence before resumption. Unknown committed effects and stale state must block this toy recovery gate. Failure injection/runbooks need bounded authority,observations and actual restore/process tests;the pure phase planner performs no operational recovery."
+  "summary": "Coordinate impact/mitigation/evidence before resumption. Unknown committed effects and stale state must block this toy recovery gate. Failure injection/runbooks need bounded authority, observations and actual restore/process tests; the pure phase planner performs no operational recovery."
 }

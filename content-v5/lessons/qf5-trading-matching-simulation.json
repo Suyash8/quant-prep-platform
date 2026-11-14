@@ -1,6 +1,6 @@
 {
   "id": "qf5-trading-matching-simulation",
-  "revision": 2,
+  "revision": 4,
   "title": "Matching and fill simulation assumptions",
   "module": "qf5-trading",
   "order": 6,
@@ -8,11 +8,11 @@
   "objectives": [
     {
       "conceptId": "qf5-trading-matching-simulation.matching-policy",
-      "text": "Implement a bounded deterministic ask-side limit-buy sweep under declared price/time/tie/execution-price/residual rules,checking quantity and notional conservation without mutating input."
+      "text": "Implement a bounded deterministic ask-side limit-buy sweep under declared price/time/tie/execution-price/residual rules, checking quantity and notional conservation without mutating input."
     },
     {
       "conceptId": "qf5-trading-matching-simulation.fill-assumptions",
-      "text": "Distinguish static deterministic matching from backtest fill inference and live execution,documenting queue,latency,liquidity,fees,impact,data-availability and venue-policy limitations."
+      "text": "Distinguish static deterministic matching from backtest fill inference and live execution, documenting queue, latency, liquidity, fees, impact, data-availability and venue-policy limitations."
     },
     {
       "conceptId": "qf5-trading-matching-simulation.two-sided-synthetic-fifo-matcher",
@@ -26,12 +26,12 @@
     {
       "type": "text",
       "id": "state-the-mechanism",
-      "markdown": "A matcher defines which resting interest trades with an incoming order,at what price,in what order and what happens to any unfilled remainder. Price/time is one policy,not the only venue algorithm. CME documentation lists FIFO,pro-rata and additional product-specific priority steps;its FIFO discussion also distinguishes outright from implied orders. Do not implement a simple list sort and label it all CME,all exchanges or a production matching engine. This lesson deliberately chooses one smaller static ask-only mechanism."
+      "markdown": "A matcher defines which resting interest trades with an incoming order, at what price, in what order and what happens to any unfilled remainder. Price/time is one policy, not the only venue algorithm. CME documentation lists FIFO, pro-rata and additional product-specific priority steps;its FIFO discussion also distinguishes outright from implied orders. Do not implement a simple list sort and label it all CME, all exchanges or a production matching engine. This lesson deliberately chooses one smaller static ask-only mechanism."
     },
     {
       "type": "text",
       "id": "own-sweep",
-      "markdown": "Our one incoming limit BUY can consume resting asks priced<=limit. Sort lowest price first,then lower arrival_rank,then lower numeric ID ONLY as our deterministic synthetic tie rule. At each row trade min(unfilled,available)at that resting ask price. Preserve partial remaining ask quantity;remove exhausted rows. Return unfilled incoming quantity as canceled/unexecuted under our IOC-like policy;never insert it as a new bid. Prices are integer minor units,quantities units;no fees,replenishment,hidden/implied orders,auctions,self-trade prevention or modifications. arrival_rank is an own recorded ordering key,not a claim that wall-clock timestamps are unique or venue queue positions known."
+      "markdown": "Our one incoming limit BUY can consume resting asks priced <=limit. Sort lowest price first, then lower arrival_rank,then lower numeric ID ONLY as our deterministic synthetic tie rule. At each row trade min(unfilled,available) at that resting ask price. Preserve partial remaining ask quantity; remove exhausted rows. Return unfilled incoming quantity as canceled/unexecuted under our IOC-like policy; never insert it as a new bid. Prices are integer minor units, quantities units; no fees, replenishment, hidden/implied orders, auctions, self-trade prevention or modifications. arrival_rank is an own recorded ordering key, not a claim that wall-clock timestamps are unique or venue queue positions known."
     },
     {
       "type": "worked",
@@ -39,13 +39,13 @@
       "title": "Better price,then declared FIFO within a price",
       "steps": [
         {
-          "text": "Asks:id3 price101 arrival0 qty5;id2 price100 arrival2 qty4;id1 price100 arrival1 qty2. Incoming buy5 limit100 cannot touch101,even though that ask has the earlier arrival rank."
+          "text": "Asks: id 3 price 101 arrival 0 qty 5; id 2 price 100 arrival 2 qty 4; id 1 price 100 arrival 1 qty 2. Incoming buy 5 limit 100 cannot touch 101, even though that ask has the earlier arrival rank."
         },
         {
-          "text": "At price100,id1 precedes id2. Take2 from id1 then3 from id2;cost2*100+3*100=500. Residual:id2 qty1 at100 and id3 qty5 at101."
+          "text": "At price 100, id 1 precedes id 2. Take 2 from id 1 then 3 from id 2; cost 2*100+3*100=500. Residual: id 2 qty 1 at 100 and id 3 qty 5 at 101."
         },
         {
-          "text": "Incoming quantity5=filled5+unfilled0;resting total11=traded5+residual6. A buy5 limit99 matches nothing and returns unfilled5,cost0. Neither outcome predicts what a real later order will fill."
+          "text": "Incoming quantity 5=filled 5+unfilled 0; resting total 11=traded 5+residual 6. A buy 5 limit 99 matches nothing and returns unfilled 5, cost 0. Neither outcome predicts what a real later order will fill."
         }
       ]
     },
@@ -54,7 +54,7 @@
       "id": "bounded-static-ask-sweep",
       "language": "python",
       "source": "def sweep_buy(book,limit,quantity):\n    # Own static ask-only IOC-like model: (id,price,arrival_rank,remaining_qty).\n    if type(limit) is not int or not 1<=limit<=10000 or type(quantity) is not int or not 1<=quantity<=100:\n        raise ValueError(\"invalid incoming order\")\n    if type(book) is not tuple or len(book)>16:\n        raise ValueError(\"invalid bounded book\")\n    for row in book:\n        if (type(row) is not tuple or len(row)!=4 or not all(type(x) is int for x in row)\n            or not 1<=row[0]<=10000 or not 1<=row[1]<=10000\n            or not 0<=row[2]<=10000 or not 1<=row[3]<=100):\n            raise ValueError(\"invalid resting row\")\n    if len({row[0] for row in book})!=len(book):\n        raise ValueError(\"duplicate resting identity\")\n    ordered=sorted(book,key=lambda row:(row[1],row[2],row[0]))\n    unfilled=quantity\n    fills=[]\n    residual=[]\n    cost=0\n    for identifier,price,arrival,available in ordered:\n        take=min(unfilled,available) if price<=limit else 0\n        if take:\n            fills.append((identifier,price,take))\n            cost+=price*take\n            unfilled-=take\n        if available>take:residual.append((identifier,price,arrival,available-take))\n    return tuple(fills),tuple(residual),unfilled,cost\n\nasks=((3,101,0,5),(2,100,2,4),(1,100,1,2))\nfills,residual,unfilled,cost=sweep_buy(asks,100,5)\nprint(fills)\nprint(residual,unfilled,cost)\nprint(sweep_buy(asks,99,5)[2:])\nprint(asks)",
-      "caption": "Expected first line ((1, 100, 2), (2, 100, 3));second ((2, 100, 2, 1), (3, 101, 0, 5)) 0 500;third (5, 0);last unchanged asks. Exact-int bounds:<=16rows,IDs/prices1..10000,arrival0..10000,each row/incoming quantity1..100. Validate the complete book before matching,even unreachable price levels or rows after a would-be full fill. Only local private tuples/lists are built;there is no account,cash check,live venue or persistence.",
+      "caption": "Expected first line ((1, 100, 2), (2, 100, 3)); second ((2, 100, 2, 1), (3, 101, 0, 5)) 0 500; third (5, 0); last unchanged asks. Exact-int bounds: <=16 rows, IDs/prices 1..10000, arrival 0..10000, each row/incoming quantity 1..100. Validate the complete book before matching, even unreachable price levels or rows after a would-be full fill. Only local private tuples/lists are built; there is no account, cash check, live venue or persistence.",
       "runnable": true
     },
     {
@@ -75,17 +75,17 @@
     {
       "type": "text",
       "id": "conservation-and-priority",
-      "markdown": "Audit four properties:incoming quantity=sum(fill quantities)+unfilled;total resting before=total resting after+sum(fill quantities);cost=sum(fill_price*fill_qty);every fill_price<=buy limit. Each resting ID trades at most its quantity and residual keeps original price/arrival. Price/time policy also requires no eligible better-priority quantity be skipped while a later row fills. Conservation alone cannot catch trading the later ask first,or executing at the wrong price. This function is a matcher,not risk admission:wire it to a separately specified coherent reservation/fill lifecycle only in a larger simulated engine."
+      "markdown": "Audit four properties: incoming quantity=sum(fill quantities)+unfilled; total resting before=total resting after+sum(fill quantities); cost=sum(fill_price*fill_qty); every fill_price<=buy limit. Each resting ID trades at most its quantity and residual keeps original price/arrival. Price/time policy also requires no eligible better-priority quantity be skipped while a later row fills. Conservation alone cannot catch trading the later ask first, or executing at the wrong price. This function is a matcher,not risk admission: wire it to a separately specified coherent reservation/fill lifecycle only in a larger simulated engine."
     },
     {
       "type": "text",
       "id": "pro-rata-counterexample",
-      "markdown": "At one price suppose resting A has2 units and B has6,incoming4. FIFO with A ahead gives A2,B2. A simple proportional target gives A1,B3 before any venue-specific rounding/minimum/priority rules. Both conserve4,yet allocations differ. Actual CME pro-rata variants have additional priority/rounding/minimum/residual stages;this arithmetic is an OWN illustrative allocation,not their full algorithm. State product/session/algorithm version and modify/requeue rules before interpreting queue position or fill outcomes."
+      "markdown": "At one price suppose resting A has 2 units and B has 6, incoming 4. FIFO with A ahead gives A 2, B 2. A simple proportional target gives A 1, B 3 before any venue-specific rounding/minimum/priority rules. Both conserve 4, yet allocations differ. Actual CME pro-rata variants have additional priority/rounding/minimum/residual stages; this arithmetic is an OWN illustrative allocation, not their full algorithm. State product/session/algorithm version and modify/requeue rules before interpreting queue position or fill outcomes."
     },
     {
       "type": "text",
       "id": "simulation-is-not-observation",
-      "markdown": "A complete simulated order-level book and declared matcher determine an internal result. A historical bar high/low or public displayed quote generally does not reveal your order arrival time,all orders ahead,hidden/replenished liquidity,cancellations,competing flow or impact of your own action. Touching a limit is not sufficient evidence of a passive fill. Executing a historical signal at the same bar extreme that created it can use information unavailable at decision time. Bind event,receipt,decision,send,venue-arrival and execution times;only use then-available inputs and a declared delay/order policy."
+      "markdown": "A complete simulated order-level book and declared matcher determine an internal result. A historical bar high/low or public displayed quote generally does not reveal your order arrival time, all orders ahead, hidden/replenished liquidity, cancellations, competing flow or impact of your own action. Touching a limit is not sufficient evidence of a passive fill. Executing a historical signal at the same bar extreme that created it can use information unavailable at decision time. Bind event, receipt, decision, send, venue-arrival and execution times; only use then-available inputs and a declared delay/order policy."
     },
     {
       "type": "check",
@@ -105,12 +105,12 @@
     {
       "type": "text",
       "id": "fill-scenarios",
-      "markdown": "Write down fill-model assumptions:decision data cutoff/availability,queue placement,partial quantities,spread,execution price,latency,fees,slippage/impact,trading session and data staleness. Compare deliberately optimistic,conservative and delayed/limited-volume scenarios rather than call one synthetic fill a fact. QuantConnect documents complete-fill assumptions in its built-in backtest models and custom partial-fill modeling;its Immediate Model also has order/data-specific strict inequality and stale/same-timestamp exclusions. Those are that model's documented choices,not ours:our exact static limit crossing uses<=. A valid implementation of one contract can differ from another without either being the universal rule."
+      "markdown": "Write down fill-model assumptions: decision data cutoff/availability,queue placement,partial quantities,spread,execution price,latency, fees,slippage/impact,trading session and data staleness. Compare deliberately optimistic, conservative and delayed/limited-volume scenarios rather than call one synthetic fill a fact. QuantConnect documents complete-fill assumptions in its built-in backtest models and custom partial-fill modeling; its Immediate Model also has order/data-specific strict inequality and stale/same-timestamp exclusions. Those are that model's documented choices, not ours: our exact static limit crossing uses<=. A valid implementation of one contract can differ from another without either being the universal rule."
     },
     {
       "type": "text",
       "id": "transfer",
-      "markdown": "Independent transfer: enumerate small ask books and expand each row into individual units sorted by(price,arrival,id). Take up to incoming quantity among eligible units,aggregate IDs and compare exact fills,residual and cost with the row sweep. Test empty/no-match,partial row,multiple levels,exact exhaustion,duplicate IDs,invalid last row,quantity bounds and same-rank tie. Then list what additional event data a passive-fill estimator would need. No favorable backtest result authorizes real-money orders or certifies a strategy."
+      "markdown": "Independent transfer: enumerate small ask books and expand each row into individual units sorted by (price,arrival,id). Take up to incoming quantity among eligible units, aggregate IDs and compare exact fills, residual and cost with the row sweep. Test empty/no-match, partial row, multiple levels, exact exhaustion, duplicate IDs, invalid last row, quantity bounds and same-rank tie. Then list what additional event data a passive-fill estimator would need. No favorable backtest result authorizes real-money orders or certifies a strategy."
     },
     {
       "type": "check",
@@ -120,7 +120,7 @@
     {
       "type": "text",
       "id": "sources",
-      "markdown": "Sources:[CME supported algorithms technical documentation](https://cmegroupclientsite.atlassian.net/wiki/spaces/EPICSANDBOX/pages/457218479/Supported+Matching+Algorithms),[CME overview](https://www.cmegroup.com/education/matching-algorithm-overview),[QuantConnect fill-model concepts/partial fills](https://www.quantconnect.com/docs/v2/writing-algorithms/reality-modeling/trade-fills/key-concepts),[QuantConnect Immediate Model rules](https://www.quantconnect.com/docs/v2/writing-algorithms/reality-modeling/trade-fills/supported-models/immediate-model). Own ask-only IOC-like sweep and ID tie rule are educational design,not a verified exchange adapter or a realistic fill forecast."
+      "markdown": "Sources: [CME supported algorithms technical documentation](https://cmegroupclientsite.atlassian.net/wiki/spaces/EPICSANDBOX/pages/457218479/Supported+Matching+Algorithms), [CME overview](https://www.cmegroup.com/education/matching-algorithm-overview), [QuantConnect fill-model concepts/partial fills](https://www.quantconnect.com/docs/v2/writing-algorithms/reality-modeling/trade-fills/key-concepts), [QuantConnect Immediate Model rules](https://www.quantconnect.com/docs/v2/writing-algorithms/reality-modeling/trade-fills/supported-models/immediate-model). Own ask-only IOC-like sweep and ID tie rule are educational design, not a verified exchange adapter or a realistic fill forecast."
     },
     {
       "type": "text",
@@ -130,17 +130,17 @@
     {
       "type": "text",
       "id": "two-sided-rest-only-matcher-1",
-      "markdown": "Preserve individual queues for observable trade lines\n\nA map gives price->deque of remaining quantities on each side. Appending preserves arrival FIFO. At each match, reselect the best price, take min(incoming remainder,front resting remainder), print one trade at the resting price, then reduce both quantities. A partial front order stays at the FRONT. Remove an exhausted order, and remove its level only when its deque is empty. Aggregating same-price quantities would lose per-resting-order trade boundaries even when total filled shares and notional match."
+      "markdown": "Preserve individual queues for observable trade lines\n\nA map gives price->deque of remaining quantities on each side. Appending preserves arrival FIFO. At each match, reselect the best price, take min(incoming remainder, front resting remainder), print one trade at the resting price, then reduce both quantities. A partial front order stays at the FRONT. Remove an exhausted order, and remove its level only when its deque is empty. Aggregating same-price quantities would lose per-resting-order trade boundaries even when total filled shares and notional match."
     },
     {
       "type": "text",
       "id": "two-sided-rest-only-matcher-2",
-      "markdown": "Trace and conservation\n\nRest asks 10 and 20 shares at 1000 cents, then market BUY 15: emit T 10.00 10 and T 10.00 5, leaving 15 at the second order. A later BUY 5 emits a separate T 10.00 5 and leaves 10. Better price outranks earlier time at a worse price. Per sweep, requested=traded+unfilled; each resting queue loses exactly traded shares, and trade notional is resting_price*take. The original starter stores variable-arity events as STRING lists, so parse int(event[2:]) or int(event[2]) inside the function,not by assuming the main already supplied ints."
+      "markdown": "Trace and conservation\n\nRest asks 10 and 20 shares at 1000 cents, then market BUY 15: emit T 10.00 10 and T 10.00 5, leaving 15 at the second order. A later BUY 5 emits a separate T 10.00 5 and leaves 10. Better price outranks earlier time at a worse price. Per sweep, requested=traded+unfilled; each resting queue loses exactly traded shares, and trade notional is resting_price*take. The original starter stores variable-arity events as STRING lists, so parse the L price/quantity with map(int, event[2:]) and the M quantity with int(event[2]) inside the function, not by assuming the main already supplied ints."
     },
     {
       "type": "text",
       "id": "two-sided-rest-only-matcher-3",
-      "markdown": "Bounded work and limits\n\nn<=2000. A match either exhausts a resting order or exhausts its market order(or both), so total trade lines are at most number_of_L+number_of_M, hence O(n). Each price selection scans at most O(n) levels, giving O(n^2) worst-case total time and O(n) queues/output under these bounds. Final lines show remaining best BID and ASK as exact two-decimal dollars or -. There is no cancellation,hidden interest,latency,fees,self-match prevention or actual broker order. Compare against an independent flat arrival-ranked order list,including same-price partials,multi-price sweeps,crossed resting limits,empty sides and oversized markets. Conservation alone is not enough: verify price priority,FIFO boundaries and resting-price execution."
+      "markdown": "Bounded work and limits\n\nn<=2000. A match either exhausts a resting order or exhausts its market order (or both), so total trade lines are at most number_of_L+number_of_M, hence O(n). Each price selection scans at most O(n) levels, giving O(n^2) worst-case total time and O(n) queues/output under these bounds. Final lines show remaining best BID and ASK as exact two-decimal dollars or -. There is no cancellation,hidden interest,latency, fees,self-match prevention or actual broker order. Compare against an independent flat arrival-ranked order list, including same-price partials, multi-price sweeps, crossed resting limits, empty sides and oversized markets. Conservation alone is not enough: verify price priority, FIFO boundaries and resting-price execution."
     },
     {
       "type": "code",
@@ -188,7 +188,7 @@
     {
       "type": "text",
       "id": "two-sided-rest-only-matcher-sources",
-      "markdown": "References: [1](https://docs.python.org/3.12/library/collections.html), [2](https://docs.python.org/3.12/library/stdtypes.html). Public task hash e18f464dde5a98ce9309aa720bdb8bb7517ef2c760f6003e3eb7fa1e9f9d2a00. These references establish language/container semantics; the exact task framing is the captured public contract. This extension preserves the earlier bounded examples and their policies rather than silently broadening those APIs."
+      "markdown": "The rest-only L/M event policy, per-order FIFO trade lines, market-remainder discard and complexity argument follow the explicit captured task contract and derivation above. [Python map](https://docs.python.org/3.12/library/functions.html#map) supports the token-conversion question, not exchange semantics. Public task hash e18f464dde5a98ce9309aa720bdb8bb7517ef2c760f6003e3eb7fa1e9f9d2a00. Earlier static IOC-like examples retain their distinct policy. No independent parser/C++/runner/judge or live matching qualification is claimed."
     }
   ],
   "practice": {
@@ -196,5 +196,5 @@
       "qfp-order-matching-engine"
     ]
   },
-  "summary": "Deterministic matching requires explicit priority,price and residual rules plus conservation. Our static IOC-like ask sweep is not a universal venue algorithm,a historical passive-fill observation,a risk-control system or a prediction of real execution. Practice transfer: two sided rest only matcher."
+  "summary": "Deterministic matching requires explicit priority, price and residual rules plus conservation. Our static IOC-like ask sweep is not a universal venue algorithm, a historical passive-fill observation, a risk-control system or a prediction of real execution. Practice transfer: two sided rest only matcher."
 }

@@ -1,6 +1,6 @@
 {
   "id": "qf5-production-capstone",
-  "revision": 1,
+  "revision": 2,
   "title": "Integrate a local trading/research simulator",
   "module": "qf5-production",
   "order": 7,
@@ -8,11 +8,11 @@
   "objectives": [
     {
       "conceptId": "qf5-production-capstone.capstone-invariants",
-      "text": "Compose a complete trusted-caller/versioned pure simulation boundary with point-in-time signal,next-open costs/ledger and independently reconcilable marked-equity summary."
+      "text": "Compose a complete trusted-caller/versioned pure simulation boundary with point-in-time signal, next-open costs/ledger and independently reconcilable marked-equity summary."
     },
     {
       "conceptId": "qf5-production-capstone.integration-tests",
-      "text": "Test integrated authorization/schema/component/summary/replay/failure boundaries without confusing synthetic simulation with external orders,persistent service or real risk qualification."
+      "text": "Test integrated authorization/schema/component/summary/replay/failure boundaries without confusing synthetic simulation with external orders, persistent service or real risk qualification."
     }
   ],
   "prerequisites": [
@@ -22,12 +22,12 @@
     {
       "type": "text",
       "id": "integration-contract",
-      "markdown": "Integration means carrying each component's assumptions across boundaries,not concatenating plausible outputs. This complete capstone embeds the research revision selector,next-open engine and audited backtest facade,then adds a tiny trusted-caller grant boundary,exact request schema and marked-equity summary. It deliberately keeps ONEsynthetic asset/own cents and the same declared cost/capacity model. It is a local trading/research SIMULATION,not an account/broker connection,production service or a combined pricing/covariance/VaRsystem."
+      "markdown": "Integration means carrying each component's assumptions across boundaries, not concatenating plausible outputs. This complete capstone embeds the research revision selector, next-open engine and audited backtest facade, then adds a tiny trusted-caller grant boundary, exact request schema and marked-equity summary. It deliberately keeps ONE synthetic asset/own cents and the same declared cost/capacity model. It is a local trading/research SIMULATION, not an account/broker connection, production service or a combined pricing/covariance/VaR system."
     },
     {
       "type": "text",
       "id": "authority-and-schema",
-      "markdown": "The wrapper accepts only fictional upstream-verified student-a/student-band a separately administered frozensetof simulation grants. No grant means PermissionErrorbefore evaluating the request. This is a trusted-input unit boundary,NOTauthentication;do not pass a caller body claim as verified identity. Request schema1has exactly history,opens,threshold,initial_cash,costs. Component validators then check entire raw/clock/numeric/asset domains before any final return. No network,files,real credentials or external order side effect exists."
+      "markdown": "The wrapper accepts only fictional upstream-verified student-a/student-b and a separately administered frozenset of simulation grants. No grant means PermissionError before evaluating the request. This is a trusted-input unit boundary, NOT authentication; do not pass a caller body claim as verified identity. Request schema 1 has exactly history, opens, threshold, initial_cash, costs. Component validators then check entire raw/clock/numeric/asset domains before any final return. No network, files, real credentials or external order side effect exists."
     },
     {
       "type": "worked",
@@ -35,13 +35,13 @@
       "title": "From authorized candidate request to reconciled summary",
       "steps": [
         {
-          "text": "Own closes100,110,105,108and opens100,101,112,104produce prior-target fills0,0,+1,-1under the embedded model. Buy114plus fee1,sell102less fee1leaves986from1000."
+          "text": "Own closes 100,110,105,108 and opens 100,101,112,104 produce prior-target fills 0,0,+1,-1 under the embedded model. Buy 114 plus fee 1, sell 102 less fee 1 leaves 986 from 1000."
         },
         {
-          "text": "Include initial equity1000and every closing mark:1000,1000,990,986. Running peak stays1000,so maximum absolute marked drop=14cents. Gross traded units=|1|+|-1|=2,not net position0."
+          "text": "Include initial equity 1000 and every closing mark: 1000,1000,990,986. Running peak stays 1000, so maximum absolute marked drop=14 cents. Gross traded units=|1|+|-1|=2, not net position 0."
         },
         {
-          "text": "Terminal position0and pending target1remain distinct. Summary and detailed audit share run_idand final equity. student-bwithout grant is denied;unsupported schema2fails. Neither error returns a previous successful candidate."
+          "text": "Terminal position 0 and pending target 1 remain distinct. Summary and detailed audit share run_id and final equity. student-b without grant is denied;unsupported schema 2 fails. Neither error returns a previous successful candidate."
         }
       ]
     },
@@ -50,7 +50,7 @@
       "id": "integrated-local-simulation",
       "language": "python",
       "source": "def vintage_rows(rows,cutoff):\n    # Synthetic schema:(permanent_asset_id,observation_time,available_time,revision,value_cents).\n    if type(cutoff) is not int or cutoff<0 or type(rows) is not list or len(rows)>128:\n        raise ValueError(\"invalid snapshot boundary\")\n    seen=set();groups={}\n    for row in rows:\n        if type(row) is not tuple or len(row)!=5:raise ValueError(\"invalid revision row\")\n        asset,obs,available,revision,value=row\n        if type(asset) is not str or not asset or any(type(x) is not int for x in row[1:]):\n            raise ValueError(\"invalid revision types\")\n        if not 0<=obs<=available or revision<0 or value<=0:\n            raise ValueError(\"invalid revision domain\")\n        key=(asset,obs,revision)\n        if key in seen:raise ValueError(\"duplicate revision key\")\n        seen.add(key);groups.setdefault((asset,obs),[]).append(row)\n    for group in groups.values():\n        ordered=sorted(group,key=lambda row:row[3])\n        if any(a[2]>b[2] for a,b in zip(ordered,ordered[1:])):\n            raise ValueError(\"revision availability runs backward\")\n    chosen={}\n    for row in rows:\n        asset,obs,available,revision,value=row\n        if available>cutoff:continue\n        key=(asset,obs)\n        if key not in chosen or (available,revision)>(chosen[key][2],chosen[key][3]):chosen[key]=row\n    return tuple(chosen[key] for key in sorted(chosen))\n\ndef bar_backtest(bars,targets,initial_cash,half_spread=0,adverse_slip=0,fee_per_unit=0):\n    # OWN schema:(time,opening_reference_cents,closing_mark_cents,open_executable_capacity).\n    if type(bars) is not list or type(targets) is not list or len(bars)!=len(targets) or len(bars)>128:\n        raise ValueError(\"invalid bar or target lists\")\n    if type(initial_cash) is not int or not 0<=initial_cash<=10**9:\n        raise ValueError(\"invalid initial cash\")\n    if any(type(x) is not int or not 0<=x<=1000 for x in (half_spread,adverse_slip,fee_per_unit)):\n        raise ValueError(\"invalid cost parameters\")\n    for index,(bar,target) in enumerate(zip(bars,targets)):\n        if type(bar) is not tuple or len(bar)!=4 or any(type(x) is not int for x in bar):\n            raise ValueError(\"invalid bar schema\")\n        time,opening,close,capacity=bar\n        if time!=index or not 1<=opening<=10**6 or not 1<=close<=10**6 or not 0<=capacity<=10:\n            raise ValueError(\"invalid bar domain or order\")\n        if opening<=half_spread+adverse_slip+fee_per_unit:\n            raise ValueError(\"costs exceed supported sell proceeds\")\n        if type(target) is not int or not 0<=target<=10:raise ValueError(\"invalid close target\")\n    cash=initial_cash;position=0;pending=None;rows=[]\n    for (time,opening,close,capacity),target in zip(bars,targets):\n        delta=0 if pending is None else pending-position\n        price=None;executed=0;unfilled=abs(delta)\n        if delta>0:\n            candidate=opening+half_spread+adverse_slip\n            quantity=min(delta,capacity,cash//(candidate+fee_per_unit))\n            if quantity:\n                cash-=quantity*(candidate+fee_per_unit);position+=quantity\n                executed=quantity;price=candidate\n        elif delta<0:\n            candidate=opening-half_spread-adverse_slip\n            quantity=min(-delta,capacity,position)\n            if quantity:\n                cash+=quantity*(candidate-fee_per_unit);position-=quantity\n                executed=-quantity;price=candidate\n        unfilled-=abs(executed)\n        # Opening attempt expires;mark then accept a NEW close-time target.\n        equity=cash+position*close;pending=target\n        rows.append((time,executed,price,cash,position,close,equity,target,unfilled))\n    return tuple(rows),pending\n\nimport hashlib,json,platform\n\ndef audited_backtest(history,opens,threshold=0,initial=1000,costs=(1,1,1)):\n    # Own one-asset chronological close signal;no fit/search/held-out inference performed.\n    vintage_rows(history,0) # validate FULL revision input even if later excluded\n    if any(row[0]!=\"A\" for row in history):raise ValueError(\"only permanent asset A supported\")\n    if type(opens) is not list or not 1<=len(opens)<=128 or type(costs) is not tuple or len(costs)!=3:\n        raise ValueError(\"invalid audit input schema\")\n    if type(threshold) is not int or not 0<=threshold<=1000:raise ValueError(\"invalid rise threshold cents\")\n    placeholder=[]\n    for row in opens:\n        if type(row) is not tuple or len(row)!=3:raise ValueError(\"invalid opening schema\")\n        time,price,capacity=row;placeholder.append((time,price,price,capacity))\n    bar_backtest(placeholder,[0]*len(opens),initial,*costs) # full open/cost domain checks\n    bars=[];targets=[];decisions=[]\n    for time,opening,capacity in opens:\n        snapshot={row[1]:row for row in vintage_rows(history,time)}\n        if time not in snapshot or time>0 and time-1 not in snapshot:\n            raise ValueError(\"required point-in-time close unavailable\")\n        current=snapshot[time]\n        previous=None if time==0 else snapshot[time-1]\n        target=int(previous is not None and current[4]-previous[4]>threshold)\n        bars.append((time,opening,current[4],capacity));targets.append(target)\n        decisions.append((time,current,previous,target))\n    ledger,pending=bar_backtest(bars,targets,initial,*costs)\n    manifest={\"kernel\":\"point-in-time-next-open-v1\",\"python\":platform.python_version(),\"asset\":\"A\",\"currency\":\"OWN-CENTS\",\"history\":[list(row) for row in history],\"opens\":[list(row) for row in opens],\"threshold\":threshold,\"initial_cash\":initial,\"costs\":list(costs)}\n    raw=json.dumps(manifest,sort_keys=True,separators=(\",\",\":\"),ensure_ascii=True,allow_nan=False)\n    return {\"schema\":1,\"run_id\":hashlib.sha256(raw.encode(\"utf-8\")).hexdigest(),\"manifest\":raw,\"decisions\":tuple(decisions),\"ledger\":ledger,\"pending_target\":pending,\"final_marked_equity\":ledger[-1][6]}\n\nfrom fractions import Fraction\n\ndef local_simulation(verified_principal,grants,request):\n    # Own trusted caller/policy boundary,not real authentication.\n    if type(verified_principal) is not str or verified_principal not in (\"student-a\",\"student-b\"):\n        raise PermissionError(\"simulation denied\")\n    if type(grants) is not frozenset or len(grants)>2 or any(type(p) is not str or p not in (\"student-a\",\"student-b\") for p in grants) or verified_principal not in grants:\n        raise PermissionError(\"simulation denied\")\n    required={\"schema\",\"history\",\"opens\",\"threshold\",\"initial_cash\",\"costs\"}\n    if type(request) is not dict or set(request)!=required or type(request[\"schema\"]) is not int or request[\"schema\"]!=1:\n        raise ValueError(\"invalid simulation request\")\n    result=audited_backtest(request[\"history\"],request[\"opens\"],request[\"threshold\"],request[\"initial_cash\"],request[\"costs\"])\n    equity=(request[\"initial_cash\"],)+tuple(row[6] for row in result[\"ledger\"])\n    peak=equity[0];max_drop=0\n    for value in equity:\n        peak=max(peak,value);max_drop=max(max_drop,peak-value)\n    # Absolute marked-equity drawdown in synthetic cents,not percentage/future risk.\n    summary={\"schema\":1,\"model\":\"point-in-time-next-open-v1\",\"currency\":\"OWN-CENTS\",\"run_id\":result[\"run_id\"],\"final_marked_equity\":result[\"final_marked_equity\"],\"max_marked_drop_cents\":max_drop,\"gross_traded_units\":sum(abs(row[1]) for row in result[\"ledger\"]),\"terminal_position\":result[\"ledger\"][-1][4],\"pending_target\":result[\"pending_target\"]}\n    return summary,result\n\nrequest={\"schema\":1,\"history\":[(\"A\",i,i,0,value) for i,value in enumerate([100,110,105,108])],\"opens\":[(0,100,10),(1,101,10),(2,112,10),(3,104,10)],\"threshold\":0,\"initial_cash\":1000,\"costs\":(1,1,1)}\nsummary,audit=local_simulation(\"student-a\",frozenset({\"student-a\"}),request)\nprint(summary[\"final_marked_equity\"],summary[\"max_marked_drop_cents\"],summary[\"gross_traded_units\"])\nprint(summary[\"terminal_position\"],summary[\"pending_target\"],summary[\"currency\"])\nprint(\"replay\",local_simulation(\"student-a\",frozenset({\"student-a\"}),request)==(summary,audit))\ntry:local_simulation(\"student-b\",frozenset({\"student-a\"}),request)\nexcept PermissionError as error:print(error)\ntry:local_simulation(\"student-a\",frozenset({\"student-a\"}),{**request,\"schema\":2})\nexcept ValueError as error:print(error)",
-      "caption": "Expected986 14 2;0 1 OWN-CENTS;replayTrue;simulation denied;invalid simulation request. Complete embedded sources,no fragment imports. Absolute peak-to-later-trough drop is synthetic marked cents,not percentage drawdown,liquidation guarantee,VaRor future bound. Pure all-or-error return,no actual caller authentication,concurrent publication,durable history or live trading.",
+      "caption": "Expected 986 14 2; 0 1 OWN-CENTS; replay True; simulation denied; invalid simulation request. Complete embedded sources, no fragment imports. Absolute peak-to-later-trough drop is synthetic marked cents, not percentage drawdown, liquidation guarantee, VaR or future bound. Pure all-or-error return,no actual caller authentication,concurrent publication, durable history or live trading.",
       "runnable": true
     },
     {
@@ -71,17 +71,17 @@
     {
       "type": "text",
       "id": "summary-invariants",
-      "markdown": "Reconcile final equity with final ledger row,position with signed fill sum,cash with execution prices/fees,gross units with absolute fills,and drawdown with an independent max-over-earlier/later-pairs definition. Initial cash is part of the equity path. Zero initial cash is supported by underlying model,so percentage drawdown would need an explicit denominator policy;this summary avoids inventing one. Do not add USDoption values from the pricing module to own-cent stock simulation outputs without a declared currency/unit/model mapping."
+      "markdown": "Reconcile final equity with final ledger row, position with signed fill sum, cash with execution prices/fees, gross units with absolute fills, and drawdown with an independent max-over-earlier/later-pairs definition. Initial cash is part of the equity path. Zero initial cash is supported by underlying model, so percentage drawdown would need an explicit denominator policy; this summary avoids inventing one. Do not add USD option values from the pricing module to own-cent stock simulation outputs without a declared currency/unit/model mapping."
     },
     {
       "type": "text",
       "id": "integration-failures",
-      "markdown": "Test denied principal/policy,unsupported schema,unknown fields,malformed late input,missing historical close,future revisions,capacity0,insufficient cash,fees and terminal pending state. A downstream validation failure must not publish a partial success or reuse a stale summary. Test every component with independent references ANDtest composed boundary/error propagation;component green tests alone can miss unit/version/identity mismatches between them."
+      "markdown": "Test denied principal/policy, unsupported schema, unknown fields, malformed late input, missing historical close, future revisions, capacity 0, insufficient cash, fees and terminal pending state. A downstream validation failure must not publish a partial success or reuse a stale summary. Test every component with independent references AND test composed boundary/error propagation; component green tests alone can miss unit/version/identity mismatches between them."
     },
     {
       "type": "text",
       "id": "performance-and-state",
-      "markdown": "This bounded max128bar/128revision source is not a measured high-throughput system. Input bounds protect only the modeled workload,not a real transport/parser/server. Record measured runtime/workload if later benchmarking;do not infer asymptotic scale or latency from a classroom fixture. The wrapper adds no persistence,retry store,SQLtransaction,telemetry export,runbook executor or deployment. Those earlier lessons supply concepts/scoped examples,not hidden implemented capabilities."
+      "markdown": "This bounded max 128 bar/128 revision source is not a measured high-throughput system. Input bounds protect only the modeled workload, not a real transport/parser/server. Record measured runtime/workload if later benchmarking; do not infer asymptotic scale or latency from a classroom fixture. The wrapper adds no persistence,retry store,SQL transaction,telemetry export,runbook executor or deployment. Those earlier lessons supply concepts/scoped examples, not hidden implemented capabilities."
     },
     {
       "type": "check",
@@ -101,12 +101,12 @@
     {
       "type": "text",
       "id": "evidence-chain",
-      "markdown": "Keep original data/availability assumptions,request/config/source/build/runtime,selected decision rows,full ledger,summary and verification methods/tolerances bound to the actual revision. Source hashes identify reviewed bytes,not correctness or trusted data. Kernel/run IDdoes not include every operational environment fact and is not a signature. Actual renderer/math/code/task/mobile/a11y/history/offline/recovery/security/production tests remain separate gates. A source simulation cannot sign itself off."
+      "markdown": "Keep original data/availability assumptions, request/config/source/build/runtime, selected decision rows, full ledger, summary and verification methods/tolerances bound to the actual revision. Source hashes identify reviewed bytes, not correctness or trusted data. Kernel/run ID does not include every operational environment fact and is not a signature. Actual renderer/math/code/task/mobile/a11y/history/offline/recovery/security/production tests remain separate gates. A source simulation cannot sign itself off."
     },
     {
       "type": "text",
       "id": "transfer",
-      "markdown": "Independent transfer:calculate maximum drop by examining every earlier peak/later trough pair,not copying the running-max loop. Perturb future-only raw rows and verify earlier decisions/ledger prefixes;check summary/raw content IDsappropriately. Revoke a fictional grant and require denial;make a late row invalid and require no candidate. Extend to another currency/asset only after explicitly changing units/schema/validators/evidence,not by changing a label. No live order is part of this transfer."
+      "markdown": "Independent transfer: calculate maximum drop by examining every earlier peak/later trough pair, not copying the running-max loop. Perturb future-only raw rows and verify earlier decisions/ledger prefixes; check summary/raw content IDs appropriately. Revoke a fictional grant and require denial; make a late row invalid and require no candidate. Extend to another currency/asset only after explicitly changing units/schema/validators/evidence, not by changing a label. No live order is part of this transfer."
     },
     {
       "type": "check",
@@ -116,11 +116,11 @@
     {
       "type": "text",
       "id": "sources",
-      "markdown": "Inherited sources:[ALFREDvintages](https://alfred.stlouisfed.org/help/downloaddata),[bar execution timing](https://www.backtrader.com/docu/order-creation-execution/order-creation-execution/),[OWASPauthorization](https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html),and previous exact source reviews. Own synthetic rule/summary/integration are not a profitable strategy or production-certified library."
+      "markdown": "Inherited sources: [ALFRED vintages](https://alfred.stlouisfed.org/help/downloaddata), [bar execution timing](https://www.backtrader.com/docu/order-creation-execution/order-creation-execution/), [OWASP authorization](https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html),and previous exact source reviews. Own synthetic rule/summary/integration are not a profitable strategy or production-certified library."
     }
   ],
   "practice": {
     "problemIds": []
   },
-  "summary": "The integrated local simulation carries trusted-caller/schema,point-in-time and execution/unit contracts into one audited result. Independent summary and error-boundary tests add evidence,butno real identity/order,persistence,benchmark,app or production qualification is implied."
+  "summary": "The integrated local simulation carries trusted-caller/schema, point-in-time and execution/unit contracts into one audited result. Independent summary and error-boundary tests add evidence, but no real identity/order, persistence, benchmark, app or production qualification is implied."
 }

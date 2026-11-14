@@ -1,6 +1,6 @@
 {
   "id": "qf5-python-trade-validator",
-  "revision": 3,
+  "revision": 5,
   "title": "Build a deterministic trade validator",
   "module": "qf5-python",
   "order": 8,
@@ -20,7 +20,7 @@
     },
     {
       "conceptId": "qf5-python-trade-validator.trade-valid-state-fold",
-      "text": "Commit seen IDs,last valid time,count and exact4dpnotional only after a fully valid record."
+      "text": "Commit seen IDs, last valid time, count and exact four-decimal-place notional only after a fully valid record."
     }
   ],
   "prerequisites": [
@@ -72,7 +72,7 @@
     {
       "type": "text",
       "id": "transfer",
-      "markdown": "Independent transfer: implement the validator before reading its worked solution, then run the same contract checks. Add cases for empty input, a missing field, an extra field, True as quantity, a duplicate valid ID, and an invalid first record followed by a valid record using the same ID. A shallow record copy is enough here because every accepted value is an immutable string or integer; extending the schema with nested mutable data needs a new copying policy."
+      "markdown": "Independent transfer: hide the worked solution and implement the validator again from its written specification, then run the same contract checks. Add cases for empty input, a missing field, an extra field, True as quantity, a duplicate valid ID, and an invalid first record followed by a valid record using the same ID. A shallow record copy is enough here because every accepted value is an immutable string or integer; extending the schema with nested mutable data needs a new copying policy."
     },
     {
       "type": "text",
@@ -113,7 +113,7 @@
     {
       "type": "text",
       "id": "ordered-record-state-fold-0",
-      "markdown": "A distinct literal-comma schema\n\nThe current public contract explicitly means ASCII letters and digits, even when non-ASCII text appears. There are up to 30,000 lines of at most 200 characters. Each record is id,symbol,side,qty,price,ts. Split literal commas into exactly six fields. Unlike the earlier CSV exercise, this schema does not enable quoted fields. Do not strip or normalize case.\n\nverdict(line, seen_ids, last_ts) returns an error string or None without changing state. The supplied main still has a TODO for valid-record updates. The complete process_records function below supplies that missing fold; replacing verdict alone would not complete the program."
+      "markdown": "A distinct literal-comma schema\n\nThe current public contract explicitly means ASCII letters and digits, even when non-ASCII text appears. There are up to 30,000 lines of at most 200 characters. Each record is id,symbol,side,qty,price,ts. Split literal commas into exactly six fields. Unlike the separate CSV state-machine exercise, this schema does not enable quoted fields. Do not strip or normalize case.\n\nverdict(line, seen_ids, last_ts) returns an error string or None without changing state. The supplied main still has a TODO for valid-record updates. The complete process_records function below supplies that missing fold; replacing verdict alone would not complete the program."
     },
     {
       "type": "text",
@@ -150,7 +150,7 @@
       "id": "ordered-record-state-fold-complete",
       "language": "python",
       "source": "MOD = 1000000007\n\ndef price_units(text):\n    (whole, dot, fractional) = text.partition('.')\n    return int(whole) * 10000 + int(fractional.ljust(4, '0') if dot else '0')\n\ndef verdict(line, seen_ids, last_ts):\n    import re\n    fields = line.split(',')\n    if len(fields) != 6:\n        return 'BAD_FIELDS'\n    (identifier, symbol, side, quantity, price, timestamp) = fields\n    if re.fullmatch('[A-Za-z0-9]+', identifier) is None:\n        return 'BAD_ID'\n    if re.fullmatch('[A-Z]{1,6}', symbol) is None:\n        return 'BAD_SYMBOL'\n    if side not in ('B', 'S'):\n        return 'BAD_SIDE'\n    if re.fullmatch('[1-9][0-9]*', quantity) is None or int(quantity) > 10 ** 9:\n        return 'BAD_QTY'\n    if re.fullmatch('[0-9]+(?:\\\\.[0-9]{1,4})?', price) is None or price_units(price) <= 0:\n        return 'BAD_PRICE'\n    if re.fullmatch('0|[1-9][0-9]*', timestamp) is None or int(timestamp) > 10 ** 12:\n        return 'BAD_TS'\n    if identifier in seen_ids:\n        return 'DUP_ID'\n    if int(timestamp) < last_ts:\n        return 'OUT_OF_ORDER'\n    return None\n\ndef process_records(lines):\n    (seen, last, valid, total) = (set(), 0, 0, 0)\n    out = []\n    for line in lines:\n        error = verdict(line, seen, last)\n        out.append(error or 'OK')\n        if error is None:\n            (identifier, _, _, quantity, price, timestamp) = line.split(',')\n            seen.add(identifier)\n            last = int(timestamp)\n            valid += 1\n            total += int(quantity) * price_units(price)\n    return out + [f'VALID {valid}', f'NOTIONAL {total // 10000}.{total % 10000:04d}']\n\nprint(process_records(['A,X,B,1,1,5', 'B,X,B,1,1,4', 'B,X,S,2,0.0001,5', 'A,X,Q,1,1,1']))\nprint(verdict('T_1,X,B,1,1,0', set(), 0))\n",
-      "caption": "Expected ['OK', 'OUT_OF_ORDER', 'OK', 'BAD_SIDE', 'VALID 2', 'NOTIONAL 1.0002'],then BAD_ID. Full pureverdict plus valid-only exactfold.",
+      "caption": "Expected ['OK', 'OUT_OF_ORDER', 'OK', 'BAD_SIDE', 'VALID 2', 'NOTIONAL 1.0002'], then BAD_ID. Complete pure verdict function plus a valid-only exact state fold.",
       "runnable": true
     },
     {
@@ -206,7 +206,7 @@
     {
       "type": "text",
       "id": "ordered-record-state-fold-sources",
-      "markdown": "Sources: [1](https://docs.python.org/3.12/library/re.html); [2](https://docs.python.org/3.12/library/decimal.html). Exact public task contract hash cb0017edf96710922067635be00965682fa2a87aba8da693dece19eaa2e1c250. This is main algorithm/contract teaching,not current app or judge signoff."
+      "markdown": "Sources: [1](https://docs.python.org/3.12/library/re.html); [2](https://docs.python.org/3.12/library/decimal.html). Exact public task contract hash cb0017edf96710922067635be00965682fa2a87aba8da693dece19eaa2e1c250. This is main algorithm/contract teaching, not current app or judge signoff."
     }
   ],
   "practice": {

@@ -187,7 +187,7 @@ export default async function LandingPage() {
 
           {/* 2. Proof strip: canonical stat tiles, two hues max, distinct subs */}
           <div className="relative max-w-6xl mx-auto px-4 lg:px-6 pb-14">
-            <dl className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               {[
                 { k: `${publishedLessons}`, v: 'bite-sized lessons', sub: `across ${modules} modules`, tone: 'accent', icon: BookOpenCheck },
                 { k: String(labCount), v: 'interactive labs', sub: 'computed live in-browser', tone: 'info', icon: FlaskConical },
@@ -196,14 +196,14 @@ export default async function LandingPage() {
               ].map((s, i) => (
                 <div key={s.v} className="stat-tile anim-pop-in" style={{ animationDelay: `${i * 60}ms` }}>
                   <span className={`icon-tile-sm icon-tile-${s.tone}`}><s.icon aria-hidden /></span>
-                  <div className="stat-body min-w-0">
+                  <dl className="stat-body min-w-0">
                     <dt className="stat-value tnum">{s.k}</dt>
                     <dd className="stat-label">{s.v}</dd>
                     <dd className="stat-sub">{s.sub}</dd>
-                  </div>
+                  </dl>
                 </div>
               ))}
-            </dl>
+            </div>
           </div>
         </section>
 

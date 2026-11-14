@@ -53,7 +53,7 @@ export function ProjectTracker({ slug, milestones, initialDone, initialStatus, i
                 onClick={() => { setStatus(opt.v); save({ status: opt.v }); }}
                 className={`press rounded-xl px-3.5 py-1.5 text-[13px] font-black transition-all ${
                   status === opt.v
-                    ? 'bg-accent text-white shadow-[0_3px_0_0_var(--accent-deep)]'
+                    ? 'bg-accent text-on-accent shadow-[0_3px_0_0_var(--accent-deep)]'
                     : 'text-muted hover:bg-surface-2'
                 }`}
               >
@@ -82,7 +82,7 @@ export function ProjectTracker({ slug, milestones, initialDone, initialStatus, i
               <span
                 className={`relative z-10 w-8 h-8 rounded-full font-black text-[15px] flex items-center justify-center shrink-0 tnum ${
                   isDone
-                    ? 'bg-accent text-white'
+                    ? 'bg-accent text-on-accent'
                     : isCurrent
                       ? 'border-2 border-accent text-accent bg-surface anim-pulse-ring'
                       : 'border-2 border-border text-faint bg-surface'

@@ -1,6 +1,6 @@
 {
   "id": "qf5-algorithms-stacks-queues",
-  "revision": 7,
+  "revision": 11,
   "title": "Stacks, queues and monotonic structures",
   "module": "qf5-algorithms",
   "order": 4,
@@ -44,7 +44,7 @@
     },
     {
       "conceptId": "qf5-algorithms-stacks-queues.round-robin-work-queue",
-      "text": "Replay bounded-quanta round-robin service with FIFOrequeueing, exact elapsed time and completion-order output."
+      "text": "Replay bounded-quanta round-robin service with FIFO requeueing, exact elapsed time and completion-order output."
     }
   ],
   "prerequisites": [
@@ -112,6 +112,14 @@
       "source": "zero_based = [2, 2, -1, -1]\n# Algorithm result: zero-based next indexes; -1 means absent.\none_based = [0 if index == -1 else index + 1 for index in zero_based]\nprint(\" \".join(str(index) for index in one_based))",
       "caption": "Expected output: 3 3 0 0. join creates one space-separated line; it does not print Python list brackets or commas. This output adapter changes representation, not which later index is the first strictly greater.",
       "runnable": true
+    },
+    {
+      "type": "code",
+      "id": "next-greater-public-bridge",
+      "language": "python",
+      "source": "def next_greater(a):\n    indexes = next_strictly_greater(a)\n    return [\" \".join(str(0 if index == -1 else index + 1) for index in indexes)]\n",
+      "caption": "Public next-greater bridge. Keep the supplied main unchanged. next_greater(a) calls the core strict-index algorithm, translates absent -1 to 0 and present zero-based indexes to one-based indexes, then returns exactly one joined output line. Retain next_strictly_greater above; the previous zero_based adapter fixture and other demonstration print calls are not submission code.",
+      "runnable": false
     },
     {
       "type": "check",
@@ -182,12 +190,12 @@
     {
       "type": "text",
       "id": "histogram-boundaries-0",
-      "markdown": "New objective,exact bounds\n\nSource:1..100000 width-one bars, heights0..1e9. Rectangle covers a consecutive run, height at most its minimum. largest_rectangle(heights) returns a one-line list of maximum area. Next-greater positions alone do not teach these widths. Area<=1e14 needs promoted64-bit C++ arithmetic; Python uses exact integers."
+      "markdown": "New objective, exact bounds\n\nThere are 1 to 100000 width-one bars with heights 0..1e9. A rectangle covers a consecutive run, with height at most its minimum bar height. largest_rectangle(heights) returns a one-line list containing the maximum area. Next-greater positions alone do not teach these widths. Area<=1e14 needs promoted 64-bit C++ arithmetic; Python uses exact integers."
     },
     {
       "type": "text",
       "id": "histogram-boundaries-1",
-      "markdown": "Stack invariant and width\n\nStore(left,height) pairs with strictly increasing heights. Before index i, every bar from left through i-1 is at least height; left carries the earliest feasible start after larger/equal pairs were popped. For new h, start=i. While top.height>=h, pop(left,H), evaluate H*(i-left), then start=left. [left,i) has width i-left. A STRICTLY lower h ends the positive-height candidate at i. Extending left would cross a lower boundary. Every computed rectangle is feasible."
+      "markdown": "Stack invariant and width\n\nStore (left,height) pairs with strictly increasing heights. Before index i, every bar from left through i-1 is at least height; left carries the earliest feasible start after larger/equal pairs were popped. For a new h, set start=i. While top.height>=h, pop (left,H), evaluate H*(i-left), then set start=left. The span [left,i) has width i-left. A strictly lower h ends the positive-height candidate at i. Extending left would cross a lower boundary. Every computed rectangle is feasible."
     },
     {
       "type": "text",
@@ -197,19 +205,19 @@
     {
       "type": "text",
       "id": "histogram-boundaries-3",
-      "markdown": "Sentinel trace\n\nFor[2,1,2]:i0 push(0,2);i1 pops2(width1,area2),push(0,1);i2 push(2,2). At logical sentinel i3,h0, pop2(width1,area2),then1(width3,area3). Answer3. The extra zero is read without mutating/indexing past input. It flushes positive increasing suffixes. For[2,2],second2 inherits left0;sentinel yields area4."
+      "markdown": "Sentinel trace\n\nFor [2,1,2]: at i=0 push (0,2). At i=1, pop height 2 with width 1 and area 2, then push (0,1). At i=2 push (2,2). At the logical sentinel i=3,h=0, pop height 2 with width 1 and area 2, then height 1 with width 3 and area 3. The answer is 3.\n\nThe extra zero is read without mutating the input or indexing past it. It flushes positive increasing suffixes. For [2,2], the second 2 inherits left=0; the sentinel yields area 4."
     },
     {
       "type": "text",
       "id": "histogram-boundaries-4",
-      "markdown": "Completeness and transfer\n\nChoose a minimum-height bar of an optimal positive rectangle. It extends until lower boundaries. Consolidating equal heights preserves earliest left for a representative;when the next lower bar/sentinel arrives,it evaluates at least that full width. Thus some candidate reaches the optimum. Each pair is pushed once and popped at most once:O(n)work,O(n)storage. Independently inspect all tiny contiguous runs and min-height*width. Test zeros,plateaus,increasing/decreasing,singletons and100000bars of1e9height."
+      "markdown": "Completeness and transfer\n\nChoose a minimum-height bar of an optimal positive rectangle. Its feasible span extends until lower boundaries. Consolidating equal heights preserves the earliest left for a representative; when the next lower bar or sentinel arrives, it evaluates at least that full width. Thus some candidate reaches the optimum. Each pair is pushed once and popped at most once: O(n) work and O(n) storage. Independently inspect all tiny contiguous runs using minimum height times width. Test zeros, plateaus, increasing/decreasing heights, singletons, and 100000 bars of height 1e9."
     },
     {
       "type": "code",
       "id": "histogram-boundaries-complete",
       "language": "python",
       "source": "MOD = 1000000007\n\ndef largest_rectangle(heights):\n    if not 1 <= len(heights) <= 100000 or any((type(h) is not int or not 0 <= h <= 10 ** 9 for h in heights)):\n        raise ValueError('invalid histogram')\n    pending = []\n    best = 0\n    for i in range(len(heights) + 1):\n        current = heights[i] if i < len(heights) else 0\n        start = i\n        while pending and pending[-1][1] >= current:\n            (left, height) = pending.pop()\n            best = max(best, height * (i - left))\n            start = left\n        pending.append((start, current))\n    return [str(best)]\n\nprint(largest_rectangle([2, 1, 2]))\nprint(largest_rectangle([2, 2]))\nprint(largest_rectangle([0, 0]))\n",
-      "caption": "Expected ['3'], ['4'], ['0']. Complete list-lines Python3.12 source with(start,height),>= consolidation and a logical zero sentinel;input is unchanged.",
+      "caption": "Expected ['3'], ['4'], ['0']. Complete list-of-lines Python 3.12 source with (start,height), >= consolidation and a logical zero sentinel; input is unchanged.",
       "runnable": true
     },
     {
@@ -250,27 +258,27 @@
     {
       "type": "text",
       "id": "histogram-boundaries-sources",
-      "markdown": "Sources: [1](https://flykiller.github.io/leetcode/0084.html). Exact public task contract hash 2eb26e21d28bfd8e06fb843628bf4d40a323ce0c53bcf8b9adf1071dbd41ef0b. This is main algorithm/contract teaching,not current app or judge signoff."
+      "markdown": "Mechanism reference: [UNSW Data Structures I, histogram lower boundaries and amortized stack work](https://cgi.cse.unsw.edu.au/~cs4128/20t3/lectures/2-datastructures.pdf). The lecture motivates a linear stack sweep; this lesson supplies its own (left, height) representation, equal-height consolidation, sentinel and completeness proof. The reference does not specify our exact parser, output adapter or equality policy. Exact public task contract hash 2eb26e21d28bfd8e06fb843628bf4d40a323ce0c53bcf8b9adf1071dbd41ef0b. This is main algorithm and contract teaching, not current app or judge sign-off."
     },
     {
       "type": "text",
       "id": "positioned-brackets-0",
-      "markdown": "Position and line contract\n\nFor each of up to1000 expressions with total length<=1000000, check (),[] and{}. All other characters are ignored for matching, but still count toward the original 1-based character position. check(expr) returns one STRING, not a Boolean or list. The supplied main splits on newline and keeps empty expressions/spaces. Do not replace it with split() over whitespace: that loses expressions and changes positions."
+      "markdown": "Position and line contract\n\nFor each of up to 1000 expressions with total length<=1000000, check (), [] and {}. Ignore all other characters for matching, but count them toward the original 1-based character position. check(expr) returns one string, not a Boolean or list. The supplied main splits on newline and keeps empty expressions and spaces. Do not replace it with split() over whitespace: that loses expressions and changes positions."
     },
     {
       "type": "text",
       "id": "positioned-brackets-1",
-      "markdown": "Invariant with positions\n\npending stores exactly the still-unmatched openers of the scanned prefix in their original order, as(kind,position). An opener appends. A matching closer pops only the last opener because properly nested pairs close last-in-first-out. A closer with an empty stack or wrong top cannot be repaired by any later suffix; return ERR current_position immediately. Counting kinds alone misses ([)]. Nonbrackets change no stack state."
+      "markdown": "Invariant with positions\n\npending stores exactly the still-unmatched openers of the scanned prefix in their original order, as (kind,position). An opener appends. A matching closer pops only the last opener because properly nested pairs close last-in-first-out. A closer with an empty stack or wrong top cannot be repaired by any later suffix; return ERR current_position immediately. Counting kinds alone misses ([)]. Nonbrackets change no stack state."
     },
     {
       "type": "text",
       "id": "positioned-brackets-2",
-      "markdown": "End-of-line precedence\n\nIf no invalid closer occurred, empty pending means OK, including empty text. Otherwise return ERR position of pending[0],the earliest unclosed opener, not the newest top. This is a source-specific end rule: an opener is not proved unclosed until the scan ends. In \" ([x\",openers at2 and3 remain,so ERR2. In \"([)]\",the closer at3 proves a mismatch immediately,so ERR3 even though an earlier opener remains. For \"a]\",the nonbracket counts,so ERR2."
+      "markdown": "End-of-line precedence\n\nIf no invalid closer occurred, empty pending means OK, including empty text. Otherwise report ERR with the position of pending[0], the earliest unclosed opener, not the newest top. This is a source-specific end rule: an opener is not proved unclosed until the scan ends.\n\nIn \" ([x\", openers at positions 2 and 3 remain, so report ERR 2. In \"([)]\", the closer at position 3 proves a mismatch immediately, so report ERR 3 even though an earlier opener remains. For \"a]\", the nonbracket counts, so report ERR 2."
     },
     {
       "type": "text",
       "id": "positioned-brackets-3",
-      "markdown": "Trace, complexity and limits\n\nFor \"a(b[c]d)\":a leaves empty,( pushes2,[ pushes4,] matches4,) matches2;OK. One pass O(length) time and O(depth) stack, worst length. Quotes and comments are NOT lexed: bracket characters inside them still count. This is not a full expression parser. Python enumerates string characters; no byte/codepoint equivalence across languages is claimed for non-ASCII text because the public contract does not fix encoding-position semantics. Independently parse nested groups on tiny strings and compare exact first error/earliest leftover positions; exercise million-character input and empty lines through supplied main."
+      "markdown": "Trace, complexity and limits\n\nFor \"a(b[c]d)\": a leaves the stack empty, ( pushes position 2, [ pushes position 4, ] matches position 4, and ) matches position 2; the result is OK. One pass takes O(length) time and O(depth) stack space, with depth at most length. Quotes and comments are not lexed: bracket characters inside them still count. This is not a full expression parser.\n\nPython enumerates string characters; no byte/codepoint equivalence across languages is claimed for non-ASCII text because the public contract does not fix encoding-position semantics. Independently parse nested groups on tiny strings and compare exact first-error/earliest-leftover positions. Exercise million-character input and empty lines through the supplied main."
     },
     {
       "type": "code",
@@ -318,27 +326,27 @@
     {
       "type": "text",
       "id": "positioned-brackets-sources",
-      "markdown": "Sources: [1](https://algorithm.tamnd.com/balanced-parentheses.md). Exact public task contract hash 992a57fcebce746c48fe095d5d4af90401c344c8e6045c9ab9387182be1aa7f9. This is main algorithm/contract teaching,not current app or judge signoff."
+      "markdown": "Mechanism reference: [multi-kind bracket nesting with a stack](https://algorithm.tamnd.com/balanced-parentheses.md). The original-position tracking, ignore-nonbrackets rule, immediate-invalid-closer precedence and earliest-leftover diagnostic are task choices derived above, not supplied by this Boolean balanced-parentheses reference. Exact public task contract hash 992a57fcebce746c48fe095d5d4af90401c344c8e6045c9ab9387182be1aa7f9. This is main teaching, not current app or judge sign-off."
     },
     {
       "type": "text",
       "id": "minstack-dispatch-0",
-      "markdown": "From helper to exact dispatch\n\nSource gives1..200000 operations with |value|<=1e9. PUSH x emits NOTHING;POP emits the removed value;TOP reads without removing;MIN reads the minimum. If empty,POP/TOP/MIN emit EMPTY and leave state empty. run_stack returns a list of STRING lines. Supplied parser leaves PUSH x as a STRING. Convert int(op[1]) before numeric comparison: lexicographic order puts10 before2 and would corrupt a minimum."
+      "markdown": "From helper to exact dispatch\n\nThere are 1 to 200000 operations with |value|<=1e9. PUSH x emits nothing; POP emits the removed value; TOP reads without removing; MIN reads the minimum. If empty, POP, TOP and MIN emit EMPTY and leave state empty. run_stack returns a list of string lines. The supplied parser leaves the argument of PUSH as a string. Convert int(op[1]) before numeric comparison: lexicographic order puts \"10\" before \"2\" and would corrupt a minimum."
     },
     {
       "type": "text",
       "id": "minstack-dispatch-1",
-      "markdown": "Cached-prefix invariant\n\nEach entry(value,prefix_min)stores the exact minimum of values from bottom through this entry. On push x,cache x if empty,else min(x,old_top_min). This establishes the invariant by induction. Pop removes one whole entry and exposes the preceding prefix,whose cached minimum remains correct. TOP reads field0;MIN reads field1. Duplicate minima need no special counter because each duplicate entry carries its own prefix minimum. No rescan or heap needed."
+      "markdown": "Cached-prefix invariant\n\nEach entry (value,prefix_min) stores the exact minimum from the bottom through that entry. On push x, cache x if empty, otherwise min(x,old_top_min). This establishes the invariant by induction. Pop removes one whole entry and exposes the preceding prefix, whose cached minimum remains correct. TOP reads field 0; MIN reads field 1. Duplicate minima need no special counter because each duplicate entry carries its own prefix minimum. No rescan or heap is needed."
     },
     {
       "type": "text",
       "id": "minstack-dispatch-2",
-      "markdown": "Trace and empty behavior\n\nPUSH5,PUSH3,PUSH3 gives[(5,5),(3,3),(3,3)]. POP prints3,MIN still prints3;POP prints3,MIN now prints5. POP prints5;the next POP,TOP,MIN each print EMPTY with no mutation. Only PUSH changes an empty stack to nonempty. Convert every emitted number to str:the outer parser already prints each returned line. Do not emit a placeholder for PUSH or return only the final minimum."
+      "markdown": "Trace and empty behavior\n\nPUSH 5, PUSH 3, PUSH 3 gives [(5,5),(3,3),(3,3)]. POP prints 3 and MIN still prints 3. Another POP prints 3 and MIN now prints 5. POP prints 5; the next POP, TOP and MIN each print EMPTY with no mutation. Only PUSH changes an empty stack to nonempty. Convert every emitted number to str: the outer main already prints each returned line. Do not emit a placeholder for PUSH or return only the final minimum."
     },
     {
       "type": "text",
       "id": "minstack-dispatch-3",
-      "markdown": "Work model and transfer\n\nEach operation does O(1) cached-value work with O(n) entries and at mostn output lines. Python list append/pop are the standard dynamic-array stack with amortized constant update cost;this is not a hard real-time latency guarantee or a claim every individual allocation takes constant time. There is no min(stack)scan in MIN. Avoid arithmetic encoding that risks fixed-width overflow. Compare against a deliberately slow raw-list/min oracle on short random traces,including duplicate minima,negatives,string10versus2 and repeated empty operations. Exercise200000 operations separately."
+      "markdown": "Work model and transfer\n\nEach operation does O(1) cached-value work, with O(n) entries and at most n output lines. Python list append/pop use the standard dynamic-array stack with amortized constant update cost; this is not a hard real-time latency guarantee or a claim that each allocation takes constant time. MIN does not scan min(stack). Avoid arithmetic encoding that risks fixed-width overflow. Compare against a deliberately slow raw-list/min oracle on short random traces, including duplicate minima, negatives, string \"10\" versus \"2\", and repeated empty operations. Exercise 200000 operations separately."
     },
     {
       "type": "code",
@@ -386,7 +394,7 @@
     {
       "type": "text",
       "id": "minstack-dispatch-sources",
-      "markdown": "Sources: [1](https://buicongnguyen.github.io/Leetcode/chapter_11_composite_structures/min_stack/). Exact public task contract hash a621a5bc6e92e378d02f4e91531bb16bf5b360f50e3665ea9079f2ec0bee5c78. This is main algorithm/contract teaching,not current app or judge signoff."
+      "markdown": "Mechanism reference: [prefix-minimum pairs](https://cp-algorithms.com/data_structures/stack_queue_modification.html). The source directly stores each value with the minimum below it. Our PUSH/POP/TOP/MIN dispatch, string parser, no-PUSH-output and EMPTY policy are captured task choices, not source API guarantees. Exact public task contract hash a621a5bc6e92e378d02f4e91531bb16bf5b360f50e3665ea9079f2ec0bee5c78. This is main teaching, not current app or judge sign-off."
     },
     {
       "type": "text",
@@ -449,7 +457,7 @@
     {
       "type": "text",
       "id": "window-max-lines-sources",
-      "markdown": "References: [1](https://docs.python.org/3.12/library/collections.html). Public task hash 6dcdeb39a441ca975625837966bab713b23264d8a9c1fe102493c29d5b02ac44. These references establish language/container semantics; the exact task framing is the captured public contract. This extension preserves the earlier bounded examples and their policies rather than silently broadening those APIs."
+      "markdown": "Mechanism references: [deque endpoint operations](https://docs.python.org/3/library/collections.html) and [indexed monotonic queues and linear total work](https://cp-algorithms.com/data_structures/stack_queue_modification.html). The algorithm source demonstrates minima; our reversed dominance direction computes maxima, with an explicitly derived newer-equal and expiration policy. The one joined output line is our task adapter. Public task hash 6dcdeb39a441ca975625837966bab713b23264d8a9c1fe102493c29d5b02ac44. Earlier examples retain their policies; this is not app or judge qualification."
     },
     {
       "type": "text",
@@ -512,7 +520,7 @@
     {
       "type": "text",
       "id": "quantum-completion-queue-sources",
-      "markdown": "References: [1](https://docs.python.org/3.12/library/collections.html). Public task hash 56fe708b25126e36437aeafea0f68c1cdfba9df6a527029a3952803d40da9c11. These references establish language/container semantics; the exact task framing is the captured public contract. This extension preserves the earlier bounded examples and their policies rather than silently broadening those APIs."
+      "markdown": "Container reference: [deque append/popleft](https://docs.python.org/3/library/collections.html). The round-robin service model, final partial quantum, completion times and bound on total visits are specified and derived here, not established by a container page. Public task hash 56fe708b25126e36437aeafea0f68c1cdfba9df6a527029a3952803d40da9c11. Earlier examples retain their policies; this is not app, operating-system scheduler or judge qualification."
     }
   ],
   "practice": {

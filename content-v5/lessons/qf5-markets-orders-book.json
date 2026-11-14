@@ -1,6 +1,6 @@
 {
   "id": "qf5-markets-orders-book",
-  "revision": 2,
+  "revision": 3,
   "title": "Order types, quotes and the order book",
   "module": "qf5-markets",
   "order": 2,
@@ -40,7 +40,7 @@
     {
       "type": "text",
       "id": "time-in-force",
-      "markdown": "Order type and time-in-force are separate instructions. In the simplified IOC policy here, execute eligible quantity immediately and cancel any remainder; partial fills are allowed. FOKrequires an immediate full fill or cancellation without a partial fill, subject to actual venue semantics. Day/GTCsession/expiry handling and whether particular instructions are accepted vary by firm/venue. Do not assume a GTCorder literally persists forever or across every session. Our code implements only snapshot buy-limit IOC, not FOKor session management."
+      "markdown": "Order type and time-in-force are separate instructions. In the simplified IOC policy here, execute eligible quantity immediately and cancel any remainder; partial fills are allowed. FOK requires an immediate full fill or cancellation without a partial fill, subject to actual venue semantics. Day/GTC session/expiry handling and whether particular instructions are accepted vary by firm/venue. Do not assume a GTC order literally persists forever or across every session. Our code implements only snapshot buy-limit IOC, not FOK or session management."
     },
     {
       "type": "worked",
@@ -48,13 +48,13 @@
       "title": "A price cap does not guarantee requested quantity",
       "steps": [
         {
-          "text": "Synthetic asks are3shares at1001cents,4at1002and5at1004. Incoming buy-limit IOCrequests10shares with limit1002."
+          "text": "Synthetic asks are 3 shares at 1001 cents, 4 at 1002 and 5 at 1004. Incoming buy-limit IOC requests 10 shares with limit 1002."
         },
         {
-          "text": "Take3at1001,leaving7requested. Take4at1002,leaving3. Price1004exceeds the buy cap, so the remainder3is canceled, not bought above limit and not rested."
+          "text": "Take 3 at 1001, leaving 7 requested. Take 4 at 1002, leaving 3. Price 1004 exceeds the buy cap, so the remainder 3 is canceled, not bought above limit and not rested."
         },
         {
-          "text": "Filled shares7cost3*1001+4*1002=7011cents before fees. Average execution price7011/7cents is not the limit or a simple unweighted average."
+          "text": "Filled shares 7 cost 3*1001+4*1002=7011 cents before fees. Average execution price 7011/7 cents is not the limit or a simple unweighted average."
         },
         {
           "text": "The snapshot assumes these displayed quantities remain available to this order with no hidden interest, latency, competition, fees, lot/tick restrictions or self-match controls. It is not a real fill forecast."
@@ -87,14 +87,14 @@
     {
       "type": "text",
       "id": "toy-priority",
-      "markdown": "Our teaching book contains ONLY eligible displayed ordinary limit orders for one instrument/side and distinct arrival sequence numbers. Better price has priority: higher bids or lower asks. Within the same price, earlier arrival sequence has priority. Order size does not outrank earlier arrival at the same price in this policy. The sequence is the simulator's authoritative arrival order, not a guessed ordering from client clock timestamps. This is an explicitly declared price-time toy rule, not the complete rules of Nasdaq, NSEor any other venue."
+      "markdown": "Our teaching book contains ONLY eligible displayed ordinary limit orders for one instrument/side and distinct arrival sequence numbers. Better price has priority: higher bids or lower asks. Within the same price, earlier arrival sequence has priority. Order size does not outrank earlier arrival at the same price in this policy. The sequence is the simulator's authoritative arrival order, not a guessed ordering from client clock timestamps. This is an explicitly declared price-time toy rule, not the complete rules of Nasdaq, NSE or any other venue."
     },
     {
       "type": "code",
       "id": "displayed-price-time-ranking",
       "language": "python",
       "source": "def displayed_priority(orders,side):\n    if side not in (\"buy\",\"sell\"):\n        raise ValueError(\"expected buy or sell\")\n    if type(orders) is not list or len(orders)>1000:\n        raise ValueError(\"expected at most1000orders\")\n    ids=set();sequences=set()\n    for row in orders:\n        if type(row) is not tuple or len(row)!=4:\n            raise ValueError(\"expected(id,price,size,arrival_sequence)\")\n        oid,price,size,sequence=row\n        if type(oid) is not str or not oid or len(oid)>20 or oid in ids:\n            raise ValueError(\"expected unique short nonempty string ids\")\n        if any(type(v) is not int or not 1<=v<=1000000 for v in (price,size,sequence)) or sequence in sequences:\n            raise ValueError(\"expected bounded positive ints and unique arrival sequence\")\n        ids.add(oid);sequences.add(sequence)\n    sign=-1 if side==\"buy\" else 1\n    return sorted(orders,key=lambda row:(sign*row[1],row[3]))\n\nbids=[(\"A\",1000,5,1),(\"B\",1001,2,3),(\"C\",1000,7,2)]\nprint([row[0] for row in displayed_priority(bids,\"buy\")])\nasks=[(\"D\",1003,5,1),(\"E\",1002,3,4),(\"F\",1003,2,2)]\nprint([row[0] for row in displayed_priority(asks,\"sell\")])\nprint(min(row[1] for row in asks)-max(row[1] for row in bids))\n# The actual best ask is1002and best bid1001: spread1cent, midpoint1001.5cents.\nfrom fractions import Fraction\nprint(Fraction(1002+1001,2))",
-      "caption": "Expected output: ['B', 'A', 'C']; ['E', 'D', 'F']; 1; then2003/2. B's higher bid outranks earlier lower-priced A; at1000Aprecedes C. E's lower ask outranks D/F; at1003Dprecedes F. Best quotes1001/1002give spread1cent and midpoint1001.5cents, which the exact Fraction prints as2003/2. Neither ranking nor midpoint predicts execution.",
+      "caption": "Expected output: ['B', 'A', 'C']; ['E', 'D', 'F']; 1; then 2003/2. B's higher bid outranks earlier lower-priced A; at 1000 A precedes C. E's lower ask outranks D/F; at 1003 D precedes F. Best quotes 1001/1002 give spread 1 cent and midpoint 1001.5 cents, which the exact Fraction prints as 2003/2. Neither ranking nor midpoint predicts execution.",
       "runnable": true
     },
     {
@@ -110,7 +110,7 @@
     {
       "type": "text",
       "id": "venue-rule-boundary",
-      "markdown": "Real rulebooks can distinguish displayed/non-displayed/reserve interest, special order attributes, auctions, self-match prevention, routing and amendments that change priority. The Nasdaq order guide illustrates reserve/hidden and other attributes, so the toy's displayed-only FIFOlist is intentionally incomplete. Do not copy an undated guide into a current venue adapter without verifying that market's current operative rules, protocol and test cases. Changing size/price/cancel-replace can have rule-specific priority effects; no universal amend policy is implemented here."
+      "markdown": "Real rulebooks can distinguish displayed/non-displayed/reserve interest, special order attributes, auctions, self-match prevention, routing and amendments that change priority. The Nasdaq order guide illustrates reserve/hidden and other attributes, so the toy's displayed-only FIFO list is intentionally incomplete. Do not copy an undated guide into a current venue adapter without verifying that market's current operative rules, protocol and test cases. Changing size/price/cancel-replace can have rule-specific priority effects; no universal amend policy is implemented here."
     },
     {
       "type": "text",
@@ -120,7 +120,7 @@
     {
       "type": "text",
       "id": "transfer",
-      "markdown": "Independent transfer: reverse the sweep for a sell-limit IOCagainst descending bids, deriving the inequality rather than copying the buy condition. Create two same-price resting orders and show why a later larger order does not jump the earlier one in this toy FIFO. Then design a limit-touch-without-fill timeline and a stop-trigger-with-worse-execution scenario. State which rules remain unknown for a real broker/venue rather than inventing them."
+      "markdown": "Independent transfer: reverse the sweep for a sell-limit IOC against descending bids, deriving the inequality rather than copying the buy condition. Create two same-price resting orders and show why a later larger order does not jump the earlier one in this toy FIFO. Then design a limit-touch-without-fill timeline and a stop-trigger-with-worse-execution scenario. State which rules remain unknown for a real broker/venue rather than inventing them."
     },
     {
       "type": "check",
@@ -145,7 +145,7 @@
     {
       "type": "text",
       "id": "final-level-depth-fold-0",
-      "markdown": "Aggregate level quantity, not individual order identity\n\nThe public messages are level deltas(A or C,side,price,quantity). Maintain separate maps for B and S; adds accumulate and cancels subtract. Cancel validity is guaranteed: it cannot remove more than currently rests. Delete a key exactly when its total reaches zero. Side is part of the level identity, so equal numeric bid/ask prices live in different maps. This task supplies no order ids or per-order queue positions."
+      "markdown": "Aggregate level quantity, not individual order identity\n\nThe public messages are level deltas (A or C, side, price, quantity). Maintain separate maps for B and S; adds accumulate and cancels subtract. Cancel validity is guaranteed: it cannot remove more than currently rests. Delete a key exactly when its total reaches zero. Side is part of the level identity, so equal numeric bid/ask prices live in different maps. This task supplies no order ids or per-order queue positions."
     },
     {
       "type": "text",
@@ -155,7 +155,7 @@
     {
       "type": "text",
       "id": "final-level-depth-fold-2",
-      "markdown": "Proof, trace and bounds\n\nAfter every event, map quantity at each side/price equals the sum of all accepted deltas there, with zero entries removed. This is true initially and preserved by one signed update/deletion. Final sorting changes only presentation. Adds B100 qty5, B100 qty3, B99 qty7 then cancel B99 qty7 leave BIDS 100:8. n<=200000, k<=10, price/qty<=1e9 and totals<=2e14 fit signed64-bit. Expected aggregation O(n), final sorting O(L log L) across L active levels, storage O(L) plus sorted keys; no O(n) scan is required after each event. Verify against a slow replay of all prior deltas and final top-k ordering, including large same-level totals and complete deletion."
+      "markdown": "Proof, trace and bounds\n\nAfter every event, map quantity at each side/price equals the sum of all accepted deltas there, with zero entries removed. This is true initially and preserved by one signed update/deletion. Final sorting changes only presentation. Adds B 100 qty 5, B 100 qty 3, B 99 qty 7 then cancel B 99 qty 7 leave BIDS 100:8. n<=200000, k<=10, price/qty<=1e9 and totals<=2e14 fit signed 64-bit. Expected aggregation O(n), final sorting O(L log L) across L active levels, storage O(L) plus sorted keys; no O(n) scan is required after each event. Verify against a slow replay of all prior deltas and final top-k ordering, including large same-level totals and complete deletion."
     },
     {
       "type": "code",
@@ -203,7 +203,7 @@
     {
       "type": "text",
       "id": "final-level-depth-fold-sources",
-      "markdown": "References: [1](https://docs.python.org/3.12/library/stdtypes.html). Public task hash 9351c2335e869221c23dbcbc824d050bee95d5fb975fbd87140fde6952d00ca0. These references establish language/container semantics; the exact task framing is the captured public contract. This extension preserves the earlier bounded examples and their policies rather than silently broadening those APIs."
+      "markdown": "Final-depth update invariants, ordering, numeric bounds and output tokens are derived above from the captured public contract (public task hash 9351c2335e869221c23dbcbc824d050bee95d5fb975fbd87140fde6952d00ca0). Python dictionaries implement the side-separated maps; their documentation does not establish the market semantics or exact output policy. The complete function uses the captured Python starter adapter. This is teaching fit, not new parser, C++, runner or judge qualification."
     },
     {
       "type": "text",
@@ -266,7 +266,7 @@
     {
       "type": "text",
       "id": "every-event-cent-spread-sources",
-      "markdown": "References: [1](https://docs.python.org/3.12/library/stdtypes.html). Public task hash d6758ca114e3ee11c58d6a47122e6e7f7bb8138c9f42ba8d76116b33b8067f8d. These references establish language/container semantics; the exact task framing is the captured public contract. This extension preserves the earlier bounded examples and their policies rather than silently broadening those APIs."
+      "markdown": "Every-event spread update invariants, ordering, numeric bounds and output tokens are derived above from the captured public contract (public task hash d6758ca114e3ee11c58d6a47122e6e7f7bb8138c9f42ba8d76116b33b8067f8d). Python dictionaries implement the side-separated maps; their documentation does not establish the market semantics or exact output policy. The complete function uses the captured Python starter adapter. This is teaching fit, not new parser, C++, runner or judge qualification."
     }
   ],
   "practice": {

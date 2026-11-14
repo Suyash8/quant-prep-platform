@@ -177,15 +177,15 @@ export function Slider({ label, value, min, max, step = 0.01, onChange, format }
   onChange: (v: number) => void; format?: (v: number) => string;
 }) {
   return (
-    <label className="flex items-center gap-3 text-[13px]">
-      <span className="text-muted w-28 shrink-0">{label}</span>
+    <label className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-2 text-[13px] sm:flex sm:gap-3">
+      <span className="min-w-0 break-words text-muted sm:w-28 sm:shrink-0">{label}</span>
       <input
         type="range" min={min} max={max} step={step} value={value}
         onChange={e => onChange(parseFloat(e.target.value))}
-        className="qf-range flex-1"
+        className="qf-range col-span-2 row-start-2 w-full min-w-0 sm:flex-1"
         aria-label={label}
       />
-      <span className="tnum w-14 text-right font-medium">{format ? format(value) : value.toFixed(2)}</span>
+      <span className="tnum col-start-2 row-start-1 whitespace-nowrap text-right font-medium sm:w-14 sm:shrink-0">{format ? format(value) : value.toFixed(2)}</span>
     </label>
   );
 }

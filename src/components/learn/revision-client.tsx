@@ -9,7 +9,7 @@
 import * as React from 'react';
 import Link from 'next/link';
 import {
-  ArrowRight, BookOpen, ChevronRight, CircleCheck, Clock, Code2, Flame, Layers, Lightbulb, Repeat, Sigma,
+  PartyPopper, FolderOpen, Moon, ArrowRight, BookOpen, ChevronRight, CircleCheck, Clock, Code2, Flame, Layers, Lightbulb, Repeat, Sigma,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { getLessonPack } from '@/lib/client/packs';
@@ -161,7 +161,7 @@ export function RevisionClient() {
         </div>
       ) : (
         <div className="qf-empty anim-pop-in">
-          <span className="empty-emoji text-6xl">🎉</span>
+          <PartyPopper className="mx-auto h-14 w-14 text-accent-ink" aria-hidden="true" />
           <p className="mt-2 text-lg font-black">Nothing due, you&apos;re all caught up!</p>
           {allCards.length === 0 && (
             <>
@@ -229,7 +229,7 @@ export function RevisionClient() {
             </div>
             {allCards.length === 0 ? (
               <div className="qf-empty">
-                <span className="empty-emoji">🗂️</span>
+                <FolderOpen className="mx-auto h-12 w-12 text-muted" aria-hidden="true" />
                 <p className="text-[15px] font-black">Empty, no cards yet</p>
               </div>
             ) : (
@@ -288,7 +288,7 @@ export function RevisionClient() {
           </div>
           {upcoming.length === 0 ? (
             <div className="qf-empty">
-              <span className="empty-emoji">🌙</span>
+              <Moon className="mx-auto h-12 w-12 text-muted" aria-hidden="true" />
               <p className="text-[15px] font-black">Nothing scheduled ahead</p>
             </div>
           ) : (

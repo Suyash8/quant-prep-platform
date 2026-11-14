@@ -1,6 +1,6 @@
 {
   "id": "qf5-production-security",
-  "revision": 1,
+  "revision": 2,
   "title": "Secrets, permissions and dependency security",
   "module": "qf5-production",
   "order": 4,
@@ -12,7 +12,7 @@
     },
     {
       "conceptId": "qf5-production-security.secret-handling",
-      "text": "Produce a fixed-enum minimal audit record without accepting/logging secrets,and explain authentication,authorization,secret lifecycle and dependency-review boundaries."
+      "text": "Produce a fixed-enum minimal audit record without accepting/logging secrets, and explain authentication, authorization, secret lifecycle and dependency-review boundaries."
     }
   ],
   "prerequisites": [
@@ -22,12 +22,12 @@
     {
       "type": "text",
       "id": "threat-boundaries",
-      "markdown": "Authentication establishes a principal through a trusted mechanism;authorization decides which action that principal may perform on a resource now. A caller-provided principal,trace ID,role header or schema-valid request does not authenticate itself. OWASPrecommends least privilege,deny by default and permission checks on every request. Our toy takes an ALREADYverified fictional principal and separately administered policy as trusted inputs. It does not implement login,tokens,tenant binding,real permissions or any account mutation."
+      "markdown": "Authentication establishes a principal through a trusted mechanism; authorization decides which action that principal may perform on a resource now. A caller-provided principal, trace ID, role header or schema-valid request does not authenticate itself. OWASP recommends least privilege, deny by default and permission checks on every request. Our toy takes an ALREADY verified fictional principal and separately administered policy as trusted inputs. It does not implement login, tokens, tenant binding, real permissions or any account mutation."
     },
     {
       "type": "text",
       "id": "policy-contract",
-      "markdown": "Policy is a frozensetof exact(principal,action,resource)triples over fictional p1/p2,read/reserve,A/B. A known matching triple allows;missing/invalid policy,unknown principal/action/resource or no matching grant denies. The whole bounded policy is checked before use. No implicit administrator/wildcard permission exists. Read access to Adoes not imply reserveAor readB. Actual policy updates must come from authorized administration,not request text or a page claiming an exemption."
+      "markdown": "Policy is a frozenset of exact (principal,action,resource) triples over fictional p1/p2, read/reserve, A/B. A known matching triple allows; missing/invalid policy, unknown principal/action/resource or no matching grant denies. The whole bounded policy is checked before use. No implicit administrator/wildcard permission exists. Read access to A does not imply reserve A or read B. Actual policy updates must come from authorized administration, not request text or a page claiming an exemption."
     },
     {
       "type": "worked",
@@ -35,13 +35,13 @@
       "title": "A read grant is not a write grant",
       "steps": [
         {
-          "text": "Policy grants p1readA,p1reserveA,p2readA. p1reserveAallows. p2reserveAdenies despite p2being a known authenticated principal. p1readBalso denies."
+          "text": "Policy grants p1 read A, p1 reserve A, p2 read A. p1 reserve A allows. p2 reserve A denies despite p2 being a known authenticated principal. p1 read B also denies."
         },
         {
-          "text": "If policy is unavailable(None),p1reserveAdenies instead of falling back to allow. A malformed rule makes the whole toy policy unavailable and denies."
+          "text": "If policy is unavailable (None), p1 reserve A denies instead of falling back to allow. A malformed rule makes the whole toy policy unavailable and denies."
         },
         {
-          "text": "Audit output uses fixed keys/enums,outcome and policy state. Unknown caller values become unknown;no arbitrary caller text,principal,token or full payload is emitted. This is avoidance under a tiny allowlist,not a generic redactor that can safely process any secret."
+          "text": "Audit output uses fixed keys/enums, outcome and policy state. Unknown caller values become unknown; no arbitrary caller text, principal, token or full payload is emitted. This is avoidance under a tiny allowlist, not a generic redactor that can safely process any secret."
         }
       ]
     },
@@ -50,7 +50,7 @@
       "id": "deny-default-safe-audit",
       "language": "python",
       "source": "import json\nPRINCIPALS=('p1','p2');ACTIONS=('read','reserve');RESOURCES=('A','B')\n\ndef access_decision(policy,verified_principal,action,resource):\n    # Own synthetic server-side policy input. Does NOTauthenticate a caller.\n    # No external secret input accepted or transformed. No generic redaction promise.\n    available=type(policy) is frozenset and len(policy)<=16\n    if available:\n        available=all(type(rule) is tuple and len(rule)==3 and\n                      type(rule[0]) is str and rule[0] in PRINCIPALS and\n                      type(rule[1]) is str and rule[1] in ACTIONS and\n                      type(rule[2]) is str and rule[2] in RESOURCES for rule in policy)\n    known=type(verified_principal) is str and verified_principal in PRINCIPALS and type(action) is str and action in ACTIONS and type(resource) is str and resource in RESOURCES\n    permitted=bool(available and known and (verified_principal,action,resource) in policy)\n    safe={'schema':1,'event':'authorization-decision','outcome':'allow' if permitted else 'deny',\n          'action':action if type(action) is str and action in ACTIONS else 'unknown',\n          'resource_class':resource if type(resource) is str and resource in RESOURCES else 'unknown',\n          'policy_state':'available' if available else 'unavailable'}\n    return permitted,json.dumps(safe,sort_keys=True,separators=(',',':'))\n\npolicy=frozenset({('p1','read','A'),('p1','reserve','A'),('p2','read','A')})\nfor principal,action,resource in [('p1','reserve','A'),('p2','reserve','A'),('p1','read','B')]:\n    allowed,line=access_decision(policy,principal,action,resource)\n    print(allowed,json.loads(line)['outcome'])\nallowed,line=access_decision(None,'p1','reserve','A')\nprint(allowed,json.loads(line)['policy_state'])\nallowed,line=access_decision(policy,'unrecognized','free text','other')\nprint(allowed,json.loads(line)['action'],json.loads(line)['resource_class'])",
-      "caption": "ExpectedTrue allow;False deny;False deny;False unavailable;False unknown unknown. Full pure source,no real credentials/secret inputs/account policies or external logs. verified_principalmust be bound by real authentication upstream;passing a body field here would defeat that boundary. Fixed enums do not establish log access/integrity/retention controls or production security.",
+      "caption": "Expected True allow; False deny; False deny; False unavailable; False unknown unknown. Full pure source,no real credentials/secret inputs/account policies or external logs. verified_principal must be bound by real authentication upstream; passing a body field here would defeat that boundary. Fixed enums do not establish log access/integrity/retention controls or production security.",
       "runnable": true
     },
     {
@@ -71,17 +71,17 @@
     {
       "type": "text",
       "id": "secrets",
-      "markdown": "Keep persistent credentials out of source,fixtures,chat,manifests,URLs and ordinary logs. Use an approved secrets manager/runtime injection with least-privilege per-service access,audited use,rotation/revocation and tested recovery. Avoid shared broad credentials. Rotation needs supported rollout/testing/rollback so users are not locked out;do not invent or expose actual credentials to teach it. Removing a leaked string from a log does not revoke the credential or erase all historical copies. This lesson handles NOreal secrets and performs no rotation."
+      "markdown": "Keep persistent credentials out of source, fixtures, chat, manifests, URLs and ordinary logs. Use an approved secrets manager/runtime injection with least-privilege per-service access, audited use, rotation/revocation and tested recovery. Avoid shared broad credentials. Rotation needs supported rollout/testing/rollback so users are not locked out;do not invent or expose actual credentials to teach it. Removing a leaked string from a log does not revoke the credential or erase all historical copies. This lesson handles NO real secrets and performs no rotation."
     },
     {
       "type": "text",
       "id": "logging-boundary",
-      "markdown": "OWASPidentifies passwords,access tokens,keys,connection strings,payment/private data and unnecessary personal information as data to avoid recording directly. Prefer minimal predefined fields,structured encoding and bounded inputs;protect log readers,storage,transport,retention and tamper evidence. Do not hash an arbitrary secret and call it universally safe:low-entropy values can be guessed,and identifiers can remain linkable. Our enum-only record omits individual principal so it is not a full forensic attribution log;real approved attribution may need protected pseudonymous IDs."
+      "markdown": "OWASP identifies passwords, access tokens, keys, connection strings, payment/private data and unnecessary personal information as data to avoid recording directly. Prefer minimal predefined fields, structured encoding and bounded inputs; protect log readers, storage, transport, retention and tamper evidence. Do not hash an arbitrary secret and call it universally safe: low-entropy values can be guessed, and identifiers can remain linkable. Our enum-only record omits individual principal so it is not a full forensic attribution log; real approved attribution may need protected pseudonymous IDs."
     },
     {
       "type": "text",
       "id": "dependency-security",
-      "markdown": "Inventory direct/transitive dependencies and actual versions,maintain lockfiles/integrity/source provenance,scan/review advisories and assess reachability/exposure. Patch with regression/security tests and an operational rollout plan. A lockfile or zero scanner findings does not prove absence of vulnerabilities;advisories may be incomplete and configuration/application flaws remain. OWASPauthorization guidance warns third-party components can bypass controls,so one library is not the entire defense. No package installation,dependency upgrade or real scan is performed here."
+      "markdown": "Inventory direct/transitive dependencies and actual versions, maintain lockfiles/integrity/source provenance, scan/review advisories and assess reachability/exposure. Patch with regression/security tests and an operational rollout plan. A lockfile or zero scanner findings does not prove absence of vulnerabilities; advisories may be incomplete and configuration/application flaws remain. OWASP authorization guidance warns third-party components can bypass controls, so one library is not the entire defense. No package installation, dependency upgrade or real scan is performed here."
     },
     {
       "type": "check",
@@ -101,12 +101,12 @@
     {
       "type": "text",
       "id": "security-tests",
-      "markdown": "Exhaustively test the small permission matrix,unknown values,missing/malformed policy and safe audit output. Actual systems also need cross-tenant object/field checks,revocation/session expiry,TOCTOUrace review,rate/resource limits,error/side-channel handling,dependency/service permissions and penetration review. A pure function accepting trusted identity/policy cannot prove those upstream controls. Denying access should not quietly disable all security logging;logging failures need a declared safe operational policy."
+      "markdown": "Exhaustively test the small permission matrix, unknown values, missing/malformed policy and safe audit output. Actual systems also need cross-tenant object/field checks, revocation/session expiry, TOCTOU race review, rate/resource limits, error/side-channel handling, dependency/service permissions and penetration review. A pure function accepting trusted identity/policy cannot prove those upstream controls. Denying access should not quietly disable all security logging; logging failures need a declared safe operational policy."
     },
     {
       "type": "text",
       "id": "transfer",
-      "markdown": "Independent transfer:enumerate every grant subset over the8possible triples and compare against set membership;remove one grant and verify only that permission disappears. Inject arbitrary nonsecret text as an UNKNOWNidentifier and verify it never appears in the minimal audit. Design authentication-to-principal binding and policy administration interfaces without real credentials,then list remaining tenant/revocation/concurrency/log-access tests. Do not claim those interfaces already exist."
+      "markdown": "Independent transfer: enumerate every grant subset over the 8 possible triples and compare against set membership; remove one grant and verify only that permission disappears. Inject arbitrary nonsecret text as an UNKNOWN identifier and verify it never appears in the minimal audit. Design authentication-to-principal binding and policy administration interfaces without real credentials, then list remaining tenant/revocation/concurrency/log-access tests. Do not claim those interfaces already exist."
     },
     {
       "type": "check",
@@ -116,11 +116,11 @@
     {
       "type": "text",
       "id": "sources",
-      "markdown": "Sources:[OWASPauthorization](https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html),[logging/excluded data](https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html),[secrets lifecycle/least privilege](https://cheatsheetseries.owasp.org/cheatsheets/Secrets_Management_Cheat_Sheet.html). Own matrix/audit example is not a real policy engine,secret manager or security certification."
+      "markdown": "Sources: [OWASP authorization](https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html), [logging/excluded data](https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html), [secrets lifecycle/least privilege](https://cheatsheetseries.owasp.org/cheatsheets/Secrets_Management_Cheat_Sheet.html). Own matrix/audit example is not a real policy engine, secret manager or security certification."
     }
   ],
   "practice": {
     "problemIds": []
   },
-  "summary": "Use trusted authenticated identity and separately authorized policy,deny by default and check each action/resource. Minimal allowlisted logs avoid collecting secrets butdo not implement authentication/forensics/security operations. Secret lifecycle/dependencies and real runtime controls need separate verified work."
+  "summary": "Use trusted authenticated identity and separately authorized policy, deny by default and check each action/resource. Minimal allowlisted logs avoid collecting secrets but do not implement authentication/forensics/security operations. Secret lifecycle/dependencies and real runtime controls need separate verified work."
 }

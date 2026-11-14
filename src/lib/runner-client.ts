@@ -30,7 +30,9 @@ export async function ensureRunner(): Promise<boolean> {
 
   if (IS_SERVERLESS) return false;
   if (starting) {
-    for (let i = 0; i < 40; i++) {
+    // Bounded wait: 40 iterations x a 1.2 s ping could otherwise hold a request for ~58 s against a hung runner.
+    const waitDeadline = Date.now() + 12_000;
+    while (Date.now() < waitDeadline) {
       await new Promise(r => setTimeout(r, 250));
       if (await ping()) return true;
     }
@@ -46,7 +48,9 @@ export async function ensureRunner(): Promise<boolean> {
       env: { ...process.env, PORT: undefined },
     });
     child.unref();
-    for (let i = 0; i < 60; i++) {
+    // Bounded wait: 60 iterations x a 1.2 s ping could otherwise hold a request for ~87 s against a hung runner. Normal warmup answers in ~1-3 s.
+    const spawnDeadline = Date.now() + 12_000;
+    while (Date.now() < spawnDeadline) {
       await new Promise(r => setTimeout(r, 250));
       if (await ping()) return true;
     }

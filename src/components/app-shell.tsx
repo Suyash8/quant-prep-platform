@@ -253,6 +253,8 @@ export function AppShell({ user, children, isAdmin }: { user: { name: string; em
         </div>
       </header>
 
+      <nav aria-label="Workspace switcher" className="border-b border-border bg-surface-2"><div className="max-w-6xl mx-auto px-4 lg:px-6 py-3 flex flex-wrap items-center gap-x-5 gap-y-1 text-sm"><span className="font-extrabold text-muted">Classic workspace</span><Link href="/v5/learn" className="min-h-11 inline-flex items-center font-extrabold text-accent-ink underline underline-offset-4">Rebuilt learning path →</Link><Link href="/v5/practice" className="min-h-11 inline-flex items-center font-extrabold text-accent-ink underline underline-offset-4">Rebuilt coding practice →</Link><span className="text-muted text-xs leading-relaxed">Classic and rebuilt progress are tracked separately.</span></div></nav>
+
       <main id="content" className="flex-1 w-full pb-24 lg:pb-0">{children}</main>
 
       {/* desktop footer */}
@@ -292,7 +294,7 @@ export function AppShell({ user, children, isAdmin }: { user: { name: string; em
         </div>
         <div className="border-t-2 border-border">
           <div className="max-w-6xl mx-auto px-4 lg:px-6 py-3 flex flex-wrap items-center justify-between gap-2 text-[13px] font-semibold text-faint">
-            <span>QuantFoundry · {APP_VERSION} · content checked by the validator</span>
+            <span>QuantFoundry · {APP_VERSION} · Classic and rebuilt learning workspaces</span>
             <span className="flex items-center gap-3">
               <Link href="/about" className="hover:text-muted">About</Link>
               <Link href="/methodology" className="hover:text-muted">Methodology</Link>
