@@ -153,3 +153,45 @@ export function rateLimit(key: string, capacity = 10, refillPerSec = 0.2): boole
   buckets.set(key, b);
   return true;
 }
+
+// ---------- password reset tokens (stateless HMAC, single-use via passwordHash binding) ----------
+
+const RESET_TTL_MS = 30 * 60 * 1000; // 30 minutes
+
+export function createPasswordResetToken(user: { id: string; email: string; passwordHash: string }): string {
+  const exp = Date.now() + RESET_TTL_MS;
+  const payload = Buffer.from(JSON.stringify({ uid: user.id, email: user.email, exp }), 'utf8').toString('base64url');
+  // Signing with secret + current passwordHash guarantees single-use: changing password invalidates the token immediately.
+  const sig = createHmac('sha256', `${sessionSecret()}:${user.passwordHash}`).update(payload).digest('hex').slice(0, 32);
+  return `${payload}.${sig}`;
+}
+
+export function decodeResetTokenUserId(token: string): string | null {
+  const [payload] = token.split('.');
+  if (!payload) return null;
+  try {
+    const data = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as { uid?: unknown };
+    return typeof data.uid === 'string' && data.uid ? data.uid : null;
+  } catch {
+    return null;
+  }
+}
+
+export function verifyPasswordResetToken(
+  token: string,
+  user: { id: string; email: string; passwordHash: string }
+): boolean {
+  const [payload, sig] = token.split('.');
+  if (!payload || !sig) return false;
+  try {
+    const data = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as { uid?: unknown; email?: unknown; exp?: unknown };
+    if (data.uid !== user.id || data.email !== user.email) return false;
+    if (typeof data.exp !== 'number' || Date.now() > data.exp) return false;
+    const expect = createHmac('sha256', `${sessionSecret()}:${user.passwordHash}`).update(payload).digest('hex').slice(0, 32);
+    const a = Buffer.from(sig);
+    const b = Buffer.from(expect);
+    return a.length === b.length && timingSafeEqual(a, b);
+  } catch {
+    return false;
+  }
+}

@@ -114,7 +114,6 @@ export function PermissionBits({ params }: { params: Record<string, unknown> }) 
   const sym = bits.map(b => `${b & 4 ? 'r' : '-'}${b & 2 ? 'w' : '-'}${b & 1 ? 'x' : '-'}`).join('');
   const initial = (params.initialOctal as string) ?? '644';
   React.useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- sync lab state to the lesson-supplied initial value
     if (initial.length === 3 && /^[0-7]{3}$/.test(initial)) setBits(initial.split('').map(c => parseInt(c, 8)));
   }, [initial]);
   return (

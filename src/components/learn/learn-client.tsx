@@ -52,7 +52,6 @@ export function LearnClient({ initialLessonId }: { initialLessonId?: string }) {
 
   React.useEffect(() => {
     const id = currentLessonId();
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- sync to the client-side route, which the server cannot know offline
     if (id && id !== lessonId) { setLessonId(id); return; }
     if (!id) return;
     let alive = true;

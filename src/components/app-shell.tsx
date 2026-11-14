@@ -9,7 +9,7 @@ import {
   Activity, BarChart3, BookOpenCheck, BrainCircuit, Briefcase, CloudOff, Code2,
   FlaskConical, GraduationCap, Home, Map as MapIcon, Moon, PersonStanding,
   Settings, Sigma, Sun, Timer, Undo2, Flame, Zap, ShieldCheck, FolderKanban,
-  LogOut, ChevronDown, Wifi, UserRound,
+  LogOut, ChevronDown, UserRound,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -266,7 +266,6 @@ export function AppShell({ user, children, isAdmin }: { user: { name: string; em
               QuantFoundry
             </div>
             <p className="text-[15px] font-semibold text-muted max-w-xs">An honest preparation pathway for quantitative engineering. Learn by doing, track real mastery.</p>
-            <span className="chip chip-info"><Wifi className="h-3.5 w-3.5" aria-hidden /> Works offline</span>
           </div>
           <nav aria-label="Learn links" className="space-y-2.5">
             <p className="text-[13px] font-black uppercase tracking-wider text-faint">Learn</p>
@@ -292,7 +291,7 @@ export function AppShell({ user, children, isAdmin }: { user: { name: string; em
         </div>
         <div className="border-t-2 border-border">
           <div className="max-w-6xl mx-auto px-4 lg:px-6 py-3 flex flex-wrap items-center justify-between gap-2 text-[13px] font-semibold text-faint">
-            <span>QuantFoundry · {APP_VERSION} · Classic and rebuilt learning workspaces</span>
+            <span>QuantFoundry · {APP_VERSION} · Quantitative Engineering &amp; Interview Preparation</span>
             <span className="flex items-center gap-3">
               <Link href="/about" className="hover:text-muted">About</Link>
               <Link href="/methodology" className="hover:text-muted">Methodology</Link>

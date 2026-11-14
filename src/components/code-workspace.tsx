@@ -4,6 +4,7 @@ import * as React from 'react';
 import { recordProblemAttempt } from '@/lib/client/local-state';
 import { CheckCircle2, FileCode2, Loader2, Play, RotateCcw, Send, Terminal, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
+import { MonacoCodeEditor } from '@/components/monaco-code-editor';
 
 export interface WorkspaceProps {
   slug: string;
@@ -112,8 +113,8 @@ export function CodeWorkspace({ slug, stubs, examples, timeLimitMs }: WorkspaceP
   const fileLabel = language === 'python' ? 'main.py' : 'main.cpp';
   const hasTestRows = (result?.results?.length ?? 0) > 0;
   const showEmptyState = !busy && !result;
-  /* editor auto-grows with the code, capped so long files scroll instead of stretching the page */
-  const editorRows = Math.min(Math.max(code.split('\n').length + 1, 12), 26);
+  const monacoLang = language === 'python' ? 'python' : 'cpp';
+  const editorHeight = Math.min(Math.max(code.split('\n').length * 22 + 40, 340), 540);
 
   let statusChip: React.ReactNode = null;
   if (busy) {
@@ -168,15 +169,13 @@ export function CodeWorkspace({ slug, stubs, examples, timeLimitMs }: WorkspaceP
                 </button>
               </div>
             </div>
-            <textarea
+            <MonacoCodeEditor
               value={code}
-              onChange={e => setCode(e.target.value)}
-              spellCheck={false}
-              wrap="off"
-              rows={editorRows}
-              placeholder="// Write your solution here"
-              className="qf-editor-input thin-scroll w-full flex-auto resize-none overflow-x-auto !rounded-none !border-0 !bg-transparent !p-4 !text-[15px] !leading-relaxed !text-slate-200 caret-emerald-400 !placeholder:text-slate-600"
-              aria-label="Code editor"
+              language={monacoLang}
+              onChange={setCode}
+              onRunShortcut={doRun}
+              onSubmitShortcut={doSubmit}
+              height={editorHeight}
             />
           </div>
         </div>
@@ -327,7 +326,7 @@ export function CodeWorkspace({ slug, stubs, examples, timeLimitMs }: WorkspaceP
                           </span>
                         </div>
                         {failed && r.hidden && (
-                          <p className="mt-1.5 font-sans text-[12px] font-bold text-slate-500">Hidden test: the input and expected output are not shown.</p>
+                          <p className="mt-1.5 font-sans text-[12px] font-bold text-slate-400">Hidden edge case did not pass. Check boundary conditions, 64-bit overflows, and off-by-one indices.</p>
                         )}
                         {failed && !r.hidden && (
                           <details className="mt-1.5">

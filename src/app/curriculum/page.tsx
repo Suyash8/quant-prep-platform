@@ -5,7 +5,8 @@ import { getMap, getRegistry, getCurriculumGraph } from '@/lib/content';
 import { PublicHeader, AppShell } from '@/components/app-shell';
 import { Lock, Circle, CircleDot, CheckCircle2, Award, Map as MapIcon, List } from 'lucide-react';
 import { CurriculumSearch } from '@/components/curriculum-search';
-import { LearningPath, resolvePhaseColor } from '@/components/gamified/learning-path';
+import { LearningPath } from '@/components/gamified/learning-path';
+import { resolvePhaseColor } from '@/lib/phase-styles';
 
 export const metadata = { title: 'Curriculum. QuantFoundry' };
 

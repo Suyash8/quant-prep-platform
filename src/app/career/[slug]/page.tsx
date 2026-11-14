@@ -2,11 +2,11 @@ import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { getCurrentUser } from '@/lib/auth';
-import { getCompany, getMap, listAssessments } from '@/lib/content';
+import { getCompany, getMap, listAssessments, listProblems } from '@/lib/content';
 import { AppShell, PublicHeader } from '@/components/app-shell';
 import {
   ArrowRight, BookOpen, Briefcase, Check, ChevronRight, ClipboardCheck, ClipboardList,
-  ExternalLink, Info, Layers, Route, ScrollText,
+  Code2, ExternalLink, Info, Layers, Route, ScrollText,
 } from 'lucide-react';
 
 // fixed track colour coding, consistent on every career page
@@ -99,6 +99,30 @@ export default async function CompanyPage({ params }: { params: Promise<{ slug: 
   const primaryTrack = company.roles[0]?.track;
   const avatarTile = TRACK_TILE[primaryTrack ?? ''] ?? AVATAR_TRACK_FALLBACK;
   const trackSet = [...new Set(company.roles.map(r => r.track))];
+
+  // Curate relevant coding problems from the 78-problem catalog based on firm category & skill profile.
+  const wantTags = new Set<string>(['quant-finance', 'dsa']);
+  if (company.category === 'market-maker' || company.category === 'prop-trading') {
+    wantTags.add('order-book'); wantTags.add('low-latency'); wantTags.add('fix-protocol'); wantTags.add('probability'); wantTags.add('systems-design');
+  } else if (company.category === 'bank') {
+    wantTags.add('options'); wantTags.add('fixed-income'); wantTags.add('monte-carlo'); wantTags.add('linear-algebra');
+  } else if (company.category === 'fund' || company.category === 'asset-manager') {
+    wantTags.add('time-series'); wantTags.add('statistics'); wantTags.add('risk'); wantTags.add('linear-algebra');
+  } else {
+    wantTags.add('streaming'); wantTags.add('parsing'); wantTags.add('systems-design');
+  }
+  const recommendedProblems = listProblems()
+    .map(p => {
+      let score = 0;
+      if (wantTags.has(p.category)) score += 2;
+      for (const t of p.tags) if (wantTags.has(t)) score += 2;
+      if (p.difficulty === 'medium' || p.difficulty === 'hard') score += 1;
+      return { p, score };
+    })
+    .filter(x => x.score >= 3)
+    .sort((a, b) => b.score - a.score || a.p.title.localeCompare(b.p.title))
+    .slice(0, 6)
+    .map(x => x.p);
 
   const body = (
     <div className="max-w-4xl mx-auto px-4 lg:px-6 py-8">
@@ -282,6 +306,38 @@ export default async function CompanyPage({ params }: { params: Promise<{ slug: 
                 <div className="flex-1 min-w-0">
                   <span className="block font-bold text-[15px]">{m.title}</span>
                   <span className="block text-[13px] text-muted mt-0.5">{m.summary}</span>
+                </div>
+                <ChevronRight className="h-4 w-4 text-faint shrink-0" />
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* recommended coding problems */}
+      {recommendedProblems.length > 0 && (
+        <section className="mt-8">
+          <div className="section-head">
+            <span className="icon-tile icon-tile-sm icon-tile-info"><Code2 /></span>
+            <h2>Recommended coding problems</h2>
+            <span className="chip ml-auto tnum">{recommendedProblems.length} curated</span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {recommendedProblems.map((prob, i) => (
+              <Link
+                key={prob.slug}
+                href={`/practice/${prob.slug}`}
+                className="row-card anim-slide-up"
+                style={{ animationDelay: SLIDE_DELAYS[i % SLIDE_DELAYS.length] }}
+              >
+                <span className="icon-tile icon-tile-sm icon-tile-accent"><Code2 /></span>
+                <div className="flex-1 min-w-0">
+                  <span className="block font-bold text-[15px] truncate">{prob.title}</span>
+                  <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+                    <span className={`chip ${prob.difficulty === 'easy' ? 'chip-success' : prob.difficulty === 'medium' ? 'chip-warning' : 'chip-danger'}`}>{prob.difficulty}</span>
+                    <span className="chip">{prob.category.replace(/-/g, ' ')}</span>
+                    <span className="text-[12px] font-bold text-faint tnum">~{prob.estMinutes}m</span>
+                  </div>
                 </div>
                 <ChevronRight className="h-4 w-4 text-faint shrink-0" />
               </Link>

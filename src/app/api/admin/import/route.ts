@@ -54,6 +54,12 @@ export async function POST(req: NextRequest) {
     await writeFile(target, JSON.stringify(obj, null, 2), 'utf8');
     return NextResponse.json({ ok: true, message: `Imported to content/${destDir}/${filename}. Validation report refreshed.` });
   } catch (e) {
+    const code = (e as NodeJS.ErrnoException)?.code;
+    if (code === 'EROFS' || code === 'EACCES' || code === 'EPERM') {
+      return NextResponse.json({
+        error: 'This deployment uses a read-only filesystem. Commit content JSON files to the repository and rebuild content packs to publish changes.',
+      }, { status: 501 });
+    }
     return NextResponse.json({ error: `Write failed: ${(e as Error).message}` }, { status: 500 });
   }
 }

@@ -212,7 +212,14 @@ export function AuthForm({ mode, stats }: { mode: 'login' | 'register'; stats?: 
               )}
             </div>
             <div>
-              <label htmlFor="password" className="text-[15px] font-extrabold">Password</label>
+              <div className="flex items-center justify-between gap-2">
+                <label htmlFor="password" className="text-[15px] font-extrabold">Password</label>
+                {mode === 'login' && (
+                  <Link href="/forgot-password" className="text-[13px] font-bold text-accent-deep dark:text-accent hover:underline">
+                    Forgot password?
+                  </Link>
+                )}
+              </div>
               <div className="relative mt-1.5">
                 <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-faint" aria-hidden />
                 <input

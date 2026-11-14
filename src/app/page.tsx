@@ -6,7 +6,7 @@ import { countLabs, getMap, getRegistry, listProblems, listProjects } from '@/li
 import { mathText } from '@/lib/math-text';
 import { Mascot } from '@/components/brand/mascot';
 import { Ring } from '@/components/page-kit';
-import { resolvePhaseColor, phaseIcon } from '@/components/gamified/learning-path';
+import { resolvePhaseColor, phaseIcon } from '@/lib/phase-styles';
 import {
   Accordion, AccordionContent, AccordionItem, AccordionTrigger,
 } from '@/components/ui/accordion';
@@ -14,7 +14,7 @@ import {
   ArrowRight, BookOpenCheck, BrainCircuit, CheckCircle2, ChevronDown, CloudOff, Code2,
   Compass, Download, FileCode2, FlaskConical, GraduationCap, Landmark, Layers, LineChart,
   Lock, ListChecks, Plane, ShieldCheck, Sigma, Swords, Timer, Trophy, Undo2, Zap, Flame,
-  Wifi, WifiOff, Play, SquarePen, Gauge,
+  WifiOff, Play, SquarePen, Gauge,
 } from 'lucide-react';
 
 const FAQ = [
@@ -125,7 +125,7 @@ export default async function LandingPage() {
                 <Link href="/curriculum" className="btn3d btn3d-ghost btn3d-lg">See the curriculum</Link>
               </div>
               <div className="mt-7 flex flex-wrap items-center gap-2.5 anim-slide-up" style={{ animationDelay: '0.3s' }}>
-                <span className="chip"><Plane className="h-3.5 w-3.5" aria-hidden /> Works offline</span>
+                <span className="chip"><BrainCircuit className="h-3.5 w-3.5" aria-hidden /> FSRS-4 spaced repetition</span>
                 <span className="chip"><Play className="h-3.5 w-3.5" aria-hidden /> Real C++ compiler</span>
                 <span className="chip"><ListChecks className="h-3.5 w-3.5" aria-hidden /> {publishedLessons} lessons</span>
               </div>
@@ -448,7 +448,7 @@ export default async function LandingPage() {
               QuantFoundry
             </div>
             <p className="text-[15px] font-semibold text-muted max-w-xs">An honest preparation pathway for quantitative engineering. Learn by doing, track real mastery.</p>
-            <span className="chip chip-info"><Wifi className="h-3.5 w-3.5" aria-hidden /> Works offline</span>
+            <span className="chip chip-info"><GraduationCap className="h-3.5 w-3.5" aria-hidden /> Built for Quant &amp; SWE</span>
           </div>
           <nav aria-label="Learn links" className="space-y-2.5">
             <p className="text-[13px] font-black uppercase tracking-wider text-faint">Learn</p>

@@ -272,10 +272,10 @@ export function RevisionClient() {
           <div className="qf-card-flat p-4 min-w-0 anim-slide-up" style={slideDelay(2)}>
             <div className="flex items-center gap-2.5">
               <span className="icon-tile icon-tile-sm icon-tile-neutral"><Lightbulb /></span>
-              <div className="font-black text-[15px] tracking-tight">Works offline</div>
+              <div className="font-black text-[15px] tracking-tight">Instant grading &amp; sync</div>
             </div>
             <p className="mt-2 text-[13px] font-semibold text-muted leading-relaxed">
-              Reviews run entirely on this device and sync when you&apos;re online, so you can revise on a plane.
+              Reviews are graded immediately as you study and sync automatically to your account across devices.
             </p>
           </div>
         </div>

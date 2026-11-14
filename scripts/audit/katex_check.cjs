@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-require-imports -- CommonJS entry point from the supplied audit. */
 const katex=require(process.argv[2]+'/node_modules/katex');const fs=require('fs'),path=require('path');
 const root=process.argv[2]+'/content';let bad=[],n=0;
 function mathSpans(s){const out=[];s=s.replace(/\\\$/g,'\u0001');let m;const re=/\$\$([\s\S]+?)\$\$|\$([^$\n]+?)\$/g;while((m=re.exec(s)))out.push((m[1]||m[2]).replace(/\u0001/g,'\\$'));return out;}
