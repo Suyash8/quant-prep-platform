@@ -1,0 +1,161 @@
+{
+  "id": "qf5-numerics-linear-solves",
+  "revision": 1,
+  "title": "Linear systems, rank and conditioning",
+  "module": "qf5-numerics",
+  "order": 2,
+  "estMinutes": 22,
+  "objectives": [
+    {
+      "conceptId": "qf5-numerics-linear-solves.solve-residual",
+      "text": "Solve and verify a bounded exact 2-by-2 system using row pivoting/elimination while distinguishing no unique solution from a valid full-rank solve."
+    },
+    {
+      "conceptId": "qf5-numerics-linear-solves.conditioning",
+      "text": "Explain residual, backward and forward error with a declared norm, and demonstrate why an ill-conditioned system can have a small residual but large solution error."
+    }
+  ],
+  "prerequisites": [
+    "qf5-numerics-vectors-projections"
+  ],
+  "blocks": [
+    {
+      "type": "text",
+      "id": "system-contract",
+      "markdown": "A matrix A maps an unknown vector x to a right-hand side b. In Ax=b, rows are equations and columns are coefficients of the same ordered unknowns. A square n-by-n matrix has a unique solution for every b exactly when its columns are linearly independent, called full rank. Rank counts independent column directions. Rectangular or rank-deficient systems can need least squares or a description of nonunique/no solutions; forcing them into a square inverse call does not settle their meaning."
+    },
+    {
+      "type": "text",
+      "id": "row-operations",
+      "markdown": "An invertible row operation must act on BOTH A and b to preserve the solution set. Swapping equations, scaling an equation by a nonzero constant, or adding a multiple of one equation to another are examples. Elimination reduces to triangular equations; back substitution then finds unknowns from the bottom up. A zero diagonal encountered without row search need not mean singularity: a row swap may supply a valid pivot. Partial pivoting chooses a largest-magnitude remaining entry in the current column."
+    },
+    {
+      "type": "worked",
+      "id": "pivot-trace",
+      "title": "A zero first diagonal can still have a unique solution",
+      "steps": [
+        {
+          "text": "System 0*x0+2*x1=4 and 1*x0+3*x1=7 has first matrix entry 0, but rows can be swapped."
+        },
+        {
+          "text": "After swapping, use x0+3*x1=7 and 2*x1=4. The second equation gives x1=2; back substitution gives x0=1."
+        },
+        {
+          "text": "Check the original equations, not only the swapped representation: 0*1+2*2=4 and 1*1+3*2=7."
+        },
+        {
+          "text": "For[[1,2],[2,4]], the second equation duplicates the first up to scale. Depending on b it can be consistent with infinitely many solutions or inconsistent; neither identifies a unique pair."
+        }
+      ]
+    },
+    {
+      "type": "code",
+      "id": "exact-pivot-solve2",
+      "language": "python",
+      "source": "from fractions import Fraction\n\ndef solve2(matrix, rhs):\n    if type(matrix) is not list or len(matrix) != 2 or any(type(row) is not list or len(row) != 2 for row in matrix):\n        raise ValueError(\"expected 2x2 list matrix\")\n    if type(rhs) is not list or len(rhs) != 2:\n        raise ValueError(\"expected length2 RHS list\")\n    values = [v for row in matrix for v in row] + rhs\n    if any(type(v) not in (int,Fraction) for v in values):\n        raise ValueError(\"expected exact int/Fraction entries, excluding bool\")\n    values = [Fraction(v) for v in values]\n    if any(abs(v.numerator) > 1000000000 or v.denominator > 1000000 for v in values):\n        raise ValueError(\"entry outside exact teaching bounds\")\n    rows = [[values[0],values[1],values[4]], [values[2],values[3],values[5]]]\n    if abs(rows[1][0]) > abs(rows[0][0]):\n        rows[0], rows[1] = rows[1], rows[0]\n    if rows[0][0] == 0:\n        raise ValueError(\"singular: no unique solution\")\n    multiplier = rows[1][0] / rows[0][0]\n    rows[1] = [b-multiplier*a for a,b in zip(rows[0],rows[1])]\n    if rows[1][1] == 0:\n        raise ValueError(\"singular: no unique solution\")\n    x1 = rows[1][2] / rows[1][1]\n    x0 = (rows[0][2]-rows[0][1]*x1) / rows[0][0]\n    return [x0,x1]\n\nmatrix, rhs = [[0,2],[1,3]], [4,7]\nsolution = solve2(matrix,rhs)\nprint([str(x) for x in solution])\nprint([str(b-sum(a*x for a,x in zip(row,solution))) for row,b in zip(matrix,rhs)])\nprint(matrix)\ntry:\n    solve2([[1,2],[2,4]], [3,6])\nexcept ValueError:\n    print(\"singular system rejected\")",
+      "caption": "Expected output: ['1', '2'], then ['0', '0'], then [[0, 2], [1, 3]], then singular system rejected. The copied augmented rows preserve the original matrix/RHS. Exact rational zero tests are valid in this bounded demonstration; they are not a general rank tolerance for floating data. The helper supports ONLY 2-by-2 square systems and reports no unique solution without classifying every singular case.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "inline-0",
+      "questionId": "qf5-numerics-linear-solves.check-1"
+    },
+    {
+      "type": "check",
+      "id": "inline-1",
+      "questionId": "qf5-numerics-linear-solves.check-2"
+    },
+    {
+      "type": "text",
+      "id": "residual-contract",
+      "markdown": "For candidate x\u0302, define residual r=b-Ax\u0302 and forward error e=x\u0302-x, where x is the exact solution to the stated system. Residual is computable from inputs and candidate; forward error usually is not, because x is unknown. Since Ax\u0302=b-r, x\u0302 solves a system with perturbed RHS b-r: r is an absolute RHS-only backward-error measure under this convention. Normalized general backward-error definitions can also include A perturbations and different denominators; always state which one you report."
+    },
+    {
+      "type": "text",
+      "id": "norms-and-scaling",
+      "markdown": "Vector infinity norm is max absolute coordinate; its induced matrix infinity norm is the largest absolute ROW SUM, not the largest matrix entry. For invertible A, \u03ba\u221e(A)=||A||\u221e||A\u207b\u00b9||\u221e. Other matched induced norm choices give other condition numbers. \u03ba measures sensitivity of a stated problem/representation, not an algorithm's quality, and changes with scaling/units. The inverse in this mathematical definition is not a recommendation to compute an explicit inverse to solve Ax=b."
+    },
+    {
+      "type": "text",
+      "id": "error-bound-proof",
+      "markdown": "With r=b-Ax\u0302 and Ax=b, A(x\u0302-x)=-r, so ||x\u0302-x||\u2264||A\u207b\u00b9||||r||. Also ||b||=||Ax||\u2264||A||||x||. For nonzero b and hence nonzero x, divide and combine to get $\\|\\hat x-x\\|/\\|x\\|\\le\\kappa(A)\\|r\\|/\\|b\\|$. Use compatible vector/induced matrix norms. A small relative residual alone need not give a small relative forward error when \u03ba is large. If b=0, this relative-residual denominator is unavailable; report an appropriate absolute/scaled measure rather than divide by 0."
+    },
+    {
+      "type": "check",
+      "id": "inline-2",
+      "questionId": "qf5-numerics-linear-solves.check-3"
+    },
+    {
+      "type": "worked",
+      "id": "sensitive-system-trace",
+      "title": "Almost parallel equations hide a large solution change",
+      "steps": [
+        {
+          "text": "Let A=[[1,1],[1,1+\u03b5]] with \u03b5=10^-6, and b=[2,2+\u03b5]. The exact solution is x=(1,1). The second equation differs only slightly from the first."
+        },
+        {
+          "text": "Candidate x\u0302=(0,2) gives Ax\u0302=[2,2+2\u03b5], so residual b-Ax\u0302=(0,-\u03b5). Relative infinity residual is \u03b5/(2+\u03b5)=1/2000001."
+        },
+        {
+          "text": "Yet relative infinity forward error is 1: the candidate differs from truth by(-1,1), whose infinity norm equals ||x||\u221e=1."
+        },
+        {
+          "text": "The analytic inverse is(1/\u03b5)*[[1+\u03b5,-1],[-1,1]], so \u03ba\u221e=(2+\u03b5)\u00b2/\u03b5\u22484000004. A tiny RHS perturbation can be strongly amplified, consistent with the error bound."
+        }
+      ]
+    },
+    {
+      "type": "code",
+      "id": "small-residual-large-error",
+      "language": "python",
+      "source": "from fractions import Fraction\n\nepsilon = Fraction(1,1000000)\nmatrix = [[Fraction(1),Fraction(1)], [Fraction(1),1+epsilon]]\nrhs = [Fraction(2),2+epsilon]\ntruth, candidate = [Fraction(1),Fraction(1)], [Fraction(0),Fraction(2)]\nresidual = [b-sum(a*x for a,x in zip(row,candidate)) for row,b in zip(matrix,rhs)]\nrelative_residual = max(abs(r) for r in residual) / max(abs(b) for b in rhs)\nrelative_forward_error = max(abs(x-y) for x,y in zip(candidate,truth)) / max(abs(x) for x in truth)\n# Analytically, ||A||_inf=2+epsilon, ||A^-1||_inf=(2+epsilon)/epsilon.\ncondition_infinity = (2+epsilon)**2 / epsilon\nprint([str(r) for r in residual])\nprint(relative_residual)\nprint(relative_forward_error)\nprint(condition_infinity)\nprint(relative_forward_error <= condition_infinity*relative_residual)",
+      "caption": "Expected output: ['0', '-1/1000000'], then 1/2000001, then 1, then 4000004000001/1000000, then True. Exact arithmetic demonstrates input sensitivity without attributing it to rounding or a broken solver. The candidate exactly solves a slightly different RHS; it is not claimed as the output of the prior helper on the original system.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "inline-3",
+      "questionId": "qf5-numerics-linear-solves.check-4"
+    },
+    {
+      "type": "check",
+      "id": "inline-4",
+      "questionId": "qf5-numerics-linear-solves.check-5"
+    },
+    {
+      "type": "text",
+      "id": "stability-versus-conditioning",
+      "markdown": "A stable algorithm seeks a small backward error for its stated inputs; conditioning describes how input changes can affect the true answer. Good pivoting cannot make an intrinsically ill-conditioned representation insensitive. Partial pivoting controls elimination multipliers but is not an unconditional guarantee of tiny forward error or absent pivot growth. Higher precision can reduce arithmetic error while leaving measurement uncertainty unchanged. Arbitrary diagonal jitter or dropping a variable changes the problem and requires an explicit modeling decision."
+    },
+    {
+      "type": "text",
+      "id": "solve-not-invert",
+      "markdown": "For real numerical work, prefer a suitable tested solve/factorization routine, preserve matrix/RHS shapes and examine residual plus conditioning diagnostics. A successful square-system solve is not a general least-squares/rank-deficient result. The referenced NumPy solve uses a numerical linear algebra backend; its word exact distinguishes the square-system target from least squares, not exact rational floating-point output. This lesson executes only its own bounded standard-library examples and makes no NumPy/app-runtime claim."
+    },
+    {
+      "type": "text",
+      "id": "transfer",
+      "markdown": "Independent transfer: choose several nonzero-determinant integer 2-by-2 matrices and integer truth vectors, construct b=Ax, then recover x and check original residuals. Include a row-swap case, a singular consistent case and a singular inconsistent case. In the sensitive example change \u03b5 and compare relative residual with forward error without changing the norm. Finally state which uncertainty comes from measurement/model inputs and which from a chosen numerical algorithm."
+    },
+    {
+      "type": "check",
+      "id": "inline-5",
+      "questionId": "qf5-numerics-linear-solves.check-6"
+    },
+    {
+      "type": "check",
+      "id": "inline-6",
+      "questionId": "qf5-numerics-linear-solves.check-7"
+    },
+    {
+      "type": "text",
+      "id": "sources",
+      "markdown": "References: [Fundamentals of Numerical Computation conditioning](https://fncbook.com/condition-number/), [Cornell partial pivoting](https://www.cs.cornell.edu/~bindel/class/cs3220-s12/notes/lec08.pdf), [NumPy solve contract](https://numpy.org/doc/stable/reference/generated/numpy.linalg.solve.html) and [norm conventions](https://numpy.org/doc/stable/reference/generated/numpy.linalg.norm.html). Only the finite fixed-A residual bound above is claimed; small-perturbation statements about changing A require additional conditions. No universal stable production solver is certified."
+    }
+  ],
+  "practice": {
+    "problemIds": []
+  },
+  "summary": "A solve needs shape/rank and original-equation checks. Residual measures equation mismatch; forward error measures answer mismatch. Their relation depends on conditioning and a declared norm, so tiny residual is not universal answer accuracy."
+}

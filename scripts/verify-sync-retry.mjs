@@ -1,7 +1,7 @@
 // Browser check: a failing /api/sync keeps events queued and shows an error record; a good sync clears it.
 import { createRequire } from 'node:module';
 const { chromium } = createRequire(import.meta.url)(process.env.PW_PATH || 'playwright');
-const B = 'http://127.0.0.1:3002';
+const B = process.argv[2] ?? 'http://127.0.0.1:3002';
 const b = await chromium.launch();
 const ctx = await b.newContext({ viewport: { width: 1280, height: 900 } });
 const p = await ctx.newPage();

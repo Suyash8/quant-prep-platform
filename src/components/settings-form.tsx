@@ -1,4 +1,5 @@
 'use client';
+import { signOutEverywhere } from '@/lib/v5/signout';
 
 import { SyncErrorNotice } from '@/components/sync-error-notice';
 import * as React from 'react';
@@ -9,7 +10,10 @@ import { Target, UserRound, Palette, ShieldCheck, LogOut, Monitor, Sun, Moon, Fl
 import { cn } from '@/lib/utils';
 
 export function SettingsForm({ user }: { user: { name: string; email: string; role: string; memberSince?: string | Date } }) {
-  const { theme, setTheme } = useTheme();
+  const { theme: storedTheme, setTheme } = useTheme();
+  // next-themes reads localStorage on the client only; render the server's answer (no active option) until mounted, so hydration matches.
+  const [themeMounted, setThemeMounted] = React.useState(false); React.useEffect(() => setThemeMounted(true), []);
+  const theme = themeMounted ? storedTheme : undefined;
   const router = useRouter();
   const [name, setName] = React.useState(user.name);
   const [busy, setBusy] = React.useState(false);
@@ -28,7 +32,8 @@ export function SettingsForm({ user }: { user: { name: string; email: string; ro
   }
 
   async function logout() {
-    await fetch('/api/auth/logout', { method: 'POST' });
+    const r = await signOutEverywhere();
+    if (r === 'pending') { window.location.assign('/v5/learn'); return; }
     router.push('/');
     router.refresh();
   }
@@ -192,20 +197,21 @@ export function SettingsForm({ user }: { user: { name: string; email: string; ro
           <span className="icon-tile icon-tile-info h-11 w-11"><ShieldCheck className="h-6 w-6" /></span>
           <div>
             <h2 className="font-black">Data &amp; privacy</h2>
-            <p className="text-[13px] font-semibold text-muted">Your data stays in this deployment</p>
+            <p className="text-[13px] font-semibold text-muted">How your data is handled</p>
           </div>
         </div>
         {/* two-column definition grid: labels left on a shared column, values right with consistent padding */}
-        <dl className="mt-4 flex-1 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2.5 content-start rounded-2xl border border-border/60 bg-surface-2/60 p-3.5 text-[15px] font-semibold">
+        <dl className="mt-4 flex-1 grid grid-cols-1 sm:grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-0.5 sm:gap-y-2.5 content-start rounded-2xl border border-border/60 bg-surface-2/60 p-3.5 text-[15px] font-semibold">
           {[
-            { k: 'Storage', v: 'This deployment’s own database, nothing leaves it' },
+            { k: 'Storage', v: 'Account and progress are kept in this deployment’s database. Drafts and the offline library are also kept on this device.' },
+            { k: 'Code you run', v: 'Sent to the code runner this deployment is set up with, to be run or checked.' },
             { k: 'Passwords', v: 'Salted scrypt hashes, never plain text' },
             { k: 'Sessions', v: 'httpOnly cookies with signed ids' },
-            { k: 'Third parties', v: 'None, no analytics, no trackers, no ads' },
+            { k: 'Third parties', v: 'This app loads no analytics, trackers, ads or outside fonts and scripts. The host and any code runner are chosen by whoever runs the deployment.' },
           ].map(row => (
             <React.Fragment key={row.k}>
-              <dt className="text-muted">{row.k}</dt>
-              <dd className="text-right pr-2 min-w-0">{row.v}</dd>
+              <dt className="text-muted sm:pt-0 pt-2">{row.k}</dt>
+              <dd className="sm:text-right sm:pr-2 min-w-0">{row.v}</dd>
             </React.Fragment>
           ))}
         </dl>
@@ -229,17 +235,17 @@ export function SettingsForm({ user }: { user: { name: string; email: string; ro
             <dd className="truncate max-w-[180px]">{user.email}</dd>
           </div>
           {gamed && (
-            <div className="rounded-xl bg-surface-2/60 px-3 py-2">
-              <div className="flex items-center justify-between gap-3">
-                <dt className="text-muted">Today</dt>
-                <dd className="tnum">{gamed.todayXp} / {gamed.dailyGoalXp} XP</dd>
-              </div>
-              <div className="prog-track mt-2">
-                <div
-                  className={cn('prog-fill', gamed.todayXp >= gamed.dailyGoalXp ? 'prog-fill-gold' : '')}
-                  style={{ width: `${Math.min(100, Math.round((gamed.todayXp / Math.max(gamed.dailyGoalXp, 1)) * 100))}%` }}
-                />
-              </div>
+            <div className="flex items-start justify-between gap-3 rounded-xl bg-surface-2/60 px-3 py-2">
+              <dt className="text-muted">Today</dt>
+              <dd className="tnum min-w-[7.5rem] text-right">
+                {gamed.todayXp} / {gamed.dailyGoalXp} XP
+                <span className="prog-track mt-2 block">
+                  <span
+                    className={cn('prog-fill block', gamed.todayXp >= gamed.dailyGoalXp ? 'prog-fill-gold' : '')}
+                    style={{ width: `${Math.min(100, Math.round((gamed.todayXp / Math.max(gamed.dailyGoalXp, 1)) * 100))}%` }}
+                  />
+                </span>
+              </dd>
             </div>
           )}
         </dl>

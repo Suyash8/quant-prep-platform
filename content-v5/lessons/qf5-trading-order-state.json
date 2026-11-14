@@ -1,0 +1,126 @@
+{
+  "id": "qf5-trading-order-state",
+  "revision": 1,
+  "title": "Order state machines and idempotency",
+  "module": "qf5-trading",
+  "order": 4,
+  "estMinutes": 22,
+  "objectives": [
+    {
+      "conceptId": "qf5-trading-order-state.order-transitions",
+      "text": "Separate local submit/cancel intent,venue event/status and filled/open/closed-unexecuted quantities under a narrow explicit order transition model,including fills during pending cancel."
+    },
+    {
+      "conceptId": "qf5-trading-order-state.idempotency",
+      "text": "Use source/order/epoch-bound normalized event identity for exact duplicate no-op versus content conflict,and explain why local projection idempotency does not provide durable exactly-once external execution."
+    }
+  ],
+  "prerequisites": [
+    "qf5-trading-replay-recovery"
+  ],
+  "blocks": [
+    {
+      "type": "text",
+      "id": "intent-event-status",
+      "markdown": "A command asks for an action; an event reports a source-confirmed occurrence; a status summarizes state after relevant events. Sending an order is not venue acceptance,acceptance is not a fill,and requesting cancellation is not cancellation confirmation. FIX ExecType(150)explains why an ExecutionReport was sent,while OrdStatus(39)describes reported state with precedence rules. Pending Cancel can take precedence over partial/filled states while the request is unresolved. A single status string without quantities/source identity can therefore mislead. Never zero possible exposure solely because a cancel request was sent."
+    },
+    {
+      "type": "text",
+      "id": "own-model",
+      "markdown": "Our code is deliberately narrower than FIX: ONE fixed-quantity order,ONE trusted normalized order/epoch namespace,quantity1..100 and<=32 input events. ACK moves submitted->working; REJECT is allowed only from submitted in this toy. FILL is allowed only after ACK while working,including while our local cancel flag is true. A full fill changes phase to filled. CANCEL_REQUEST sets a LOCAL pending flag while working; CANCEL_ACK while working/pending closes the unfilled remainder; CANCEL_REJECT clears the flag while working or filled. No replaces,fees/prices,unsolicited cancels,trade corrections/busts,multi-day rules or full FIX status precedence are implemented. Real FIX permits scenarios excluded here,including rejection after acknowledgement and some reduced-verbosity paths."
+    },
+    {
+      "type": "text",
+      "id": "quantity-invariant",
+      "markdown": "For this projection retain filled,remaining candidate quantity and unexecuted_closed. Required nonnegative accounting is quantity=filled+remaining+unexecuted_closed. Submitted quantity is conservatively a possible outstanding candidate,not proof of venue acceptance. On cancel/reject,remaining becomes0 but previously filled quantity stays filled; closed unexecuted remainder is tracked separately. These are OWN fields,not a universal mapping to FIX LeavesQty. Canceled quantity is not a reversal of confirmed fills or an account cash refund."
+    },
+    {
+      "type": "worked",
+      "id": "cancel-fill-race",
+      "title": "A fill can cross a cancel request",
+      "steps": [
+        {
+          "text": "Order10 is ACKed; FILL3 leaves filled3,remaining7. Send local CANCEL_REQUEST: flag true,but remaining7 is still possible execution."
+        },
+        {
+          "text": "FILL2 arrives before cancel confirmation: filled5,remaining5,flag still true. CANCEL_ACK then closes the5 unfilled units: phase canceled,filled5,remaining0,unexecuted_closed5."
+        },
+        {
+          "text": "Alternative: after cancel request,FILL10 completes the entire order. The cancel can then be rejected as too late; phase remains filled and the local request flag clears. The model does not pretend the request prevented the fill."
+        }
+      ]
+    },
+    {
+      "type": "code",
+      "id": "normalized-order-event-projection",
+      "language": "python",
+      "source": "def project_order(quantity,events):\n    # Own normalized ONE-order/ONE-epoch model, not FIX OrdStatus or a venue adapter.\n    kinds=(\"ACK\",\"REJECT\",\"FILL\",\"CANCEL_REQUEST\",\"CANCEL_ACK\",\"CANCEL_REJECT\")\n    if type(quantity) is not int or not 1<=quantity<=100:\n        raise ValueError(\"invalid order quantity\")\n    if type(events) is not list or len(events)>32:\n        raise ValueError(\"invalid event list\")\n    for event in events:\n        if type(event) is not tuple or len(event)!=3:\n            raise ValueError(\"invalid event shape\")\n        event_id,kind,amount=event\n        if type(event_id) is not int or not 1<=event_id<=10000 or type(kind) is not str or kind not in kinds or type(amount) is not int:\n            raise ValueError(\"invalid event fields\")\n        if not (1<=amount<=100 if kind==\"FILL\" else amount==0):\n            raise ValueError(\"invalid event amount\")\n    phase=\"submitted\"\n    filled=0\n    cancel_pending=False # OUR local request flag, not a venue PendingCancel status\n    seen={}\n    for event in events:\n        event_id,kind,amount=event\n        if event_id in seen:\n            if seen[event_id]!=event:raise ValueError(\"conflicting event identity\")\n            continue\n        if kind==\"ACK\" and phase==\"submitted\":phase=\"working\"\n        elif kind==\"REJECT\" and phase==\"submitted\":phase=\"rejected\"\n        elif kind==\"FILL\" and phase==\"working\" and amount<=quantity-filled:\n            filled+=amount\n            if filled==quantity:phase=\"filled\"\n        elif kind==\"CANCEL_REQUEST\" and phase==\"working\" and not cancel_pending:\n            cancel_pending=True\n        elif kind==\"CANCEL_ACK\" and phase==\"working\" and cancel_pending:\n            phase=\"canceled\"\n            cancel_pending=False\n        elif kind==\"CANCEL_REJECT\" and phase in (\"working\",\"filled\") and cancel_pending:\n            cancel_pending=False\n        else:raise ValueError(\"invalid order transition\")\n        seen[event_id]=event\n    remaining=quantity-filled if phase in (\"submitted\",\"working\") else 0\n    unexecuted_closed=quantity-filled-remaining\n    return phase,filled,remaining,unexecuted_closed,cancel_pending,tuple(seen)\n\nhistory=[(1,\"ACK\",0),(2,\"FILL\",3),(3,\"CANCEL_REQUEST\",0),(4,\"FILL\",2),(5,\"CANCEL_ACK\",0)]\nprint(project_order(10,history))\nprint(project_order(10,history+[history[1]])==project_order(10,history))\nlate=[(1,\"ACK\",0),(2,\"CANCEL_REQUEST\",0),(3,\"FILL\",10),(4,\"CANCEL_REJECT\",0)]\nprint(project_order(10,late))\ntry:\n    project_order(10,history+[(2,\"FILL\",4)])\nexcept ValueError as error:\n    print(error)",
+      "caption": "Expected first tuple: ('canceled', 5, 0, 5, False, (1,2,3,4,5)) with Python spacing; second line True; third ('filled',10,0,0,False,(1,2,3,4)); last conflicting event identity. Pure full-batch projection returns only after all validation/transitions succeed; on ValueError no candidate result is published and caller inputs are unchanged. It records accepted normalized event IDs only within this one supplied history,not a durable ID store or real command/execution ID assignment.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "inline-0",
+      "questionId": "qf5-trading-order-state.check-1"
+    },
+    {
+      "type": "check",
+      "id": "inline-1",
+      "questionId": "qf5-trading-order-state.check-2"
+    },
+    {
+      "type": "check",
+      "id": "inline-4",
+      "questionId": "qf5-trading-order-state.check-5"
+    },
+    {
+      "type": "text",
+      "id": "idempotency-contract",
+      "markdown": "Each normalized event is(event_id,kind,amount); exact ID+tuple duplicate is a no-op,even if repeated after a terminal state. Same ID with different tuple raises conflict before any candidate can be returned. A fresh event ID is not a license for an otherwise invalid transition,and a mathematically identical FILL under a fresh ID would count again if permitted by remaining quantity. Actual identity must bind source/session/order/execution namespace,not a guessed timestamp or payload amount. This toy has one namespace by construction; a real multi-order engine needs those explicit keys and a declared retention policy. Do not deduplicate equal-size legitimate fills merely because their values match."
+    },
+    {
+      "type": "text",
+      "id": "replay-versus-effects",
+      "markdown": "Idempotent local projection means replaying identical normalized history/duplicates gives the same local result. It does NOT mean a sent external order executes exactly once. A timeout after send may leave an unknown outcome; blind resend can create a second order unless the venue's client-ID/session rules and reconciliation establish what happened. Persisting accepted identity and applying a local transition together needs a transactional/concurrency/recovery protocol. This pure full-batch function has none of those external effects or durable guarantees. If a fresh invalid event fails,retain the prior valid history and investigate; do not silently advance sequence/mark it applied."
+    },
+    {
+      "type": "check",
+      "id": "inline-2",
+      "questionId": "qf5-trading-order-state.check-3"
+    },
+    {
+      "type": "check",
+      "id": "inline-3",
+      "questionId": "qf5-trading-order-state.check-4"
+    },
+    {
+      "type": "check",
+      "id": "inline-5",
+      "questionId": "qf5-trading-order-state.check-6"
+    },
+    {
+      "type": "text",
+      "id": "review-and-tests",
+      "markdown": "Review each transition guard and the quantity invariant after every valid prefix. Include duplicate fill no-op,conflicting ID,overfill,fill before ACK,fill after canceled/rejected,duplicate terminal event,fill during pending cancel,full fill then cancel reject and rejection with zero fills. A rejected transition returns no new candidate for that batch; no caller-owned list/dict is mutated. These tests verify the explicit toy model,not every legal real FIX/venue sequence. A production engine must represent additional source events/status precedence and reconcile open orders/executions before assigning current exposure."
+    },
+    {
+      "type": "text",
+      "id": "transfer",
+      "markdown": "Independent transfer: build a reference transition table and enumerate bounded event streams,checking quantity decomposition,phase/flag consistency and duplicate invariance. Use unique source-bound fill IDs and prove two distinct equal-size fills remain two events. Extend only after writing new scenarios: partial cancel/replace,execution correction and reconnect unknown outcome require changed semantics/tests,not a silent else branch accepting anything. Keep the reducer separate from any live-send adapter."
+    },
+    {
+      "type": "check",
+      "id": "inline-6",
+      "questionId": "qf5-trading-order-state.check-7"
+    },
+    {
+      "type": "text",
+      "id": "sources",
+      "markdown": "Sources: [FIX EP284 Order State Changes November2023](https://www.fixtrading.org/wp-content/uploads/download-manager-files/FIX-Latest-as-of-EP284-Order-State-Changes.pdf), [versioned FIX order-state package](https://fixtrading.org/packages/fix-latest-specification-order-state-changes/), [FIX Session Layer June2020 duplicate/resend identities](https://www.fixtrading.org/wp-content/uploads/download-manager-files/FIX_Session_Layer_June_2020.pdf), and [event-sourcing concurrency/idempotency tradeoffs](https://learn.microsoft.com/en-us/azure/architecture/patterns/event-sourcing). The authored normalized model has its own smaller state graph/local flag,not the full FIX OrdStatus state machine or a live execution certification."
+    }
+  ],
+  "practice": {
+    "problemIds": []
+  },
+  "summary": "Intent,source events and reported order status differ. Pending cancel does not remove fill exposure; preserve quantity accounting and source-bound event identity. Exact local duplicate no-op is not durable exactly-once execution,full FIX compatibility or account reconciliation."
+}

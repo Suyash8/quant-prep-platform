@@ -1,0 +1,4 @@
+import { LessonMarkdown } from '@/components/v5/lesson-markdown';
+import s from '@/components/v5/learning.module.css';
+export const metadata={title:'Renderer fixture | QuantFoundry',robots:{index:false,follow:false}};
+export default function RendererFixture(){return <main className={s.workspace}><p className={s.fixture}>Renderer fixture only. These formulas and failures test display, not learner progress.</p><article className={s.panel}><LessonMarkdown markdown={'## Keep the meaning intact\n\nInline return $r_t = \\frac{P_t-P_{t-1}}{P_{t-1}}$ and an aligned display:\n\n$$\\sum_{i=1}^{n} x_i$$\n\nCurrency stays literal: \\$10 and \\$20.\n\nCode is not maths: `$x_1$`\n\n```python\nprint("$100")\n```\n\nAn invalid formula should show a useful fallback: $\\notARealCommand{x}$\n\n[Python floating point](https://docs.python.org/3/tutorial/floatingpoint.html)\n\n<script>window.__unsafe = true</script>'}/></article></main>;}

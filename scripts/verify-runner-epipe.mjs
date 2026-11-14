@@ -1,5 +1,5 @@
 // Regression: a submission that exits without reading stdin must not kill the runner.
-const B = 'http://127.0.0.1:3002';
+const B = process.argv[2] ?? 'http://127.0.0.1:3002';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 let r = await fetch(B + '/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: (process.env.QF_DEMO_EMAIL || ''), password: (process.env.QF_DEMO_PASSWORD || '') }) });
 const ck = r.headers.getSetCookie().map(c => c.split(';')[0]).join('; ');

@@ -1,7 +1,7 @@
 // Browser check: a schema-invalid queued event is quarantined and does not block valid events.
 import { createRequire } from 'node:module';
 const { chromium } = createRequire(import.meta.url)(process.env.PW_PATH || 'playwright');
-const B = 'http://127.0.0.1:3002';
+const B = process.argv[2] ?? 'http://127.0.0.1:3002';
 const b = await chromium.launch(); const p = await (await b.newContext()).newPage();
 await p.goto(B + '/login'); await p.waitForTimeout(1200);
 await p.fill('input[type=email]', (process.env.QF_DEMO_EMAIL || '')); await p.fill('input[type=password]', (process.env.QF_DEMO_PASSWORD || ''));

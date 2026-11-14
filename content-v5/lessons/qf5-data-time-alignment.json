@@ -1,0 +1,108 @@
+{
+  "id": "qf5-data-time-alignment",
+  "revision": 3,
+  "title": "Timestamps, sessions and alignment",
+  "module": "qf5-data",
+  "order": 3,
+  "estMinutes": 22,
+  "objectives": [
+    {
+      "conceptId": "qf5-data-time-alignment.timezones",
+      "text": "Convert a timestamp with a known UTC offset without relabelling the instant."
+    },
+    {
+      "conceptId": "qf5-data-time-alignment.alignment",
+      "text": "Select data available at a decision time while respecting identity and freshness constraints."
+    }
+  ],
+  "prerequisites": [
+    "qf5-data-missing-quality"
+  ],
+  "blocks": [
+    {
+      "type": "text",
+      "id": "two-clocks",
+      "markdown": "Event time is when the source says an event happened. Availability time is when your system could use that observation. They can differ because of transport, publication, processing or correction. A historical decision must not use an observation before its availability time, even if its event time is earlier. Keep both fields when replaying information. A timestamp string without a timezone or explicit source-zone contract is incomplete, not automatically UTC."
+    },
+    {
+      "type": "code",
+      "id": "convert",
+      "language": "python",
+      "source": "from datetime import datetime, timezone\nlocal = datetime.fromisoformat(\"2026-01-15T09:30:00+05:30\")\nutc = local.astimezone(timezone.utc)\nprint(utc.isoformat())\nprint(local == utc)",
+      "caption": "Expected output: 2026-01-15T04:00:00+00:00, then True. This fixed-offset synthetic timestamp denotes one instant in two representations; it is not a claim about an exchange session.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "inline-0",
+      "questionId": "qf5-data-time-alignment.check-1"
+    },
+    {
+      "type": "text",
+      "id": "zone-contract",
+      "markdown": "astimezone converts an aware datetime to another timezone while preserving its instant. Simply replacing tzinfo does not perform that conversion: it reinterprets the displayed clock under a different label. Attaching a timezone to a naive value requires knowing what its original wall clock meant. Fixed offsets such as +05:30 are not substitutes for named-zone rules in places with daylight saving changes. A repeated wall time may need a fold choice, and a nonexistent wall time needs a source-specific policy. Do not guess either case."
+    },
+    {
+      "type": "text",
+      "id": "sessions",
+      "markdown": "UTC comparison helps order instants, but exchange sessions remain venue-specific business rules. A calendar day is not necessarily one session, and a session can cross midnight. Holidays, special hours, halts and instrument calendars require a current authoritative venue calendar. This module does not include one and must not manufacture a Monday-to-Friday rule as trading truth. Preserve original zone/session metadata together with normalized instants."
+    },
+    {
+      "type": "text",
+      "id": "asof-contract",
+      "markdown": "This synthetic quote selector requires the same symbol, event time no later than decision, availability no later than decision, and event age at most five seconds. Among eligible rows it chooses the greatest (event time, sequence) pair. The sequence is a declared deterministic tie-break within this fixture. A real feed must supply and define its ordering/correction rules. If no row qualifies, return None rather than substituting a future or stale quote."
+    },
+    {
+      "type": "code",
+      "id": "asof",
+      "language": "python",
+      "source": "from datetime import datetime, timedelta, timezone\n\ndef stamp(seconds):\n    return datetime(2026, 1, 15, 10, 0, seconds, tzinfo=timezone.utc)\n\nquotes = [\n    {\"symbol\": \"A\", \"event\": stamp(1), \"available\": stamp(2), \"seq\": 1, \"price\": 100},\n    {\"symbol\": \"A\", \"event\": stamp(3), \"available\": stamp(4), \"seq\": 2, \"price\": 101},\n    {\"symbol\": \"A\", \"event\": stamp(4), \"available\": stamp(6), \"seq\": 3, \"price\": 999},\n    {\"symbol\": \"B\", \"event\": stamp(4), \"available\": stamp(4), \"seq\": 4, \"price\": 200},\n]\n\ndef asof_quote(rows, symbol, decision, max_age):\n    eligible = [q for q in rows\n                if q[\"symbol\"] == symbol\n                and q[\"event\"] <= decision\n                and q[\"available\"] <= decision\n                and decision - q[\"event\"] <= max_age]\n    return max(eligible, key=lambda q: (q[\"event\"], q[\"seq\"])) if eligible else None\n\nquote = asof_quote(quotes, \"A\", stamp(5), timedelta(seconds=5))\nprint(quote[\"price\"] if quote else None)\nprint(asof_quote(quotes, \"A\", stamp(20), timedelta(seconds=5)))",
+      "caption": "Expected output: 101, then None. The 999 quote is not available at decision second 5. By second 20 every listed event is older than the allowed five seconds. Inputs are already validated aware UTC timestamps and rows; parsing and clock synchronisation are outside this selector.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "inline-1",
+      "questionId": "qf5-data-time-alignment.check-2"
+    },
+    {
+      "type": "text",
+      "id": "alignment",
+      "markdown": "A regular time grid does not make observations simultaneous. Joining quotes by nearest time without direction can choose a later observation. Forward filling without an age limit can reuse a stale price. Select the information set first, then apply the declared direction, freshness and identity rules. Keep missing matches visible and count them. Data alignment must preserve which information was actually usable, not merely produce two arrays of equal length."
+    },
+    {
+      "type": "check",
+      "id": "inline-4",
+      "questionId": "qf5-data-time-alignment.check-5"
+    },
+    {
+      "type": "text",
+      "id": "transfer",
+      "markdown": "Independent transfer: add a quote whose event time is second 4 but availability is second7. At decision second 5 it must still be excluded. Add a row for another symbol and ensure it never matches A. Add an eligible correction with the same event time and a larger sequence, then state the declared tie-break result. Test no eligible quote, exactly-at-age-limit, and one microsecond too old. None is a missing result, not a zero price."
+    },
+    {
+      "type": "check",
+      "id": "consolidation-1",
+      "questionId": "qf5-data-time-alignment.check-3"
+    },
+    {
+      "type": "check",
+      "id": "consolidation-2",
+      "questionId": "qf5-data-time-alignment.check-4"
+    },
+    {
+      "type": "check",
+      "id": "inline-5",
+      "questionId": "qf5-data-time-alignment.check-6"
+    },
+    {
+      "type": "text",
+      "id": "source-scope",
+      "markdown": "Technical references: [Python datetime reference](https://docs.python.org/3/library/datetime.html) for aware/naive values and timezone conversion. The financial schemas, policies and synthetic cases in this lesson are declared teaching contracts, not claims about a particular venue or employer."
+    }
+  ],
+  "practice": {
+    "problemIds": []
+  },
+  "summary": "Keep event time and availability separate. Convert aware timestamps rather than relabelling clock readings; use venue calendars for sessions. As-of matching needs identity, direction, information availability, freshness and deterministic tie rules."
+}

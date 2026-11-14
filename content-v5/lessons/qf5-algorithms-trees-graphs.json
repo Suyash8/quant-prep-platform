@@ -1,0 +1,650 @@
+{
+  "id": "qf5-algorithms-trees-graphs",
+  "revision": 3,
+  "title": "Trees, graphs and traversal",
+  "module": "qf5-algorithms",
+  "order": 6,
+  "estMinutes": 170,
+  "objectives": [
+    {
+      "conceptId": "qf5-algorithms-trees-graphs.traversal-state",
+      "text": "Build adjacency with an explicit directed/undirected and identity contract rather than infer meaning from a diagram."
+    },
+    {
+      "conceptId": "qf5-algorithms-trees-graphs.graph-representation",
+      "text": "Track discovery and parent/distance state during BFS/stack traversal, including cycles and disconnected vertices."
+    },
+    {
+      "conceptId": "qf5-algorithms-trees-graphs.grid-bfs-distance",
+      "text": "Prove first-discovery shortest distance for unit grid edges."
+    },
+    {
+      "conceptId": "qf5-algorithms-trees-graphs.grid-boundary-contract",
+      "text": "Handle blocked endpoints,singletons,row boundaries and unreachable results."
+    },
+    {
+      "conceptId": "qf5-algorithms-trees-graphs.tree-level-snapshot",
+      "text": "Freeze each BFS layer before enqueuing the following depth."
+    },
+    {
+      "conceptId": "qf5-algorithms-trees-graphs.tree-value-sum-contract",
+      "text": "Sum signed node values using root0 and absent-child -1 without recursive depth limits."
+    },
+    {
+      "conceptId": "qf5-algorithms-trees-graphs.lca-power-table",
+      "text": "Build depths without parent-before-child numbering or recursion."
+    },
+    {
+      "conceptId": "qf5-algorithms-trees-graphs.lca-equal-depth-proof",
+      "text": "Prove depth alignment and unequal-ancestor jumps recover deepest common ancestor."
+    },
+    {
+      "conceptId": "qf5-algorithms-trees-graphs.diameter-highest-vertex",
+      "text": "Decompose each weighted tree path at its unique highest vertex."
+    },
+    {
+      "conceptId": "qf5-algorithms-trees-graphs.diameter-two-branches",
+      "text": "Combine two distinct child branches in iterative postorder with wide totals."
+    },
+    {
+      "conceptId": "qf5-algorithms-trees-graphs.bst-ancestor-bounds",
+      "text": "Validate strict whole-subtree BST ordering with inherited open bounds and an iterative stack."
+    },
+    {
+      "conceptId": "qf5-algorithms-trees-graphs.kahn-minimum-ready",
+      "text": "Produce the deterministic smallest-ready course order with indegree state, edge orientation and cycle detection."
+    },
+    {
+      "conceptId": "qf5-algorithms-trees-graphs.dijkstra-count-positive",
+      "text": "Compute positive-weight shortest distances and edge-distinct shortest-route counts, handling parallel links and stale heap entries."
+    }
+  ],
+  "prerequisites": [
+    "qf5-algorithms-heaps-topk"
+  ],
+  "blocks": [
+    {
+      "type": "text",
+      "id": "representation",
+      "markdown": "A graph has vertices and edges. Here vertices are integer IDs 0 through n-1. A directed edge (u,v) permits u-to-v only; an undirected edge connects both directions and is stored in both adjacency lists. Self-loops and repeated edges are allowed in the teaching builder, so they can increase the stored adjacency entries. They do not create new vertex identities. An adjacency list stores each vertex's outgoing neighbors; the whole graph uses O(V+E) storage under the convention that undirected edges appear twice."
+    },
+    {
+      "type": "text",
+      "id": "tree-contract",
+      "markdown": "An undirected tree is connected and acyclic. It has one simple path between each pair of vertices, making a traversal parent relation natural once a root is chosen. A general graph can have cycles, disconnected components, multiple paths and no natural root. Do not assume input is a tree because a drawing looks branching. A BFS parent array is a rooted traversal forest fragment from one source, not proof that the input edges themselves form a tree."
+    },
+    {
+      "type": "text",
+      "id": "bfs-invariant",
+      "markdown": "Breadth-first search uses a FIFO queue. Mark a vertex discovered when ENQUEUING it, not when removing it, so several incoming edges do not enqueue it repeatedly. Set the source distance 0. When discovering a neighbor, give it distance[parent]+1 and that parent. FIFO processes discovered vertices in nondecreasing hop distance, so the first discovered path has the fewest edges in an unweighted graph. Distance None means unreachable from the source, not zero-distance. This does not solve arbitrary weighted shortest paths."
+    },
+    {
+      "type": "code",
+      "id": "graph-bfs",
+      "language": "python",
+      "source": "from collections import deque\n\ndef adjacency(n, edges, directed=False):\n    if type(n) is not int or n < 0:\n        raise ValueError(\"invalid vertex count\")\n    rows = [[] for _ in range(n)]\n    for u, v in edges:\n        if type(u) is not int or type(v) is not int or not 0 <= u < n or not 0 <= v < n:\n            raise ValueError(\"invalid endpoint\")\n        rows[u].append(v)\n        if not directed:\n            rows[v].append(u)\n    return rows\n\ndef breadth_first(rows, source):\n    if type(source) is not int or not 0 <= source < len(rows):\n        raise ValueError(\"invalid source\")\n    distance = [None] * len(rows)\n    parent = [None] * len(rows)\n    distance[source] = 0\n    pending = deque([source])\n    while pending:\n        vertex = pending.popleft()\n        for neighbor in rows[vertex]:\n            if distance[neighbor] is None:\n                distance[neighbor] = distance[vertex] + 1\n                parent[neighbor] = vertex\n                pending.append(neighbor)\n    return distance, parent\n\nrows = adjacency(5, [(0, 1), (0, 2), (1, 3), (2, 3)])\ndistance, parent = breadth_first(rows, 0)\nprint(distance)\nprint(parent)\nprint(adjacency(2, [(0, 1)], directed=True))",
+      "caption": "Expected output: [0, 1, 1, 2, None], then [None, 0, 0, 1, None], then [[1], []]. The isolated vertex 4 stays unreachable. Parent 3 is 1 under this particular adjacency insertion order; another equal-length path via 2 would be equally short. The directed builder does not add the reverse edge.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "inline-0",
+      "questionId": "qf5-algorithms-trees-graphs.check-1"
+    },
+    {
+      "type": "text",
+      "id": "ties-paths",
+      "markdown": "Distances can be uniquely defined while a shortest PATH is not unique. This code chooses a parent from first discovery in adjacency iteration order. If the output contract demands lexicographic or another path tie rule, explicitly implement and prove it rather than assume any BFS parent array satisfies it. Reconstruct a reachable path by following parent pointers back to the source, then reverse. Returned parent/distance arrays and valid endpoints are preconditions of the helper below; it is not a safe parser for arbitrary corrupted parent cycles."
+    },
+    {
+      "type": "code",
+      "id": "reconstruct-path",
+      "language": "python",
+      "source": "def reconstruct_path(parent, distance, source, target):\n    # Precondition: arrays from this lesson's BFS, and valid source/target indexes.\n    if distance[target] is None:\n        return None\n    path = []\n    vertex = target\n    while vertex is not None:\n        path.append(vertex)\n        vertex = parent[vertex]\n    path.reverse()\n    return path if path and path[0] == source else None\n\nparent = [None, 0, 0, 1, None]\ndistance = [0, 1, 1, 2, None]\nprint(reconstruct_path(parent, distance, 0, 3))\nprint(reconstruct_path(parent, distance, 0, 4))",
+      "caption": "Expected output: [0, 1, 3], then None. The unreachable target has no path; it must not be reported as the single-vertex path [4]. The source-to-itself case returns [source] under the helper's stated preconditions.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "inline-1",
+      "questionId": "qf5-algorithms-trees-graphs.check-2"
+    },
+    {
+      "type": "text",
+      "id": "stack-traversal",
+      "markdown": "A LIFO worklist explores newly added branches before older pending ones. The iterative traversal below finds connected components of an UNDIRECTED graph, labeling each vertex on discovery. Starting again from each still-unseen vertex is necessary to include disconnected and isolated vertices. Do not apply the same outer loop to a directed graph and call the result strongly connected components: that is a different property requiring another algorithm. The component ID values are labels, not distances or sizes."
+    },
+    {
+      "type": "code",
+      "id": "graph-components",
+      "language": "python",
+      "source": "def connected_components(rows):\n    # Precondition: validated adjacency of an undirected graph.\n    component = [None] * len(rows)\n    next_id = 0\n    for start in range(len(rows)):\n        if component[start] is not None:\n            continue\n        component[start] = next_id\n        pending = [start]\n        while pending:\n            vertex = pending.pop()\n            for neighbor in rows[vertex]:\n                if component[neighbor] is None:\n                    component[neighbor] = next_id\n                    pending.append(neighbor)\n        next_id += 1\n    return component\n\nprint(connected_components([[1], [0], [3], [2], []]))\nprint(connected_components([]))",
+      "caption": "Expected output: [0, 0, 1, 1, 2], then []. The two undirected pairs form two components and the isolated vertex forms a third. No recursion limit is involved because the worklist is explicit.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "inline-2",
+      "questionId": "qf5-algorithms-trees-graphs.check-3"
+    },
+    {
+      "type": "text",
+      "id": "dfs-scope",
+      "markdown": "A simple iterative LIFO worklist is enough for reachability/components, but does not automatically reproduce recursive DFS entry/exit times or edge classification. Those tasks need explicit frames/iterator state or a separate recursive contract. Likewise, tracking a visited Boolean alone does not distinguish an active recursion-stack vertex from one already finished when detecting directed cycles. These examples do not claim to teach topological sorting, lowest common ancestor, low-link bridges, Dijkstra or weighted path inference."
+    },
+    {
+      "type": "text",
+      "id": "cost-boundary",
+      "markdown": "With adjacency lists, each discovered vertex is queued/pushed once and each outgoing adjacency entry is inspected once by these traversals. Traversing the whole graph is O(V+E) work and O(V)auxiliary state, plus input adjacency storage. Matrix representation costs O(V\u00b2)storage and a full neighbor-row scan even for sparse graphs. State cost depends on representation and discovery discipline, not merely writing the word BFS. An explicit worklist can still grow to many vertices; it is not constant-space."
+    },
+    {
+      "type": "check",
+      "id": "inline-3",
+      "questionId": "qf5-algorithms-trees-graphs.check-4"
+    },
+    {
+      "type": "text",
+      "id": "transfer",
+      "markdown": "Independent transfer: build a directed chain and an undirected chain from the same input edge pairs and predict reachability both ways. Test isolated vertices, a cycle, a self-loop, parallel edges and invalid endpoints. Verify each reachable non-source vertex has parent distance exactly one smaller and reconstructs a valid-edge path. Compare distances with exhaustive short-path enumeration on tiny graphs. For undirected components, verify every edge joins equal component labels and isolated vertices are not dropped."
+    },
+    {
+      "type": "check",
+      "id": "inline-4",
+      "questionId": "qf5-algorithms-trees-graphs.check-5"
+    },
+    {
+      "type": "check",
+      "id": "inline-5",
+      "questionId": "qf5-algorithms-trees-graphs.check-6"
+    },
+    {
+      "type": "text",
+      "id": "source-scope",
+      "markdown": "References: [BFS](https://cp-algorithms.com/graph/breadth-first-search.html), [DFS](https://cp-algorithms.com/graph/depth-first-search.html), and [deque](https://docs.python.org/3/library/collections.html). Traversal order depends on adjacency order; we do not adopt an unqualified claim that DFS always finds a lexicographically first path. All graph identities and edge meanings here are synthetic."
+    },
+    {
+      "type": "callout",
+      "id": "graph-extension-scope",
+      "tone": "note",
+      "markdown": "The earlier core examples exclude LCA and weighted path inference. These later, separate parts explicitly teach grid BFS, tree level sums, static LCA and positive-weight tree diameter. They still do not teach Dijkstra, topological ordering or low-link bridges. Work through these as separate 20-30 minute parts with their own checks, not one uninterrupted sitting."
+    },
+    {
+      "type": "text",
+      "id": "grid-unit-bfs-0",
+      "markdown": "Grid contract\n\nR,C each1..1000,rectangular .or#rows. Four unit moves only,no diagonals/wrapping. shortest_steps(grid)returns one STRING in a list. Blocked source OR target means-1;one open cell means0. Count moves,not visited cells. Input remains unchanged."
+    },
+    {
+      "type": "text",
+      "id": "grid-unit-bfs-1",
+      "markdown": "Layer invariant and shortest proof\n\nFIFO queue begins at source distance0. At each outer loop,snapshot len(queue)and pop exactly those entries:they are layer d. Newly enqueued open neighbors belong to d+1. Mark seen WHEN ENQUEUED,so each cell enters once. A shorter path would have a predecessor in an earlier layer,which would have discovered this cell earlier. Thus first discovery is shortest. Return current dwhen target is dequeued;empty queue proves unreachable."
+    },
+    {
+      "type": "text",
+      "id": "grid-unit-bfs-2",
+      "markdown": "Coordinates and trace\n\nEncode(r,c)asr*C+c;decode with divmod(index,C). Test BOTH row/column bounds before reading/encoding a neighbor. Flat index+1can be in range but wrap from last column into next row. For[\"....\",\".##.\",\"....\"],a boundary route uses5moves,matching the Manhattan lower bound here. Manhattan distance is not generally attainable with walls. [\".#\",\"#.\"]is unreachable."
+    },
+    {
+      "type": "text",
+      "id": "grid-unit-bfs-3",
+      "markdown": "Complexity and transfer\n\nAt most1000000cells and4neighbor tests per reached cell:O(R*C)time/space. bytearray stores visited flags and deque stores encoded integers. DFS first arrival does not ensure minimum distance;weighted edges need a different method. Independently relax all edges on tiny grids and compare every wall pattern,then exercise million-cell grids. Blocked ends,single rows/columns,and open/blocked singleton all matter. Local evidence is not remote judge memory/time qualification."
+    },
+    {
+      "type": "code",
+      "id": "grid-unit-bfs-complete",
+      "language": "python",
+      "source": "MOD = 1000000007\n\ndef shortest_steps(grid):\n    from collections import deque\n    (rows, columns) = (len(grid), len(grid[0]))\n    if grid[0][0] == '#' or grid[-1][-1] == '#':\n        return ['-1']\n    seen = bytearray(rows * columns)\n    seen[0] = 1\n    queue = deque([0])\n    distance = 0\n    while queue:\n        for _ in range(len(queue)):\n            encoded = queue.popleft()\n            if encoded == rows * columns - 1:\n                return [str(distance)]\n            (row, col) = divmod(encoded, columns)\n            for (dr, dc) in ((-1, 0), (1, 0), (0, -1), (0, 1)):\n                (nr, nc) = (row + dr, col + dc)\n                if 0 <= nr < rows and 0 <= nc < columns:\n                    nxt = nr * columns + nc\n                    if not seen[nxt] and grid[nr][nc] == '.':\n                        seen[nxt] = 1\n                        queue.append(nxt)\n        distance += 1\n    return ['-1']\n\nprint(shortest_steps(['....', '.##.', '....']))\nprint(shortest_steps(['.']))\nprint(shortest_steps(['#']))\nprint(shortest_steps(['.#', '#.']))\n",
+      "caption": "Expected ['5'], ['0'], ['-1'], ['-1']. Complete layer BFS and bounds checks.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "grid-unit-bfs-inline-1",
+      "questionId": "qf5-algorithms-trees-graphs.grid-unit-bfs-check-1"
+    },
+    {
+      "type": "check",
+      "id": "grid-unit-bfs-inline-2",
+      "questionId": "qf5-algorithms-trees-graphs.grid-unit-bfs-check-2"
+    },
+    {
+      "type": "check",
+      "id": "grid-unit-bfs-inline-3",
+      "questionId": "qf5-algorithms-trees-graphs.grid-unit-bfs-check-3"
+    },
+    {
+      "type": "check",
+      "id": "grid-unit-bfs-inline-4",
+      "questionId": "qf5-algorithms-trees-graphs.grid-unit-bfs-check-4"
+    },
+    {
+      "type": "check",
+      "id": "grid-unit-bfs-inline-5",
+      "questionId": "qf5-algorithms-trees-graphs.grid-unit-bfs-check-5"
+    },
+    {
+      "type": "check",
+      "id": "grid-unit-bfs-inline-6",
+      "questionId": "qf5-algorithms-trees-graphs.grid-unit-bfs-check-6"
+    },
+    {
+      "type": "check",
+      "id": "grid-unit-bfs-inline-7",
+      "questionId": "qf5-algorithms-trees-graphs.grid-unit-bfs-check-7"
+    },
+    {
+      "type": "text",
+      "id": "grid-unit-bfs-sources",
+      "markdown": "Sources: [1](https://cp-algorithms.com/graph/breadth-first-search.html). Exact public task contract hash 57cff9547f9d403fd5d900fadf064cffd677d185c13a799a9f7638be6b06b3dd. This is main algorithm/contract teaching,not current app or judge signoff."
+    },
+    {
+      "type": "text",
+      "id": "tree-level-aggregate-0",
+      "markdown": "Proper tree contract\n\nn1..200000;node i=(value,left,right),root0,child-1means absent. Indices form one PROPER binary tree,not arbitrary graph/forest. |value|<=1e9. Return one STRING sum per depth,root first. A valid chain can have200000nodes,so avoid recursive Python DFS."
+    },
+    {
+      "type": "text",
+      "id": "tree-level-aggregate-1",
+      "markdown": "Layer induction\n\nQueue starts[0]. At each outer entry it contains exactly the next depth. Snapshot len(queue),pop exactly this many nodes,add their VALUES,and enqueue real children. New children are at next depth and excluded from this snapshot. Append total after snapshot completes. This proves each line sums exactly one depth. Proper-tree guarantee prevents duplicate visits;the implementation does not validate shared children/cycles."
+    },
+    {
+      "type": "text",
+      "id": "tree-level-aggregate-2",
+      "markdown": "Sentinels,signed values and trace\n\nCheck child!=-1BEFORE indexing:Python nodes[-1]would read a real final node. Zero/negative values and zero sums are valid,not missing levels. For[(3,1,2),(9,-1,-1),(20,3,4),(15,-1,-1),(7,-1,-1)],sums are3,29,22. Sum values,not IDs or child counts."
+    },
+    {
+      "type": "text",
+      "id": "tree-level-aggregate-3",
+      "markdown": "Bounds and transfer\n\nO(n)time,O(width)live queue,O(height)output,all bounded O(n). Absolute level total<=n*1e9<=2e14requires64bitC++accumulation;Python integers exact. Independently traverse an explicit(node,depth)stack into dictionary totals. Compare chain,broad,negative,canceling and relabeled proper trees. Exercise maximum chain and near-complete tree,not only tiny balanced examples."
+    },
+    {
+      "type": "code",
+      "id": "tree-level-aggregate-complete",
+      "language": "python",
+      "source": "MOD = 1000000007\n\ndef level_sums(nodes):\n    from collections import deque\n    queue = deque([0])\n    out = []\n    while queue:\n        total = 0\n        for _ in range(len(queue)):\n            (value, left, right) = nodes[queue.popleft()]\n            total += value\n            if left != -1:\n                queue.append(left)\n            if right != -1:\n                queue.append(right)\n        out.append(str(total))\n    return out\n\nprint(level_sums([(3, 1, 2), (9, -1, -1), (20, 3, 4), (15, -1, -1), (7, -1, -1)]))\nprint(level_sums([(-5, -1, -1)]))\n",
+      "caption": "Expected ['3', '29', '22'],then ['-5']. Explicit -1 guarding and layer sums.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "tree-level-aggregate-inline-1",
+      "questionId": "qf5-algorithms-trees-graphs.tree-level-aggregate-check-1"
+    },
+    {
+      "type": "check",
+      "id": "tree-level-aggregate-inline-2",
+      "questionId": "qf5-algorithms-trees-graphs.tree-level-aggregate-check-2"
+    },
+    {
+      "type": "check",
+      "id": "tree-level-aggregate-inline-3",
+      "questionId": "qf5-algorithms-trees-graphs.tree-level-aggregate-check-3"
+    },
+    {
+      "type": "check",
+      "id": "tree-level-aggregate-inline-4",
+      "questionId": "qf5-algorithms-trees-graphs.tree-level-aggregate-check-4"
+    },
+    {
+      "type": "check",
+      "id": "tree-level-aggregate-inline-5",
+      "questionId": "qf5-algorithms-trees-graphs.tree-level-aggregate-check-5"
+    },
+    {
+      "type": "check",
+      "id": "tree-level-aggregate-inline-6",
+      "questionId": "qf5-algorithms-trees-graphs.tree-level-aggregate-check-6"
+    },
+    {
+      "type": "check",
+      "id": "tree-level-aggregate-inline-7",
+      "questionId": "qf5-algorithms-trees-graphs.tree-level-aggregate-check-7"
+    },
+    {
+      "type": "text",
+      "id": "tree-level-aggregate-sources",
+      "markdown": "Sources: [1](https://cp-algorithms.com/graph/breadth-first-search.html). Exact public task contract hash b76a20346175cb7df76a4f56b063a9e8972924a5f7cb8d1e27ff55de0026c478. This is main algorithm/contract teaching,not current app or judge signoff."
+    },
+    {
+      "type": "text",
+      "id": "static-lca-lifting-0",
+      "markdown": "Static rooted indexing\n\nn,q1..100000,root1;parents[i]is manager of i+2. Parent labels MAY BE LARGER than child labels. Build child lists completely,then traverse iteratively from1to assign depths;numeric-order depth calculation is invalid. Input is a proper rooted tree reaching1. A node counts as its own ancestor. Return one STRING label/query."
+    },
+    {
+      "type": "text",
+      "id": "static-lca-lifting-1",
+      "markdown": "Power table proof\n\nSet root parent to itself. up[k][v]means ancestor2^ksteps above,capped at root. up[0]=immediate;up[k][v]=up[k-1][up[k-1][v]]composes two half jumps. Build complete previous level first. levels=max(1,n.bit_length())ensures2^levels>n-1,including singleton/power-of-two sizes. Induction proves table entries."
+    },
+    {
+      "type": "text",
+      "id": "static-lca-lifting-2",
+      "markdown": "Align then lift together\n\nLift deeper node by bits of depth difference. Every common ancestor is no deeper than shallower node,so alignment cannot pass LCA. If nodes meet,return that node. Otherwise equal-depth nodes remain in different branches below LCA. Try powers descending;move BOTH only if target ancestors DIFFER. At equal depth,targets differ exactly when that jump remains strictly below LCA;equal targets would reach/pass it. After all powers no one-step jump can keep them different,so their shared parent is the LCA."
+    },
+    {
+      "type": "text",
+      "id": "static-lca-lifting-3",
+      "markdown": "Trace and scope\n\nRoot1children2,3;2children4,5;3children6,7. Query4,6:two-step targets both1,skip;one-step targets2,3differ,move;return parent1. Query4,2aligns4to2and returns2;5,5returns5. In tree parents[3,1],node2hasmanager3,whosemanager1:query2,3returns3. Tree STATIC;manager changes invalidate depths/table. This explicit extension supersedes the core LCA exclusion only for this contract."
+    },
+    {
+      "type": "text",
+      "id": "static-lca-lifting-4",
+      "markdown": "Cost and independent transfer\n\nBuild O(n log n),query O(log n),space O(n log n+q)with returned lines. n100000uses17levels,roughly1700000entries plus sentinel column;Python list references/objects mean this is NOT1.7MB. Iterative depth build handles100000chain. Compare with naive ancestor lists on random RELABELED trees(parent>child),same/root/ancestor/branch cases. Exercise n=q100000with one reused table,not preprocessing per query."
+    },
+    {
+      "type": "code",
+      "id": "static-lca-lifting-complete",
+      "language": "python",
+      "source": "MOD = 1000000007\n\ndef lca_queries(n, parents, queries):\n    children = [[] for _ in range(n + 1)]\n    immediate = [1] * (n + 1)\n    for (child, parent) in enumerate(parents, 2):\n        immediate[child] = parent\n        children[parent].append(child)\n    depth = [0] * (n + 1)\n    pending = [1]\n    while pending:\n        node = pending.pop()\n        for child in children[node]:\n            depth[child] = depth[node] + 1\n            pending.append(child)\n    levels = max(1, n.bit_length())\n    up = [immediate]\n    for _ in range(1, levels):\n        prev = up[-1]\n        up.append([prev[prev[v]] for v in range(n + 1)])\n    out = []\n    for (u, v) in queries:\n        if depth[u] < depth[v]:\n            (u, v) = (v, u)\n        difference = depth[u] - depth[v]\n        for k in range(levels):\n            if difference >> k & 1:\n                u = up[k][u]\n        if u != v:\n            for k in range(levels - 1, -1, -1):\n                if up[k][u] != up[k][v]:\n                    (u, v) = (up[k][u], up[k][v])\n            u = up[0][u]\n        out.append(str(u))\n    return out\n\nprint(lca_queries(7, [1, 1, 2, 2, 3, 3], [(4, 5), (4, 6), (5, 5), (7, 1)]))\nprint(lca_queries(3, [3, 1], [(2, 3), (2, 1)]))\n",
+      "caption": "Expected ['2', '1', '5', '1'],then ['3', '1']. Parent numbering independent and chain-safe.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "static-lca-lifting-inline-1",
+      "questionId": "qf5-algorithms-trees-graphs.static-lca-lifting-check-1"
+    },
+    {
+      "type": "check",
+      "id": "static-lca-lifting-inline-2",
+      "questionId": "qf5-algorithms-trees-graphs.static-lca-lifting-check-2"
+    },
+    {
+      "type": "check",
+      "id": "static-lca-lifting-inline-3",
+      "questionId": "qf5-algorithms-trees-graphs.static-lca-lifting-check-3"
+    },
+    {
+      "type": "check",
+      "id": "static-lca-lifting-inline-4",
+      "questionId": "qf5-algorithms-trees-graphs.static-lca-lifting-check-4"
+    },
+    {
+      "type": "check",
+      "id": "static-lca-lifting-inline-5",
+      "questionId": "qf5-algorithms-trees-graphs.static-lca-lifting-check-5"
+    },
+    {
+      "type": "check",
+      "id": "static-lca-lifting-inline-6",
+      "questionId": "qf5-algorithms-trees-graphs.static-lca-lifting-check-6"
+    },
+    {
+      "type": "check",
+      "id": "static-lca-lifting-inline-7",
+      "questionId": "qf5-algorithms-trees-graphs.static-lca-lifting-check-7"
+    },
+    {
+      "type": "text",
+      "id": "static-lca-lifting-sources",
+      "markdown": "Sources: [1](https://algorithm.tamnd.com/lca-binary-lifting/). Exact public task contract hash 92c59c9e4d677a8d702729d1d6fcd4517c9b5d60ecd9fe162cf45961acc6c1fb. This is main algorithm/contract teaching,not current app or judge signoff."
+    },
+    {
+      "type": "text",
+      "id": "weighted-tree-diameter-0",
+      "markdown": "Weighted proper tree\n\nn1..200000,1-basednodes,n-1undirectededges,positiveweights1..1e9. diameter(n,edges)returns one STRING line with maximum path TOTAL WEIGHT,not number of edges or last BFS visit. Singleton0. Root at1only to define subtrees;answer root-independent. No general-graph longest-path claim."
+    },
+    {
+      "type": "text",
+      "id": "weighted-tree-diameter-1",
+      "markdown": "Downward state and exact decomposition\n\ndown[u]is heaviest downward path starting at u,with0for stopping there. Child vcontributes weight(u,v)+down[v]. Every simple path has a UNIQUE highest vertex uand uses at most two DISTINCT child branches,or one branch ending at u. Its weight is at most sum of the two largest contributions(missing branches0). Conversely joining these two paths through uis feasible and simple. Max over all uis exactly diameter. Equal lengths from different children must both count."
+    },
+    {
+      "type": "text",
+      "id": "weighted-tree-diameter-2",
+      "markdown": "Iterative dependencies and trace\n\nRecord parent and preorder using explicit stack;reverse preorder has every child before parent. Scan children once,retain largest/secondlargest,set down[u]=largest,update globalbest. Skip parent edge. Proper-tree input makes this safe without general graph visited logic. For1-2weight3,2-3weight4,2-4weight6,4-5weight1:down[4]=1;at2branches4and7combine11. Rootdown10is NOTthe diameter;best can bend below root."
+    },
+    {
+      "type": "text",
+      "id": "weighted-tree-diameter-3",
+      "markdown": "Bounds and independent transfer\n\nO(n)time/storage,no sorting branches/no recursive stack. Answer<=(n-1)*1e9<=199999000000000needs64bitC++and Python exact ints. Generalize unweighted source+1to actual edge weight;do not use unweighted BFS last-visit shortcut. Independently enumerate unique path sums from every tiny-tree source. Test equal branches,stars,chains,singleton,below-root bend;stress200000chainwith1e9weightsand200000star. Negative weights,path reconstruction,centers and remote judge limits remain outside scope."
+    },
+    {
+      "type": "code",
+      "id": "weighted-tree-diameter-complete",
+      "language": "python",
+      "source": "MOD = 1000000007\n\ndef diameter(n, edges):\n    adjacent = [[] for _ in range(n + 1)]\n    for (u, v, weight) in edges:\n        adjacent[u].append((v, weight))\n        adjacent[v].append((u, weight))\n    parent = [0] * (n + 1)\n    parent[1] = 1\n    (order, pending) = ([], [1])\n    while pending:\n        u = pending.pop()\n        order.append(u)\n        for (v, _) in adjacent[u]:\n            if v != parent[u]:\n                parent[v] = u\n                pending.append(v)\n    down = [0] * (n + 1)\n    best = 0\n    for u in reversed(order):\n        first = second = 0\n        for (v, weight) in adjacent[u]:\n            if v == parent[u]:\n                continue\n            branch = weight + down[v]\n            if branch > first:\n                (first, second) = (branch, first)\n            elif branch > second:\n                second = branch\n        down[u] = first\n        best = max(best, first + second)\n    return [str(best)]\n\nprint(diameter(5, [(1, 2, 3), (2, 3, 4), (2, 4, 6), (4, 5, 1)]))\nprint(diameter(1, []))\nprint(diameter(3, [(1, 2, 5), (1, 3, 5)]))\n",
+      "caption": "Expected ['11'], ['0'], ['10']. Weighted top-two-child DP.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "weighted-tree-diameter-inline-1",
+      "questionId": "qf5-algorithms-trees-graphs.weighted-tree-diameter-check-1"
+    },
+    {
+      "type": "check",
+      "id": "weighted-tree-diameter-inline-2",
+      "questionId": "qf5-algorithms-trees-graphs.weighted-tree-diameter-check-2"
+    },
+    {
+      "type": "check",
+      "id": "weighted-tree-diameter-inline-3",
+      "questionId": "qf5-algorithms-trees-graphs.weighted-tree-diameter-check-3"
+    },
+    {
+      "type": "check",
+      "id": "weighted-tree-diameter-inline-4",
+      "questionId": "qf5-algorithms-trees-graphs.weighted-tree-diameter-check-4"
+    },
+    {
+      "type": "check",
+      "id": "weighted-tree-diameter-inline-5",
+      "questionId": "qf5-algorithms-trees-graphs.weighted-tree-diameter-check-5"
+    },
+    {
+      "type": "check",
+      "id": "weighted-tree-diameter-inline-6",
+      "questionId": "qf5-algorithms-trees-graphs.weighted-tree-diameter-check-6"
+    },
+    {
+      "type": "check",
+      "id": "weighted-tree-diameter-inline-7",
+      "questionId": "qf5-algorithms-trees-graphs.weighted-tree-diameter-check-7"
+    },
+    {
+      "type": "text",
+      "id": "weighted-tree-diameter-sources",
+      "markdown": "Sources: [1](https://book.micheletti.io/diameter.html). Exact public task contract hash 5a05deeb1e9ff3f4934828a744a7ecede22e2a06c456141df8f89c06ca369b7e. This is main algorithm/contract teaching,not current app or judge signoff."
+    },
+    {
+      "type": "text",
+      "id": "inherited-bst-bounds-0",
+      "markdown": "Parent comparisons are not enough\n\nA strict BST requires every left-subtree value to be below its ancestor and every right-subtree value above it. Root 10, left child 5, left-right child 12 passes its local 5<12 comparison but violates root 10. Carry an OPEN interval(lower, upper) from all ancestors. Root has no bounds. A value must satisfy lower<value<upper whenever those bounds exist; duplicates are invalid."
+    },
+    {
+      "type": "text",
+      "id": "inherited-bst-bounds-1",
+      "markdown": "Bound propagation proves the subtree condition\n\nFor node value v, the left child inherits(lower, v), the right child(v, upper). Existing opposite-side bounds remain in force. Inductively this interval is the intersection of every ancestor constraint, so accepting every node implies all required subtree inequalities. A violating node supplies a concrete counterexample. None denotes an absent bound, not an artificial 32-bit sentinel that would reject a legal endpoint value."
+    },
+    {
+      "type": "text",
+      "id": "inherited-bst-bounds-2",
+      "markdown": "Iterate across a deep proper tree\n\nInput guarantees one proper binary tree rooted at 0 with -1 for no child. This validator checks ordering, not connectivity/cycle/index validity; inventing extra rejection rules would change scope. n may reach 100000 in a chain, so use an explicit stack rather than default recursive calls. O(n) visits and O(height) pending ancestor branches, bounded by O(n). Test equal values, integer endpoints, a deep ancestor violation and a valid chain."
+    },
+    {
+      "type": "code",
+      "id": "inherited-bst-bounds-complete",
+      "language": "python",
+      "source": "from collections import OrderedDict, deque\nfrom bisect import bisect_left\nimport heapq\n\ndef is_bst(nodes):\n    stack = [(0, None, None)]\n    while stack:\n        (at, lower, upper) = stack.pop()\n        (value, left, right) = nodes[at]\n        if lower is not None and value <= lower:\n            return ['INVALID']\n        if upper is not None and value >= upper:\n            return ['INVALID']\n        if right != -1:\n            stack.append((right, value, upper))\n        if left != -1:\n            stack.append((left, lower, value))\n    return ['VALID']\n\nprint(*is_bst([(10, 1, -1), (5, -1, 2), (12, -1, -1)]))\nprint(*is_bst([(0, 1, 2), (-2147483648, -1, -1), (2147483647, -1, -1)]))\n",
+      "caption": "Expected stdout:\nINVALID\nVALID\n\nPrevalidated inputs follow the captured public contract. This completes the named Python function using its original supplied main/parser. It does not claim independent parser, C++, app-runner or judge qualification.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "inherited-bst-bounds-inline-1",
+      "questionId": "qf5-algorithms-trees-graphs.inherited-bst-bounds-check-1"
+    },
+    {
+      "type": "check",
+      "id": "inherited-bst-bounds-inline-2",
+      "questionId": "qf5-algorithms-trees-graphs.inherited-bst-bounds-check-2"
+    },
+    {
+      "type": "check",
+      "id": "inherited-bst-bounds-inline-3",
+      "questionId": "qf5-algorithms-trees-graphs.inherited-bst-bounds-check-3"
+    },
+    {
+      "type": "check",
+      "id": "inherited-bst-bounds-inline-4",
+      "questionId": "qf5-algorithms-trees-graphs.inherited-bst-bounds-check-4"
+    },
+    {
+      "type": "check",
+      "id": "inherited-bst-bounds-inline-5",
+      "questionId": "qf5-algorithms-trees-graphs.inherited-bst-bounds-check-5"
+    },
+    {
+      "type": "check",
+      "id": "inherited-bst-bounds-inline-6",
+      "questionId": "qf5-algorithms-trees-graphs.inherited-bst-bounds-check-6"
+    },
+    {
+      "type": "check",
+      "id": "inherited-bst-bounds-inline-7",
+      "questionId": "qf5-algorithms-trees-graphs.inherited-bst-bounds-check-7"
+    },
+    {
+      "type": "text",
+      "id": "inherited-bst-bounds-sources",
+      "markdown": "References: [1](https://algs4.cs.princeton.edu/32bst/), [2](https://docs.python.org/3.12/library/stdtypes.html). Public task hash 2115334fad00402be1b76f58a7ed025d0e83aa9ad05f77a5040fce66fdffa811. These references establish language/container semantics; the exact task framing is the captured public contract. This extension preserves the earlier bounded examples and their policies rather than silently broadening those APIs."
+    },
+    {
+      "type": "text",
+      "id": "smallest-ready-topology-0",
+      "markdown": "Orient prerequisites before choosing an algorithm\n\nA public pair (a, b) means b must precede a, so store directed edge b->a and increment indegree[a]. Remaining indegree counts prerequisite edges from unprocessed nodes. Nodes at 0 are exactly those currently available. Put all such nodes in a min-heap, not a FIFO queue; the required next choice is the smallest index among all currently ready nodes."
+    },
+    {
+      "type": "text",
+      "id": "smallest-ready-topology-1",
+      "markdown": "Safety, deterministic ties and cycles\n\nPopping a ready node respects every prerequisite. Remove each outgoing edge by decrementing its destination count and push the destination when it reaches 0. At any step, every feasible next element must be ready. Choosing the smallest ready index therefore minimizes the first differing position of any valid completion, giving the prescribed lexicographic order. If the heap empties before n outputs, every remaining node has a remaining predecessor; following predecessors in a finite graph finds a cycle. Self-edge(a, a) never becomes ready."
+    },
+    {
+      "type": "text",
+      "id": "smallest-ready-topology-2",
+      "markdown": "Trace, bounds and output\n\nFor n=4, pairs[(1, 2), (0, 2)], initially 2 and 3 are ready. Pop 2, releasing 0 and 1; the heap then gives 0, 1, 3, so output 2 0 1 3. A FIFO initialized with 2, 3 would instead choose 3 too early. The task supplies distinct pairs, n<=100000, m<=200000. Each edge is processed once, each node heap-inserted/popped once: O(m+n log n) time, O(n+m) state. Output one joined line or IMPOSSIBLE, not any arbitrary valid topological order."
+    },
+    {
+      "type": "code",
+      "id": "smallest-ready-topology-complete",
+      "language": "python",
+      "source": "from collections import OrderedDict, deque\nfrom bisect import bisect_left\nimport heapq\n\ndef course_order(n, prereqs):\n    outgoing = [[] for _ in range(n)]\n    remaining = [0] * n\n    for (after, before) in prereqs:\n        outgoing[before].append(after)\n        remaining[after] += 1\n    available = [i for i in range(n) if remaining[i] == 0]\n    heapq.heapify(available)\n    result = []\n    while available:\n        node = heapq.heappop(available)\n        result.append(node)\n        for after in outgoing[node]:\n            remaining[after] -= 1\n            if remaining[after] == 0:\n                heapq.heappush(available, after)\n    return [' '.join(map(str, result))] if len(result) == n else ['IMPOSSIBLE']\n\nprint(*course_order(4, [(1, 2), (0, 2)]))\nprint(*course_order(1, [(0, 0)]))\n",
+      "caption": "Expected stdout:\n2 0 1 3\nIMPOSSIBLE\n\nPrevalidated inputs follow the captured public contract. This completes the named Python function using its original supplied main/parser. It does not claim independent parser, C++, app-runner or judge qualification.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "smallest-ready-topology-inline-1",
+      "questionId": "qf5-algorithms-trees-graphs.smallest-ready-topology-check-1"
+    },
+    {
+      "type": "check",
+      "id": "smallest-ready-topology-inline-2",
+      "questionId": "qf5-algorithms-trees-graphs.smallest-ready-topology-check-2"
+    },
+    {
+      "type": "check",
+      "id": "smallest-ready-topology-inline-3",
+      "questionId": "qf5-algorithms-trees-graphs.smallest-ready-topology-check-3"
+    },
+    {
+      "type": "check",
+      "id": "smallest-ready-topology-inline-4",
+      "questionId": "qf5-algorithms-trees-graphs.smallest-ready-topology-check-4"
+    },
+    {
+      "type": "check",
+      "id": "smallest-ready-topology-inline-5",
+      "questionId": "qf5-algorithms-trees-graphs.smallest-ready-topology-check-5"
+    },
+    {
+      "type": "check",
+      "id": "smallest-ready-topology-inline-6",
+      "questionId": "qf5-algorithms-trees-graphs.smallest-ready-topology-check-6"
+    },
+    {
+      "type": "check",
+      "id": "smallest-ready-topology-inline-7",
+      "questionId": "qf5-algorithms-trees-graphs.smallest-ready-topology-check-7"
+    },
+    {
+      "type": "text",
+      "id": "smallest-ready-topology-sources",
+      "markdown": "References: [1](https://networkx.org/documentation/stable/reference/algorithms/generated/networkx.algorithms.dag.lexicographical_topological_sort.html), [2](https://cp-algorithms.com/graph/topological-sort.html). Public task hash f99bbf11b28d79c6652ce3d896ec00430151ee248d6ad6510caf1caf43a4e568. These references establish language/container semantics; the exact task framing is the captured public contract. This extension preserves the earlier bounded examples and their policies rather than silently broadening those APIs."
+    },
+    {
+      "type": "text",
+      "id": "positive-latency-route-count-0",
+      "markdown": "Distance and count are different state\n\nFor each node keep the best known distance and the number of routes attaining it modulo 1000000007. Start source 0 at distance 0, count 1; unreachable distance is None, count 0. Store both directions of each undirected edge, retaining parallel edges separately because link sequences distinguish routes. BFS edge counts cannot replace weighted latency sums."
+    },
+    {
+      "type": "text",
+      "id": "positive-latency-route-count-1",
+      "markdown": "Relaxation rules and a positive-weight count proof\n\nPop the smallest distance from a min-heap. A strictly shorter candidate replaces distance and resets count to ways[u]; an equal-distance candidate adds ways[u] without resetting. A longer candidate does nothing. All weights are strictly positive, so every predecessor on a shortest route to v has smaller distance than v. Thus its count contribution arrives before the current-distance pop for v, and its count is complete when propagated. Zero-weight links would invalidate this simple ordering proof; they are excluded, not silently supported."
+    },
+    {
+      "type": "text",
+      "id": "positive-latency-route-count-2",
+      "markdown": "Lazy heap, trace and limits\n\nOn strict improvement push a new (distance, node) pair. Old pairs remain; skip a popped pair when cost!=dist[u], otherwise obsolete work can propagate incorrect duplicate counts. With two parallel 0--1 edges of weight 1 and edge 1--2 weight 2, counts are 1, 2, 2 at distances 0, 1, 3. Disconnected nodes print -1 0. n<=100000, m<=200000; positive shortest paths need no cycles, so signed 64-bit distances suffice here. Lazy heap work O((n+m) log(n+m)), state O(n+m), plus n output lines. Route counts can be huge before modulo, not floating probabilities."
+    },
+    {
+      "type": "code",
+      "id": "positive-latency-route-count-complete",
+      "language": "python",
+      "source": "from collections import OrderedDict, deque\nfrom bisect import bisect_left\nimport heapq\n\ndef shortest_paths(n, edges):\n    graph = [[] for _ in range(n)]\n    for (u, v, weight) in edges:\n        graph[u].append((v, weight))\n        graph[v].append((u, weight))\n    dist = [None] * n\n    ways = [0] * n\n    (dist[0], ways[0]) = (0, 1)\n    pending = [(0, 0)]\n    modulus = 1000000007\n    while pending:\n        (cost, u) = heapq.heappop(pending)\n        if cost != dist[u]:\n            continue\n        for (v, weight) in graph[u]:\n            candidate = cost + weight\n            if dist[v] is None or candidate < dist[v]:\n                dist[v] = candidate\n                ways[v] = ways[u]\n                heapq.heappush(pending, (candidate, v))\n            elif candidate == dist[v]:\n                ways[v] = (ways[v] + ways[u]) % modulus\n    return ['-1 0' if d is None else f'{d} {ways[i]}' for (i, d) in enumerate(dist)]\n\nprint(*shortest_paths(4, [(0, 1, 1), (0, 1, 1), (1, 2, 2)]), sep='\\n')\n",
+      "caption": "Expected stdout:\n0 1\n1 2\n3 2\n-1 0\n\nPrevalidated inputs follow the captured public contract. This completes the named Python function using its original supplied main/parser. It does not claim independent parser, C++, app-runner or judge qualification.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "positive-latency-route-count-inline-1",
+      "questionId": "qf5-algorithms-trees-graphs.positive-latency-route-count-check-1"
+    },
+    {
+      "type": "check",
+      "id": "positive-latency-route-count-inline-2",
+      "questionId": "qf5-algorithms-trees-graphs.positive-latency-route-count-check-2"
+    },
+    {
+      "type": "check",
+      "id": "positive-latency-route-count-inline-3",
+      "questionId": "qf5-algorithms-trees-graphs.positive-latency-route-count-check-3"
+    },
+    {
+      "type": "check",
+      "id": "positive-latency-route-count-inline-4",
+      "questionId": "qf5-algorithms-trees-graphs.positive-latency-route-count-check-4"
+    },
+    {
+      "type": "check",
+      "id": "positive-latency-route-count-inline-5",
+      "questionId": "qf5-algorithms-trees-graphs.positive-latency-route-count-check-5"
+    },
+    {
+      "type": "check",
+      "id": "positive-latency-route-count-inline-6",
+      "questionId": "qf5-algorithms-trees-graphs.positive-latency-route-count-check-6"
+    },
+    {
+      "type": "check",
+      "id": "positive-latency-route-count-inline-7",
+      "questionId": "qf5-algorithms-trees-graphs.positive-latency-route-count-check-7"
+    },
+    {
+      "type": "text",
+      "id": "positive-latency-route-count-sources",
+      "markdown": "References: [1](https://cp-algorithms.com/graph/dijkstra_sparse.html), [2](https://docs.python.org/3.12/library/heapq.html). Public task hash 76aaae1a397c6f2198a3939d9884f0d20a2875f4a3d44daece519e3e5ee841d8. These references establish language/container semantics; the exact task framing is the captured public contract. This extension preserves the earlier bounded examples and their policies rather than silently broadening those APIs."
+    }
+  ],
+  "practice": {
+    "problemIds": [
+      "qfp-shortest-path-grid",
+      "qfp-level-order-sum",
+      "qfp-lowest-common-ancestor",
+      "qfp-tree-diameter",
+      "qfp-bst-validate",
+      "qfp-course-schedule",
+      "qfp-dijkstra-latency"
+    ]
+  },
+  "summary": "Declare graph representation and direction. Mark discovery before enqueue/push, keep unreachable state explicit and prove any path tie rule. BFS minimizes unweighted hop count; reachability/components do not imply weighted paths or advanced DFS metadata. Extension: grid unit bfs. Extension: tree level aggregate. Extension: static lca lifting. Extension: weighted tree diameter. Practice transfer: inherited bst bounds. Practice transfer: smallest ready topology. Practice transfer: positive latency route count."
+}

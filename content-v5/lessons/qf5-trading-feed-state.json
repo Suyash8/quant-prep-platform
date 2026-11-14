@@ -1,0 +1,203 @@
+{
+  "id": "qf5-trading-feed-state",
+  "revision": 2,
+  "title": "Sequence gaps, duplicates and feed state",
+  "module": "qf5-trading",
+  "order": 2,
+  "estMinutes": 38,
+  "objectives": [
+    {
+      "conceptId": "qf5-trading-feed-state.sequence-state",
+      "text": "Derive per-message sequence positions from session-bound packet headers and distinguish heartbeats/end markers from data counts before applying state."
+    },
+    {
+      "conceptId": "qf5-trading-feed-state.duplicate-policy",
+      "text": "Apply an explicit bounded duplicate/conflict/gap policy that preserves last contiguous state and pauses use until authorized coherent recovery, without treating sequence equality as payload equality."
+    },
+    {
+      "conceptId": "qf5-trading-feed-state.synthetic-sequence-error-order",
+      "text": "Decode a declared small big-endian packet format with explicit sequence/error priority and atomic live-quantity changes, without claiming real ITCH compatibility."
+    }
+  ],
+  "prerequisites": [
+    "qf5-trading-protocols"
+  ],
+  "blocks": [
+    {
+      "type": "text",
+      "id": "packet-versus-message",
+      "markdown": "A packet can contain several messages. In MoldUDP64, header is session10 octets, first-message sequence8 octets and message count2 octets, all numeric fields big-endian. Each data block has a2-octet payload length followed by that many bytes, not including its own length. Header sequence s and count k imply data message positions s through s+k-1. Lost packets can lose several message positions; counting packets is not message sequencing. A sequence is meaningful only with its configured stream/session/channel identity, not as a globally unique integer."
+    },
+    {
+      "type": "text",
+      "id": "markers",
+      "markdown": "MoldUDP64 count0 is heartbeat; count65535 is end-of-session, not a packet containing65535 data blocks. These markers carry the next expected sequence according to the sender and consume no data message position. A heartbeat can reveal that our receiver is behind even when no new data packet arrives; it does not fill the missing messages. End-of-session may leave a final chance to request gaps under the service contract; it does not certify our local book is complete. The generic wrapper can carry zero-length message data, while a specific ITCH Add A decoder cannot accept an empty record."
+    },
+    {
+      "type": "code",
+      "id": "moldudp64-bounded-wrapper",
+      "language": "python",
+      "source": "def mold_subset(packet):\n    # Generic MoldUDP64 wrapper subset; message data is opaque, not assumed ITCH A.\n    if type(packet) is not bytes or not 20<=len(packet)<=256:\n        raise ValueError(\"invalid datagram bounds\")\n    if packet[:10]!=b\"SESSION001\":\n        raise ValueError(\"unexpected configured session\")\n    sequence=int.from_bytes(packet[10:18],\"big\")\n    count=int.from_bytes(packet[18:20],\"big\")\n    if not 1<=sequence<=1000:\n        raise ValueError(\"own sequence bound\")\n    if count in (0,65535):\n        if len(packet)!=20:raise ValueError(\"marker has trailing data\")\n        return \"heartbeat\" if count==0 else \"end\",sequence,[]\n    if count>4 or sequence+count-1>1000:\n        raise ValueError(\"own packet count or sequence bound\")\n    cursor=20\n    messages=[]\n    for index in range(count):\n        if cursor+2>len(packet):raise ValueError(\"truncated length\")\n        size=int.from_bytes(packet[cursor:cursor+2],\"big\")\n        cursor+=2\n        if size>64 or cursor+size>len(packet):raise ValueError(\"invalid message length\")\n        messages.append((sequence+index,packet[cursor:cursor+size]))\n        cursor+=size\n    if cursor!=len(packet):raise ValueError(\"trailing bytes\")\n    return \"data\",sequence,messages\n\nheader=b\"SESSION001\"+(7).to_bytes(8,\"big\")\nprint(mold_subset(header+(2).to_bytes(2,\"big\")+b\"\\x00\\x01A\\x00\\x01B\"))\nprint(mold_subset(header+b\"\\x00\\x00\"))\nprint(mold_subset(header+b\"\\xff\\xff\"))",
+      "caption": "Expected lines: ('data',7,[(7,b'A'),(8,b'B')]); ('heartbeat',7,[]); ('end',7,[]), with normal Python spacing. Fixed configured session SESSION001, sequence1..1000,<=4 data blocks,<=64 octets per message,<=256 per datagram are own teaching bounds, not universal protocol limits. Zero-length generic message blocks allowed. Opaque A/B one-octet payloads are wrapper fixtures, NOT valid ITCH records. Markers/lengths/trailing data checked before returning the packet; no partial application or live receive occurs.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "inline-0",
+      "questionId": "qf5-trading-feed-state.check-1"
+    },
+    {
+      "type": "check",
+      "id": "inline-1",
+      "questionId": "qf5-trading-feed-state.check-2"
+    },
+    {
+      "type": "check",
+      "id": "inline-4",
+      "questionId": "qf5-trading-feed-state.check-5"
+    },
+    {
+      "type": "text",
+      "id": "state-contract",
+      "markdown": "Our next code is a deliberately separate normalized event policy: fixed configured session DAY1, initial next expected1, up to16 accepted contiguous positions and payload bytes1..16. History position i stores exactly the accepted payload for sequence i+1; we keep the whole tiny history, so no unbounded deduplication/eviction claim. A matching next sequence appends once. A lower sequence with exact same stored bytes is duplicate/no-op; same sequence with different bytes is conflict/pause. A higher sequence is gap/pause, preserving history and expected position. Foreign session is rejected unchanged, not silently adopted. Exact byte equality is the declared duplicate identity here, not a universal FIX resend rule."
+    },
+    {
+      "type": "worked",
+      "id": "sequence-gap-trace",
+      "title": "Do not skip a missing event to make the feed look live",
+      "steps": [
+        {
+          "text": "Start expected1. Accept seq1/A, so expected2 and history(A). Receiving seq1/A again is duplicate and expected stays2."
+        },
+        {
+          "text": "Receive seq3/C while expecting2: mark gap, keep expected2/history(A), and do NOT apply seq3. This implementation intentionally does not buffer it."
+        },
+        {
+          "text": "Even if seq2/B arrives later, the paused policy does not resume by itself. Recover a consistent snapshot/replay under an explicit protocol before publishing live state. A gap-free integer counter manufactured by skipping2 would hide the missing event."
+        }
+      ]
+    },
+    {
+      "type": "code",
+      "id": "bounded-feed-contiguity-policy",
+      "language": "python",
+      "source": "def feed_step(state,session,sequence,payload):\n    # Own tiny fail-closed single-session policy, NOT FIX or MoldUDP64 recovery rules.\n    if type(state) is not tuple or len(state)!=2:\n        raise ValueError(\"invalid state\")\n    phase,history=state\n    if phase not in (\"live\",\"gap\",\"conflict\") or type(history) is not tuple or len(history)>16:\n        raise ValueError(\"invalid state\")\n    if any(type(p) is not bytes or not 1<=len(p)<=16 for p in history):\n        raise ValueError(\"invalid accepted history\")\n    if type(session) is not str or type(sequence) is not int or not 1<=sequence<=16 or type(payload) is not bytes or not 1<=len(payload)<=16:\n        raise ValueError(\"invalid event\")\n    if session!=\"DAY1\":return state,\"wrong-session\"\n    if phase!=\"live\":return state,\"paused\"\n    expected=len(history)+1\n    if sequence>expected:return (\"gap\",history),\"gap\"\n    if sequence<expected:\n        if history[sequence-1]==payload:return state,\"duplicate\"\n        return (\"conflict\",history),\"conflict\"\n    return (\"live\",history+(payload,)),\"applied\"\n\nstate=(\"live\",())\nfor sequence,payload in [(1,b\"A\"),(1,b\"A\"),(3,b\"C\"),(2,b\"B\")]:\n    state,status=feed_step(state,\"DAY1\",sequence,payload)\n    print(status,len(state[1])+1)\nprint(state)\nother,_=feed_step((\"live\",()),\"DAY1\",1,b\"A\")\nprint(feed_step(other,\"DAY1\",1,b\"X\")[1])",
+      "caption": "Expected lines: applied 2; duplicate 2; gap 2; paused 2; ('gap', (b'A',)); conflict. Only applied appends accepted history. Gap/conflict retains last contiguous data while changing availability/phase; late data is not silently applied while paused. This pure immutable transition function neither requests retransmission nor installs a snapshot. Separate later recovery code must establish a coherent new state.",
+      "runnable": true
+    },
+    {
+      "type": "text",
+      "id": "real-session-distinction",
+      "markdown": "Real recovery policies are protocol-specific. FIX session resend handling can set PossDupFlag(43)=Y, update SendingTime(52), include OrigSendingTime(122)and recalculate framing; a valid retransmission need not be byte-identical. SequenceReset/GapFill have explicit conditions and are not permission to discard missing business events at will. MoldUDP64 request/response uses the requested session and sequence range with service retention/end-of-session constraints. Our DAY1 exact-byte policy intentionally does not implement either complete state machine. Dual-feed arbitration, out-of-order buffering, stale history eviction and reconnect/session resets require explicit additional contracts."
+    },
+    {
+      "type": "check",
+      "id": "inline-2",
+      "questionId": "qf5-trading-feed-state.check-3"
+    },
+    {
+      "type": "check",
+      "id": "inline-3",
+      "questionId": "qf5-trading-feed-state.check-4"
+    },
+    {
+      "type": "check",
+      "id": "inline-5",
+      "questionId": "qf5-trading-feed-state.check-6"
+    },
+    {
+      "type": "text",
+      "id": "availability-and-safety",
+      "markdown": "Keep last contiguous data for diagnosis but mark it stale/unavailable for decisions requiring current state. Book/signal/risk consumers must see that state, not just the last displayed price. A checksum-valid packet is not automatically contiguous; a contiguous record is not necessarily schema-valid; and valid state is not authority to trade. Track configured stream/session, expected/observed ranges, duplicate/conflict/gap counts and recovery phase. Validate a packet and its application schema before deciding state transitions; if a record fails validation, do not advance the sequence as though it was applied. Bad-data handling can itself require pausing recovery."
+    },
+    {
+      "type": "text",
+      "id": "transfer",
+      "markdown": "Independent transfer: build a bounded two-message wrapper with first sequence10 and verify positions10/11, then truncate every byte and reject malformed counts/lengths. For the state model enumerate short applied/duplicate/conflict/gap/foreign-session streams and compare accepted history to a reference. Check that all paused transitions preserve history, exact duplicates do not count as applied and a new session number cannot reset state without explicit initialization/recovery. Explain why equal packet count is not equal feed completeness."
+    },
+    {
+      "type": "check",
+      "id": "inline-6",
+      "questionId": "qf5-trading-feed-state.check-7"
+    },
+    {
+      "type": "text",
+      "id": "sources",
+      "markdown": "Sources: [MoldUDP64 header/message/heartbeat/end/request definitions](https://www.nasdaqtrader.com/content/technicalSupport/specifications/dataproducts/moldudp64.pdf), [ITCH5 encoding and outbound feed scope](https://www.nasdaqtrader.com/content/technicalsupport/specifications/dataproducts/NQTVITCHSpecification_5.0.pdf), and [FIX Session Layer June2020 possible duplicates/resend/gap fill](https://www.fixtrading.org/wp-content/uploads/download-manager-files/FIX_Session_Layer_June_2020.pdf). These distinctions are why the exact-byte DAY1 model is labeled own policy, not certified FIX/MoldUDP64 recovery."
+    },
+    {
+      "type": "text",
+      "id": "synthetic-packet-application-0",
+      "markdown": "This packet format is not Nasdaq ITCH5\n\nDespite the exercise title, these packets use a synthetic four-byte sequence plus one-byte type. Add is 22 bytes: seq[0:4],type[4],id[5:13],side[13],qty[14:18],price[18:22]. Cancel/execute are 17 bytes with qty[13:17]. All integers are unsigned big endian; id is numeric 64-bit, so hex letter case does not change identity. This differs from the earlier real 36-byte ITCH5 Add A layout and the MoldUDP64 wrapper. Do not feed one layout to the other decoder or infer production compatibility."
+    },
+    {
+      "type": "text",
+      "id": "synthetic-packet-application-1",
+      "markdown": "Sequence policy is deliberately different from the fail-closed model\n\nOdd hex length or fewer than five decoded bytes yields ERR LENGTH - without touching expected sequence. Otherwise read seq first. If seq<expected, emit DUP seq and ignore all payload defects. If seq>expected, emit GAP expected seq-1, then CONTINUE with the current packet. Set expected=seq+1 even if its body is invalid. The earlier DAY1 model instead pauses on a gap and refuses to skip missing business events. Both are explicit educational policies; this synthetic skip-forward rule must never silently replace a real recovery policy."
+    },
+    {
+      "type": "text",
+      "id": "synthetic-packet-application-2",
+      "markdown": "Validate layout before state mutation\n\nAfter sequence handling, reject unknown type, reject wrong total length for a known type, then validate the add side. All payload reads follow the exact-length check. A valid add inserts its quantity only when id is absent. A cancel/execute first requires a live id and quantity<=remaining; otherwise emit ERR UNKNOWN or ERR OVERFLOW without changing that order or executed total. Successful reductions delete zero remainder. Only successful execute adds to SHARES; cancel never does. Duplicate live add reports ERR DUPID and preserves prior state. The price bytes occupy the declared Add field, but no price calculation, range check or output is requested; the side code must still be validated."
+    },
+    {
+      "type": "text",
+      "id": "synthetic-packet-application-3",
+      "markdown": "Trace, guarantees and transfer\n\nThe visible stream adds id7 quantity 100 at sequence 1, executes 40 at 2, cancels60 at4 after GAP3 3, ignores older sequence 3, then errors on unknown id9 at5: BOOK 0, SHARES 40. A body error consumes the observed sequence position but changes no live-order quantity. Positive quantities and hex-digit syntax are public preconditions; no unspecified extra error category is invented. Up to 100000 packets and 64 hex digits each give linear byte parsing plus expected constant dictionary work per event, O(live ids) state and output-sized lines. Test truncation, duplicates with corrupted bodies, gaps followed by body errors, numeric ids above signed64-bit,over-cancels and removal/re-add against a separate record-based interpreter. The current contract explicitly resolves combined faults: unknown type precedes type-specific length; known-type wrong length precedes an invalid A side."
+    },
+    {
+      "type": "code",
+      "id": "synthetic-packet-application-complete",
+      "language": "python",
+      "source": "from collections import OrderedDict, deque\nfrom bisect import bisect_left\nimport heapq\nimport math\n\ndef decode_packets(packets):\n    expected = 1\n    live = {}\n    shares = 0\n    lines = []\n    for text in packets:\n        if len(text) % 2 or len(text) < 10:\n            lines.append('ERR LENGTH -')\n            continue\n        data = bytes.fromhex(text)\n        sequence = int.from_bytes(data[:4], 'big')\n        if sequence < expected:\n            lines.append(f'DUP {sequence}')\n            continue\n        if sequence > expected:\n            lines.append(f'GAP {expected} {sequence - 1}')\n        expected = sequence + 1\n        kind = data[4:5]\n        if kind not in [b'A', b'X', b'E']:\n            lines.append(f'ERR TYPE {sequence}')\n            continue\n        if len(data) != (22 if kind == b'A' else 17):\n            lines.append(f'ERR LENGTH {sequence}')\n            continue\n        if kind == b'A' and data[13:14] not in [b'B', b'S']:\n            lines.append(f'ERR TYPE {sequence}')\n            continue\n        identifier = int.from_bytes(data[5:13], 'big')\n        offset = 14 if kind == b'A' else 13\n        quantity = int.from_bytes(data[offset:offset + 4], 'big')\n        if kind == b'A':\n            if identifier in live:\n                lines.append(f'ERR DUPID {sequence}')\n            else:\n                live[identifier] = quantity\n        elif identifier not in live:\n            lines.append(f'ERR UNKNOWN {sequence}')\n        elif quantity > live[identifier]:\n            lines.append(f'ERR OVERFLOW {sequence}')\n        else:\n            live[identifier] -= quantity\n            if live[identifier] == 0:\n                del live[identifier]\n            if kind == b'E':\n                shares += quantity\n    return lines + [f'BOOK {len(live)}', f'SHARES {shares}']\n\nprint(*decode_packets(['00000001410000000000000007420000006400003ab1', '0000000245000000000000000700000028', '000000045800000000000000070000003c', '0000000345000000000000000700000001']), sep='\\n')\n",
+      "caption": "Expected stdout:\nGAP 3 3\nDUP 3\nBOOK 0\nSHARES 40\n\nPrevalidated inputs follow the captured public contract. This completes the named Python function using its original supplied main/parser. It does not claim independent parser, C++, app-runner or judge qualification.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "synthetic-packet-application-inline-1",
+      "questionId": "qf5-trading-feed-state.synthetic-packet-application-check-1"
+    },
+    {
+      "type": "check",
+      "id": "synthetic-packet-application-inline-2",
+      "questionId": "qf5-trading-feed-state.synthetic-packet-application-check-2"
+    },
+    {
+      "type": "check",
+      "id": "synthetic-packet-application-inline-3",
+      "questionId": "qf5-trading-feed-state.synthetic-packet-application-check-3"
+    },
+    {
+      "type": "check",
+      "id": "synthetic-packet-application-inline-4",
+      "questionId": "qf5-trading-feed-state.synthetic-packet-application-check-4"
+    },
+    {
+      "type": "check",
+      "id": "synthetic-packet-application-inline-5",
+      "questionId": "qf5-trading-feed-state.synthetic-packet-application-check-5"
+    },
+    {
+      "type": "check",
+      "id": "synthetic-packet-application-inline-6",
+      "questionId": "qf5-trading-feed-state.synthetic-packet-application-check-6"
+    },
+    {
+      "type": "check",
+      "id": "synthetic-packet-application-inline-7",
+      "questionId": "qf5-trading-feed-state.synthetic-packet-application-check-7"
+    },
+    {
+      "type": "text",
+      "id": "synthetic-packet-application-sources",
+      "markdown": "References: [1](https://docs.python.org/3.12/library/stdtypes.html). Public task hash b2b39d18fe40e14c6da270bef623b75085e14d113cef3851e4863048c86fc61b. These references establish language/container semantics; the exact task framing is the captured public contract. This extension preserves the earlier bounded examples and their policies rather than silently broadening those APIs."
+    }
+  ],
+  "practice": {
+    "problemIds": [
+      "qfp-itch-binary-decode"
+    ]
+  },
+  "summary": "Sequence positions belong to a specific message stream/session, not packet count. Duplicates require a declared identity/content policy; gaps/conflicts preserve last contiguous state but pause current-state use. Marker/replay/reset semantics are protocol-specific, not permission to skip missing data. Practice transfer: synthetic packet application."
+}

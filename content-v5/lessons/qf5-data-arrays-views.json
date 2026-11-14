@@ -1,0 +1,253 @@
+{
+  "id": "qf5-data-arrays-views",
+  "revision": 3,
+  "title": "Array shapes, views and copies",
+  "module": "qf5-data",
+  "order": 1,
+  "estMinutes": 54,
+  "objectives": [
+    {
+      "conceptId": "qf5-data-arrays-views.shape-semantics",
+      "text": "Label array axes and predict elementwise broadcasting without confusing shape with meaning."
+    },
+    {
+      "conceptId": "qf5-data-arrays-views.aliasing",
+      "text": "Distinguish a basic-slice view from an independent numeric-array copy before mutation."
+    },
+    {
+      "conceptId": "qf5-data-arrays-views.clockwise-index-map",
+      "text": "Derive clockwise square-grid index mapping and construct a new token grid without numerical coercion or caller mutation."
+    },
+    {
+      "conceptId": "qf5-data-arrays-views.spiral-unvisited-rectangle",
+      "text": "Traverse rectangular token grids by shrinking unvisited boundaries without duplicating a final row or column."
+    }
+  ],
+  "prerequisites": [
+    "qf5-python-trade-validator"
+  ],
+  "blocks": [
+    {
+      "type": "text",
+      "id": "setup",
+      "markdown": "NumPy is a separate Python package, not part of the standard library. The examples below require a compatible NumPy installation. Reading and answering the trace questions does not require installing it. If the app has no NumPy runtime, treat these as worked examples to copy into a prepared local environment, not as failed learner submissions. Record the runtime and NumPy version you actually use."
+    },
+    {
+      "type": "text",
+      "id": "axes",
+      "markdown": "An array stores values with a shape, a data type and layout metadata. For this synthetic price panel, axis 0 means observation time and axis 1 means instrument, ordered A then B. Two times by two instruments has shape (2, 2). The numbers alone do not encode instrument labels, currency or timestamps. Keep that metadata beside the array and check it before arithmetic. This first example uses integer cents and small values; fixed-width NumPy integers can overflow and do not have Python integers' unlimited range."
+    },
+    {
+      "type": "code",
+      "id": "axes-example",
+      "language": "python",
+      "source": "import numpy as np\nprices = np.array([[100, 200], [110, 180]], dtype=np.int64)\nshares = np.array([2, 3], dtype=np.int64)\nnotionals = prices * shares\nprint(prices.shape)\nprint(notionals.tolist())\nprint(notionals.sum(axis=1).tolist())",
+      "caption": "Expected output: (2, 2), then [[200, 600], [220, 540]], then [800, 760]. Each column uses the corresponding instrument share count. Sum over axis 1 removes the instrument axis, leaving one total per time. These totals describe synthetic currency amounts, not returns. NumPy dependency illustration: not runnable in the app until its runner explicitly supports NumPy. Copy into a prepared local Python environment with NumPy to execute. No installation is required to read or answer this lesson.",
+      "runnable": false
+    },
+    {
+      "type": "check",
+      "id": "inline-0",
+      "questionId": "qf5-data-arrays-views.check-1"
+    },
+    {
+      "type": "text",
+      "id": "broadcasting",
+      "markdown": "For elementwise operations, compare shapes from the right. A pair of dimensions is compatible when equal or when one is 1; missing leading dimensions behave as 1. Thus (2, 2) times (2,) produces (2, 2), with the one-dimensional share vector aligned to the last axis. NumPy checks sizes, not instrument identities. Reversing A and B in only one input can produce plausible but wrong numbers without any shape error. A vector of per-time values must instead be shaped (times, 1) to broadcast down rows in this convention."
+    },
+    {
+      "type": "code",
+      "id": "accidental-outer",
+      "language": "python",
+      "source": "import numpy as np\na = np.array([1, 2, 3])\ncolumn = a.reshape(3, 1)\nwrong_pairing = column + a\nprint(wrong_pairing.shape)\nprint(wrong_pairing.tolist())",
+      "caption": "Expected output: (3, 3), then [[2, 3, 4], [3, 4, 5], [4, 5, 6]]. This is a broadcast pairwise sum, not three matched sums. A successful operation is not evidence that the intended records were aligned. NumPy dependency illustration: not runnable in the app until its runner explicitly supports NumPy. Copy into a prepared local Python environment with NumPy to execute. No installation is required to read or answer this lesson.",
+      "runnable": false
+    },
+    {
+      "type": "check",
+      "id": "inline-1",
+      "questionId": "qf5-data-arrays-views.check-2"
+    },
+    {
+      "type": "text",
+      "id": "views",
+      "markdown": "Assignment such as alias = original does not copy an array. For the one-dimensional numeric array below, basic slicing original[1:3] gives a view sharing storage with the original. Mutating that view changes the original. Advanced integer indexing original[[1, 3]] instead produces a copy for this selection; changing that selected array does not change the original. Direct assignment original[[1, 3]] = ... is different: that assignment changes the original at those positions."
+    },
+    {
+      "type": "code",
+      "id": "view-copy",
+      "language": "python",
+      "source": "import numpy as np\noriginal = np.array([10, 20, 30, 40], dtype=np.int64)\nview = original[1:3]\nindependent = original[[1, 3]]\nview[0] = 99\nindependent[0] = -1\nprint(original.tolist())\nprint(independent.tolist())\nowned = original[1:3].copy()\nowned[0] = 7\nprint(original.tolist())",
+      "caption": "Expected output: [10, 99, 30, 40], then [-1, 40], then [10, 99, 30, 40]. The explicit copy separates the numeric data. This example is not about object-dtype arrays, whose elements can reference mutable Python objects. NumPy dependency illustration: not runnable in the app until its runner explicitly supports NumPy. Copy into a prepared local Python environment with NumPy to execute. No installation is required to read or answer this lesson.",
+      "runnable": false
+    },
+    {
+      "type": "text",
+      "id": "reshape",
+      "markdown": "reshape can use shared storage when the layout permits, but it can copy when necessary. Do not generalise one example into a promise that every reshape is a view. If a later operation must own independent numeric data, explicitly copy at the boundary and test mutation behaviour. Copies consume time and memory, so choose ownership deliberately rather than copying every intermediate without thought."
+    },
+    {
+      "type": "check",
+      "id": "inline-4",
+      "questionId": "qf5-data-arrays-views.check-5"
+    },
+    {
+      "type": "text",
+      "id": "transfer",
+      "markdown": "Independent transfer: take the price panel above, compute one notional total per instrument by summing over time, and label the result with A and B. Expected totals are [420, 1140] cents. Then make a basic slice and an explicit copy, change each separately, and verify which change reaches the input. Explain why a transpose or a shape match alone cannot verify that two panels describe the same instruments and times."
+    },
+    {
+      "type": "check",
+      "id": "consolidation-1",
+      "questionId": "qf5-data-arrays-views.check-3"
+    },
+    {
+      "type": "check",
+      "id": "consolidation-2",
+      "questionId": "qf5-data-arrays-views.check-4"
+    },
+    {
+      "type": "check",
+      "id": "inline-5",
+      "questionId": "qf5-data-arrays-views.check-6"
+    },
+    {
+      "type": "text",
+      "id": "source-scope",
+      "markdown": "Technical references: [NumPy copies and views](https://numpy.org/doc/stable/user/basics.copies.html) for basic slices, advanced indexing and reshape caveats; [NumPy broadcasting](https://numpy.org/doc/stable/user/basics.broadcasting.html) for right-aligned compatible dimensions. The financial schemas, policies and synthetic cases in this lesson are declared teaching contracts, not claims about a particular venue or employer."
+    },
+    {
+      "type": "text",
+      "id": "clockwise-token-grid-0",
+      "markdown": "Coordinates define the rotation\n\nFor an n*n grid, old position (r, c) moves to new (c, n-1-r) under a 90 degree clockwise rotation. Equivalently, new row r, column c reads old[n-1-c][r]. The old top row becomes the new right column, and the old left column becomes the new top row in reverse vertical order. This is not merely transposing, which would reflect across the diagonal."
+    },
+    {
+      "type": "text",
+      "id": "clockwise-token-grid-1",
+      "markdown": "Construct without aliasing or numeric assumptions\n\nInput cells are string tokens, possibly alphanumeric or integer-looking. Retain them as tokens; do not parse all cells as integers or change leading-zero formatting. For rows [a, b] and [c, d], output rows [c, a] and [d, b]. Build new output strings rather than overwrite cells while still reading the source. The standard-library list-of-lists solution below does not require NumPy or any app package."
+    },
+    {
+      "type": "text",
+      "id": "clockwise-token-grid-2",
+      "markdown": "Bijection and work\n\nThe coordinate map has a unique inverse, so each old cell appears exactly once. Applying the rotation four times restores the original arrangement. n=1 is unchanged. For n<=1000, read and emit n^2 tokens: O(n^2) cell visits plus token/text size, and output-sized storage. Test uniquely labeled coordinates, non-numeric tokens, one cell and the four-rotation identity. Shape correctness is mathematical/source evidence, not a rendered visual signoff."
+    },
+    {
+      "type": "code",
+      "id": "clockwise-token-grid-complete",
+      "language": "python",
+      "source": "from collections import OrderedDict, deque\nfrom bisect import bisect_left\nimport heapq\n\ndef rotate(grid):\n    n = len(grid)\n    return [' '.join((grid[n - 1 - column][row] for column in range(n))) for row in range(n)]\n\nprint(*rotate([['a', 'b'], ['c', 'd']]), sep='\\n')\n",
+      "caption": "Expected stdout:\nc a\nd b\n\nPrevalidated inputs follow the captured public contract. This completes the named Python function using its original supplied main/parser. It does not claim independent parser, C++, app-runner or judge qualification.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "clockwise-token-grid-inline-1",
+      "questionId": "qf5-data-arrays-views.clockwise-token-grid-check-1"
+    },
+    {
+      "type": "check",
+      "id": "clockwise-token-grid-inline-2",
+      "questionId": "qf5-data-arrays-views.clockwise-token-grid-check-2"
+    },
+    {
+      "type": "check",
+      "id": "clockwise-token-grid-inline-3",
+      "questionId": "qf5-data-arrays-views.clockwise-token-grid-check-3"
+    },
+    {
+      "type": "check",
+      "id": "clockwise-token-grid-inline-4",
+      "questionId": "qf5-data-arrays-views.clockwise-token-grid-check-4"
+    },
+    {
+      "type": "check",
+      "id": "clockwise-token-grid-inline-5",
+      "questionId": "qf5-data-arrays-views.clockwise-token-grid-check-5"
+    },
+    {
+      "type": "check",
+      "id": "clockwise-token-grid-inline-6",
+      "questionId": "qf5-data-arrays-views.clockwise-token-grid-check-6"
+    },
+    {
+      "type": "check",
+      "id": "clockwise-token-grid-inline-7",
+      "questionId": "qf5-data-arrays-views.clockwise-token-grid-check-7"
+    },
+    {
+      "type": "text",
+      "id": "clockwise-token-grid-sources",
+      "markdown": "References: [1](https://docs.python.org/3.12/library/stdtypes.html). Public task hash 978acc5eb6e3ce10be18a8f2511d0484034d5493393d529e698de0b4f27353d3. These references establish language/container semantics; the exact task framing is the captured public contract. This extension preserves the earlier bounded examples and their policies rather than silently broadening those APIs."
+    },
+    {
+      "type": "text",
+      "id": "shrinking-spiral-rings-0",
+      "markdown": "Unvisited state is a rectangle\n\nMaintain top, bottom, left, right as inclusive boundaries of the not-yet-emitted rectangle. While it is nonempty, emit its top row left-to-right and increment top; emit its right column top-to-bottom and decrement right; then, only if top<=bottom, emit the bottom row right-to-left and decrement bottom; only if left<=right, emit the left column bottom-to-top and increment left."
+    },
+    {
+      "type": "text",
+      "id": "shrinking-spiral-rings-1",
+      "markdown": "Shrinking bounds prevent duplicate corners\n\nEach side emission uses the updated bounds from earlier sides, so shared corners are not repeated. The extra guards matter when a remaining ring has just one row or column. For a 2*3 grid [a, b, c]/[d, e, f], output a b c f e d. A 1*m grid emits its row once; an n*1 grid emits its column once. The invariant is that completed outer rings appear exactly once in clockwise order, and the bounds describe exactly the remaining inner cells."
+    },
+    {
+      "type": "text",
+      "id": "shrinking-spiral-rings-2",
+      "markdown": "Proof and transfer\n\nOne nonempty boundary is removed each iteration, so progress terminates. Every emitted cell belonged to the current unvisited boundary and is removed from future bounds; no cell is skipped or repeated. Input is n<=500, m<=500, not necessarily square. O(n*m) cell visits plus text size, and output-sized result storage. Keep tokens unchanged and input immutable. An independent small oracle can simulate a walker turning clockwise at a visited/out-of-bounds cell rather than reuse these shrinking loops."
+    },
+    {
+      "type": "code",
+      "id": "shrinking-spiral-rings-complete",
+      "language": "python",
+      "source": "from collections import OrderedDict, deque\nfrom bisect import bisect_left\nimport heapq\n\ndef spiral(n, m, grid):\n    (top, bottom, left, right) = (0, n - 1, 0, m - 1)\n    result = []\n    while top <= bottom and left <= right:\n        result.extend((grid[top][column] for column in range(left, right + 1)))\n        top += 1\n        for row in range(top, bottom + 1):\n            result.append(grid[row][right])\n        right -= 1\n        if top <= bottom:\n            for column in range(right, left - 1, -1):\n                result.append(grid[bottom][column])\n            bottom -= 1\n        if left <= right:\n            for row in range(bottom, top - 1, -1):\n                result.append(grid[row][left])\n            left += 1\n    return [' '.join(result)]\n\nprint(*spiral(2, 3, [['a', 'b', 'c'], ['d', 'e', 'f']]))\nprint(*spiral(3, 1, [['x'], ['y'], ['z']]))\n",
+      "caption": "Expected stdout:\na b c f e d\nx y z\n\nPrevalidated inputs follow the captured public contract. This completes the named Python function using its original supplied main/parser. It does not claim independent parser, C++, app-runner or judge qualification.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "shrinking-spiral-rings-inline-1",
+      "questionId": "qf5-data-arrays-views.shrinking-spiral-rings-check-1"
+    },
+    {
+      "type": "check",
+      "id": "shrinking-spiral-rings-inline-2",
+      "questionId": "qf5-data-arrays-views.shrinking-spiral-rings-check-2"
+    },
+    {
+      "type": "check",
+      "id": "shrinking-spiral-rings-inline-3",
+      "questionId": "qf5-data-arrays-views.shrinking-spiral-rings-check-3"
+    },
+    {
+      "type": "check",
+      "id": "shrinking-spiral-rings-inline-4",
+      "questionId": "qf5-data-arrays-views.shrinking-spiral-rings-check-4"
+    },
+    {
+      "type": "check",
+      "id": "shrinking-spiral-rings-inline-5",
+      "questionId": "qf5-data-arrays-views.shrinking-spiral-rings-check-5"
+    },
+    {
+      "type": "check",
+      "id": "shrinking-spiral-rings-inline-6",
+      "questionId": "qf5-data-arrays-views.shrinking-spiral-rings-check-6"
+    },
+    {
+      "type": "check",
+      "id": "shrinking-spiral-rings-inline-7",
+      "questionId": "qf5-data-arrays-views.shrinking-spiral-rings-check-7"
+    },
+    {
+      "type": "text",
+      "id": "shrinking-spiral-rings-sources",
+      "markdown": "References: [1](https://docs.python.org/3.12/library/stdtypes.html). Public task hash 20db2706294281496ee193f24b05aef7118fc50d04008b97ac0f1b86ae658943. These references establish language/container semantics; the exact task framing is the captured public contract. This extension preserves the earlier bounded examples and their policies rather than silently broadening those APIs."
+    }
+  ],
+  "practice": {
+    "problemIds": [
+      "qfp-matrix-rotate",
+      "qfp-spiral-matrix"
+    ]
+  },
+  "summary": "Shapes describe sizes, not financial identities. Broadcasting follows trailing dimensions. Basic slices can share numeric storage; use deliberate ownership and explicit copies where independent mutation is required. Practice transfer: clockwise token grid. Practice transfer: shrinking spiral rings."
+}

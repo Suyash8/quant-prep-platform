@@ -1,5 +1,5 @@
 // Local check of /api/sync (needs the app running on :3002 and the seeded demo user).
-const B = 'http://127.0.0.1:3002';
+const B = process.argv[2] ?? 'http://127.0.0.1:3002';
 let r = await fetch(B + '/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: (process.env.QF_DEMO_EMAIL || ''), password: (process.env.QF_DEMO_PASSWORD || '') }) });
 const ck = r.headers.getSetCookie().map(c => c.split(';')[0]).join('; ');
 const post = (events) => fetch(B + '/api/sync', { method: 'POST', headers: { 'content-type': 'application/json', cookie: ck }, body: JSON.stringify({ events }) }).then(async r => ({ status: r.status, body: await r.json() }));

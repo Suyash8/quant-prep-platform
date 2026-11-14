@@ -1,0 +1,12 @@
+'use client';
+import { Children,createContext,useContext,type ReactNode } from 'react';
+import ReactMarkdown from 'react-markdown';
+import katex from 'katex';
+import 'katex/dist/katex.min.css';
+import { mathTokens,protectMathMarkdown,type MathToken } from './markdown-math';
+import s from './learning.module.css';
+const MathBank=createContext<MathToken[]>([]);
+function renderToken(t:MathToken,key:string){if(t.kind==='text')return t.value;try{const html=katex.renderToString(t.value,{displayMode:Boolean(t.display),throwOnError:true,strict:'error',trust:false,output:'htmlAndMathml'});return <span key={key} className={t.display?s.mathDisplay:s.mathInline} dangerouslySetInnerHTML={{__html:html}}/>;}catch{return <span key={key} className={s.mathError} role="note">Formula unavailable: <code>{t.value}</code></span>;}}
+export function MathText({children}:{children:ReactNode}){const bank=useContext(MathBank);return <>{Children.map(children,(node,index)=>{if(typeof node!=='string')return node;const segments=node.split(/(\uE100\d+\uE101)/g);return segments.flatMap((segment,j)=>{const match=segment.match(/^\uE100(\d+)\uE101$/);if(match&&bank[Number(match[1])])return renderToken(bank[Number(match[1])],`${index}:${j}`);return mathTokens(segment).map((token,k)=>renderToken(token,`${index}:${j}:${k}`));});})}</>;}
+/** No raw HTML, unsafe link protocols or external image embeds are enabled. */
+export function LessonMarkdown({markdown:source}:{markdown:string}){const {markdown,bank}=protectMathMarkdown(source);return <MathBank.Provider value={bank}><div className={s.prose}><ReactMarkdown components={{p:({children})=><p><MathText>{children}</MathText></p>,h1:({children})=><h2><MathText>{children}</MathText></h2>,h2:({children})=><h2><MathText>{children}</MathText></h2>,h3:({children})=><h3><MathText>{children}</MathText></h3>,li:({children})=><li><MathText>{children}</MathText></li>,strong:({children})=><strong><MathText>{children}</MathText></strong>,em:({children})=><em><MathText>{children}</MathText></em>,a:({href,children})=>{const external=href?.startsWith('https://')||href?.startsWith('http://');return <a href={href} target={external?'_blank':undefined} rel={external?'noopener noreferrer':undefined}>{children}</a>;},img:({alt})=><span className={s.mathError}>Embedded image not loaded: {alt||'no description provided'}</span>,code:({children,className})=><code className={className}>{children}</code>}}>{markdown}</ReactMarkdown></div></MathBank.Provider>;}

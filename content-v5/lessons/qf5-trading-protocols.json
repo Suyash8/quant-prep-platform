@@ -1,0 +1,205 @@
+{
+  "id": "qf5-trading-protocols",
+  "revision": 2,
+  "title": "Binary/text framing, FIX-style and ITCH-style records",
+  "module": "qf5-trading",
+  "order": 1,
+  "estMinutes": 38,
+  "objectives": [
+    {
+      "conceptId": "qf5-trading-protocols.protocol-framing",
+      "text": "Derive FIX-style length/checksum and binary record boundaries from versioned byte contracts without treating text splits or raw structs as protocol parsers."
+    },
+    {
+      "conceptId": "qf5-trading-protocols.message-validation",
+      "text": "Validate narrow schema/range/unit/identity constraints before state mutation, separating framing/checksum success from session completeness, authentication and market/account truth."
+    },
+    {
+      "conceptId": "qf5-trading-protocols.synthetic-fix-log-parser",
+      "text": "Validate the complete synthetic bar-delimited grammar before its SOH-valued checksum, preserving textual tags and explicit scope limits."
+    }
+  ],
+  "prerequisites": [
+    "qf5-markets-portfolio-accounting",
+    "qf5-systems-measured-system",
+    "qf5-data-validated-dataset"
+  ],
+  "blocks": [
+    {
+      "type": "text",
+      "id": "layers",
+      "markdown": "Keep transport framing, message encoding/schema, session sequencing and application state separate. TCP is a byte stream; UDP is a datagram transport without delivery/order guarantees. FIX tag-value encoding and Nasdaq ITCH are message formats carried with their session/transport layers. Nasdaq TotalView-ITCH is outbound market data, NOT an order-entry instruction interface. A decoded Add Order describes a displayed feed event under its specification; it is not our confirmed order, a personal fill or permission to send a trade."
+    },
+    {
+      "type": "text",
+      "id": "fix-layout",
+      "markdown": "FIX tag-value fields use numeric tag=value and the actual one-octet SOH delimiter(0x01), not a printable vertical bar. Common session framing begins with BeginString(8), then BodyLength(9), MsgType(35)as the third field and CheckSum(10)last. BodyLength counts octets AFTER the delimiter ending9 through the delimiter immediately before10. CheckSum is the three-digit decimal representation of the sum modulo256 of octets from the start through the delimiter before10, excluding the10 field. Literal bars in logs may be display substitutions, not wire bytes. Unicode character count and a split on text characters are not substitutes for exact octet accounting."
+    },
+    {
+      "type": "worked",
+      "id": "fix-byte-count",
+      "title": "Count the body, not an attractive substring",
+      "steps": [
+        {
+          "text": "Own tiny framing fixture body is bytes35=0<SOH>, length5. Its head is8=FIX.4.4<SOH>9=5<SOH>followed by those5 body octets."
+        },
+        {
+          "text": "Compute modulo256 over that complete head, format exactly three decimal digits and append10=ddd<SOH>. The7-octet trailer is outside BodyLength and outside its own checksum sum."
+        },
+        {
+          "text": "The tiny body omits required session fields on purpose: a framing test can pass while full FIX schema/session validation fails. A checksum is not authentication, encryption or an application acceptance acknowledgement."
+        }
+      ]
+    },
+    {
+      "type": "code",
+      "id": "fix-framing-only-check",
+      "language": "python",
+      "source": "def check_fix_frame(frame):\n    # Framing-only FIX.4.4 fixture: NOT full field/session/application validation.\n    prefix=b\"8=FIX.4.4\\x019=\"\n    if type(frame) is not bytes or not len(prefix)+9<=len(frame)<=256 or not frame.startswith(prefix):\n        raise ValueError(\"invalid bounded prefix\")\n    end=frame.find(b\"\\x01\",len(prefix))\n    digits=frame[len(prefix):end]\n    if end<0 or not 1<=len(digits)<=3 or not digits.isdigit() or digits[:1]==b\"0\":\n        raise ValueError(\"invalid body length\")\n    size=int(digits)\n    if size>200:\n        raise ValueError(\"body limit\")\n    trailer=end+1+size\n    if len(frame)!=trailer+7 or frame[trailer:trailer+3]!=b\"10=\" or frame[-1:]!=b\"\\x01\":\n        raise ValueError(\"length or trailer mismatch\")\n    checksum=frame[trailer+3:trailer+6]\n    if not checksum.isdigit() or int(checksum)!=sum(frame[:trailer])%256:\n        raise ValueError(\"checksum mismatch\")\n    body=frame[end+1:trailer]\n    if not body.endswith(b\"\\x01\"):\n        raise ValueError(\"missing body delimiter\")\n    return body\n\nbody=b\"35=0\\x01\" # deliberately framing-only, not a complete valid FIX session message\nhead=b\"8=FIX.4.4\\x019=\"+str(len(body)).encode(\"ascii\")+b\"\\x01\"+body\nframe=head+b\"10=\"+f\"{sum(head)%256:03d}\".encode(\"ascii\")+b\"\\x01\"\nprint(check_fix_frame(frame)==body)\ntry:\n    check_fix_frame(frame+b\"X\")\nexcept ValueError as error:\n    print(error)",
+      "caption": "Expected output: True, then length or trailer mismatch. The bounded complete-frame checker returns raw body, not a parsed/session-validated message. It accepts only FIX.4.4 prefix and own1..200-octet body policy, checks three-digit modulo checksum and final delimiter. A real TCP reader must first accumulate partial header/body/trailer and keep subsequent frames separately. No socket/session/logon/order or full FIX compatibility is implemented.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "inline-0",
+      "questionId": "qf5-trading-protocols.check-1"
+    },
+    {
+      "type": "check",
+      "id": "inline-1",
+      "questionId": "qf5-trading-protocols.check-2"
+    },
+    {
+      "type": "check",
+      "id": "inline-4",
+      "questionId": "qf5-trading-protocols.check-5"
+    },
+    {
+      "type": "text",
+      "id": "binary-itch-layout",
+      "markdown": "Read the versioned ITCH5 Add Order A format: type at0; stock locate at1 length2; tracking at3 length2; timestamp at5 length6; order reference at11 length8; side at19 length1; shares at20 length4; stock at24 length8; price at32 length4. Total36 octets. Integer fields are big-endian and unsigned unless stated; alpha is ASCII left-justified and space-padded on the right. Price(4)is integer units of1/10000, not cents or a native floating double. The retrieved specification caps Price(4)at200000.0000. Timestamp is nanoseconds since midnight, not an epoch timestamp or a UTC date by itself."
+    },
+    {
+      "type": "code",
+      "id": "itch5-add-a-subset",
+      "language": "python",
+      "source": "def decode_add_a(record):\n    # Narrow ITCH5 Add Order A subset, not full exchange feed/book validation.\n    if type(record) is not bytes or len(record)!=36 or record[:1]!=b\"A\":\n        raise ValueError(\"expected 36-octet Add A\")\n    locate=int.from_bytes(record[1:3],\"big\")\n    timestamp_ns=int.from_bytes(record[5:11],\"big\")\n    reference=int.from_bytes(record[11:19],\"big\")\n    side=record[19:20]\n    shares=int.from_bytes(record[20:24],\"big\")\n    stock_bytes=record[24:32]\n    stock=stock_bytes.rstrip(b\" \")\n    price_units=int.from_bytes(record[32:36],\"big\")\n    if not locate or side not in (b\"B\",b\"S\") or not reference or not shares:\n        raise ValueError(\"invalid own order subset\")\n    if timestamp_ns>=86400*10**9 or not 1<=price_units<=200000*10000:\n        raise ValueError(\"invalid own time or price subset\")\n    if not stock or any(not 65<=x<=90 for x in stock) or stock_bytes!=stock.ljust(8,b\" \"):\n        raise ValueError(\"expected own uppercase symbol subset\")\n    return locate,timestamp_ns,reference,side.decode(\"ascii\"),shares,stock.decode(\"ascii\"),price_units\n\nrecord=(b\"A\"+(1).to_bytes(2,\"big\")+(0).to_bytes(2,\"big\")+(123).to_bytes(6,\"big\")+\n        (7).to_bytes(8,\"big\")+b\"B\"+(100).to_bytes(4,\"big\")+b\"ABC     \"+(1234500).to_bytes(4,\"big\"))\nprint(len(record))\nprint(decode_add_a(record))",
+      "caption": "Expected lines: 36; (1, 123, 7, 'B', 100, 'ABC', 1234500). Price units1234500 represent123.4500, not12345 dollars or1234500 cents. The code imposes own stricter subset: nonzero locate/reference/shares/price, timestamp inside a non-leap86400-second day, uppercase A-Z symbol with canonical padding. It is not the complete exchange symbol/calendar/domain policy. It preserves locate/timestamp/reference/side/shares/symbol/price but not tracking metadata; full provenance must retain raw record/session/venue/version separately.",
+      "runnable": true
+    },
+    {
+      "type": "text",
+      "id": "validation-order",
+      "markdown": "Check bytes/type/total length before offsets; check declared message type/version before interpreting that layout; then validate field codes/ranges/units and required business mappings. Reject unsupported message types rather than pretending every record is Add A. A fixed36-byte length is not enough: side X, malformed symbol, invalid declared bound or wrong session remains invalid for our interface. Stock locate must be mapped consistently to the stock directory under the correct feed/session. A reference is day-scoped by the source contract, not globally unique forever. No arbitrary native struct layout/padding/endian reinterpretation is a safe portable wire decoder."
+    },
+    {
+      "type": "check",
+      "id": "inline-2",
+      "questionId": "qf5-trading-protocols.check-3"
+    },
+    {
+      "type": "check",
+      "id": "inline-3",
+      "questionId": "qf5-trading-protocols.check-4"
+    },
+    {
+      "type": "check",
+      "id": "inline-5",
+      "questionId": "qf5-trading-protocols.check-6"
+    },
+    {
+      "type": "text",
+      "id": "protocol-boundaries",
+      "markdown": "Real FIX includes required headers, session IDs/sequence state, heartbeat/logon/reset/resend and application dictionaries/repeating groups/data fields with their own length semantics. Do not generalize a raw SOH split or flat dict that overwrites duplicate tags into a general FIX parser; repeating tags can be valid inside schema-defined groups. This lesson validates only the explicit complete framing fixture and narrow Add A subset. The checksum can detect some byte errors but collisions are easy: increasing one byte and decreasing another preserves the sum. Neither checksums nor asserted SenderCompID authenticate a peer."
+    },
+    {
+      "type": "text",
+      "id": "transfer",
+      "markdown": "Independent transfer: recompute FIX BodyLength/checksum with an independent byte counter; alter one byte without updating checksum and reject it, then show a deliberately adjusted colliding sum is not an authentication proof. For Add A, encode known multibyte values independently, test every truncation, wrong side/type, boundary price and symbol padding. Keep integer price precision until explicit display conversion and retain raw/session/version metadata. Do not send these fixtures to any exchange or broker."
+    },
+    {
+      "type": "check",
+      "id": "inline-6",
+      "questionId": "qf5-trading-protocols.check-7"
+    },
+    {
+      "type": "text",
+      "id": "sources",
+      "markdown": "Sources read: [FIX encoding standard description](https://fixtrading.org/packages/fix-tagvalue-encoding/), [FIX Session Layer June2020](https://www.fixtrading.org/wp-content/uploads/download-manager-files/FIX_Session_Layer_June_2020.pdf), [Nasdaq TotalView-ITCH5 specification](https://www.nasdaqtrader.com/content/technicalsupport/specifications/dataproducts/NQTVITCHSpecification_5.0.pdf), and [MoldUDP64 transport](https://www.nasdaqtrader.com/content/technicalSupport/specifications/dataproducts/moldudp64.pdf). Protocol-specific facts follow the retrieved documents, while toy bounds/acceptance restrictions are explicitly own policy. Passing examples is not protocol certification or live market connectivity."
+    },
+    {
+      "type": "text",
+      "id": "bar-log-checksum-parser-0",
+      "markdown": "A log grammar, not a full FIX session parser\n\nThis practice input replaces every SOH byte with a printable vertical bar and guarantees printable ASCII without spaces. Every field, including the checksum field, ends in a bar. Its own grammar requires one equals sign, a nonempty value, a one-to-four ASCII-digit tag and no duplicate TEXT tag. Thus55 and055 are distinct, not integer aliases. The first tag is exactly 8 and last exactly 10. Tag10 value must be exactly three ASCII digits. Do not import real FIX BodyLength/header/session/group requirements absent from this exercise, and do not relax real FIX validation to this flat grammar."
+    },
+    {
+      "type": "text",
+      "id": "bar-log-checksum-parser-1",
+      "markdown": "Structural errors precede checksum errors\n\nFirst require a trailing bar, remove exactly that one delimiter, and split fields. Preserve empty pieces: a doubled final bar creates an empty field and is BAD_FORMAT. Scan every field and reject duplicate tags before computing the checksum, even if a prefix already has a mismatch. A checksum that happens to match cannot rescue malformed grammar. The values dictionary is populated only after each field passes the no-duplicate check; overwriting duplicates would lose the evidence."
+    },
+    {
+      "type": "text",
+      "id": "bar-log-checksum-parser-2",
+      "markdown": "Checksum bytes and extraction\n\nChecksum covers the prefix through the delimiter immediately before10=, not the checksum field or its ending bar. Sum ASCII codes for ordinary characters but1 for each bar, then reduce modulo 256 and format three decimal digits. Once verified, return OK followed by tags 35,55,38,44 in that order, or - for each absent tag. Missing tag35 is allowed here despite the real session layout discussion. Checksum is weak error detection, not authentication or proof of an accepted order."
+    },
+    {
+      "type": "text",
+      "id": "bar-log-checksum-parser-3",
+      "markdown": "Trace, work and transfer\n\nFor prefix8=F|, the checksum is56+61+70+1=188, so8=F|10=188| is well formed and returns OK - - - -. Replacing188 by189 yields BAD_CHECKSUM; adding a duplicate8 field yields BAD_FORMAT regardless of checksum. With up to 10000 lines of length 400, total work is linear in input characters and per-message state is bounded by that line. Test all grammar failures, tag55 versus055, absent extraction fields and checksum-prefix boundaries with an independent byte-oriented SOH reconstruction. This is private synthetic parsing, not sending messages to a venue. The current corrected visible FIX.4.2 example has prefix byte sum 2010 and checksum218. Its former checksum065 counted printable bars incorrectly and is now an explicit BAD_CHECKSUM regression; do not reproduce the old example as valid."
+    },
+    {
+      "type": "code",
+      "id": "bar-log-checksum-parser-complete",
+      "language": "python",
+      "source": "from collections import OrderedDict, deque\nfrom bisect import bisect_left\nimport heapq\nimport math\n\ndef parse_messages(messages):\n    lines = []\n    for message in messages:\n        if not message.endswith('|'):\n            lines.append('BAD_FORMAT')\n            continue\n        fields = message[:-1].split('|')\n        tags = []\n        values = {}\n        valid = True\n        for field in fields:\n            if field.count('=') != 1:\n                valid = False\n                break\n            (tag, value) = field.split('=')\n            if not 1 <= len(tag) <= 4 or not tag.isascii() or (not tag.isdigit()) or (not value) or (tag in values):\n                valid = False\n                break\n            tags.append(tag)\n            values[tag] = value\n        if not valid or not tags or tags[0] != '8' or (tags[-1] != '10') or (len(values['10']) != 3) or (not values['10'].isascii()) or (not values['10'].isdigit()):\n            lines.append('BAD_FORMAT')\n            continue\n        prefix = '|'.join(fields[:-1]) + '|'\n        checksum = sum((1 if char == '|' else ord(char) for char in prefix)) % 256\n        if f'{checksum:03d}' != values['10']:\n            lines.append('BAD_CHECKSUM')\n        else:\n            lines.append('OK ' + ' '.join((values.get(tag, '-') for tag in ['35', '55', '38', '44'])))\n    return lines\n\nprint(*parse_messages(['8=F|10=188|', '8=F|10=189|', '8=F||10=000|']), sep='\\n')\n",
+      "caption": "Expected stdout:\nOK - - - -\nBAD_CHECKSUM\nBAD_FORMAT\n\nPrevalidated inputs follow the captured public contract. This completes the named Python function using its original supplied main/parser. It does not claim independent parser, C++, app-runner or judge qualification.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "bar-log-checksum-parser-inline-1",
+      "questionId": "qf5-trading-protocols.bar-log-checksum-parser-check-1"
+    },
+    {
+      "type": "check",
+      "id": "bar-log-checksum-parser-inline-2",
+      "questionId": "qf5-trading-protocols.bar-log-checksum-parser-check-2"
+    },
+    {
+      "type": "check",
+      "id": "bar-log-checksum-parser-inline-3",
+      "questionId": "qf5-trading-protocols.bar-log-checksum-parser-check-3"
+    },
+    {
+      "type": "check",
+      "id": "bar-log-checksum-parser-inline-4",
+      "questionId": "qf5-trading-protocols.bar-log-checksum-parser-check-4"
+    },
+    {
+      "type": "check",
+      "id": "bar-log-checksum-parser-inline-5",
+      "questionId": "qf5-trading-protocols.bar-log-checksum-parser-check-5"
+    },
+    {
+      "type": "check",
+      "id": "bar-log-checksum-parser-inline-6",
+      "questionId": "qf5-trading-protocols.bar-log-checksum-parser-check-6"
+    },
+    {
+      "type": "check",
+      "id": "bar-log-checksum-parser-inline-7",
+      "questionId": "qf5-trading-protocols.bar-log-checksum-parser-check-7"
+    },
+    {
+      "type": "text",
+      "id": "bar-log-checksum-parser-sources",
+      "markdown": "References: [1](https://forum.fixtrading.org/t/check-sum-error/5284), [2](https://docs.python.org/3.12/library/stdtypes.html). Public task hash 537fbb3e4ceaaf423e67a28eea03cca3cf40f4c7788aa44020ec577379a6f5ec. These references establish language/container semantics; the exact task framing is the captured public contract. This extension preserves the earlier bounded examples and their policies rather than silently broadening those APIs."
+    }
+  ],
+  "practice": {
+    "problemIds": [
+      "qfp-fix-tag-parser"
+    ]
+  },
+  "summary": "Parse a versioned octet contract before applying state. FIX body length/checksum and ITCH binary offsets/price precision are different layers from session identity, valid market state and authenticated application acceptance. Narrow fixture success is not full protocol compatibility. Practice transfer: bar log checksum parser."
+}

@@ -1,0 +1,7 @@
+// node scripts/verify-no-third-party.mjs [baseUrl]  Production build. Visits the main screens (incl. a code run is NOT triggered) and fails if the page requests ANY origin other than the app's own. Backs the Settings privacy wording; it says nothing about the hosting provider or an externally configured code runner.
+import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);
+const { chromium } = require(process.env.PW_PATH ?? 'playwright'); const base = process.argv[2] ?? 'http://localhost:3112'; const own = new URL(base).origin;
+const b = await chromium.launch(); const ctx = await b.newContext({ viewport: { width: 390, height: 844 } }); await ctx.request.post(base + '/api/auth/login', { data: { email: process.env.QF_DEMO_EMAIL, password: process.env.QF_DEMO_PASSWORD } });
+const page = await ctx.newPage(); const foreign = new Set(); let n = 0; page.on('request', (r) => { n++; const u = r.url(); if (!u.startsWith('data:') && !u.startsWith('blob:') && new URL(u).origin !== own) foreign.add(new URL(u).origin); });
+for (const u of ['/', '/login', '/dashboard', '/learn', '/settings', '/v5/learn', '/v5/learn/qf5-python-control-flow', '/v5/practice', '/v5/practice/qfp-ledger-replay', '/v5/progress', '/v5/review']) { await page.goto(base + u, { timeout: 60000 }); await page.waitForTimeout(2500); }
+console.log(foreign.size ? 'FAIL foreign origins: ' + [...foreign].join(', ') : `PASS ${n} requests across 11 pages, all same-origin`); await b.close(); process.exit(foreign.size ? 1 : 0);

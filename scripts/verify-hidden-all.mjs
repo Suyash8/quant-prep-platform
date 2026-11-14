@@ -1,6 +1,6 @@
 // For every problem: a wrong Python submission must never leak expected/actual/stderr of hidden tests.
 import fs from 'node:fs';
-const B = 'http://127.0.0.1:3002';
+const B = process.argv[2] ?? 'http://127.0.0.1:3002';
 let r = await fetch(B + '/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: (process.env.QF_DEMO_EMAIL || ''), password: (process.env.QF_DEMO_PASSWORD || '') }) });
 const ck = r.headers.getSetCookie().map(c => c.split(';')[0]).join('; ');
 let leaks = 0, checked = 0, hiddenTotal = 0, noHidden = [];

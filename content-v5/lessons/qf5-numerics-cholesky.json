@@ -1,0 +1,216 @@
+{
+  "id": "qf5-numerics-cholesky",
+  "revision": 2,
+  "title": "Covariance PSD/PD and Cholesky",
+  "module": "qf5-numerics",
+  "order": 3,
+  "estMinutes": 38,
+  "objectives": [
+    {
+      "conceptId": "qf5-numerics-cholesky.positive-definiteness",
+      "text": "Prove why common-row sample covariance is positive semidefinite and distinguish this from strict positive definiteness or statistical reliability."
+    },
+    {
+      "conceptId": "qf5-numerics-cholesky.cholesky-factor",
+      "text": "Derive the real symmetric2-by-2 Cholesky factor with positive pivots, verify reconstruction, and handle singularity/asymmetry without silently changing the model."
+    },
+    {
+      "conceptId": "qf5-numerics-cholesky.integer-spd-full-factor",
+      "text": "Factor the full bounded integer SPD domain using exact rational LDL and prove six-decimal square-root rounding with integer comparisons instead of assuming double pivots stay positive."
+    }
+  ],
+  "prerequisites": [
+    "qf5-numerics-linear-solves"
+  ],
+  "blocks": [
+    {
+      "type": "text",
+      "id": "covariance-contract",
+      "markdown": "For a random real vector with finite second moments, covariance C has entries Cov(X_i,X_j). Diagonal entries are coordinate variances, off-diagonal entries are covariances, and C is symmetric. Units depend on the coordinate pair: C_ij has unit(U_i*U_j). A matrix with nonnegative diagonal entries is not automatically a valid covariance matrix. For example[[1,2],[2,1]]gives quadratic form -2 along direction(1,-1), which would imply a negative variance."
+    },
+    {
+      "type": "text",
+      "id": "psd-proof",
+      "markdown": "A real symmetric matrix C is positive semidefinite (PSD) if a\u1d40Ca\u22650for every real a, and positive definite(PD)if it is strictly positive for every nonzero a. For a covariance matrix, a\u1d40Ca=Var(a\u1d40X)\u22650, so covariance is PSD. It may fail to be PD if some nonzero linear combination has zero variance. PSD is an algebraic consistency condition, not evidence that estimated covariances are accurate or a model is Gaussian."
+    },
+    {
+      "type": "text",
+      "id": "sample-gram",
+      "markdown": "Let n\u22652 complete aligned observations be rows of X with d feature columns. Subtract the same column means to form Z. Define unweighted sample C=Z\u1d40Z/(n-1). Then a\u1d40Ca=||Za||\u2082\u00b2/(n-1)\u22650, proving PSD directly without a distribution assumption. The centered columns lie in an(n-1)-dimensional row space, so rank(C)\u2264min(d,n-1); PD needs full column rank of Z. n>d is necessary but not sufficient for this sample C to be PD. The n-1 denominator is an unbiased-estimator convention under iid finite-covariance sampling, not an algebraic requirement for PSD."
+    },
+    {
+      "type": "code",
+      "id": "exact-sample-covariance2",
+      "language": "python",
+      "source": "from fractions import Fraction\n\ndef sample_covariance2(rows):\n    if type(rows) is not list or not 2 <= len(rows) <= 1000:\n        raise ValueError(\"expected 2..1000 complete paired observations\")\n    if any(type(row) is not list or len(row) != 2 for row in rows):\n        raise ValueError(\"expected exactly two coordinates per row\")\n    if any(type(x) is not int or abs(x) > 1000000 for row in rows for x in row):\n        raise ValueError(\"expected bounded integer coordinates, excluding bool\")\n    means = [Fraction(sum(row[j] for row in rows),len(rows)) for j in range(2)]\n    centered = [[x-mean for x,mean in zip(row,means)] for row in rows]\n    return [[sum(row[i]*row[j] for row in centered)/(len(rows)-1)\n             for j in range(2)] for i in range(2)]\n\ncovariance = sample_covariance2([[1,2],[2,4],[3,6]])\nprint([[str(x) for x in row] for row in covariance])\ndirection = [2,-1]\nprint(sum(direction[i]*covariance[i][j]*direction[j]\n          for i in range(2) for j in range(2)))",
+      "caption": "Expected output: [['1', '2'], ['2', '4']], then 0. The second coordinate is always twice the first, so direction(2,-1)has zero sample variance. This covariance is PSD but singular, despite three complete observations for two features. The helper uses bounded integer complete pairs and exact Fraction arithmetic, with explicit n-1 normalization.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "inline-0",
+      "questionId": "qf5-numerics-cholesky.check-1"
+    },
+    {
+      "type": "check",
+      "id": "inline-1",
+      "questionId": "qf5-numerics-cholesky.check-2"
+    },
+    {
+      "type": "text",
+      "id": "aligned-missingness",
+      "markdown": "The Gram-matrix proof uses the SAME observation rows and centering rule for every matrix entry. Independently deleting different missing rows for different pairs need not produce one common Z\u1d40Z matrix, so the proof no longer applies. Do not silently mix currencies, times, revision states or sample windows across entries. Choosing imputation, weighting or shrinkage changes the estimator and requires a stated policy plus its own checks."
+    },
+    {
+      "type": "text",
+      "id": "cholesky-derivation",
+      "markdown": "For a real symmetric PD matrix A, Cholesky writes A=LL\u1d40 with lower-triangular L and positive diagonal. In2-by-2 write A=[[a,b],[b,d]], L=[[l00,0],[l10,l11]]. Multiplication gives l00\u00b2=a, l00*l10=b, and l10\u00b2+l11\u00b2=d. Hence l00=\u221aa, l10=b/l00, l11=\u221a(d-b\u00b2/a). For a symmetric2-by-2 matrix, a>0and d-b\u00b2/a>0are equivalent to PD. A zero final pivot is consistent with singular PSD, not a strictly PD factor."
+    },
+    {
+      "type": "worked",
+      "id": "cholesky-trace",
+      "title": "Check a small factor and the failure cases",
+      "steps": [
+        {
+          "text": "A=[[4,2],[2,3]]is symmetric. First pivot 4 gives l00=2; l10=2/2=1; last squared pivot3-1=2gives l11=sqrt(2)."
+        },
+        {
+          "text": "L=[[2,0],[1,sqrt(2)]]. LL\u1d40has entries4,2,2,3, so it reconstructs A."
+        },
+        {
+          "text": "[[1,2],[2,4]]has final squared pivot 0: PSD but not PD. [[1,2],[2,1]]has final squared pivot -3: indefinite, not a covariance."
+        },
+        {
+          "text": "[[4,9],[2,3]]is not symmetric. Reading only its lower triangle can hide the inconsistent upper entry; validate the intended matrix rather than trust decomposition success alone."
+        }
+      ]
+    },
+    {
+      "type": "code",
+      "id": "cholesky2-positive-pivots",
+      "language": "python",
+      "source": "from math import sqrt\n\ndef cholesky2_demo(matrix):\n    if type(matrix) is not list or len(matrix) != 2 or any(type(row) is not list or len(row) != 2 for row in matrix):\n        raise ValueError(\"expected2x2list matrix\")\n    if any(type(x) is not int or abs(x) > 1000000\n           for row in matrix for x in row):\n        raise ValueError(\"expected bounded integer entries, excluding bool\")\n    if matrix[0][1] != matrix[1][0]:\n        raise ValueError(\"this demonstration requires exact input symmetry\")\n    if matrix[0][0] <= 0:\n        raise ValueError(\"nonpositive first pivot\")\n    # Exact integer determinant check avoids a rounded positive pivot for singular input.\n    determinant = matrix[0][0]*matrix[1][1] - matrix[0][1]*matrix[1][0]\n    if determinant <= 0:\n        raise ValueError(\"nonpositive determinant\")\n    first = sqrt(matrix[0][0])\n    lower = matrix[1][0] / first\n    last_squared = matrix[1][1] - lower*lower\n    if last_squared <= 0:\n        raise ValueError(\"nonpositive remaining pivot\")\n    return [[first,0.0],[lower,sqrt(last_squared)]]\n\nmatrix = [[4,2],[2,3]]\nlower = cholesky2_demo(matrix)\nprint([[round(x,6) for x in row] for row in lower])\nrebuilt = [[sum(lower[i][k]*lower[j][k] for k in range(2))\n            for j in range(2)] for i in range(2)]\nprint(all(abs(rebuilt[i][j]-matrix[i][j]) <= 1e-12 for i in range(2) for j in range(2)))\nfor bad in ([[1,2],[2,4]], [[1,2],[2,1]], [[4,9],[2,3]]):\n    try:\n        cholesky2_demo(bad)\n    except ValueError:\n        print(\"rejected\")",
+      "caption": "Expected output: [[2.0, 0.0], [1.0, 1.414214]], then True, then rejected on three lines. Reconstruction uses absolute tolerance1e-12only for this small unit-scale synthetic fixture. The exact-symmetry input contract is deliberate. Near a floating PD boundary, rounded pivot signs may be ambiguous; this helper is not a robust general PD certificate or tolerance-selection algorithm. Input is restricted to bounded integer symmetric matrices; first pivot and determinant are checked exactly before floating square roots. This avoids mistaking a tiny rounded positive final pivot on an exactly singular integer matrix for PD. Rounded reconstruction/pivots still do not certify arbitrary measured floating matrices.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "inline-2",
+      "questionId": "qf5-numerics-cholesky.check-3"
+    },
+    {
+      "type": "check",
+      "id": "inline-3",
+      "questionId": "qf5-numerics-cholesky.check-4"
+    },
+    {
+      "type": "text",
+      "id": "library-and-model-boundary",
+      "markdown": "A numerical Cholesky routine may use only one triangle and may not check symmetry; the NumPy reference explicitly warns of this. A successful factorization of the consumed triangle is not proof that the supplied full matrix matches the intended symmetric input. A failure on a near-singular estimate is not permission to add diagonal jitter silently. Jitter/shrinkage or projection to another matrix changes variances/correlations and must be justified and reported with its magnitude and effect."
+    },
+    {
+      "type": "text",
+      "id": "uses-and-limits",
+      "markdown": "A PD factor supports triangular solves instead of an explicit inverse. For an independent mean-zero identity-covariance vector z, Lz has covariance LL\u1d40; a Cholesky factor alone does not establish a full joint distribution or market model. Gaussian z gives a Gaussian result, while a different z can share the same covariance but different tails. This lesson implements only the small factor trace, not a full multivariate simulator or portfolio model. For A x=b and A=LL\u1d40, first solve L y=b forward, then L\u1d40 x=y backward. In the worked factor, b=(6,5) gives y0=6/2=3, y1=(5-3)/sqrt(2)=sqrt(2), then x1=y1/sqrt(2)=1 and x0=(3-x1)/2=1. Checking A(1,1)=(6,5) verifies the original system. This explicit small trace teaches the two triangular substitutions, not an implemented general solver."
+    },
+    {
+      "type": "text",
+      "id": "transfer",
+      "markdown": "Independent transfer: derive the two pivots for[[9,3],[3,2]], reconstruct the matrix and test a quadratic form in several directions. Then construct a perfectly collinear two-column dataset and explain why no number of duplicated copies makes its covariance PD. Specify an explicit scale-aware numerical checking policy for real measurements rather than copying the worked absolute tolerance as universal. The integer-input helper does not implement that real-measurement policy."
+    },
+    {
+      "type": "check",
+      "id": "inline-4",
+      "questionId": "qf5-numerics-cholesky.check-5"
+    },
+    {
+      "type": "check",
+      "id": "inline-5",
+      "questionId": "qf5-numerics-cholesky.check-6"
+    },
+    {
+      "type": "check",
+      "id": "inline-6",
+      "questionId": "qf5-numerics-cholesky.check-7"
+    },
+    {
+      "type": "text",
+      "id": "sources",
+      "markdown": "References: [CMU covariance/PD notes](https://www.stat.cmu.edu/~jiashun/Teaching/F07STAT722/Lectures/Lecture102207.pdf), [NumPy covariance conventions](https://numpy.org/doc/stable/reference/generated/numpy.cov.html), [Cholesky API/symmetry caveat](https://numpy.org/doc/stable/reference/generated/numpy.linalg.cholesky.html) and [Cornell Cholesky derivation](https://www.cs.cornell.edu/~bindel/class/cs3220-s12/notes/lec08.pdf). The own code is standard-library only; NumPy capability is not inferred."
+    },
+    {
+      "type": "text",
+      "id": "exact-ldl-six-decimal-factor-0",
+      "markdown": "SPD is mathematical,not a binary-float conditioning promise\n\nThe public input is a symmetric positive definite integer matrix,n<=50,abs(Aij)<=1e6. Existing two-by-two teaching derives Cholesky but does not implement this full domain. An ordinary float recurrence can produce a zero or negative rounded pivot for a legal ill-conditioned SPD matrix. A tridiagonal block with diagonal[5,...,5,1]and off-diagonal 2 is the coordinate reversal of B*B^Tfor a unit lower-bidiagonal B with subdiagonal 2, so it is exactly SPD. At size 28 a naive double pivot chain can round its last positive pivot to 0; an added independent identity coordinate can then expose division by zero. Never silently add jitter or reject a guaranteed-SPD matrix because a float pivot disappeared."
+    },
+    {
+      "type": "text",
+      "id": "exact-ldl-six-decimal-factor-1",
+      "markdown": "Exact square-root-free LDL recurrence\n\nWrite A=U*D*U^Twith unit lower-triangular U and positive diagonal D. By matching entries,column j has Dj=Ajj-sum(k<j)Ujk^2*Dk,and Uij=(Aij-sum(k<j)Uik*Ujk*Dk)/Dj for i>j. Compute these in Fraction arithmetic over the original integers. For SPD,each exact Schur-complement pivot is positive;the code checks that invariant rather than dividing by a rounded zero. The Cholesky factor is L=U*sqrt(D),so Lij=Uij*sqrt(Dj). This derives the same unique positive-diagonal factor without subtracting approximate squared pivots. No symmetry test is needed inside this trusted-precondition function;real callers still need an input contract."
+    },
+    {
+      "type": "text",
+      "id": "exact-ldl-six-decimal-factor-2",
+      "markdown": "Round each factor entry with exact integer comparisons\n\nFor nonzero Lij,let R=Uij^2*Dj=a/b>0in lowest terms. Its absolute value is sqrt(a/b). In millionths,it is sqrt(a*10^12/b). k=isqrt((a*10^12)//b)is exactly the floor of that square root:integer flooring does not cross an integer-square threshold. Compare4*a*10^12with(2*k+1)^2*bto determine whether the value lies below,above or exactly at k+.5. Increment above;on equality choose the even k. The current Route B public contract explicitly requires nearest rounding of each exact infinite-precision entry with ties to even. No halfway values or ill-conditioned matrices are excluded. Apply Uij sign only if rounded magnitude is nonzero. Any negative value with magnitude<5e-7therefore prints0.000000,never negative zero. Zeros above the diagonal are explicit."
+    },
+    {
+      "type": "text",
+      "id": "exact-ldl-six-decimal-factor-3",
+      "markdown": "Trace, exactness and resource scope\n\nA=[[4,12,-16],[12,37,-43],[-16,-43,98]]gives L rows[2,0,0],[6,1,0],[-8,5,3],matching the visible factor. Exact LDL identity can be reconstructed independently before display;an independent high-precision ordinary Cholesky checks output digits on well-conditioned/random and pathological cases. At n=50 the algorithm uses O(n^3)rational operations and O(n^2)stored fractions;integer bit lengths and gcd cost are additional,not constant-time arithmetic. Declared-size dense and ill-conditioned checks are local evidence,not app/judge runtime certification. No covariance estimator,Gaussian model,regularization or trading authority is inferred from a correct factor."
+    },
+    {
+      "type": "code",
+      "id": "exact-ldl-six-decimal-factor-complete",
+      "language": "python",
+      "source": "from collections import OrderedDict, deque\nfrom bisect import bisect_left\nimport heapq\nimport math\nfrom fractions import Fraction\n\ndef cholesky(a):\n    n = len(a)\n    unit = [[Fraction(int(i == j)) for j in range(n)] for i in range(n)]\n    diagonal = []\n    for j in range(n):\n        pivot = Fraction(a[j][j]) - sum((unit[j][k] * unit[j][k] * diagonal[k] for k in range(j)), Fraction(0))\n        if pivot <= 0:\n            raise ValueError('nonpositive exact pivot')\n        diagonal.append(pivot)\n        for i in range(j + 1, n):\n            residual = Fraction(a[i][j]) - sum((unit[i][k] * unit[j][k] * diagonal[k] for k in range(j)), Fraction(0))\n            unit[i][j] = residual / pivot\n    lines = []\n    for i in range(n):\n        rendered = []\n        for j in range(n):\n            if j > i or unit[i][j] == 0:\n                rendered.append('0.000000')\n                continue\n            square = unit[i][j] * unit[i][j] * diagonal[j]\n            numerator = square.numerator * 10 ** 12\n            denominator = square.denominator\n            scaled = math.isqrt(numerator // denominator)\n            midpoint_left = 4 * numerator\n            midpoint_right = (2 * scaled + 1) ** 2 * denominator\n            if midpoint_left > midpoint_right or (midpoint_left == midpoint_right and scaled % 2):\n                scaled += 1\n            sign = '-' if unit[i][j] < 0 and scaled else ''\n            rendered.append(f'{sign}{scaled // 1000000}.{scaled % 1000000:06d}')\n        lines.append(' '.join(rendered))\n    return lines\n\nprint(*cholesky([[4,12,-16],[12,37,-43],[-16,-43,98]]), sep='\\n')\n",
+      "caption": "Expected stdout:\n2.000000 0.000000 0.000000\n6.000000 1.000000 0.000000\n-8.000000 5.000000 3.000000\n\nPrevalidated inputs follow the captured public contract. This completes the named Python function using its original supplied main/parser. It does not claim independent parser, C++, app-runner or judge qualification.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "exact-ldl-six-decimal-factor-inline-1",
+      "questionId": "qf5-numerics-cholesky.exact-ldl-six-decimal-factor-check-1"
+    },
+    {
+      "type": "check",
+      "id": "exact-ldl-six-decimal-factor-inline-2",
+      "questionId": "qf5-numerics-cholesky.exact-ldl-six-decimal-factor-check-2"
+    },
+    {
+      "type": "check",
+      "id": "exact-ldl-six-decimal-factor-inline-3",
+      "questionId": "qf5-numerics-cholesky.exact-ldl-six-decimal-factor-check-3"
+    },
+    {
+      "type": "check",
+      "id": "exact-ldl-six-decimal-factor-inline-4",
+      "questionId": "qf5-numerics-cholesky.exact-ldl-six-decimal-factor-check-4"
+    },
+    {
+      "type": "check",
+      "id": "exact-ldl-six-decimal-factor-inline-5",
+      "questionId": "qf5-numerics-cholesky.exact-ldl-six-decimal-factor-check-5"
+    },
+    {
+      "type": "check",
+      "id": "exact-ldl-six-decimal-factor-inline-6",
+      "questionId": "qf5-numerics-cholesky.exact-ldl-six-decimal-factor-check-6"
+    },
+    {
+      "type": "check",
+      "id": "exact-ldl-six-decimal-factor-inline-7",
+      "questionId": "qf5-numerics-cholesky.exact-ldl-six-decimal-factor-check-7"
+    },
+    {
+      "type": "text",
+      "id": "exact-ldl-six-decimal-factor-sources",
+      "markdown": "References: [1](https://resources.wolframcloud.com/FunctionRepository/resources/RationalCholeskyDecomposition/), [2](https://docs.python.org/3.12/library/fractions.html), [3](https://docs.python.org/3.12/library/math.html). Public task hash a9e3818a00e2f036a38091bc11acbac18ec5a85f258d9009549d4c4befffbf81. These references establish language/container semantics; the exact task framing is the captured public contract. This extension preserves the earlier bounded examples and their policies rather than silently broadening those APIs."
+    }
+  ],
+  "practice": {
+    "problemIds": [
+      "qfp-cholesky-decompose"
+    ]
+  },
+  "summary": "Common-row covariance is PSD by a squared-norm identity, but can be singular or statistically unreliable. Cholesky requires the intended real symmetric PD input and positive pivots; changing a matrix to make it factor changes the model. Practice transfer: exact ldl six decimal factor."
+}

@@ -10,6 +10,7 @@ the files win.
 - Bun on your PATH. The app starts the code-runner service with `bun mini-services/code-runner/index.ts`
   (`src/lib/runner-client.ts`), and `npm start` uses `bun` as well. `package.json` does not declare Bun,
   so install it yourself.
+- `bun`, `python3` and `g++` are all required prerequisites (they are not installed by `npm ci`; `npm start` prints a preflight report and never blocks).
 - For running submitted code: `python3` and `/usr/bin/g++` on the machine that runs the runner
   (`mini-services/code-runner/index.ts`). Without them, code submission fails and everything else works.
   The problem checks were run on Python 3.12 and GCC 12.4, so use those or newer.
@@ -66,3 +67,18 @@ No credentials are shipped.
 
 The older `scripts/*-v3.sh`, `audit-all.sh` and `mini-audit.sh` belong to the original project's harness and
 were not re-verified for this checkpoint.
+
+## Running the local code judge (Linux, single user)
+
+Coding practice (Python and C++, 78 problems) runs on a local isolated runner. Nothing is deployed or published.
+
+Requirements: Linux with unprivileged user namespaces, `bubblewrap` (bwrap) on PATH, Bun, Python 3.12+, g++ 12.4+, about 2 GiB RAM. A machine below these keeps practice closed with a reason shown on the practice pages.
+
+1. Start the runner (listens on 127.0.0.1 port 3010; change with `QF_RUNNER_PORT`):
+   `PYTHON_BIN=/path/to/python3.12 CXX_BIN=/path/to/g++-12.4 bun mini-services/code-runner/index.ts`
+   (`PYTHON_BIN` and `CXX_BIN` default to `python3` and `/usr/bin/g++`; set them if the system ones are older.)
+2. Check `curl localhost:3010/health`: `sandbox.active` must be true and the toolchain versions meet the baseline.
+3. Start the app normally (`npm run build`, then `node .next/standalone/server.js`). If the runner is unreachable, inactive or below baseline the app refuses to run code (practice shows why) and nothing is run.
+4. Optional: `node scripts/qualify-runtime.mjs` re-runs all 156 reference solutions and the 30 isolation probes and writes an evidence file.
+
+Limits to know: Linux namespace isolation for one local user, not a hypervisor or a shared multi-user boundary. The memory limit is an address-space limit (not RSS); a run over it is reported as `runtime_error`. The 64 MiB per-job disk cap is a polling cap and can overshoot (measured 80 to 96 MiB). Timings are provisional host timings.

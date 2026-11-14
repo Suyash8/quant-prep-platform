@@ -1,0 +1,287 @@
+{
+  "id": "qf5-data-serialization",
+  "revision": 2,
+  "title": "Serialization, decimals and schema evolution",
+  "module": "qf5-data",
+  "order": 7,
+  "estMinutes": 72,
+  "objectives": [
+    {
+      "conceptId": "qf5-data-serialization.encoding",
+      "text": "Separate text encoding from record framing and numeric parsing when reading a payload."
+    },
+    {
+      "conceptId": "qf5-data-serialization.decimal-roundtrip",
+      "text": "Round-trip a declared decimal representation without silently changing precision, rounding or schema version."
+    },
+    {
+      "conceptId": "qf5-data-serialization.csv-four-state-invariant",
+      "text": "Scan quoted/unquoted fields with exact doubled-quote semantics and preserved empty fields."
+    },
+    {
+      "conceptId": "qf5-data-serialization.csv-first-error-contract",
+      "text": "Return the first offending ASCII column or original unclosed opener and preserve line framing."
+    },
+    {
+      "conceptId": "qf5-data-serialization.cent-quotient-remainder",
+      "text": "Derive exact fee cents from integer notional cents and integer bps."
+    },
+    {
+      "conceptId": "qf5-data-serialization.cent-tie-policy",
+      "text": "Distinguish half-up,half-even and toward-zero without floats and format exactly two decimals."
+    }
+  ],
+  "prerequisites": [
+    "qf5-data-streaming-statistics"
+  ],
+  "blocks": [
+    {
+      "type": "text",
+      "id": "layers",
+      "markdown": "Serialization converts a structured value into a representation for storage or transport. UTF-8 is a text-to-bytes encoding, not a table schema or a numeric conversion rule. JSON describes structured text; CSV describes delimited records under a dialect. A payload needs an encoding, format, schema version, units and input limits. Decoding bytes successfully proves only the encoding step, not that the financial fields are valid."
+    },
+    {
+      "type": "code",
+      "id": "json-wire",
+      "language": "python",
+      "source": "import json\nmessage = {\"schema_version\": 1, \"label\": \"rupee \u20b9\", \"price_usd\": \"12.35\"}\ntext = json.dumps(message, ensure_ascii=False, sort_keys=True, separators=(\",\", \":\"), allow_nan=False)\npayload = text.encode(\"utf-8\")\nrestored = json.loads(payload.decode(\"utf-8\"))\nprint(restored == message)\nprint(restored[\"price_usd\"])\ntry:\n    json.dumps({\"price\": float(\"nan\")}, allow_nan=False)\nexcept ValueError:\n    print(\"nonfinite JSON rejected\")",
+      "caption": "Expected output: True, then 12.35, then nonfinite JSON rejected. The decimal amount is explicitly a string in this wire schema. ensure_ascii=False permits Unicode text; UTF-8 encoding produces bytes. This is not a claim that every consumer accepts the same schema or that JSON number parsers share Python's integer range.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "inline-0",
+      "questionId": "qf5-data-serialization.check-1"
+    },
+    {
+      "type": "text",
+      "id": "json-policy",
+      "markdown": "Python json.dumps permits NaN/infinity by default through allow_nan=True, which is not strict JSON numeric syntax. Use allow_nan=False when this boundary requires strict finite numbers. Incoming JSON needs its own strict parse policy and validation; changing the encoder option does not harden a separate decoder. Repeated dump calls do not automatically frame multiple JSON documents into one valid JSON value. A line-delimited protocol needs an explicit framing and escaping rule."
+    },
+    {
+      "type": "code",
+      "id": "csv-framing",
+      "language": "python",
+      "source": "import csv\nimport io\ntext = 'id,note,price\\nT1,\"comma, inside\",12.35\\nT2,\"line1\\nline2\",10.00\\n'\nrows = list(csv.DictReader(io.StringIO(text, newline=\"\"), strict=True))\nprint(len(rows))\nprint(rows[0][\"note\"])\nprint(repr(rows[1][\"note\"]))\nprint(type(rows[0][\"price\"]).__name__)",
+      "caption": "Expected output: 2, then comma, inside, then the repr string 'line1\\nline2', then str. The comma inside quotes stays in one field; the quoted newline stays inside one record field. csv returns field strings here, not validated monetary values. A physical line count is not the record count.",
+      "runnable": true
+    },
+    {
+      "type": "text",
+      "id": "csv-policy",
+      "markdown": "Do not split CSV using split(\",\") or treat every physical newline as a new record. Quoted fields can contain delimiters and newlines, and doubled quotes can escape a quote within a quoted field in the usual dialect. State the dialect, headers, byte/field/row limits and malformed-input policy. Python's csv library handles framing under its configured rules; the application must still validate field count, header duplication, types, ranges and identifiers. Opening real CSV text files with newline=\"\" lets the csv module manage newline handling."
+    },
+    {
+      "type": "check",
+      "id": "inline-1",
+      "questionId": "qf5-data-serialization.check-2"
+    },
+    {
+      "type": "text",
+      "id": "decimal-policy",
+      "markdown": "A JSON amount stored as a decimal string can preserve the specified decimal value when the consumer parses it as Decimal rather than float. It does not enforce a currency, scale or range by itself. Construct Decimal from the original validated decimal text; Decimal(0.1) instead captures the float's binary approximation. Decimal arithmetic has a context with finite precision, and quantize may round or raise under that context. Bound the accepted magnitude/precision and state whether excess fractional digits are rejected or rounded."
+    },
+    {
+      "type": "code",
+      "id": "decimal-wire",
+      "language": "python",
+      "source": "import json\nfrom decimal import Decimal, ROUND_HALF_EVEN\noriginal = Decimal(\"12.35\")\nwire = json.dumps({\"price_usd\": str(original)}, allow_nan=False)\nrestored = Decimal(json.loads(wire)[\"price_usd\"])\nprint(restored == original)\nprint(Decimal(\"2.675\").quantize(Decimal(\"0.01\"), rounding=ROUND_HALF_EVEN))\nprint(Decimal(\"2.685\").quantize(Decimal(\"0.01\"), rounding=ROUND_HALF_EVEN))\nprint(Decimal(0.1) == Decimal(\"0.1\"))",
+      "caption": "Expected output: True, then 2.68, then 2.68, then False. ROUND_HALF_EVEN chooses the nearest cent, with an exact tie going to an even last cent digit. Both ties therefore produce 2.68. These are exact Decimal text inputs with small bounded magnitudes, not binary float inputs.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "inline-2",
+      "questionId": "qf5-data-serialization.check-3"
+    },
+    {
+      "type": "text",
+      "id": "rounding-boundary",
+      "markdown": "This lesson demonstrates one explicit rounding policy. A whole-cent ingestion contract can instead reject 2.675 outright rather than round it. Do not treat the display of two digits as evidence that rounding was authorised. Negative amounts, tax rules, tick sizes and per-line versus aggregate rounding need their own contract. We are not approving any real invoice or exchange policy here."
+    },
+    {
+      "type": "check",
+      "id": "inline-3",
+      "questionId": "qf5-data-serialization.check-4"
+    },
+    {
+      "type": "text",
+      "id": "versions",
+      "markdown": "Keep schema_version and unit-bearing names in the wire contract. A producer adding an optional field and a producer changing price_usd from decimal string to integer cents are different changes. Consumers must explicitly accept or migrate supported versions, and reject unknown versions when their meaning is unresolved. A hash of the original bytes can establish later byte equality, but is not proof of who authored those bytes or that the data is true."
+    },
+    {
+      "type": "text",
+      "id": "transfer",
+      "markdown": "Independent transfer: round-trip a synthetic JSON object with a non-ASCII label and a decimal-string amount. Test NaN output rejection separately from incoming-field validation. Parse a CSV fixture containing a quoted comma, a quoted newline and a doubled quote, then verify logical record counts. Test a whole-cent contract that rejects extra precision and contrast it with the explicit half-even rounding example. A general hand-written CSV state machine is not taught by merely calling csv.reader."
+    },
+    {
+      "type": "check",
+      "id": "inline-4",
+      "questionId": "qf5-data-serialization.check-5"
+    },
+    {
+      "type": "check",
+      "id": "inline-5",
+      "questionId": "qf5-data-serialization.check-6"
+    },
+    {
+      "type": "text",
+      "id": "source-scope",
+      "markdown": "References: [Python json](https://docs.python.org/3/library/json.html), [Python csv](https://docs.python.org/3/library/csv.html) and [Decimal](https://docs.python.org/3/library/decimal.html). Wire schemas, precision bounds and error policies here are declared synthetic contracts, not universal service or market conventions."
+    },
+    {
+      "type": "callout",
+      "id": "exact-contract-extension-scope",
+      "tone": "note",
+      "markdown": "The earlier core uses a different, narrower example. These separate extensions now teach the named exact public contracts, not a silent change to the earlier function. Keep the schemas, rounding rules and parser return shapes distinct. Work through each part and its checks separately."
+    },
+    {
+      "type": "text",
+      "id": "csv-column-state-machine-0",
+      "markdown": "A strict one-line dialect\n\nThe task has up to 1,000 records and at most 1,000,000 printable ASCII characters in total. A quoted field must start with a double quote. Inside it, doubled quotes decode to one quote and commas are data. After a closing quote, only a comma or the end of the line is allowed. A quote inside an unquoted field is an error. An empty line is one empty field.\n\nparse(line) returns ('OK', fields) or ('ERR', column). The supplied main prints the field count and each [field], or just ERR followed by the column. Preserve empty lines and spaces. Do not strip records or split them into whitespace tokens."
+    },
+    {
+      "type": "text",
+      "id": "csv-column-state-machine-1",
+      "markdown": "Four states and one invariant\n\nSTART means a new field with an empty buffer. A comma commits an empty field; a quote saves its column and enters QUOTED; any other character starts UNQUOTED.\n\nIn UNQUOTED, a comma commits the buffer, a quote is an error at its own column, and other characters append. In QUOTED, every nonquote appends literally; a quote enters AFTER_QUOTE. In AFTER_QUOTE, another quote appends one decoded quote and returns to QUOTED; a comma commits the field; any other character is an error.\n\nAfter every processed prefix, committed fields are complete and the buffer is exactly the decoded content of the current unfinished field."
+    },
+    {
+      "type": "text",
+      "id": "csv-column-state-machine-2",
+      "markdown": "End rules and error positions\n\nAt end of line, QUOTED means an unclosed field. Report the saved opening quote column, not the line length. Every other state commits one final buffer, including an empty START after a trailing comma. AFTER_QUOTE is a valid closed field.\n\nThree quotes are unterminated: the opening quote and a doubled interior quote leave no closing quote. Four quotes form a complete field containing one quote. For ab\"c, report ERR 3. For \"a\"x, report ERR 4. For x,\"a, report ERR 3, the opening quote. A space after a closing quote is an error, not something to trim."
+    },
+    {
+      "type": "text",
+      "id": "csv-column-state-machine-3",
+      "markdown": "Why the scan is correct\n\nFor a,,\"b,c\", the first comma commits a, the second commits an empty field, and the quoted comma stays inside b,c. The state cases cover every character. An immediate illegal character is the first point where no later suffix can repair the prefix. An unclosed quoted field is instead known only at end, so it needs the saved opener.\n\nRFC 4180 supports the quoted and doubled-quote grammar, but this task is a stricter one-line ASCII exercise. It accepts trailing empty fields. Do not import embedded CRLF records, headers, constant file-wide field counts, or tolerant library behavior. ASCII makes character and byte columns agree."
+    },
+    {
+      "type": "text",
+      "id": "csv-column-state-machine-4",
+      "markdown": "Cost and independent transfer\n\nAppend characters to a list and join once per field. Repeated immutable-string concatenation can add avoidable copying. The scan takes O(L) time and O(L) space for decoded fields and the current buffer. An error result needs constant output space.\n\nGenerate legal CSV records from arbitrary field texts and check exact decoding. Also use a different, field-at-a-time recognizer to check malformed columns. Include empty records, repeated and trailing commas, quoted empty fields, runs of doubled quotes, post-quote spaces, middle quotes, and million-character records. This checks syntax, not spreadsheet formula safety or record semantics."
+    },
+    {
+      "type": "code",
+      "id": "csv-column-state-machine-complete",
+      "language": "python",
+      "source": "MOD = 1000000007\n\ndef parse(line):\n    (fields, current) = ([], [])\n    state = 'START'\n    opening = None\n    for (column, char) in enumerate(line, 1):\n        if state == 'START':\n            if char == ',':\n                fields.append('')\n            elif char == '\"':\n                opening = column\n                state = 'QUOTED'\n            else:\n                current.append(char)\n                state = 'UNQUOTED'\n        elif state == 'UNQUOTED':\n            if char == '\"':\n                return ('ERR', column)\n            if char == ',':\n                fields.append(''.join(current))\n                current = []\n                state = 'START'\n            else:\n                current.append(char)\n        elif state == 'QUOTED':\n            if char == '\"':\n                state = 'AFTER_QUOTE'\n            else:\n                current.append(char)\n        elif char == '\"':\n            current.append('\"')\n            state = 'QUOTED'\n        elif char == ',':\n            fields.append(''.join(current))\n            current = []\n            state = 'START'\n        else:\n            return ('ERR', column)\n    if state == 'QUOTED':\n        return ('ERR', opening)\n    fields.append(''.join(current))\n    return ('OK', fields)\n\nprint(parse('a,,\"b,c\"'))\nprint(parse('ab\"c'))\nprint(parse('\"a\"x'))\nprint(parse('x,\"a'))\nprint(parse(''))\n",
+      "caption": "Expected ('OK', ['a', '', 'b,c']),('ERR',3),('ERR',4),('ERR',3),('OK',['']) with Python spacing. Complete strict one-line state machine.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "csv-column-state-machine-inline-1",
+      "questionId": "qf5-data-serialization.csv-column-state-machine-check-1"
+    },
+    {
+      "type": "check",
+      "id": "csv-column-state-machine-inline-2",
+      "questionId": "qf5-data-serialization.csv-column-state-machine-check-2"
+    },
+    {
+      "type": "check",
+      "id": "csv-column-state-machine-inline-3",
+      "questionId": "qf5-data-serialization.csv-column-state-machine-check-3"
+    },
+    {
+      "type": "check",
+      "id": "csv-column-state-machine-inline-4",
+      "questionId": "qf5-data-serialization.csv-column-state-machine-check-4"
+    },
+    {
+      "type": "check",
+      "id": "csv-column-state-machine-inline-5",
+      "questionId": "qf5-data-serialization.csv-column-state-machine-check-5"
+    },
+    {
+      "type": "check",
+      "id": "csv-column-state-machine-inline-6",
+      "questionId": "qf5-data-serialization.csv-column-state-machine-check-6"
+    },
+    {
+      "type": "check",
+      "id": "csv-column-state-machine-inline-7",
+      "questionId": "qf5-data-serialization.csv-column-state-machine-check-7"
+    },
+    {
+      "type": "text",
+      "id": "csv-column-state-machine-sources",
+      "markdown": "Sources: [1](https://www.rfc-editor.org/rfc/rfc4180.html); [2](https://dvanderweele.com/csv-parser-javascript-no-libraries-rfc-4180). Exact public task contract hash 8c5dde064822e328342fa55bd0f5e91da410de8384b01b52560a7c42adad0f64. This is main algorithm/contract teaching,not current app or judge signoff."
+    },
+    {
+      "type": "text",
+      "id": "integer-cent-rounding-0",
+      "markdown": "Derive the units first\n\nThere are up to 40,000 queries. Notional is nonnegative, at most 10^12 dollars, with exactly two decimal digits. The rate is an integer from 0 to 10,000 basis points. fee(notional, bps, mode) returns a string with exactly two decimals.\n\nLet C be integer notional cents. The dollar fee is (C/100)*bps/10000, so fee cents are C*bps/10000. Do not divide by 100 again before rounding. The integer product is at most 10^18, which fits signed 64-bit arithmetic if multiplication is promoted before it happens. Python uses exact integers."
+    },
+    {
+      "type": "text",
+      "id": "integer-cent-rounding-1",
+      "markdown": "Quotient, remainder, and ties\n\nWrite N = 10000*q + r with 0 <= r < 10000. Exact fee cents are q + r/10000. DOWN returns q because inputs are nonnegative. UP means half-up, not ceiling: increment only when 2*r >= 10000.\n\nEVEN increments when 2*r > 10000, or when 2*r == 10000 and q is odd. The exact tie then ends on an even cent. Below half, neither nearest mode increments. Above half, both do. These rules follow by comparing distances to the two neighboring integer cents."
+    },
+    {
+      "type": "text",
+      "id": "integer-cent-rounding-2",
+      "markdown": "Trace and output\n\nFor 0.50 at 100 bps, C=50, N=5000, q=0, r=5000. UP gives 0.01; EVEN and DOWN give 0.00. For 1.50 at 100 bps, the quotient is 1 at an exact half, so EVEN gives 0.02. For 1234.56 at 25 bps, q=308 and r=6400. DOWN gives 3.08 and either nearest mode gives 3.09.\n\nFormat the rounded integer cents as q//100, a point, and q%100 padded to two digits. Do not pass through float, round(float(...)), or Decimal constructed from a float."
+    },
+    {
+      "type": "text",
+      "id": "integer-cent-rounding-3",
+      "markdown": "Scope and independent transfer\n\nReject unknown mode names. Negative amounts are outside this task: toward zero equals floor only for nonnegative values, and signed half-up needs its own sign handling. This is a declared synthetic policy, not a universal billing rule.\n\nCompare with Decimal constructed from the original text, multiplied by Decimal(bps), divided by 10000, then quantized to 0.01 with an explicit rounding mode and enough precision. Test just below, at, and above half; even and odd quotients; zero; maximum values; and 40,000 queries. Parsing costs O(text length); arithmetic uses numbers bounded by this task."
+    },
+    {
+      "type": "code",
+      "id": "integer-cent-rounding-complete",
+      "language": "python",
+      "source": "MOD = 1000000007\n\ndef fee(notional, bps, mode):\n    (whole, fractional) = notional.split('.')\n    cents = 100 * int(whole) + int(fractional)\n    (quotient, remainder) = divmod(cents * bps, 10000)\n    if mode == 'UP':\n        quotient += int(2 * remainder >= 10000)\n    elif mode == 'EVEN':\n        quotient += int(2 * remainder > 10000 or (2 * remainder == 10000 and quotient % 2 == 1))\n    elif mode != 'DOWN':\n        raise ValueError('unknown rounding mode')\n    return f'{quotient // 100}.{quotient % 100:02d}'\n\nprint(fee('0.50', 100, 'UP'))\nprint(fee('0.50', 100, 'EVEN'))\nprint(fee('1.50', 100, 'EVEN'))\nprint(fee('1234.56', 25, 'DOWN'))\n",
+      "caption": "Expected 0.01,0.00,0.02,3.08 on separate lines. Source name fee,integer cents product,explicit modes.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "integer-cent-rounding-inline-1",
+      "questionId": "qf5-data-serialization.integer-cent-rounding-check-1"
+    },
+    {
+      "type": "check",
+      "id": "integer-cent-rounding-inline-2",
+      "questionId": "qf5-data-serialization.integer-cent-rounding-check-2"
+    },
+    {
+      "type": "check",
+      "id": "integer-cent-rounding-inline-3",
+      "questionId": "qf5-data-serialization.integer-cent-rounding-check-3"
+    },
+    {
+      "type": "check",
+      "id": "integer-cent-rounding-inline-4",
+      "questionId": "qf5-data-serialization.integer-cent-rounding-check-4"
+    },
+    {
+      "type": "check",
+      "id": "integer-cent-rounding-inline-5",
+      "questionId": "qf5-data-serialization.integer-cent-rounding-check-5"
+    },
+    {
+      "type": "check",
+      "id": "integer-cent-rounding-inline-6",
+      "questionId": "qf5-data-serialization.integer-cent-rounding-check-6"
+    },
+    {
+      "type": "check",
+      "id": "integer-cent-rounding-inline-7",
+      "questionId": "qf5-data-serialization.integer-cent-rounding-check-7"
+    },
+    {
+      "type": "text",
+      "id": "integer-cent-rounding-sources",
+      "markdown": "Sources: [1](https://docs.python.org/3.12/library/decimal.html); [2](https://peps.python.org/pep-0327/). Exact public task contract hash 195ee5ac6ce8815db0f7603c67878a4091c6fd33aebf54fad15a2a71323597e0. This is main algorithm/contract teaching,not current app or judge signoff."
+    }
+  ],
+  "practice": {
+    "problemIds": [
+      "qfp-csv-line-parser",
+      "qfp-money-round"
+    ]
+  },
+  "summary": "Separate bytes, text, framing, schema and numeric meaning. Preserve decimal contracts deliberately, state any rounding rule and reject unknown schema meanings. A hash proves equality evidence, not authenticity. Extension: csv column state machine. Extension: integer cent rounding."
+}

@@ -1,5 +1,5 @@
 // Regression: offline-synced assessment_result must use the assessment's own passMarkPercent (80), not 70.
-const B = 'http://127.0.0.1:3002';
+const B = process.argv[2] ?? 'http://127.0.0.1:3002';
 const email = 'passmark-' + Date.now() + '@test.dev';
 const r = await fetch(B + '/api/auth/register', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'Pass Mark', email, password: 'passmark-test-1234' }) });
 const cookie = (r.headers.getSetCookie?.() || []).map(c => c.split(';')[0]).join('; ');

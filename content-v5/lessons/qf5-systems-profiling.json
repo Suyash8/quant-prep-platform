@@ -1,0 +1,123 @@
+{
+  "id": "qf5-systems-profiling",
+  "revision": 1,
+  "title": "Profiling, benchmarking and latency distributions",
+  "module": "qf5-systems",
+  "order": 7,
+  "estMinutes": 22,
+  "objectives": [
+    {
+      "conceptId": "qf5-systems-profiling.profiling-method",
+      "text": "Form a performance hypothesis from correctness and resource/stack evidence, define clock/workload/timing boundaries and compare controlled repeated runs without treating profiling as benchmarking."
+    },
+    {
+      "conceptId": "qf5-systems-profiling.tail-latency",
+      "text": "Compute an explicitly defined empirical percentile and separate service, queue/admission and response time while retaining sample counts/errors and arrival-process limitations."
+    }
+  ],
+  "prerequisites": [
+    "qf5-systems-queues-backpressure"
+  ],
+  "blocks": [
+    {
+      "type": "text",
+      "id": "question-before-tool",
+      "markdown": "Start with an observable question: is time spent executing a hot function, waiting for a mutex, waiting for I/O, descheduled, or queued behind work? First verify equal correct results and the intended workload/units. Form a hypothesis, collect evidence that could disprove it, change one thing, then recheck correctness and measurements. Do not optimize by deleting validation or tasks needed by the contract. Utilization, saturation and errors are different metrics; a low long-interval average can hide a short saturated queue."
+    },
+    {
+      "type": "text",
+      "id": "profile-versus-benchmark",
+      "markdown": "A profiler locates where observed execution time or samples accumulate; a benchmark estimates cost under a declared experiment. In Python 3.12, cProfile records call counts and function timings; its overhead can distort comparisons, especially Python versus native C code. Inspect self time versus cumulative time including callees without summing overlapping cumulative totals. A CPU sampling flame graph shows stack population: width reflects sampled stacks, vertical position stack depth, and the horizontal axis is not chronological time. On-CPU samples alone do not establish time spent blocked. Inlining, missing symbols, sampling frequency and workload affect interpretation. These are tools to select a hypothesis, not proof that a change improved end-to-end latency."
+    },
+    {
+      "type": "text",
+      "id": "clock-and-boundary",
+      "markdown": "Use a monotonic interval clock, such as C++ steady_clock or Python perf_counter_ns, rather than subtracting adjustable civil timestamps. A reported integer nanosecond UNIT is not a promise of one-nanosecond resolution or accuracy. Clock calls and recording have overhead; CPU process time and elapsed time answer different questions. Declare whether allocation/setup/thread creation/warmup/I/O/validation/shutdown are included. Keep output observable so the intended computation cannot simply disappear, but note that observability/instrumentation itself changes the workload. Save runtime/compiler/flags, machine/OS/affinity/frequency/load policy, input shape/distribution and raw observations; unknowns stay unknown."
+    },
+    {
+      "type": "text",
+      "id": "percentile-convention",
+      "markdown": "For this lesson choose empirical nearest-rank: sort n observations ascending and return order statistic at one-based rank ceil(p*n/100), for integer p=1..100. No interpolation. Other software conventions can differ, especially for small samples; this is our stated convention, not a universal NIST/library default. A percentile of observed data is not automatically a population bound, confidence interval or future latency guarantee. Report n, time range, units, errors/timeouts and maximum alongside selected percentiles. High-tail claims need enough representative observations and dependence/load awareness, not only a formula."
+    },
+    {
+      "type": "code",
+      "id": "explicit-nearest-rank-summary",
+      "language": "python",
+      "source": "def nearest_rank(samples,percent):\n    # Own empirical convention: sorted[ceil(percent*n/100)-1], no interpolation.\n    if type(samples) is not list or not 1<=len(samples)<=10000:\n        raise ValueError(\"expected 1..10000 observations\")\n    if any(type(x) is not int or not 0<=x<=10**12 for x in samples):\n        raise ValueError(\"expected bounded nonnegative integer durations\")\n    if type(percent) is not int or not 1<=percent<=100:\n        raise ValueError(\"expected integer percentile 1..100\")\n    rank=(percent*len(samples)+99)//100\n    return sorted(samples)[rank-1]\n\nsynthetic_ns=[1]*99+[1000]\nprint(sum(synthetic_ns),len(synthetic_ns))\nprint(nearest_rank(synthetic_ns,50),nearest_rank(synthetic_ns,99),max(synthetic_ns))\nprint(nearest_rank([10,20],50))",
+      "caption": "Synthetic data only. Expected lines: 1099 100; 1 1 1000; 10. Mean is 10.99ns, p99=1ns under this convention, yet max=1000ns. This intentionally small distribution is not measured hardware data or a claim about real timer precision. For two observations, nearest-rank p50 returns10, not the interpolated/arithmetic median 15.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "inline-0",
+      "questionId": "qf5-systems-profiling.check-1"
+    },
+    {
+      "type": "check",
+      "id": "inline-1",
+      "questionId": "qf5-systems-profiling.check-2"
+    },
+    {
+      "type": "check",
+      "id": "inline-4",
+      "questionId": "qf5-systems-profiling.check-5"
+    },
+    {
+      "type": "text",
+      "id": "arrival-service-response",
+      "markdown": "Define arrival A, service start S and completion C. Queue waiting is S-A, service is C-S and response is C-A=(S-A)+(C-S), when those timestamps share one valid clock/domain and boundaries. Producer admission waiting can occur before enqueue and must be named separately if included. A short handler service time can coexist with long response time when work queues. Do not subtract unsynchronized timestamps from different hosts as though they were exact common-clock intervals."
+    },
+    {
+      "type": "code",
+      "id": "synthetic-fifo-latency-timeline",
+      "language": "python",
+      "source": "def serial_fifo_timeline(arrivals,service):\n    # Deterministic unbounded-buffer one-server model, integer time units.\n    if type(arrivals) is not list or type(service) is not list or len(arrivals)!=len(service) or len(arrivals)>1000:\n        raise ValueError(\"expected matched bounded lists\")\n    if any(type(x) is not int or not 0<=x<=10**9 for x in arrivals+service):\n        raise ValueError(\"expected bounded nonnegative integer times\")\n    if arrivals!=sorted(arrivals):\n        raise ValueError(\"arrivals must be nondecreasing\")\n    end=0\n    rows=[]\n    for arrival,duration in zip(arrivals,service):\n        start=max(arrival,end)\n        end=start+duration\n        rows.append((start-arrival,duration,end-arrival))\n    return rows\n\nprint(serial_fifo_timeline([0,1,2],[3,3,3]))\nprint(serial_fifo_timeline([0,5,10],[3,3,3]))",
+      "caption": "Expected lines: [(0,3,3),(2,3,5),(4,3,7)] and [(0,3,3),(0,3,3),(0,3,3)], with ordinary Python spaces. Each tuple is(wait,service,response). This is a synthetic single-server FIFO with unlimited buffer and no scheduling/clock overhead, NOT the bounded concurrent ring or an actual latency measurement. The same 3-unit service produces different response times under different arrivals.",
+      "runnable": true
+    },
+    {
+      "type": "text",
+      "id": "load-and-omission",
+      "markdown": "Record offered, accepted, completed, rejected and timed-out work, arrival pattern, duration and concurrency. A producer waiting on a response or full queue changes when it offers later work. If real arrivals continue during stalls, measuring only actual sends can omit demand/queueing that would have happened on the intended schedule, called coordinated omission. Open-loop intended-arrival tests and closed-loop tests answer different workload questions; neither may silently stand in for the other. Preserve original scheduled arrival times where that is the intended model and report lag/rejections rather than replaying every missed request without policy. Do not silently drop slow/error samples or average per-run p99 values and call that the p99 of pooled observations."
+    },
+    {
+      "type": "check",
+      "id": "inline-2",
+      "questionId": "qf5-systems-profiling.check-3"
+    },
+    {
+      "type": "check",
+      "id": "inline-3",
+      "questionId": "qf5-systems-profiling.check-4"
+    },
+    {
+      "type": "check",
+      "id": "inline-5",
+      "questionId": "qf5-systems-profiling.check-6"
+    },
+    {
+      "type": "text",
+      "id": "repeat-and-report",
+      "markdown": "For a comparison, preserve correct equal work, separate or explicitly include setup, specify warm/cold and run-order policy, repeat independent runs and retain variation. Avoid cherry-picking the fastest run or discarding a first run after seeing it is slow. For latency, raw observation distributions and time-series can reveal tails hidden by means; run-to-run summaries answer a different question from event-level percentiles. Sanitizer/profiler runs diagnose bugs/cost attribution and must be labeled, not mixed into an optimized noninstrumented timing baseline. A bottleneck hypothesis requires resource/saturation/error or stack evidence, not just one elapsed number."
+    },
+    {
+      "type": "text",
+      "id": "transfer",
+      "markdown": "Independent transfer: hand-sort [2,2,3,100], compute p50,p75,p100 using the declared rank and compare to another library only after identifying its convention. For the synthetic FIFO, increase gaps between arrivals while leaving services fixed and explain the response change. Design a timing plan with included/excluded work and validity/error counters. State what a CPU profile cannot reveal about an off-CPU wait and what an endogenously paced toy producer cannot establish about production load."
+    },
+    {
+      "type": "check",
+      "id": "inline-6",
+      "questionId": "qf5-systems-profiling.check-7"
+    },
+    {
+      "type": "text",
+      "id": "sources",
+      "markdown": "Sources: [Python 3.12 profiler](https://docs.python.org/3.12/library/profile.html), [interval clock APIs](https://docs.python.org/3/library/time.html), [steady_clock](https://en.cppreference.com/w/cpp/chrono/steady_clock.html), [USE resource method](https://www.brendangregg.com/usemethod.html), [flame graph interpretation](https://www.brendangregg.com/flamegraphs.html), [percentile convention differences](https://www.itl.nist.gov/div898/handbook/prc/section2/prc262.htm), and [wrk2 intended-versus-actual send measurement discussion](https://github.com/giltene/wrk2). Historical tool throughput/accuracy examples are not imported as present measurements. Python 3.12 source is pinned to the local teaching runtime family; later Python profiler API changes are not silently substituted."
+    }
+  ],
+  "practice": {
+    "problemIds": []
+  },
+  "summary": "Measure correct equal work with declared boundaries and monotonic clocks. Profiles locate hypotheses; repeated benchmark observations test them. Name percentile conventions and distinguish service/response/arrival effects, sample counts and failures from future tail guarantees."
+}

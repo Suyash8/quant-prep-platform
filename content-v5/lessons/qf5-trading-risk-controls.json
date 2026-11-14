@@ -1,0 +1,126 @@
+{
+  "id": "qf5-trading-risk-controls",
+  "revision": 1,
+  "title": "Pre-trade limits, kill switches and invariants",
+  "module": "qf5-trading",
+  "order": 5,
+  "estMinutes": 22,
+  "objectives": [
+    {
+      "conceptId": "qf5-trading-risk-controls.limit-invariants",
+      "text": "Reserve potential open-order cash and position exposure together before admitting a new command,checking exact units,bounds,existing-state consistency and aggregate invariants."
+    },
+    {
+      "conceptId": "qf5-trading-risk-controls.fail-safe",
+      "text": "Separate disabling new risk,cancel requests and reconciled cancellation;reject unavailable or stale control inputs without pretending a pure candidate is a concurrent,durable or live risk-control system."
+    }
+  ],
+  "prerequisites": [
+    "qf5-trading-order-state"
+  ],
+  "blocks": [
+    {
+      "type": "text",
+      "id": "why-before-routing",
+      "markdown": "Risk checks belong before routing a new order,not in an after-the-fact warning that assumes cancellation will beat execution. As a scoped US securities example,SEC Rule15c3-5 concerns broker-dealers with market access and controls reasonably designed to reject orders beyond appropriate credit/capital thresholds or erroneous-order parameters. Its staff FAQ distinguishes pre-entry prevention from chase-and-cancel. This is not legal advice,a universal rule for every jurisdiction/product,or a claim our educational model meets the rule. Real thresholds require appropriate business judgment,aggregate coverage,review and supervisory ownership."
+    },
+    {
+      "type": "text",
+      "id": "reservation-contract",
+      "markdown": "Use one currency in integer minor units and one long-only instrument. cash is current unspent cash before subtracting open BUY reservations; position is already owned units. Each open reservation(id,limit_price,remaining_qty)includes outstanding possible buys,including sent-but-unconfirmed or cancel-pending quantity when that outcome is unresolved. The own zero-fee upper-bound invariants are sum(price*qty)<=cash and position+sum(qty)<=cap. Reserving only filled quantities ignores the future exposure of working orders. Do not offset possible buys with unconfirmed sells."
+    },
+    {
+      "type": "worked",
+      "id": "aggregate-admission",
+      "title": "Two individually affordable orders can breach aggregate limits",
+      "steps": [
+        {
+          "text": "Cash1000 minor units,position2,cap10. Existing BUY3 at100 reserves300 cash and3 possible units: available700;potential position5."
+        },
+        {
+          "text": "New BUY4 at100 brings cash reservation700 and potential position9,so this toy can reserve it. The candidate still has1000 unspent cash;700 is reserved,not spent. No order is sent."
+        },
+        {
+          "text": "Another BUY2 at100 would bring potential position11>10 and is rejected despite costing only200. Disabling new orders preserves the existing700 reservation;it does not prove those7 units cannot fill."
+        }
+      ]
+    },
+    {
+      "type": "code",
+      "id": "bounded-buy-admission",
+      "language": "python",
+      "source": "def admit_buy(cash,position,cap,open_orders,request,enabled,age_ms):\n    # Own long-only, one-instrument, one-currency, zero-fee BUY reservation model.\n    for value,upper in ((cash,10**9),(position,1000),(cap,1000),(age_ms,10**6)):\n        if type(value) is not int or not 0<=value<=upper:\n            raise ValueError(\"invalid state scalar\")\n    if position>cap or type(enabled) is not bool:\n        raise ValueError(\"invalid position or gate\")\n    if type(open_orders) is not tuple or len(open_orders)>16:\n        raise ValueError(\"invalid bounded reservation list\")\n    def valid_order(order):\n        return (type(order) is tuple and len(order)==3 and\n                all(type(x) is int for x in order) and\n                1<=order[0]<=10000 and 1<=order[1]<=10000 and 1<=order[2]<=100)\n    if not all(valid_order(o) for o in open_orders) or not valid_order(request):\n        raise ValueError(\"invalid order fields\")\n    ids=[o[0] for o in open_orders]\n    if len(set(ids))!=len(ids) or request[0] in ids:\n        raise ValueError(\"duplicate live reservation identity\")\n    reserved=sum(price*qty for _,price,qty in open_orders)\n    exposure=position+sum(qty for _,_,qty in open_orders)\n    if reserved>cash or exposure>cap:\n        raise ValueError(\"inconsistent existing reservations\")\n    if not enabled:return \"disabled\",open_orders\n    if age_ms>100:return \"stale\",open_orders\n    if len(open_orders)==16:return \"capacity\",open_orders\n    _,price,qty=request\n    if exposure+qty>cap:return \"position\",open_orders\n    if reserved+price*qty>cash:return \"cash\",open_orders\n    return \"reserved\",open_orders+(request,)\n\noriginal=((1,100,3),)\nstatus,candidate=admit_buy(1000,2,10,original,(2,100,4),True,100)\nprint(status,candidate)\nprint(admit_buy(1000,2,10,candidate,(3,100,2),True,0)[0])\nprint(admit_buy(1000,2,10,candidate,(3,100,1),False,0))\nprint(original)",
+      "caption": "Expected lines: reserved ((1, 100, 3), (2, 100, 4)); position; ('disabled', ((1, 100, 3), (2, 100, 4))); ((1, 100, 3),). Own exact-int bounds:cash0..1e9,position/cap0..1000,order price1..10000,qty1..100,id1..10000,<=16live reservations;age0..1e6ms with100ms inclusive fresh. Schema errors raise ValueError;control rejections return reason and same immutable reservations. No fee,short,sell,margin,FX,price-band,rate-limit or live-send implementation.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "inline-0",
+      "questionId": "qf5-trading-risk-controls.check-1"
+    },
+    {
+      "type": "check",
+      "id": "inline-1",
+      "questionId": "qf5-trading-risk-controls.check-2"
+    },
+    {
+      "type": "check",
+      "id": "inline-4",
+      "questionId": "qf5-trading-risk-controls.check-5"
+    },
+    {
+      "type": "text",
+      "id": "safe-rejection",
+      "markdown": "The disabled and stale results deny this new BUY only. Malformed,missing or inconsistent state raises an error and must be routed into a blocked/unavailable control state,not caught and interpreted as permission. age_ms is a supplied bounded age value,not proof of a current authenticated clock/feed. Production freshness must bind source/session and monotonic receipt timing with an explicit policy for gaps,clock jumps and unknown input. Our threshold100ms is invented for traceable exercises,not a recommended latency limit."
+    },
+    {
+      "type": "text",
+      "id": "reservation-lifecycle",
+      "markdown": "After a confirmed partial fill of q at execution price e<=reserved limit p,reduce unspent cash by e*q,increase position by q,and reduce that order remaining by q in one coherent update;reserved amount drops p*q. Under the zero-fee assumptions,free cash increases by(p-e)*q and position+remaining exposure is unchanged. A confirmed cancel releases only the unfilled reservation;cancel request alone releases nothing. Rejection,replace,correction,fees,FX and uncertain reconnect outcomes need explicit events/reconciliation. The function only admits reservations;it does not implement these lifecycle transitions or persist/reconcile IDs."
+    },
+    {
+      "type": "text",
+      "id": "disable-is-not-cancel",
+      "markdown": "Define scope and acknowledgment for every kill mechanism:local new-order gate,venue session disconnect,order cancellation and account/firm-wide blocking are different actions. Keep cancel/reconcile handling available through an appropriately controlled path while blocking new risk;do not blindly route cancels through a BUY admission gate. CME Direct documents Kill my orders as your entered orders,not all company orders. No universal kill label proves every venue/order is canceled. Record what was requested,acknowledged,still working and unknown;fills that race a cancel remain real exposure."
+    },
+    {
+      "type": "check",
+      "id": "inline-2",
+      "questionId": "qf5-trading-risk-controls.check-3"
+    },
+    {
+      "type": "check",
+      "id": "inline-3",
+      "questionId": "qf5-trading-risk-controls.check-4"
+    },
+    {
+      "type": "check",
+      "id": "inline-5",
+      "questionId": "qf5-trading-risk-controls.check-6"
+    },
+    {
+      "type": "text",
+      "id": "atomic-check-reserve",
+      "markdown": "Two workers can each read available cash700,each accept a500 reservation,and jointly over-reserve. Run validate-check-reserve in one serialized/transactional revision-checked state transition;on conflict reload and recheck rather than publishing both candidates. A pure function protects caller input and yields a candidate,but it cannot atomically publish it to concurrent senders or bind reservation+durable command intent+remote acceptance. A timeout after send requires reconciliation,not automatic release of reserved exposure. Never use this lesson as authority to send a live order."
+    },
+    {
+      "type": "text",
+      "id": "transfer",
+      "markdown": "Independent transfer: test exact-limit acceptance,one-above rejection,aggregate open orders,stale age100 versus101,disabled with existing reservations,zero cash,duplicate live IDs,malformed bools and16-slot capacity. Construct two accepted candidates from the same old state whose union breaches cash,then explain the required concurrency boundary. Add a fill/cancel reducer only after specifying its event identity,fees,source and coherent cash/position/reservation update;do not erase unknown exposure to make the invariant appear green."
+    },
+    {
+      "type": "check",
+      "id": "inline-6",
+      "questionId": "qf5-trading-risk-controls.check-7"
+    },
+    {
+      "type": "text",
+      "id": "sources",
+      "markdown": "Sources:[SEC market-access rule overview](https://www.sec.gov/rules-regulations/2011/06/risk-management-controls-brokers-or-dealers-market-access),[SEC staff FAQ including Question16](https://www.sec.gov/rules-regulations/staff-guidance/trading-markets-frequently-asked-questions/divisionsmarketregfaq-0),[CME Direct holding/killing scope](https://www.cmegroup.com/tools-information/webhelp/cme-direct/cme-direct-trader-broker/Content/HeldOrders.html),[Azure event-store optimistic concurrency discussion](https://learn.microsoft.com/en-us/azure/architecture/patterns/event-sourcing). Staff FAQ is staff guidance,not a new Commission rule. All concrete model limits and gate/reason order here are own teaching policy."
+    }
+  ],
+  "practice": {
+    "problemIds": []
+  },
+  "summary": "Aggregate possible open-order exposure matters before routing. Check and reserve together,retain unresolved/cancel-pending exposure,and distinguish blocking new commands from confirmed cancel/reconciliation. This pure zero-fee long-only candidate is not a concurrent,durable or regulatory-complete live risk engine."
+}

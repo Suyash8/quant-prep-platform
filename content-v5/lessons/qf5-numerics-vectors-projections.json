@@ -1,0 +1,207 @@
+{
+  "id": "qf5-numerics-vectors-projections",
+  "revision": 2,
+  "title": "Vectors, norms and projections",
+  "module": "qf5-numerics",
+  "order": 1,
+  "estMinutes": 38,
+  "objectives": [
+    {
+      "conceptId": "qf5-numerics-vectors-projections.norms",
+      "text": "Compute real-vector dot products and declared norms with compatible dimensions/units and distinguish their different meanings."
+    },
+    {
+      "conceptId": "qf5-numerics-vectors-projections.projection",
+      "text": "Derive and compute projection onto a nonzero line, checking orthogonal residuals and the Euclidean minimum-distance property."
+    },
+    {
+      "conceptId": "qf5-numerics-vectors-projections.matrix-power-invariant",
+      "text": "Derive modular matrix multiplication and binary exponentiation with identity, noncommutative order and bounded accumulators."
+    }
+  ],
+  "prerequisites": [
+    "qf5-statistics-risk-estimation",
+    "qf5-algorithms-dp-greedy"
+  ],
+  "blocks": [
+    {
+      "type": "text",
+      "id": "vector-contract",
+      "markdown": "A vector is an ordered list of coordinates in a declared basis. Equal length is necessary for coordinatewise operations, but labels/order/units must also agree: a shape-compatible pair with reversed instruments is still wrong. This lesson uses finite-dimensional REAL vectors and the ordinary Euclidean dot product, not complex conjugate inner products or arbitrary weighted geometries. Synthetic numeric coordinates are dimensionless unless explicitly given a common unit."
+    },
+    {
+      "type": "text",
+      "id": "dot-and-norms",
+      "markdown": "For equal-dimensional real vectors, $u\\cdot v=\\sum_i u_i v_i$. It is symmetric and linear in either argument. The Euclidean squared length is v\u00b7v, and ||v||\u2082=\u221a(v\u00b7v). Other common norms are ||v||\u2081=\u03a3|v_i| and ||v||\u221e=max|v_i|. A norm is nonnegative, is zero only at the zero vector, scales by |c| under scalar multiplication, and satisfies the triangle inequality. Different norms answer different magnitude questions; they are not interchangeable numeric values."
+    },
+    {
+      "type": "code",
+      "id": "vector-norm-trace",
+      "language": "python",
+      "source": "from math import sqrt\nv, w = [-3,4], [4,3]\none_norm = sum(abs(x) for x in v)\ntwo_norm_squared = sum(x*x for x in v)\ninfinity_norm = max(abs(x) for x in v)\nprint(one_norm)\nprint(two_norm_squared)\nprint(sqrt(two_norm_squared))\nprint(infinity_norm)\nprint(sum(x*y for x,y in zip(v,w)))",
+      "caption": "Expected output: 7, then 25, then 5.0, then 4, then 0. For v=(-3,4), L1=7, Euclidean length=5 and infinity norm=4. Its dot product with w=(4,3) is 0, so these nonzero real vectors are orthogonal under the declared dot product. The squared norm 25 is not the length 5.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "inline-0",
+      "questionId": "qf5-numerics-vectors-projections.check-1"
+    },
+    {
+      "type": "check",
+      "id": "inline-1",
+      "questionId": "qf5-numerics-vectors-projections.check-2"
+    },
+    {
+      "type": "text",
+      "id": "norm-meaning",
+      "markdown": "L1 adds coordinate magnitudes; L2 measures Euclidean distance; infinity norm records the largest absolute coordinate. If coordinates all have a common unit U, these lengths have unit U while squared length and a dot product of two U-valued vectors have U\u00b2 units. Combining price cents, elapsed seconds and share counts in one unscaled Euclidean norm is an arbitrary choice of geometry, not a meaningful universal error metric. Scaling or weighting changes the question and must be declared."
+    },
+    {
+      "type": "text",
+      "id": "projection-derivation",
+      "markdown": "A line through the origin in direction u\u22600 contains all vectors c u. Seek a closest point p=c u to v in Euclidean distance. Orthogonality u\u00b7(v-c u)=0 gives c=(u\u00b7v)/(u\u00b7u). With p so defined and residual r=v-p, r\u00b7u=0. For ANY scalar d, v-d u=r+(c-d)u, so ||v-d u||\u2082\u00b2=||r||\u2082\u00b2+(c-d)\u00b2||u||\u2082\u00b2. The cross-term vanishes by orthogonality; the added square is nonnegative and is 0 only at d=c. This proves the unique minimum, not merely a formula to memorize."
+    },
+    {
+      "type": "worked",
+      "id": "projection-trace",
+      "title": "Project onto a diagonal line",
+      "steps": [
+        {
+          "text": "Let v=(3,1) and u=(1,1). Then u\u00b7v=4 and u\u00b7u=2, so c=2."
+        },
+        {
+          "text": "Projection p=(2,2), residual r=(1,-1), and r\u00b7u=1-1=0."
+        },
+        {
+          "text": "The original squared length is 10. Projection squared length 8 plus residual squared length 2 gives 10, a Euclidean Pythagorean check."
+        },
+        {
+          "text": "Replacing direction u with 3u changes coefficient c to c/3 but leaves the same projected point on the same line. The direction coefficient is not itself the projected vector."
+        }
+      ]
+    },
+    {
+      "type": "code",
+      "id": "exact-line-projection",
+      "language": "python",
+      "source": "from fractions import Fraction\n\ndef rational_vector(values):\n    if type(values) is not list or not 1 <= len(values) <= 1000:\n        raise ValueError(\"expected a list of 1..1000 rational coordinates\")\n    result = []\n    for value in values:\n        if type(value) not in (int,Fraction):\n            raise ValueError(\"expected int/Fraction coordinates, excluding bool\")\n        value = Fraction(value)\n        if abs(value.numerator) > 1000000000 or value.denominator > 1000000:\n            raise ValueError(\"coordinate outside exact teaching bounds\")\n        result.append(value)\n    return result\n\ndef project_line(vector, direction):\n    v, u = rational_vector(vector), rational_vector(direction)\n    if len(v) != len(u):\n        raise ValueError(\"dimension mismatch\")\n    denominator = sum(x*x for x in u)\n    if denominator == 0:\n        raise ValueError(\"zero direction does not define a line\")\n    coefficient = sum(x*y for x,y in zip(v,u)) / denominator\n    projected = [coefficient*x for x in u]\n    residual = [x-y for x,y in zip(v,projected)]\n    return projected, residual\n\nprojected, residual = project_line([3,1], [1,1])\nprint([str(x) for x in projected])\nprint([str(x) for x in residual])\nprint(sum(x*y for x,y in zip(residual,[1,1])))\nprint(sum(Fraction(x)**2 for x in [3,1]) ==\n      sum(x*x for x in projected) + sum(x*x for x in residual))\ntry:\n    project_line([3,1], [0,0])\nexcept ValueError:\n    print(\"zero direction rejected\")",
+      "caption": "Expected output: ['2', '2'], then ['1', '-1'], then 0, then True, then zero direction rejected. Inputs are exact bounded int/Fraction lists; this helper rejects bool, floats, mismatched dimensions and a zero direction. No fitted plane, multi-column QR routine or general numerical geometry package is supplied.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "inline-2",
+      "questionId": "qf5-numerics-vectors-projections.check-3"
+    },
+    {
+      "type": "check",
+      "id": "inline-3",
+      "questionId": "qf5-numerics-vectors-projections.check-4"
+    },
+    {
+      "type": "text",
+      "id": "zero-and-affine",
+      "markdown": "The zero vector does not define a line direction because u\u00b7u=0. Projection onto the zero SUBSPACE {0} can be defined separately as 0, but that is not this line helper's contract. A line not through the origin needs an anchor a: project v-a onto direction u, then add a back. Applying the origin-line formula directly to an affine line silently changes the geometry. Multi-dimensional subspaces need their own basis/rank and numerical method."
+    },
+    {
+      "type": "text",
+      "id": "numeric-boundary",
+      "markdown": "Exact Fraction arithmetic makes the small worked identities exact, not the underlying measurements. For floating data, squared intermediates can overflow/underflow or lose scale; a numerical library and explicit tolerances are separate choices. Do not silently replace exact comparisons with an arbitrary epsilon independent of units/scale. Here no NumPy runtime is required; the NumPy norm reference is used only to distinguish vector and matrix norm conventions."
+    },
+    {
+      "type": "text",
+      "id": "transfer",
+      "markdown": "Independent transfer: project (4,0) onto u=(1,1); verify the residual is orthogonal to u and compare squared distance with candidates d u for d=0,1,2,3. Then scale u by a negative nonzero constant and check that the projected vector stays fixed. Explain why translating to an anchored line needs subtract/project/add rather than merely changing the norm. Test dimension mismatch and zero direction before dividing."
+    },
+    {
+      "type": "check",
+      "id": "inline-4",
+      "questionId": "qf5-numerics-vectors-projections.check-5"
+    },
+    {
+      "type": "check",
+      "id": "inline-5",
+      "questionId": "qf5-numerics-vectors-projections.check-6"
+    },
+    {
+      "type": "check",
+      "id": "inline-6",
+      "questionId": "qf5-numerics-vectors-projections.check-7"
+    },
+    {
+      "type": "text",
+      "id": "sources",
+      "markdown": "References: [MIT dot product](https://ocw.mit.edu/ans7870/18/18.013a/textbook/HTML/chapter03/section03.html), [MIT projection derivation](https://ocw.mit.edu/courses/18-06sc-linear-algebra-fall-2011/00e9c8f0eafedeab21a3d079a17ed3d8_MIT18_06SCF11_Ses2.2sum.pdf), and [NumPy norm conventions](https://numpy.org/doc/stable/reference/generated/numpy.linalg.norm.html). The source's multi-column normal-equation/inverse formulas are not adopted as a general stable numerical implementation here. This lesson proves and implements only the stated real-line projection."
+    },
+    {
+      "type": "text",
+      "id": "modular-matrix-squaring-0",
+      "markdown": "Matrix multiplication is not elementwise power\n\nFor n*n matrices X, Y, the product entry C[i][j] is sum over h of X[i][h]*Y[h][j]. It combines row i of X with column j of Y. Reduce each product-add modulo M: integer congruence preserves sums/products, so this gives the exact product over residues. Matrix multiplication is associative but generally not commutative. The power A^k means repeated matrix products; raising each cell to k separately is wrong."
+    },
+    {
+      "type": "text",
+      "id": "modular-matrix-squaring-1",
+      "markdown": "Exponentiation invariant and identity\n\nInitialize result=I, base=A, remaining=k. Maintain result*base^remaining=A^original_k mod M. If remaining is odd, multiply result=result*base. Then divide remaining by 2 and square base when more work remains. Associativity justifies grouping powers of the same base; no interchange of arbitrary matrices is assumed. At remaining 0, result is the requested power. In particular A^0=I, including a zero/singular matrix. Do not reduce k modulo M-1: scalar Fermat rules are not a general matrix-power rule."
+    },
+    {
+      "type": "text",
+      "id": "modular-matrix-squaring-2",
+      "markdown": "Overflow discipline, bounds and trace\n\nFor [[1, 1], [1, 0]], power 0 is identity, power 3 is [[3, 2], [2, 1]]. n<=20, k<=10^18, M prime 2..1000000007. Each reduced factor is < M, so a product plus one reduced accumulator is < 10^18+14000000049, within signed 64-bit range, but summing a whole unmodded dot product can exceed that. Python ints are exact; the explicit per-add reduction mirrors the safe bounded pattern without implying C++ qualification. O(n^3 log(k+1)) arithmetic operations and O(n^2) matrix state, plus formatted output. Product matrices are fresh, avoiding aliasing corruption. Primality is supplied but not needed for nonnegative exponentiation itself."
+    },
+    {
+      "type": "code",
+      "id": "modular-matrix-squaring-complete",
+      "language": "python",
+      "source": "from collections import OrderedDict, deque\nfrom bisect import bisect_left\nimport heapq\n\ndef matrix_power(k, mod, a):\n    n = len(a)\n\n    def multiply(x, y):\n        product = [[0] * n for _ in range(n)]\n        for i in range(n):\n            for middle in range(n):\n                factor = x[i][middle]\n                for j in range(n):\n                    product[i][j] = (product[i][j] + factor * y[middle][j]) % mod\n        return product\n    result = [[int(i == j) for j in range(n)] for i in range(n)]\n    base = [row[:] for row in a]\n    while k:\n        if k & 1:\n            result = multiply(result, base)\n        k //= 2\n        if k:\n            base = multiply(base, base)\n    return [' '.join(map(str, row)) for row in result]\n\nprint(*matrix_power(3, 1000000007, [[1, 1], [1, 0]]), sep='\\n')\nprint(*matrix_power(0, 7, [[0, 0], [0, 0]]), sep='\\n')\n",
+      "caption": "Expected stdout:\n3 2\n2 1\n1 0\n0 1\n\nPrevalidated inputs follow the captured public contract. This completes the named Python function using its original supplied main/parser. It does not claim independent parser, C++, app-runner or judge qualification.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "modular-matrix-squaring-inline-1",
+      "questionId": "qf5-numerics-vectors-projections.modular-matrix-squaring-check-1"
+    },
+    {
+      "type": "check",
+      "id": "modular-matrix-squaring-inline-2",
+      "questionId": "qf5-numerics-vectors-projections.modular-matrix-squaring-check-2"
+    },
+    {
+      "type": "check",
+      "id": "modular-matrix-squaring-inline-3",
+      "questionId": "qf5-numerics-vectors-projections.modular-matrix-squaring-check-3"
+    },
+    {
+      "type": "check",
+      "id": "modular-matrix-squaring-inline-4",
+      "questionId": "qf5-numerics-vectors-projections.modular-matrix-squaring-check-4"
+    },
+    {
+      "type": "check",
+      "id": "modular-matrix-squaring-inline-5",
+      "questionId": "qf5-numerics-vectors-projections.modular-matrix-squaring-check-5"
+    },
+    {
+      "type": "check",
+      "id": "modular-matrix-squaring-inline-6",
+      "questionId": "qf5-numerics-vectors-projections.modular-matrix-squaring-check-6"
+    },
+    {
+      "type": "check",
+      "id": "modular-matrix-squaring-inline-7",
+      "questionId": "qf5-numerics-vectors-projections.modular-matrix-squaring-check-7"
+    },
+    {
+      "type": "text",
+      "id": "modular-matrix-squaring-sources",
+      "markdown": "References: [1](https://cp-algorithms.com/algebra/binary-exp.html), [2](https://docs.python.org/3.12/library/stdtypes.html). Public task hash e8add334cba94710ae6f0e3de6f6a6717fd8d68611ed3482da821416220b48eb. These references establish language/container semantics; the exact task framing is the captured public contract. This extension preserves the earlier bounded examples and their policies rather than silently broadening those APIs."
+    }
+  ],
+  "practice": {
+    "problemIds": [
+      "qfp-matrix-mult-mod"
+    ]
+  },
+  "summary": "A norm needs a declared geometry and compatible units. Euclidean line projection divides by a nonzero direction squared length and leaves an orthogonal residual, which proves the closest-point property. Practice transfer: modular matrix squaring."
+}

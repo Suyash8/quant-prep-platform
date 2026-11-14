@@ -71,3 +71,22 @@ export async function runnerPost<T>(endpoint: '/submit' | '/run', body: unknown)
   }
   return res.json() as Promise<T>;
 }
+
+/** The judge may run learners' code only on an ISOLATED runner on a supported toolchain. FAIL CLOSED: if the runner cannot be reached or does not say so, nothing is judged.
+ *  Production needs sandbox.active and Python >= 3.12 / g++ >= 12.4 (the qualification baseline). QF_V5_CODE_DEV=1 (development and tests only) waives both. Cached for 5 s. */
+let rtCache: { at: number; v: { ok: boolean; reason?: string } } | null = null;
+export async function judgeRuntimeStatus(): Promise<{ ok: boolean; reason?: string }> {
+  if (rtCache && Date.now() - rtCache.at < 5000) return rtCache.v;
+  let v: { ok: boolean; reason?: string };
+  if (process.env.QF_V5_CODE_DEV === '1') v = { ok: true };
+  else if (!(await ensureRunner())) v = { ok: false, reason: 'The code runner is not running.' };
+  else {
+    try {
+      const h = (await (await fetch(`${RUNNER_URL}/health`, { signal: AbortSignal.timeout(2500) })).json()) as { sandbox?: { active?: boolean }; toolchain?: { pythonMeetsBaseline?: boolean; gppMeetsBaseline?: boolean } };
+      if (h.sandbox?.active !== true) v = { ok: false, reason: 'The code runner is not isolated on this machine (bubblewrap sandbox unavailable), so code is not run.' };
+      else if (h.toolchain?.pythonMeetsBaseline !== true || h.toolchain?.gppMeetsBaseline !== true) v = { ok: false, reason: 'The runner toolchain is below Python 3.12 / g++ 12.4, so code is not judged. Point PYTHON_BIN and CXX_BIN at supported versions.' };
+      else v = { ok: true };
+    } catch { v = { ok: false, reason: 'The code runner could not be checked.' }; }
+  }
+  rtCache = { at: Date.now(), v }; return v;
+}

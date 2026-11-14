@@ -1,0 +1,121 @@
+{
+  "id": "qf5-trading-replay-recovery",
+  "revision": 1,
+  "title": "Snapshots, replay and deterministic recovery",
+  "module": "qf5-trading",
+  "order": 3,
+  "estMinutes": 22,
+  "objectives": [
+    {
+      "conceptId": "qf5-trading-replay-recovery.snapshot-consistency",
+      "text": "Bind a coherent snapshot to exact schema/session and a documented inclusive/exclusive cursor, recovering only through a validated contiguous target before publishing current state."
+    },
+    {
+      "conceptId": "qf5-trading-replay-recovery.deterministic-replay",
+      "text": "Demonstrate full replay equals snapshot-plus-suffix under the same reducer/configuration while isolating external effects and retaining source/version/provenance and failure limits."
+    }
+  ],
+  "prerequisites": [
+    "qf5-trading-feed-state"
+  ],
+  "blocks": [
+    {
+      "type": "text",
+      "id": "state-and-position",
+      "markdown": "A snapshot must pair application state with the exact stream position it represents, plus schema/reducer version, configured session/channel, instrument directory and relevant rules/configuration. State from after event100 with a cursor from before100 can double-apply or omit work. A checksum of that inconsistent artifact does not make it coherent. Capture/publish state and cursor under one consistent cut or equivalent transactional/versioned protocol. Validate schema/ranges/source and completeness, but remember that shape checks alone cannot prove the snapshot came from a trusted coherent source."
+    },
+    {
+      "type": "text",
+      "id": "cursor-conventions",
+      "markdown": "Choose an explicit convention. Our toy snapshot field through means LAST APPLIED event inclusive, so replay begins through+1. That is an OWN convention, not a rule to impose on every protocol. The Nasdaq GLIMPSE5 End of Snapshot G message specifies that real-time ITCH processing begins WITH the sequence number stated in its snapshot message, not blindly that number+1. GLIMPSE also has its own SoupBinTCP snapshot sequence separate from the real-time feed cursor. Read the exact protocol/service cursor meaning and bind the same session/day/feed before joining snapshot and updates."
+    },
+    {
+      "type": "worked",
+      "id": "consistent-snapshot-cut",
+      "title": "A complete suffix must meet one coherent cut",
+      "steps": [
+        {
+          "text": "Toy initial A=10,B=10 through0. Apply1:A+2 ->(12,10),2:B-3 ->(12,7),3:A-1 ->(11,7). Next expected after these events is4."
+        },
+        {
+          "text": "A coherent snapshot through2 contains(12,7). Replay only event3 to target-next4 and obtain(11,7),the same as replaying all three from through0."
+        },
+        {
+          "text": "If(12,7)is paired with through1, replaying2 again double-applies B-3. If it is paired with through3, event3 is omitted. Ranges/checksum might still look valid; coherent capture/source evidence is essential."
+        }
+      ]
+    },
+    {
+      "type": "code",
+      "id": "coherent-snapshot-replay-counts",
+      "language": "python",
+      "source": "def recover_counts(snapshot,events,target_next):\n    # Own schema: (version,session,last_APPLIED_sequence,(A_count,B_count)).\n    # No snapshot provenance/coherent-capture/durability is proved by this function.\n    if type(snapshot) is not tuple or len(snapshot)!=4:\n        raise ValueError(\"invalid snapshot shape\")\n    version,session,through,values=snapshot\n    if type(version) is not int or version!=1 or type(session) is not str or session!=\"DAY1\":\n        raise ValueError(\"unsupported schema or session\")\n    if type(through) is not int or not 0<=through<=16 or type(values) is not tuple or len(values)!=2:\n        raise ValueError(\"invalid cursor or values\")\n    if any(type(x) is not int or not 0<=x<=100 for x in values):\n        raise ValueError(\"invalid count range\")\n    if type(target_next) is not int or not through+1<=target_next<=17:\n        raise ValueError(\"invalid target cursor\")\n    if type(events) is not list or len(events)>16:\n        raise ValueError(\"invalid bounded replay\")\n    for event in events:\n        if type(event) is not tuple or len(event)!=3:\n            raise ValueError(\"invalid event shape\")\n        sequence,symbol,delta=event\n        if type(sequence) is not int or not 1<=sequence<=16 or type(symbol) is not str or symbol not in (\"A\",\"B\") or type(delta) is not int or not -10<=delta<=10:\n            raise ValueError(\"invalid event field\")\n    candidate=list(values)\n    expected=through+1\n    for sequence,symbol,delta in events:\n        if sequence!=expected:\n            raise ValueError(\"noncontiguous replay\")\n        index=0 if symbol==\"A\" else 1\n        updated=candidate[index]+delta\n        if not 0<=updated<=100:\n            raise ValueError(\"count invariant failed\")\n        candidate[index]=updated\n        expected+=1\n    if expected!=target_next:\n        raise ValueError(\"target not reached\")\n    return expected,tuple(candidate)\n\ninitial=(1,\"DAY1\",0,(10,10))\nevents=[(1,\"A\",2),(2,\"B\",-3),(3,\"A\",-1)]\nfull=recover_counts(initial,events,4)\nsnapshot=(1,\"DAY1\",2,(12,7))\nprint(full)\nprint(recover_counts(snapshot,events[2:],4)==full)\ntry:\n    recover_counts(initial,events[1:],4)\nexcept ValueError as error:\n    print(error)\nprint(initial)",
+      "caption": "Expected lines: (4, (11, 7)); True; noncontiguous replay; (1, 'DAY1', 0, (10, 10)). Schema1/sessionDAY1,<=16 delta events,two exact integer counts0..100 and delta -10..10 are own finite model bounds. Input is immutable snapshot tuples plus caller-owned list; candidate state stays local and is returned only at the exact target. No partial result on failure. This does NOT authenticate snapshot provenance, repair a mixed cursor/state, persist anything or provide atomic publication to concurrent readers.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "inline-0",
+      "questionId": "qf5-trading-replay-recovery.check-1"
+    },
+    {
+      "type": "check",
+      "id": "inline-1",
+      "questionId": "qf5-trading-replay-recovery.check-2"
+    },
+    {
+      "type": "check",
+      "id": "inline-4",
+      "questionId": "qf5-trading-replay-recovery.check-5"
+    },
+    {
+      "type": "text",
+      "id": "recovery-workflow",
+      "markdown": "A safe workflow keeps consumers paused, obtains a source-bound complete snapshot and required contiguous suffix, builds a private candidate, validates target/invariants and publishes state/cursor/availability together only after success. Buffer or request updates under an explicit bounded retention/overflow policy while snapshot capture runs; a dropped suffix requires starting recovery again, not hiding the gap. Keep the previous state labeled stale until the replacement is accepted. End-of-snapshot/end-of-session or a heartbeat is not itself proof our own suffix is complete. This lesson returns a pure candidate; concurrent atomic publication and durable recovery are later implementation work."
+    },
+    {
+      "type": "text",
+      "id": "determinism-inputs",
+      "markdown": "Deterministic replay requires the same ordered normalized events, reducer/schema version, initial snapshot and rule configuration. Capture historical reference data/FX/fees/calendar decisions that affect results instead of querying today's values during a replay. Avoid implicit wall clocks, unrecorded randomness and unstable iteration-dependent ties in the reducer. Exact integers here make equal event sequences produce exact equal count states; floating reductions or parallel order need explicit tolerance/order policy elsewhere. A source hash/config manifest records what was used; it is not an authenticated source or correctness proof by itself."
+    },
+    {
+      "type": "check",
+      "id": "inline-2",
+      "questionId": "qf5-trading-replay-recovery.check-3"
+    },
+    {
+      "type": "check",
+      "id": "inline-3",
+      "questionId": "qf5-trading-replay-recovery.check-4"
+    },
+    {
+      "type": "check",
+      "id": "inline-5",
+      "questionId": "qf5-trading-replay-recovery.check-6"
+    },
+    {
+      "type": "text",
+      "id": "external-effects",
+      "markdown": "Replaying historical fills/orders for a local state rebuild must not resend old orders,cancels,payments,emails or other external mutations. Isolate reducers/projections from effect execution and define idempotency/transaction boundaries for genuinely new effects separately. An append-only log or a duplicate map alone does not atomically commit an external action and its processed marker. Disk write/close alone is not a durable coherent checkpoint. The pure functions here intentionally make no live-service/file/account calls."
+    },
+    {
+      "type": "text",
+      "id": "transfer",
+      "markdown": "Independent transfer: generate a valid bounded event log and compute every prefix state. For each cut, form a snapshot from that SAME prefix and replay the exact suffix to a common target; compare with full replay. Test through0,empty suffix at the target,last valid sequence,wrong session/schema,duplicate/out-of-order/gap,invalid count delta and early/late target. Demonstrate a mixed state/cursor that passes field validation but yields the wrong candidate, then explain why provenance/capture evidence cannot be replaced by a pure shape validator."
+    },
+    {
+      "type": "check",
+      "id": "inline-6",
+      "questionId": "qf5-trading-replay-recovery.check-7"
+    },
+    {
+      "type": "text",
+      "id": "sources",
+      "markdown": "Sources: [Nasdaq GLIMPSE5 cursor semantics](https://www.nasdaqtrader.com/content/technicalsupport/specifications/dataproducts/NQGlimpseSpecification_5.0.pdf), [MoldUDP64 session/request definitions](https://www.nasdaqtrader.com/content/technicalSupport/specifications/dataproducts/moldudp64.pdf), [Fowler event-sourcing snapshot/replay/external interaction discussion](https://martinfowler.com/eaaDev/EventSourcing.html), and [Azure event-sourcing tradeoffs/versioning/concurrency](https://learn.microsoft.com/en-us/azure/architecture/patterns/event-sourcing). Fowler is a2005 draft conceptual source,not a current vendor recovery contract. The toy cursor/count rules are own explicit model,not a Nasdaq snapshot implementation."
+    }
+  ],
+  "practice": {
+    "problemIds": []
+  },
+  "summary": "A snapshot is state plus a coherent source/session/version/cursor contract. Build and validate a contiguous candidate to the intended target before resuming; preserve exact replay inputs and suppress historical external effects. Pure deterministic equality does not prove authenticated capture,durable commit or concurrent publication."
+}

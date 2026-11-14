@@ -35,7 +35,7 @@ async function shot(name, route) {
 
 await login();
 await shot('landing', '/');
-await page.evaluate(() => fetch('/api/auth/logout', { method: 'POST' })); await page.waitForTimeout(1500);
+await page.evaluate(() => fetch('/api/auth/logout', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ confirmCurrent: true }) })); await page.waitForTimeout(1500);
 await shot('login', '/login'); await shot('register', '/register');
 await login();
 for (const [n, r] of [

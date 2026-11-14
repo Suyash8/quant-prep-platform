@@ -1,0 +1,126 @@
+{
+  "id": "qf5-research-research-scale",
+  "revision": 1,
+  "title": "Batch computation, storage and failure recovery",
+  "module": "qf5-research",
+  "order": 7,
+  "estMinutes": 22,
+  "objectives": [
+    {
+      "conceptId": "qf5-research-research-scale.batch-failure",
+      "text": "Use content-keyed local shard artifacts and temp-file/rename publication with idempotent verified reuse and explicit injected pre/post-publication failures."
+    },
+    {
+      "conceptId": "qf5-research-research-scale.storage-layout",
+      "text": "Design batch completion/recovery and storage manifests that distinguish failed attempts,committed shards and complete datasets without claiming concurrent/power-loss durability."
+    }
+  ],
+  "prerequisites": [
+    "qf5-research-overfitting"
+  ],
+  "blocks": [
+    {
+      "type": "text",
+      "id": "shard-unit",
+      "markdown": "Split independent experiments into bounded tasks with stable IDs,input/config/code versions,attempt IDs and output schemas. Choose shard size by compute overhead,memory,IOand failure replay cost. Too-small files can be metadata-heavy;too-large shards increase memory and recomputation. Partitioning by time/instrument can help access,butmust preserve required label/context windows and avoid changing scientific semantics. This source uses a tiny sum-of-squares task solely to expose the storage/retry protocol,not to implement a distributed backtest cluster."
+    },
+    {
+      "type": "text",
+      "id": "artifact-layout",
+      "markdown": "Own single-writer private local directory:SHA256canonical input/kernel identity names each final JSONartifact. Final payload includes schema,key,full input and deterministic result. A manifest for a larger batch should enumerate expected shards and their verified hashes/status;discovering some files is not evidence all work finished. Here each repeated call recomputes its expected payload and compares exact canonical bytes before reuse,so a stale/corrupt file is not treated as success. Hashes are content identity,not source authenticity."
+    },
+    {
+      "type": "worked",
+      "id": "publication-failure",
+      "title": "A lost acknowledgment does not mean no write",
+      "steps": [
+        {
+          "text": "For values[1,-2,3],sum squares=1+4+9=14. Write a temporary file in the destination directory,close it,then rename into the final content-keyed path."
+        },
+        {
+          "text": "Inject failure after temp write,before publication:the function reports failure,cleans its temp file and no committed JSONexists. Retrying computes/commits14."
+        },
+        {
+          "text": "Inject failure AFTERrename for[4]:the call raises butthe final artifact with16exists. Retry must inspect it and return reused16,not duplicate side effects or blindly infer no write. Corrupt an existing artifact and reject reuse rather than overwrite away the evidence."
+        }
+      ]
+    },
+    {
+      "type": "code",
+      "id": "local-shard-publication",
+      "language": "python",
+      "source": "from pathlib import Path\nimport hashlib,json,os,tempfile\n\ndef canonical(value):\n    return json.dumps(value,sort_keys=True,separators=(\",\",\":\"),ensure_ascii=True,allow_nan=False)\n\ndef commit_shard(root,values,failpoint=None):\n    # Single writer,private trusted local root;no concurrent or hostile directory support.\n    if type(values) is not list or not 1<=len(values)<=32 or any(type(x) is not int or not -10000<=x<=10000 for x in values):\n        raise ValueError(\"invalid shard values\")\n    if failpoint not in (None,\"after-temp\",\"after-replace\"):raise ValueError(\"invalid failpoint\")\n    source={\"kernel\":\"sum-squares-v1\",\"values\":values[:]}\n    key=hashlib.sha256(canonical(source).encode(\"utf-8\")).hexdigest()\n    payload={\"schema\":1,\"key\":key,\"input\":source,\"sum_squares\":sum(x*x for x in values)}\n    raw=canonical(payload)\n    root=Path(root);root.mkdir(parents=True,exist_ok=True)\n    final=root/(key+\".json\")\n    if final.exists():\n        if final.read_text(encoding=\"utf-8\")!=raw:raise ValueError(\"conflicting or corrupt committed artifact\")\n        return key,\"reused\",payload[\"sum_squares\"]\n    temporary=None\n    try:\n        with tempfile.NamedTemporaryFile(mode=\"w\",encoding=\"utf-8\",dir=root,delete=False) as file:\n            temporary=Path(file.name);file.write(raw)\n        if failpoint==\"after-temp\":raise RuntimeError(\"injected before publication\")\n        os.replace(temporary,final)\n        if failpoint==\"after-replace\":raise RuntimeError(\"injected after publication\")\n        return key,\"committed\",payload[\"sum_squares\"]\n    finally:\n        if temporary is not None:temporary.unlink(missing_ok=True)\n\nwith tempfile.TemporaryDirectory() as directory:\n    try:commit_shard(directory,[1,-2,3],\"after-temp\")\n    except RuntimeError as error:print(error)\n    print(\"artifacts\",len(list(Path(directory).glob(\"*.json\"))))\n    first=commit_shard(directory,[1,-2,3]);print(first[1:])\n    print(commit_shard(directory,[1,-2,3])[1:])\n    try:commit_shard(directory,[4],\"after-replace\")\n    except RuntimeError as error:print(error)\n    print(commit_shard(directory,[4])[1:])\n    Path(directory,first[0]+\".json\").write_text(\"corrupt\",encoding=\"utf-8\")\n    try:commit_shard(directory,[1,-2,3])\n    except ValueError as error:print(error)",
+      "caption": "Expected:injected before publication;artifacts0;(committed,14);(reused,14);injected after publication;(reused,16);conflicting or corrupt committed artifact. Exact stdout quotes tuple strings. Complete code actually writes/reads temporary local files. Same-directory successful os.replaceprovides atomic rename visibility,NOTfsync/power-loss survival,concurrent compare-and-swap,remote object-store transactions or persistent retention. TemporaryDirectoryis deleted after demo. Single trusted writer/root only.",
+      "runnable": false
+    },
+    {
+      "type": "check",
+      "id": "inline-0",
+      "questionId": "qf5-research-research-scale.check-1"
+    },
+    {
+      "type": "check",
+      "id": "inline-1",
+      "questionId": "qf5-research-research-scale.check-2"
+    },
+    {
+      "type": "check",
+      "id": "inline-4",
+      "questionId": "qf5-research-research-scale.check-5"
+    },
+    {
+      "type": "text",
+      "id": "attempt-versus-commit",
+      "markdown": "Task attempt status and artifact commit status are different facts. A worker timeout/exception can occur after publication;recover by validating expected output identity/content. A valid committed shard may be reused while an incomplete temp file must not masquerade as one. Do not retry arbitrary external actions because a local file retry is safe. The function avoids overwriting conflicting final content in this single-writer workflow,butits existence-check/replace sequence is not safe against simultaneous writers or hostile filesystem changes."
+    },
+    {
+      "type": "text",
+      "id": "durability-and-cleanup",
+      "markdown": "Closing a Python file flushes buffers through the OSbutdoes not itself promise stable storage across power loss. This demo intentionally has no file/directory fsyncprotocol. os.replacemay fail across filesystems;placing the temp beside the final avoids that particular cross-filesystem move. Atomic publication concerns visible name replacement,not complete scientific correctness,backup,retention or disk health. Real recovery tests need the actual filesystem/crash environment and a supported operational protocol."
+    },
+    {
+      "type": "text",
+      "id": "batch-coordination",
+      "markdown": "Collect every worker result/exception;submitting a future is not completion. PythonFuture.resultcan raise the worker exception,cancellation or timeout. A timeout does not automatically kill the underlying operation or prove it did not commit. Use bounded resources,explicit dependency DAGs and deterministic reduction order/tolerances. Publish a complete-batch manifest only after all required shards validate;partial analysis must be labeled partial with missing IDs. No parallel executor or distributed retry scheduler is implemented in this local demo."
+    },
+    {
+      "type": "check",
+      "id": "inline-2",
+      "questionId": "qf5-research-research-scale.check-3"
+    },
+    {
+      "type": "check",
+      "id": "inline-3",
+      "questionId": "qf5-research-research-scale.check-4"
+    },
+    {
+      "type": "check",
+      "id": "inline-5",
+      "questionId": "qf5-research-research-scale.check-6"
+    },
+    {
+      "type": "text",
+      "id": "audit-and-layout",
+      "markdown": "Store raw input separately from derived/features/results,with schema/version and lineage links. Keep access patterns and reproducibility needs separate from trading return semantics. Compression/columnar partition choices need real workload measurement,not a universal fastest claim. Do not store secrets in research manifests/logs. Local scratch paths and content filenames are implementation details,not a shareable file service or a durable backup strategy."
+    },
+    {
+      "type": "text",
+      "id": "transfer",
+      "markdown": "Independent transfer:repeat every failpoint and inspect actual final bytes;retry after lost acknowledgment and require exact reuse. Tamper with final JSONand confirm explicit conflict;change input and confirm a different content key. Simulate a list of expected shards with one failure and show batch complete stays false until the missing artifact is verified. Explain why a process-kill/power-loss/concurrent-writer test is still missing even if these injected exceptions pass."
+    },
+    {
+      "type": "check",
+      "id": "inline-6",
+      "questionId": "qf5-research-research-scale.check-7"
+    },
+    {
+      "type": "text",
+      "id": "sources",
+      "markdown": "Sources:[os.replaceand same-filesystem atomic rename contract](https://docs.python.org/3.12/library/os.html#os.replace),[tempfilecreation/cleanup](https://docs.python.org/3.12/library/tempfile.html),[Future.resultfailure semantics](https://docs.python.org/3.12/library/concurrent.futures.html),[pathlibIO](https://docs.python.org/3.12/library/pathlib.html),[JSON](https://docs.python.org/3.12/library/json.html),[hashlib](https://docs.python.org/3.12/library/hashlib.html). Own storage protocol is a bounded teaching design,not a filesystem durability standard."
+    }
+  ],
+  "practice": {
+    "problemIds": []
+  },
+  "summary": "Track task attempts,verified shard commits and batch completion separately. Inspect current artifact state before retrying after a failed acknowledgment. Same-directory atomic rename is not power-loss durability or multi-writer transactional safety;this demo is local scratch and app capability remains unverified."
+}

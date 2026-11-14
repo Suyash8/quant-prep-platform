@@ -1,0 +1,126 @@
+{
+  "id": "qf5-pricing-black-scholes",
+  "revision": 1,
+  "title": "Black-Scholes implementation and limiting cases",
+  "module": "qf5-pricing",
+  "order": 3,
+  "estMinutes": 22,
+  "objectives": [
+    {
+      "conceptId": "qf5-pricing-black-scholes.model-domain",
+      "text": "Implement bounded no-dividend European Black-Scholes call/put valuation with explicit continuous-rate/time/volatility domains,normal CDF and numerical precision limits."
+    },
+    {
+      "conceptId": "qf5-pricing-black-scholes.limiting-cases",
+      "text": "Handle zero maturity and zero volatility before the smooth formula,then test parity,price bounds and independent reference values without implying American/dividend/calibration coverage."
+    }
+  ],
+  "prerequisites": [
+    "qf5-pricing-binomial"
+  ],
+  "blocks": [
+    {
+      "type": "text",
+      "id": "contract",
+      "markdown": "This lesson prices one European call and put on one non-dividend-paying stock under constant annualized volatility sigma,constant continuously compounded annual rate r,frictionless continuous trading and the usual lognormal diffusion/replication assumptions. S,Kare positive same-currency amounts per underlying unit;tauis remaining year fraction. No dividends,fees,default,discrete exercise,borrow constraints,volatility smile or stochastic rates are implemented. European rights differ from American rights. Do not feed a futures price into this stock formula and call it the Black futures model."
+    },
+    {
+      "type": "text",
+      "id": "formula",
+      "markdown": "For tau>0and sigma>0,let w=sigma*sqrt(tau),d1=[ln(S/K)+(r+sigma^2/2)*tau]/w,d2=d1-w,D=exp(-r*tau). With Nthe standard normal CDF,C=S*N(d1)-K*D*N(d2),P=K*D*N(-d2)-S*N(-d1). Thus C-P=S-K*D. The rate is not a physical stock expected return;the pricing measure/model assumptions determine the formula. sigma0.20means20%annualized,not20,and tauis years,not raw days."
+    },
+    {
+      "type": "worked",
+      "id": "model-value-and-bounds",
+      "title": "Price,parity and branch semantics",
+      "steps": [
+        {
+          "text": "S100,K100,r0.05,tau1,sigma0.2produce call about10.450584and put5.573526. Difference4.877058equals100-100*exp(-0.05). These are theoretical model prices,not observed executable quotes."
+        },
+        {
+          "text": "At tau0,no uncertain future remains:call max(S-K,0),put max(K-S,0). For S120,K100,this gives20and0without dividing by sqrt(0). Validation still rejects malformed supplied inputs before returning."
+        },
+        {
+          "text": "At sigma0with tau>0,the stock is deterministic under the pricing model. Discounted payoff becomes call max(S-K*D,0),put max(K*D-S,0),not generally current intrinsic payoff. At S=K100,r5%,tau1,call is about4.877058,put0."
+        }
+      ]
+    },
+    {
+      "type": "code",
+      "id": "bounded-european-limits",
+      "language": "python",
+      "source": "import math\n\ndef normal_cdf(x):\n    return 0.5*math.erfc(-x/math.sqrt(2.0))\n\ndef european_pair(spot,strike,rate,years,vol):\n    # No dividends,European exercise,continuous annual rate and annualized vol.\n    for value,low,high in ((spot,1.0,10000.0),(strike,1.0,10000.0),(rate,-0.2,0.5),(years,0.0,10.0),(vol,0.0,2.0)):\n        if type(value) is not float or not math.isfinite(value) or not low<=value<=high:\n            raise ValueError(\"invalid bounded pricing input\")\n    if years==0.0:return max(spot-strike,0.0),max(strike-spot,0.0)\n    discounted_strike=strike*math.exp(-rate*years)\n    if vol==0.0:return max(spot-discounted_strike,0.0),max(discounted_strike-spot,0.0)\n    if years<1e-6 or vol<1e-6:\n        raise ValueError(\"positive time/vol below teaching numerical domain\")\n    width=vol*math.sqrt(years)\n    d1=(math.log(spot/strike)+(rate+0.5*vol*vol)*years)/width\n    d2=d1-width\n    if max(abs(d1),abs(d2))>8.0:\n        raise ValueError(\"normal tail outside teaching numerical domain\")\n    # Compute the out-of-money side directly,then parity for the other side.\n    if spot<=discounted_strike:\n        call=spot*normal_cdf(d1)-discounted_strike*normal_cdf(d2)\n        put=call+discounted_strike-spot\n    else:\n        put=discounted_strike*normal_cdf(-d2)-spot*normal_cdf(-d1)\n        call=put+spot-discounted_strike\n    return call,put\n\ncall,put=european_pair(100.0,100.0,0.05,1.0,0.2)\nprint(f\"{call:.6f} {put:.6f}\")\nprint(european_pair(120.0,100.0,0.05,0.0,0.2))\nprint(european_pair(100.0,100.0,0.0,1.0,0.0))\nzero=european_pair(100.0,100.0,0.05,1.0,0.0)\nprint(f\"{zero[0]:.6f} {zero[1]:.6f}\")\ntry:european_pair(100.0,100.0,0.05,1.0,-0.2)\nexcept ValueError as error:print(error)",
+      "caption": "Expected:10.450584 5.573526;(20.0, 0.0);(0.0, 0.0);4.877058 0.000000;invalid bounded pricing input. Own exact-float bounds:S,K1..10000,r[-0.2,0.5],tau0..10,sigma0..2. Positive tau/sigma below1e-6or smooth |d1|/|d2|>8are explicitly rejected,not silently approximated by zero. Zero branches are separate exact input cases. Standard-library only,no live quotes or calibration.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "inline-0",
+      "questionId": "qf5-pricing-black-scholes.check-1"
+    },
+    {
+      "type": "check",
+      "id": "inline-1",
+      "questionId": "qf5-pricing-black-scholes.check-2"
+    },
+    {
+      "type": "check",
+      "id": "inline-4",
+      "questionId": "qf5-pricing-black-scholes.check-5"
+    },
+    {
+      "type": "text",
+      "id": "normal-and-cancellation",
+      "markdown": "The code uses N(x)=0.5*erfc(-x/sqrt(2));Python documents erfcas a complementary error function that avoids loss from forming1-erffor large positive arguments. Computing1-N(x)can lose a small tail,so use N(-x)directly when needed. The implementation computes the side out-of-money relative to discounted strike directly,then obtains the other by parity. This reduces one cancellation path;it does not certify relative accuracy for arbitrarily tiny option premiums. Subtraction of small nearby terms and normal-tail underflow still need attention in a production numerical library."
+    },
+    {
+      "type": "text",
+      "id": "zero-is-not-small",
+      "markdown": "Do not switch to the sigma0formula merely because volatility is small without an explicit approximation/error policy. Near the money and maturity,the price/derivatives can change rapidly;small positive inputs are not identical to zero. This own implementation rejects a narrow positive region/tails outside its teaching domain instead of promising accuracy there. Unsupported numerical domain is different from an invalid economic contract. Downstream callers must not catch that error and replace the option value by zero."
+    },
+    {
+      "type": "text",
+      "id": "bounds",
+      "markdown": "Under this no-dividend model,max(S-K*D,0)<=C<=S,and max(K*D-S,0)<=P<=K*D. These discounted-strike lower bounds remain meaningful for negative r;for a European put it is wrong to require P>=current intrinsic in every negative/positive-rate case without the appropriate conditions. Put-call parity is an algebraic cross-check,not independent evidence if one side was constructed from the other. Compare an independent distribution/expectation implementation too. A price within broad bounds can still have the wrong rate,units or model."
+    },
+    {
+      "type": "check",
+      "id": "inline-2",
+      "questionId": "qf5-pricing-black-scholes.check-3"
+    },
+    {
+      "type": "check",
+      "id": "inline-3",
+      "questionId": "qf5-pricing-black-scholes.check-4"
+    },
+    {
+      "type": "check",
+      "id": "inline-5",
+      "questionId": "qf5-pricing-black-scholes.check-6"
+    },
+    {
+      "type": "text",
+      "id": "validation",
+      "markdown": "Separate formula accuracy,model fit and app execution. Local source tests compare selected smooth cases with an independently integrated/high-precision risk-neutral normal reference,check zero branches,monotonicity and bounds,then inspect exceptions at declared boundaries. Passing does not prove a real stock follows constant volatility or the market permits continuous hedging. Actual renderer/app runner and calibration/production gates remain separate. Record versioned input conventions with every result;round output for display only."
+    },
+    {
+      "type": "text",
+      "id": "transfer",
+      "markdown": "Independent transfer:derive put from parity and compare with the direct formula in moderate cases;use a separate normal-integral reference so both are not the only oracle. Test negative/zero/positive rates,zero maturity,zero volatility,Sabove/below discounted strike,nonfinite/wrong types and explicitly rejected positive/tail regions. Explain why a dividend-paying American option would require a different contract/model rather than a cosmetic flag."
+    },
+    {
+      "type": "check",
+      "id": "inline-6",
+      "questionId": "qf5-pricing-black-scholes.check-7"
+    },
+    {
+      "type": "text",
+      "id": "sources",
+      "markdown": "Sources:[MIT18.642lecture21p20formula](https://ocw.mit.edu/courses/18-642-topics-in-mathematics-with-applications-in-finance-fall-2024/mit18_642_f24_lec21.pdf),[Macroption formulas and no-dividend specialization](https://www.macroption.com/black-scholes-formula/),[Python math erfc](https://docs.python.org/3.12/library/math.html),[SciPy normal CDF definition](https://docs.scipy.org/doc/scipy/reference/generated/scipy.special.ndtr.html),[CME stock/futures/carry model distinctions](https://cmegroupclientsite.atlassian.net/wiki/spaces/pubsub/pages/457083416/SPAN+Risk+Manager+-+Option+Pricing+Models). Source formula pixels inspected;concrete numerical bounds are own teaching policy."
+    }
+  ],
+  "practice": {
+    "problemIds": []
+  },
+  "summary": "Black-Scholes is a scoped European no-dividend model with explicit rate,time and volatility conventions. Zero maturity and zero volatility require separate branches. Parity/bounds are useful checks,not calibration,arbitrary-tail accuracy or real execution proof."
+}

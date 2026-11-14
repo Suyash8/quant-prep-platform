@@ -1,0 +1,152 @@
+{
+  "id": "qf5-statistics-regression",
+  "revision": 1,
+  "title": "Regression, residuals and assumptions",
+  "module": "qf5-statistics",
+  "order": 6,
+  "estMinutes": 22,
+  "objectives": [
+    {
+      "conceptId": "qf5-statistics-regression.least-squares",
+      "text": "Derive and compute the unique intercept/slope least-squares fit for a nonconstant single predictor, with explicit input and residual contracts."
+    },
+    {
+      "conceptId": "qf5-statistics-regression.residual-diagnostics",
+      "text": "Use residual patterns and evaluation design to challenge a fitted line without confusing algebraic fit identities, association or training error with valid inference/prediction."
+    }
+  ],
+  "prerequisites": [
+    "qf5-statistics-estimation-uncertainty"
+  ],
+  "blocks": [
+    {
+      "type": "text",
+      "id": "fit-target",
+      "markdown": "For paired observations (x_i,y_i), fit y\u0302_i=a+b x_i by minimizing SSE(a,b)=\u03a3(y_i-a-b x_i)\u00b2. Residual e_i=y_i-y\u0302_i is observed minus fitted; it is not the unknown population error \u03b5_i. A slope has units of y per unit x, an intercept has y units, and SSE has y\u00b2 units. The algorithm can fit a descriptive line even when a linear model is scientifically wrong. Computing a fit does not establish causation or a profitable prediction rule."
+    },
+    {
+      "type": "text",
+      "id": "centered-derivation",
+      "markdown": "Write x\u0304,y\u0304 for sample means, Sxx=\u03a3(x_i-x\u0304)\u00b2, Sxy=\u03a3(x_i-x\u0304)(y_i-y\u0304), and Syy=\u03a3(y_i-y\u0304)\u00b2. Centering gives SSE(a,b)=Syy-2b Sxy+b\u00b2 Sxx+n(a+b x\u0304-y\u0304)\u00b2. For a chosen b, the last square is minimized at a=y\u0304-b x\u0304. If Sxx>0, complete the other square: Syy-Sxy\u00b2/Sxx+Sxx(b-Sxy/Sxx)\u00b2. Thus the unique minimum has b=Sxy/Sxx and a=y\u0304-b x\u0304. No calculus or normality is needed for this algebra."
+    },
+    {
+      "type": "text",
+      "id": "degenerate-predictor",
+      "markdown": "Sxx is nonnegative, not automatically positive. If every predictor value is the same, Sxx=0 and no unique slope is identified with an intercept: many (a,b) pairs give the same constant fitted value. Reject that case or define a separate intercept-only model rather than divide by zero or invent slope certainty. Nearly constant floating predictors can be ill-conditioned even when the denominator is not exactly 0; this exact small-integer helper is not a general numerical linear-algebra solver."
+    },
+    {
+      "type": "worked",
+      "id": "ols-trace",
+      "title": "Fit a three-point synthetic line exactly",
+      "steps": [
+        {
+          "text": "For x=[0,1,2], y=[1,2,2], x\u0304=1 and y\u0304=5/3."
+        },
+        {
+          "text": "Sxx=2 and Sxy=1, so b=1/2 and a=5/3-1/2=7/6."
+        },
+        {
+          "text": "Fitted values are [7/6,5/3,13/6]. Residuals y-y\u0302 are [-1/6,1/3,-1/6]. SSE=1/36+1/9+1/36=1/6."
+        },
+        {
+          "text": "The in-sample residual sum and x-weighted residual sum are both 0. These are consequences of the fitted intercept/slope, not empirical proof of independent errors."
+        }
+      ]
+    },
+    {
+      "type": "code",
+      "id": "exact-ols-line",
+      "language": "python",
+      "source": "from fractions import Fraction\n\ndef fit_line(xs, ys):\n    if type(xs) is not list or type(ys) is not list or len(xs) != len(ys) or not 2 <= len(xs) <= 1000:\n        raise ValueError(\"expected equal-length lists of 2..1000 values\")\n    if any(type(v) is not int or abs(v) > 1000000 for v in xs+ys):\n        raise ValueError(\"expected bounded integer observations, excluding bool\")\n    x_mean, y_mean = Fraction(sum(xs),len(xs)), Fraction(sum(ys),len(ys))\n    sxx = sum((Fraction(x)-x_mean)**2 for x in xs)\n    if sxx == 0:\n        raise ValueError(\"constant predictor: no unique slope\")\n    sxy = sum((Fraction(x)-x_mean)*(Fraction(y)-y_mean) for x,y in zip(xs,ys))\n    slope = sxy / sxx\n    intercept = y_mean - slope*x_mean\n    fitted = [intercept+slope*x for x in xs]\n    residuals = [y-prediction for y,prediction in zip(ys,fitted)]\n    return intercept, slope, fitted, residuals\n\nxs, ys = [0,1,2], [1,2,2]\nintercept, slope, fitted, residuals = fit_line(xs,ys)\nprint(intercept, slope)\nprint([str(value) for value in residuals])\nprint(sum(value**2 for value in residuals))\nprint(sum(residuals))\nprint(sum(x*e for x,e in zip(xs,residuals)))",
+      "caption": "Expected output: 7/6 1/2, then ['-1/6', '1/3', '-1/6'], then 1/6, then 0, then 0. Exact rational arithmetic exposes the fit identities. The helper requires aligned integer observations with explicit size/magnitude bounds; it does not silently zip mismatched series or accept bool as an observation.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "inline-0",
+      "questionId": "qf5-statistics-regression.check-1"
+    },
+    {
+      "type": "check",
+      "id": "inline-1",
+      "questionId": "qf5-statistics-regression.check-2"
+    },
+    {
+      "type": "text",
+      "id": "residual-identities",
+      "markdown": "For an intercept-including unweighted least-squares fit on the training rows, \u03a3e_i=0 and \u03a3x_i e_i=0. The fitted line passes through (x\u0304,y\u0304). Those normal-equation identities hold for the computed fit regardless of whether its stochastic assumptions are true. In-sample residuals share fitted parameter estimates and are constrained; they are not automatically iid samples of population errors. Do not test independence merely by observing their algebraic zero correlation with the fitted predictor."
+    },
+    {
+      "type": "text",
+      "id": "assumptions-inference",
+      "markdown": "A stochastic model writes Y_i=\u03b20+\u03b21 x_i+\u03b5_i. A correct conditional mean, E[\u03b5|X]=0, and sufficient design variation support the usual interpretation of fitted coefficients as estimates of that mean relationship. Classical finite-sample normal-theory inference additionally uses independent normal errors with constant finite variance. Normality is not required merely to compute least squares. Unequal variance can invalidate naive standard errors without by itself biasing coefficients when the conditional-mean condition still holds. Autocorrelation, omitted variables and data leakage each need their own treatment, not a universal fix of adding more rows."
+    },
+    {
+      "type": "check",
+      "id": "inline-2",
+      "questionId": "qf5-statistics-regression.check-3"
+    },
+    {
+      "type": "text",
+      "id": "diagnostic-plan",
+      "markdown": "Inspect residuals against predictor/fitted values for curvature, against fitted magnitude for changing spread, and against time/order for runs or drift. Unusual points and leverage can change the fit and deserve source checks, not automatic deletion. A Q-Q plot can assess departures relevant to normal-error inference. Patterns suggest problems to investigate; no pattern in a small plot proves all assumptions. Raw residual correlation checks alone do not certify independence."
+    },
+    {
+      "type": "code",
+      "id": "curved-residual-counterexample",
+      "language": "python",
+      "source": "from fractions import Fraction\nxs = [-2,-1,0,1,2]\nys = [4,1,0,1,4]\nx_mean = Fraction(sum(xs),len(xs))\ny_mean = Fraction(sum(ys),len(ys))\nslope = sum((x-x_mean)*(y-y_mean) for x,y in zip(xs,ys)) / sum((x-x_mean)**2 for x in xs)\nintercept = y_mean-slope*x_mean\nresiduals = [y-(intercept+slope*x) for x,y in zip(xs,ys)]\nprint(intercept, slope)\nprint([str(value) for value in residuals])\nprint(sum(residuals))\nprint(sum(x*e for x,e in zip(xs,residuals)))",
+      "caption": "Expected output: 2 0, then ['2', '-1', '-2', '-1', '2'], then 0, then 0. A zero slope and both zero normal-equation sums coexist with an obvious U-shaped residual pattern. The true synthetic response here is y=x\u00b2, so a straight mean line misses curvature.",
+      "runnable": true
+    },
+    {
+      "type": "text",
+      "id": "residual-table",
+      "markdown": "The curved example in observation order:\n\n| x | observed y | fitted y | residual |\n|---|---|---|---|\n| -2 | 4 | 2 | 2 |\n| -1 | 1 | 2 | -1 |\n| 0 | 0 | 2 | -2 |\n| 1 | 1 | 2 | -1 |\n| 2 | 4 | 2 | 2 |\n\nPositive ends and a negative center reveal what one residual average hides. A quadratic feature can express this particular pattern, but choosing features after inspecting outcomes is model selection and must be evaluated on untouched data."
+    },
+    {
+      "type": "check",
+      "id": "inline-3",
+      "questionId": "qf5-statistics-regression.check-4"
+    },
+    {
+      "type": "check",
+      "id": "inline-4",
+      "questionId": "qf5-statistics-regression.check-5"
+    },
+    {
+      "type": "text",
+      "id": "evaluation-boundaries",
+      "markdown": "Training SSE is the quantity minimized by the fit, not an honest estimate of future performance after model search. Keep a declared holdout and, for time-dependent tasks, respect chronological feature availability and any overlapping-label restrictions. Fit transformations and coefficients using training information only. Compare against a stated baseline with units and costs. Predictions far outside the observed x range are extrapolations requiring extra justification; an intercept at x=0 may also be outside observed support. Association is not a causal effect without an identification argument."
+    },
+    {
+      "type": "text",
+      "id": "r-squared",
+      "markdown": "With a fitted intercept and Syy>0, training R\u00b2=1-SSE/Syy summarizes the fraction of centered training variation explained by this fit. It does not certify residual assumptions, causal identification, tail accuracy or holdout performance. When all y values are equal, Syy=0 and this ratio is undefined; do not silently divide by zero or claim a unique perfect score. This lesson does not implement multivariable regression, coefficient standard errors, robust covariance estimates or prediction intervals."
+    },
+    {
+      "type": "text",
+      "id": "transfer",
+      "markdown": "Independent transfer: fit the three-point example by hand and check each residual and SSE. Shift every y by 5 and explain why only the intercept changes. Scale x by 2 and predict the slope change. Test constant x and mismatched lengths before arithmetic. Then inspect the curved residual table: propose a model revision and a separate untouched evaluation plan instead of declaring success from zero residual sum."
+    },
+    {
+      "type": "check",
+      "id": "inline-5",
+      "questionId": "qf5-statistics-regression.check-6"
+    },
+    {
+      "type": "check",
+      "id": "inline-6",
+      "questionId": "qf5-statistics-regression.check-7"
+    },
+    {
+      "type": "text",
+      "id": "sources",
+      "markdown": "References: [NIST linear least squares](https://www.itl.nist.gov/div898/handbook/pmd/section1/pmd141.htm), [Penn State coefficients/model assumptions](https://online.stat.psu.edu/stat501/Lesson01), and [NIST residual model checking](https://www.itl.nist.gov/div898/handbook/pmd/section4/pmd44.htm). Own derivation explicitly requires Sxx>0 and distinguishes residual constraints from error independence. The helper is descriptive exact single-predictor fitting, not a professional regression or trading system."
+    }
+  ],
+  "practice": {
+    "problemIds": []
+  },
+  "summary": "Least squares minimizes a declared training loss and has algebraic residual constraints. Valid inference, holdout prediction and causal interpretation each need assumptions and evidence beyond the fit."
+}

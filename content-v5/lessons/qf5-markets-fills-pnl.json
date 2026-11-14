@@ -1,0 +1,274 @@
+{
+  "id": "qf5-markets-fills-pnl",
+  "revision": 3,
+  "title": "Fills, positions, cash and PnL",
+  "module": "qf5-markets",
+  "order": 3,
+  "estMinutes": 54,
+  "objectives": [
+    {
+      "conceptId": "qf5-markets-fills-pnl.fill-accounting",
+      "text": "Derive signed-fill cash/position changes and average-cost realized/unrealized PnL under an explicit fee, close and reversal policy."
+    },
+    {
+      "conceptId": "qf5-markets-fills-pnl.position-reconciliation",
+      "text": "Reconcile positions/cash and total marked PnL against independent fill sums, preserving identity, exact units and exceptions rather than forcing a ledger to balance."
+    },
+    {
+      "conceptId": "qf5-markets-fills-pnl.symbol-netting-output",
+      "text": "Aggregate signed shares per symbol without dropping zero positions, then emit deterministic ASCII symbol order at current bounds."
+    },
+    {
+      "conceptId": "qf5-markets-fills-pnl.flat-pnl-cent-format",
+      "text": "Derive flat round-trip PnL as exact signed cash flow from original price text, with safe negative formatting."
+    }
+  ],
+  "prerequisites": [
+    "qf5-markets-orders-book"
+  ],
+  "blocks": [
+    {
+      "type": "text",
+      "id": "scope",
+      "markdown": "Use one synthetic instrument, integer shares and prices/fees in integer cents. Begin flat with stated initial cash; no deposits, withdrawals, income, financing, dividends, corporate actions, FX, tax or settlement timing adjustments. Positive signed fill quantity means buy, negative means sell. These are confirmed fills, not orders or hypothetical touches. Short positions are permitted mathematically for the reversal example, without claiming any account may short or ignore collateral/borrow rules. This is a trade-date economic ledger, not spendable settled cash or tax reporting."
+    },
+    {
+      "type": "text",
+      "id": "cash-position",
+      "markdown": "For signed fill \u0394q at price p cents/share and nonnegative fee f cents, q_new=q_old+\u0394q and cash_new=cash_old-\u0394q*p-f. A buy consumes cash; a sell adds proceeds before fee. At a chosen valid mark m, equity=cash+q*m. The mark must identify instrument, currency, timestamp and valuation policy; a stale or theoretical mark is not guaranteed liquidation proceeds. Price cents/share times shares gives cents. Fees are charged once per supplied fill here, not silently per share."
+    },
+    {
+      "type": "text",
+      "id": "basis-policy",
+      "markdown": "Realized/unrealized decomposition requires a matching convention. This lesson uses moving average entry price on the open position, with transaction fees EXPENSED separately immediately, not capitalized into average cost. Adding to the same side sets average=(|q|*old_average+|\u0394q|*p)/(|q|+|\u0394q|). A partial close leaves that average unchanged. Closing c shares realizes c*(p-average)*sign(old_q). If the fill reverses direction, close the old side first and open the excess at the new fill price; flat state has average0. FIFO/specific-lot/tax systems can give different realized/unrealized splits, and broker displays may use other fee/basis policies."
+    },
+    {
+      "type": "worked",
+      "id": "average-cost-trace",
+      "title": "Close part of a position without confusing proceeds and profit",
+      "steps": [
+        {
+          "text": "Start cash100000cents, flat. Buy10at1000with fee5: position10, average1000, cash89995. Buy10at1200with fee5: position20, average1100, cash77990."
+        },
+        {
+          "text": "Sell5at1300with fee3: position15, cash84487. Sale proceeds before fee6500are not profit. Matched basis is5*1100=5500, so gross realized PnL=1000cents; remaining average stays1100."
+        },
+        {
+          "text": "Mark remaining15at1250: unrealized=15*(1250-1100)=2250. Total fees13. Equity=84487+15*1250=103237; equity-initial cash=3237=1000+2250-13."
+        },
+        {
+          "text": "A separate reversal: buy3at1000, then sell5at1100with no fees. Close3long for realized300; excess2opens short at1100. Mark1050gives unrealized(-2)*(1050-1100)=100, total PnL400."
+        }
+      ]
+    },
+    {
+      "type": "code",
+      "id": "exact-average-cost-fill-ledger",
+      "language": "python",
+      "source": "from fractions import Fraction\n\ndef average_cost_fills(fills,mark_cents,initial_cash=100000):\n    # Complete replay from flat. Inputs are synthetic already-confirmed fills.\n    if type(fills) is not list or len(fills)>1000:\n        raise ValueError(\"expected at most1000confirmed fills\")\n    if type(mark_cents) is not int or not 1<=mark_cents<=1000000:\n        raise ValueError(\"expected bounded positive integer mark cents\")\n    if type(initial_cash) is not int or not 0<=initial_cash<=1000000000:\n        raise ValueError(\"expected bounded nonnegative integer initial cash\")\n    position=0;average=Fraction(0);cash=Fraction(initial_cash)\n    realized=Fraction(0);fees=0;seen=set()\n    for row in fills:\n        if type(row) is not tuple or len(row)!=4:\n            raise ValueError(\"expected(execution_id,signed_shares,price_cents,fee_cents)\")\n        eid,delta,price,fee=row\n        if type(eid) is not str or not eid or len(eid)>30 or eid in seen:\n            raise ValueError(\"expected unique nonempty execution ids\")\n        if type(delta) is not int or not 1<=abs(delta)<=1000000:\n            raise ValueError(\"expected bounded nonzero signed integer shares\")\n        if type(price) is not int or not 1<=price<=1000000 or type(fee) is not int or not 0<=fee<=1000000:\n            raise ValueError(\"expected bounded integer price and nonnegative fee cents\")\n        seen.add(eid)\n        next_position=position+delta\n        if position==0 or position*delta>0:\n            average=(abs(position)*average+abs(delta)*price)/(abs(position)+abs(delta))\n        else:\n            closing=min(abs(position),abs(delta))\n            realized+=closing*(price-average)*(1 if position>0 else -1)\n            if next_position==0:\n                average=Fraction(0)\n            elif position*next_position<0:\n                average=Fraction(price)  # excess fill opens the reversed side\n        cash-=delta*price+fee\n        fees+=fee;position=next_position\n    unrealized=position*(mark_cents-average)\n    equity=cash+position*mark_cents\n    return {\"position\":position,\"average\":average,\"cash\":cash,\"realized_gross\":realized,\n            \"unrealized\":unrealized,\"fees\":fees,\"equity\":equity,\n            \"net_pnl\":equity-initial_cash}\n\nfills=[(\"E1\",10,1000,5),(\"E2\",10,1200,5),(\"E3\",-5,1300,3)]\nstate=average_cost_fills(fills,1250)\nprint(*(str(state[k]) for k in (\"position\",\"average\",\"cash\",\"realized_gross\",\"unrealized\",\"fees\",\"equity\",\"net_pnl\")))\nprint(state[\"net_pnl\"]==state[\"realized_gross\"]+state[\"unrealized\"]-state[\"fees\"])\nreversed_state=average_cost_fills([(\"R1\",3,1000,0),(\"R2\",-5,1100,0)],1050)\nprint(*(str(reversed_state[k]) for k in (\"position\",\"average\",\"realized_gross\",\"unrealized\",\"net_pnl\")))",
+      "caption": "Expected lines: 15 1100 84487 1000 2250 13 103237 3237; True; then -2 1100 300 100 400. The helper replays from flat, rejects repeated execution IDs, uses exact Fraction average prices and returns a new result without modifying the input. Repeated-ID rejection is not full protocol idempotency: corrections/busts/partial replays/account namespaces are outside this simple API.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "inline-0",
+      "questionId": "qf5-markets-fills-pnl.check-1"
+    },
+    {
+      "type": "check",
+      "id": "inline-1",
+      "questionId": "qf5-markets-fills-pnl.check-2"
+    },
+    {
+      "type": "text",
+      "id": "pnl-identity",
+      "markdown": "Under these assumptions and zero initial position, marked net PnL equals equity-initial_cash=realized_gross+unrealized-total_fees. Why? On a same-side entry, cash decreases by traded notional/fee while remaining open basis grows by that notional, leaving realized unchanged. On a close, proceeds versus removed open basis is exactly the realized formula; remaining marked position supplies unrealized. A reversal is a close plus a new entry at the same price. Fees enter cash exactly once and are subtracted once in the identity. This conservation check can catch sign and double-fee errors, but a consistent wrong price/omitted event can still pass it."
+    },
+    {
+      "type": "text",
+      "id": "independent-reconciliation",
+      "markdown": "Reconcile q_end=q_start+sum(\u0394q), and cash_end=cash_start-sum(\u0394q*p+fee) under the stated no-other-flows contract. Compare against an independent authoritative report/snapshot, not two copies generated from the same missing source. Retain execution IDs and order/account/instrument mappings; detect duplicates, missing events and corrections under their actual protocol. Classify breaks rather than changing one side until numbers match. A3centdifference might be a missing fee, but the amount alone does not prove its cause."
+    },
+    {
+      "type": "code",
+      "id": "independent-fill-sum-reconciliation",
+      "language": "python",
+      "source": "from fractions import Fraction\n\ndef reconcile_position_cash(fills,initial_cash,reported_position,reported_cash):\n    if type(initial_cash) is not int or type(reported_position) is not int:\n        raise ValueError(\"expected integer starting cash and reported position\")\n    if type(reported_cash) not in (int,Fraction):\n        raise ValueError(\"expected exact reported cash\")\n    if type(fills) is not list or len(fills)>1000:\n        raise ValueError(\"expected at most1000validated signed-share/price/fee tuples\")\n    for row in fills:\n        if type(row) is not tuple or len(row)!=3 or any(type(x) is not int for x in row):\n            raise ValueError(\"expected integer signed-share,price,fee triples\")\n        delta,price,fee=row\n        if not 1<=abs(delta)<=1000000 or not 1<=price<=1000000 or not 0<=fee<=1000000:\n            raise ValueError(\"fill outside bounded synthetic range\")\n    expected_position=sum(delta for delta,price,fee in fills)\n    expected_cash=initial_cash-sum(delta*price+fee for delta,price,fee in fills)\n    return reported_position-expected_position,Fraction(reported_cash)-expected_cash\n\nfills=[(10,1000,5),(10,1200,5),(-5,1300,3)]\nprint(reconcile_position_cash(fills,100000,15,84487))\nprint(reconcile_position_cash(fills,100000,15,84490))\nprint(reconcile_position_cash(fills[:-1],100000,15,84487))",
+      "caption": "Expected output: (0, Fraction(0, 1)); (0, Fraction(3, 1)); then (-5, Fraction(6497, 1)). Differences are reported-minus-expected. A cash report3cents high is a break, not automatically a repaired fee. Omitting the final sell gives both quantity and cash breaks. The helper assumes its input fills have already been deduplicated/identified and starts flat; it does not authenticate reports or reconcile settled balances.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "inline-2",
+      "questionId": "qf5-markets-fills-pnl.check-3"
+    },
+    {
+      "type": "check",
+      "id": "inline-3",
+      "questionId": "qf5-markets-fills-pnl.check-4"
+    },
+    {
+      "type": "text",
+      "id": "boundary-cases",
+      "markdown": "Required cases include flat, opening short, adding, partial close, full close, side reversal and repeated IDs. A quantity/sign error can turn a close into a larger position; a fee applied twice can break cash/PnL. Negative cash in this synthetic arithmetic is not permission for credit or a funded account. Price/mark adjustments, splits, transfers, dividends, short borrow/financing and FX require explicit extra events and valuation rules before extending the identity. Realized PnL is not automatically taxable gain or money available to withdraw."
+    },
+    {
+      "type": "text",
+      "id": "transfer",
+      "markdown": "Independent transfer: reproduce the long partial-close trace using a table of event ID, signed shares, price, fee, position, average, cash, realized and unrealized. Then do an opening short, partial cover and reversal to long. Verify the same marked equity identity at two marks. Introduce a duplicate/missing fill and a fee-sign error, naming which independent reconciliation detects each and which common-source omissions could escape internal invariants."
+    },
+    {
+      "type": "check",
+      "id": "inline-4",
+      "questionId": "qf5-markets-fills-pnl.check-5"
+    },
+    {
+      "type": "check",
+      "id": "inline-5",
+      "questionId": "qf5-markets-fills-pnl.check-6"
+    },
+    {
+      "type": "check",
+      "id": "inline-6",
+      "questionId": "qf5-markets-fills-pnl.check-7"
+    },
+    {
+      "type": "text",
+      "id": "sources",
+      "markdown": "References: [IBKR statement guide, matching-method/fee distinctions](https://ibkrguides.com/reportingreference/reportguide/realized_unrealizedperformancesummary_default.htm), [FINRA confirmation/reconciliation](https://www.finra.org/investors/insights/checking-trade-confirmations), and [GIPS2020trade-date/transaction-cost concepts](https://gipsstandards.org/wp-content/uploads/2021/03/2020_gips_standards_firms.pdf). The exact average-cost/expense-fee model is our declared synthetic policy, not a claim about any user account, broker display, tax jurisdiction or GIPS compliance."
+    },
+    {
+      "type": "text",
+      "id": "symbol-position-netting-0",
+      "markdown": "A vector of positions, not a PnL report\n\nThe earlier identity q_end=q_start+sum(delta_q) now applies separately to every symbol, starting at zero. A dictionary maps symbol to accumulated signed shares. Buys/sells are already encoded by the sign of qty; there are no prices, fees or marks in this public task, so output is not profit, cash, settled balance or an order instruction."
+    },
+    {
+      "type": "text",
+      "id": "symbol-position-netting-1",
+      "markdown": "Preserve every symbol and every contribution\n\nOn each row, assign totals[symbol]=totals.get(symbol,0)+quantity. A zero sum remains a present key and MUST be printed. Repeated symbols are ordinary contributions, not duplicate IDs to reject or overwrite. For [(A,5),(A,-5),(0Z,3)], emit 0Z 3 then A 0. Sorting the ASCII [A-Z0-9] symbols places digits before letters and shorter equal prefixes first."
+    },
+    {
+      "type": "text",
+      "id": "symbol-position-netting-2",
+      "markdown": "Bounds and transfer\n\nn<=200000 and each abs(qty)<=1000000000, giving abs(net)<=200000000000000. Python ints preserve this exactly; C++ would require a sufficiently wide accumulator but is not qualified here. Expected aggregation time O(n), sorting O(s log s) for s distinct short symbols, with O(s) state and returned strings. The existing single-instrument bounded ledger remains unchanged. Test interleaved symbols, zeros, negative totals, digit prefixes and totals above 32 bits."
+    },
+    {
+      "type": "code",
+      "id": "symbol-position-netting-complete",
+      "language": "python",
+      "source": "from collections import deque\nimport heapq\n\ndef net_positions(rows):\n    totals = {}\n    for (symbol, quantity) in rows:\n        totals[symbol] = totals.get(symbol, 0) + quantity\n    return [f'{symbol} {totals[symbol]}' for symbol in sorted(totals)]\n\nprint(*net_positions([('A', 5), ('A', -5), ('0Z', 3)]), sep='\\n')\n",
+      "caption": "Expected stdout:\n0Z 3\nA 0\n\nPrevalidated inputs follow the captured public contract. This completes the named Python function using its original supplied main/parser. It does not claim independent parser, C++, app-runner or judge qualification.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "symbol-position-netting-inline-1",
+      "questionId": "qf5-markets-fills-pnl.symbol-position-netting-check-1"
+    },
+    {
+      "type": "check",
+      "id": "symbol-position-netting-inline-2",
+      "questionId": "qf5-markets-fills-pnl.symbol-position-netting-check-2"
+    },
+    {
+      "type": "check",
+      "id": "symbol-position-netting-inline-3",
+      "questionId": "qf5-markets-fills-pnl.symbol-position-netting-check-3"
+    },
+    {
+      "type": "check",
+      "id": "symbol-position-netting-inline-4",
+      "questionId": "qf5-markets-fills-pnl.symbol-position-netting-check-4"
+    },
+    {
+      "type": "check",
+      "id": "symbol-position-netting-inline-5",
+      "questionId": "qf5-markets-fills-pnl.symbol-position-netting-check-5"
+    },
+    {
+      "type": "check",
+      "id": "symbol-position-netting-inline-6",
+      "questionId": "qf5-markets-fills-pnl.symbol-position-netting-check-6"
+    },
+    {
+      "type": "check",
+      "id": "symbol-position-netting-inline-7",
+      "questionId": "qf5-markets-fills-pnl.symbol-position-netting-check-7"
+    },
+    {
+      "type": "text",
+      "id": "symbol-position-netting-sources",
+      "markdown": "References: [1](https://docs.python.org/3.12/library/stdtypes.html). Public task hash 22e987e10b48daa5cff06e221c500a6bef22f535123fe4bf778dc25e57e9e1fc. These references establish language/container semantics; the exact task framing is the captured public contract. This extension preserves the earlier bounded examples and their policies rather than silently broadening those APIs."
+    },
+    {
+      "type": "text",
+      "id": "flat-blotter-cash-profit-0",
+      "markdown": "Why flat ending position simplifies realized PnL\n\nThe single instrument starts and ends flat, never shorts, and has no fees or other flows in this task. Every purchased share is eventually sold. Therefore final trade PnL equals sale proceeds minus purchase cost; there is no remaining marked inventory or unresolved cost basis. This does not mean sale proceeds alone are profit, nor that arbitrary nonflat blotters can omit a valuation rule."
+    },
+    {
+      "type": "text",
+      "id": "flat-blotter-cash-profit-1",
+      "markdown": "Parse once without binary money\n\nThe supplied starter retains each price as text with exactly two decimals. Split whole and fractional parts and compute cents=100*int(whole)+int(fraction). For each SELL add quantity*cents; for each BUY subtract it. All accumulation is exact integer money. Do not convert to float first or round each notional. Positive input prices and exact two-digit fraction grammar are public preconditions, not a general money parser."
+    },
+    {
+      "type": "text",
+      "id": "flat-blotter-cash-profit-2",
+      "markdown": "Output and tests\n\nBuy 2 at 10.10, sell 2 at 9.95 gives -0.30. Extract sign from the total, then use abs(total)//100 and abs(total)%100 with two digits; zero has no negative sign. N<=100000,quantity<=10000,price<=1000.00 and total movement fits signed 64-bit under the task. O(N) scan, fixed accumulation state and one output line. Test losses smaller than a dollar, whole-dollar loss, exact zero and many 1 cent trades against a Decimal original-string cash-flow sum."
+    },
+    {
+      "type": "code",
+      "id": "flat-blotter-cash-profit-complete",
+      "language": "python",
+      "source": "from collections import OrderedDict, deque\nfrom bisect import bisect_left\nimport heapq\nimport math\n\ndef total_pnl(fills):\n    total = 0\n    for (side, quantity, text) in fills:\n        (whole, fraction) = text.split('.')\n        price = int(whole) * 100 + int(fraction)\n        total += (1 if side == 'S' else -1) * quantity * price\n    sign = '-' if total < 0 else ''\n    total = abs(total)\n    return [f'{sign}{total // 100}.{total % 100:02d}']\n\nprint(*total_pnl([('B', 2, '10.10'), ('S', 2, '9.95')]))\nprint(*total_pnl([('B', 1, '1.00'), ('S', 1, '1.00')]))\n",
+      "caption": "Expected stdout:\n-0.30\n0.00\n\nPrevalidated inputs follow the captured public contract. This completes the named Python function using its original supplied main/parser. It does not claim independent parser, C++, app-runner or judge qualification.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "flat-blotter-cash-profit-inline-1",
+      "questionId": "qf5-markets-fills-pnl.flat-blotter-cash-profit-check-1"
+    },
+    {
+      "type": "check",
+      "id": "flat-blotter-cash-profit-inline-2",
+      "questionId": "qf5-markets-fills-pnl.flat-blotter-cash-profit-check-2"
+    },
+    {
+      "type": "check",
+      "id": "flat-blotter-cash-profit-inline-3",
+      "questionId": "qf5-markets-fills-pnl.flat-blotter-cash-profit-check-3"
+    },
+    {
+      "type": "check",
+      "id": "flat-blotter-cash-profit-inline-4",
+      "questionId": "qf5-markets-fills-pnl.flat-blotter-cash-profit-check-4"
+    },
+    {
+      "type": "check",
+      "id": "flat-blotter-cash-profit-inline-5",
+      "questionId": "qf5-markets-fills-pnl.flat-blotter-cash-profit-check-5"
+    },
+    {
+      "type": "check",
+      "id": "flat-blotter-cash-profit-inline-6",
+      "questionId": "qf5-markets-fills-pnl.flat-blotter-cash-profit-check-6"
+    },
+    {
+      "type": "check",
+      "id": "flat-blotter-cash-profit-inline-7",
+      "questionId": "qf5-markets-fills-pnl.flat-blotter-cash-profit-check-7"
+    },
+    {
+      "type": "text",
+      "id": "flat-blotter-cash-profit-sources",
+      "markdown": "References: [1](https://docs.python.org/3.12/library/decimal.html), [2](https://docs.python.org/3.12/library/stdtypes.html). Public task hash cdce14b432cd87a30a1a4595741802da971231bad2c75d29dea80a7d9eaa285d. These references establish language/container semantics; the exact task framing is the captured public contract. This extension preserves the earlier bounded examples and their policies rather than silently broadening those APIs."
+    }
+  ],
+  "practice": {
+    "problemIds": [
+      "qfp-positions-netting",
+      "qfp-pnl-calc"
+    ]
+  },
+  "summary": "Signed fills change position and cash; matching and fee policy define realized/unrealized splits. Reconcile exact units and independent records, and keep marked economic PnL separate from proceeds, settled cash, tax and trading authority. Practice transfer: symbol position netting. Practice transfer: flat blotter cash profit."
+}

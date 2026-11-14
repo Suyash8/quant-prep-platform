@@ -1,0 +1,126 @@
+{
+  "id": "qf5-production-persistence-consistency",
+  "revision": 1,
+  "title": "Transactions, consistency and idempotency",
+  "module": "qf5-production",
+  "order": 2,
+  "estMinutes": 22,
+  "objectives": [
+    {
+      "conceptId": "qf5-production-persistence-consistency.transaction-invariants",
+      "text": "Atomically couple a guarded synthetic inventory update and idempotency response record in an actual SQLiteMEMORYSQLtransaction with explicit rollback/commit checks."
+    },
+    {
+      "conceptId": "qf5-production-persistence-consistency.retry-idempotency",
+      "text": "Resolve duplicate same-command,conflicting-key and lost-acknowledgment retries without equating single-connection transaction tests to durable multi-system exactly-once effects."
+    }
+  ],
+  "prerequisites": [
+    "qf5-production-service-interfaces"
+  ],
+  "blocks": [
+    {
+      "type": "text",
+      "id": "atomic-outcome",
+      "markdown": "A business mutation and its deduplication/response record must agree. If inventory is reduced butno record survives,a retry may reduce it twice. If a success record exists without the inventory effect,the service reports a false commit. This example uses actual SQLBEGIN/COMMIT/ROLLBACKin SQLite:memory:,one sequential trusted connection,synthetic units only. It has no real purchasing,orders,network,tenant authentication or file persistence."
+    },
+    {
+      "type": "text",
+      "id": "request-key-contract",
+      "markdown": "Within this one toy scope,request_idnames one operation for the database lifetime. Same key with same normalized sku/quantityreturns the stored response without another decrement. Same key with different business fields is a conflict,not a new operation. Trace metadata may differ. Real keys must be scoped to authenticated principal/operation and have documented retention/expiry;reusing a key after deleting its record can repeat an effect. This demo has no expiry/tenant model."
+    },
+    {
+      "type": "worked",
+      "id": "transaction-retry",
+      "title": "Rollback versus committed-but-unacknowledged",
+      "steps": [
+        {
+          "text": "Astock10,request r1reserves3. Inject after stock UPDATEbefore response INSERT:rollback restores10and no request record,so retry may safely perform the operation under this store protocol."
+        },
+        {
+          "text": "Successful r1commits stock7and its stored response together. Replay r1/A/3returns that response with stock still7;replay r1/A/2raises conflict and leaves stock unchanged."
+        },
+        {
+          "text": "r2reserves2then COMMITs,butthe acknowledgment is lost. Stock is now5and r2response exists. Retrying r2must return stored quantity2,not decrement again. Exception/timeout is not evidence that the write did not happen."
+        }
+      ]
+    },
+    {
+      "type": "code",
+      "id": "sql-idempotent-reservation",
+      "language": "python",
+      "source": "def decode_reservation(payload):\n    # OWN v1synthetic inventory units,not money or a live account.\n    required={\"schema\",\"request_id\",\"sku\",\"quantity\"}\n    if type(payload) is not dict or not required<=set(payload) or not set(payload)<=required|{\"trace_id\"}:\n        raise ValueError(\"unsupported request fields\")\n    if type(payload[\"schema\"]) is not int or payload[\"schema\"]!=1:raise ValueError(\"unsupported request schema\")\n    def identifier(value):\n        return type(value) is str and 1<=len(value)<=32 and all(c in \"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-\" for c in value)\n    if not identifier(payload[\"request_id\"]):raise ValueError(\"invalid request id\")\n    if \"trace_id\" in payload and not identifier(payload[\"trace_id\"]):raise ValueError(\"invalid trace id\")\n    if type(payload[\"sku\"]) is not str or payload[\"sku\"] not in (\"A\",\"B\"):raise ValueError(\"unsupported sku\")\n    if type(payload[\"quantity\"]) is not int or not 1<=payload[\"quantity\"]<=10:raise ValueError(\"invalid reservation quantity\")\n    return (1,payload[\"request_id\"],payload[\"sku\"],payload[\"quantity\"])\n\nimport json,sqlite3\n\ndef new_store():\n    db=sqlite3.connect(\":memory:\",autocommit=sqlite3.LEGACY_TRANSACTION_CONTROL,isolation_level=None)\n    db.execute(\"CREATE TABLE inventory(sku TEXT PRIMARY KEY,units INTEGER NOT NULL CHECK(units>=0))\")\n    db.execute(\"CREATE TABLE requests(id TEXT PRIMARY KEY,sku TEXT NOT NULL,quantity INTEGER NOT NULL,response TEXT NOT NULL)\")\n    db.executemany(\"INSERT INTO inventory VALUES(?,?)\",[(\"A\",10),(\"B\",5)])\n    return db\n\ndef reserve(db,payload,failpoint=None):\n    _,request_id,sku,quantity=decode_reservation(payload)\n    if failpoint not in (None,\"after-stock\",\"after-response\",\"after-commit\"):raise ValueError(\"invalid failpoint\")\n    db.execute(\"BEGIN\")\n    try:\n        cached=db.execute(\"SELECT sku,quantity,response FROM requests WHERE id=?\",(request_id,)).fetchone()\n        if cached is not None:\n            if cached[:2]!=(sku,quantity):raise ValueError(\"idempotency key conflict\")\n            response=json.loads(cached[2]);db.execute(\"COMMIT\");return response\n        changed=db.execute(\"UPDATE inventory SET units=units-? WHERE sku=? AND units>=?\",(quantity,sku,quantity)).rowcount\n        if changed!=1:raise ValueError(\"insufficient synthetic inventory\")\n        if failpoint==\"after-stock\":raise RuntimeError(\"injected after stock\")\n        response={\"schema\":1,\"request_id\":request_id,\"status\":\"reserved\",\"sku\":sku,\"quantity\":quantity}\n        raw=json.dumps(response,sort_keys=True,separators=(\",\",\":\"))\n        db.execute(\"INSERT INTO requests VALUES(?,?,?,?)\",(request_id,sku,quantity,raw))\n        if failpoint==\"after-response\":raise RuntimeError(\"injected after response\")\n        db.execute(\"COMMIT\")\n        if failpoint==\"after-commit\":raise RuntimeError(\"injected lost acknowledgment\")\n        return response\n    except Exception:\n        if db.in_transaction:db.execute(\"ROLLBACK\")\n        raise\n\ndef state(db):\n    return tuple(db.execute(\"SELECT sku,units FROM inventory ORDER BY sku\")),tuple(db.execute(\"SELECT id,sku,quantity FROM requests ORDER BY id\"))\n\nrequest={\"schema\":1,\"request_id\":\"r1\",\"sku\":\"A\",\"quantity\":3}\ndb=new_store()\ntry:\n    before=state(db)\n    try:reserve(db,request,\"after-stock\")\n    except RuntimeError as error:print(error)\n    print(\"rollback\",state(db)==before)\n    first=reserve(db,request)\n    print(first[\"status\"],state(db)[0])\n    print(\"replay\",reserve(db,{**request,\"trace_id\":\"retry\"})==first,state(db)[0])\n    try:reserve(db,{**request,\"quantity\":2})\n    except ValueError as error:print(error)\n    r2={**request,\"request_id\":\"r2\",\"quantity\":2}\n    try:reserve(db,r2,\"after-commit\")\n    except RuntimeError as error:print(error)\n    print(\"recover\",reserve(db,r2)[\"quantity\"],state(db))\nfinally:db.close()",
+      "caption": "Expected injected after stock;rollbackTrue;reserved A7B5;replayTrue A7B5;idempotency key conflict;injected lost acknowledgment;recover2with stockA5B5and request records r1/A/3,r2/A/2. Complete source explicitly pins Python3.12legacy transaction-control mode with isolation_levelNoneand uses SQLtransaction statements. sqlite3MEMORYapp support unverified,runnable=false. No disk/power-loss/multi-writer/network exactly-once claim.",
+      "runnable": false
+    },
+    {
+      "type": "check",
+      "id": "inline-0",
+      "questionId": "qf5-production-persistence-consistency.check-1"
+    },
+    {
+      "type": "check",
+      "id": "inline-1",
+      "questionId": "qf5-production-persistence-consistency.check-2"
+    },
+    {
+      "type": "check",
+      "id": "inline-4",
+      "questionId": "qf5-production-persistence-consistency.check-5"
+    },
+    {
+      "type": "text",
+      "id": "guarded-invariants",
+      "markdown": "SQLUPDATEinventory SETunits=units-quantity WHEREsku=? ANDunits>=quantityenforces nonnegative stock at the authoritative write. Check rowcount;zero means insufficient stock in this fixed known-SKUschema. CHECK(units>=0)adds a second database constraint. Parameter placeholders separate data from SQLsyntax;never build mutation SQLby concatenating caller strings. Response INSERTand UPDATEare in the same transaction,so injected failures before commit roll back both."
+    },
+    {
+      "type": "text",
+      "id": "isolation-boundary",
+      "markdown": "SQLiteallows one writer at a time and documents journal/isolation behavior,with details depending on mode/shared-cache/read-uncommitted settings. This exercise tests a single in-memory connection sequentially,not interleaving workers,SQLITE_BUSYbackoff,deadlocks,migrations or a remote database's isolation level. A Pythonlockor successful serial test does not prove distributed concurrency behavior. File durability/power-loss needs a real persisted database/configuration and crash testing,not this disposable memory store."
+    },
+    {
+      "type": "text",
+      "id": "idempotence-not-identical-http",
+      "markdown": "MDNdescribes HTTPidempotence as same intended server effect for repeated identical requests;responses need not be identical. Our application contract additionally returns the stored success response on a matching retry. POSTis not inherently guaranteed idempotent byHTTP;an application must implement its own semantics. This snippet implements no HTTPendpoint. Do not infer all retries everywhere are safe,or that a local transaction can atomically commit a remote broker/email/payment effect."
+    },
+    {
+      "type": "check",
+      "id": "inline-2",
+      "questionId": "qf5-production-persistence-consistency.check-3"
+    },
+    {
+      "type": "check",
+      "id": "inline-3",
+      "questionId": "qf5-production-persistence-consistency.check-4"
+    },
+    {
+      "type": "check",
+      "id": "inline-5",
+      "questionId": "qf5-production-persistence-consistency.check-6"
+    },
+    {
+      "type": "text",
+      "id": "unknown-outcomes",
+      "markdown": "After uncertain acknowledgment,query/retry using the SAMEauthorized operation identity and verify current state before considering a new key. Retry only transient/unknown outcomes according to the service's contract;malformed,unauthorized,conflict and insufficient-resource errors need different handling. This toy does not cache failed insufficient-stock attempts,so that same key could later succeed if inventory is replenished by a future extension;document that choice rather than claiming every failed attempt is permanently deduplicated."
+    },
+    {
+      "type": "text",
+      "id": "transfer",
+      "markdown": "Independent transfer:inject after stock and after response,and require identical prior inventory/records;inject after commit and verify one committed effect on replay. Generate many same-key repeats and conflicts,compare against an independent dictionary model and sum successful unique quantities against remaining stock. Test exhaustion and ensure rejected attempts leave no fake success record. Explain what must change for multiple tenants,writers,expiry,persisted power-loss recovery or external side effects."
+    },
+    {
+      "type": "check",
+      "id": "inline-6",
+      "questionId": "qf5-production-persistence-consistency.check-7"
+    },
+    {
+      "type": "text",
+      "id": "sources",
+      "markdown": "Sources:[Python3.12sqlite3transaction-control modes](https://docs.python.org/3.12/library/sqlite3.html),[SQLiteexplicit transaction semantics](https://sqlite.org/lang_transaction.html),[SQLiteisolation/mode caveats](https://sqlite.org/isolation.html),[MDNidempotent effect/response distinction](https://developer.mozilla.org/en-US/docs/Glossary/Idempotent). Our request-key/response retention design is application-specific,not a claim that any protocol gives global exactly-once delivery."
+    }
+  ],
+  "practice": {
+    "problemIds": []
+  },
+  "summary": "Commit guarded inventory and idempotency response together. Matching retries reuse,conflicting reuse fails,and lost acknowledgment requires current commit-state recovery. These actual memory-SQLtransaction tests are not file durability,multi-writer readiness or exactly-once external effects."
+}

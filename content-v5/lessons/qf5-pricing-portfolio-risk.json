@@ -1,0 +1,140 @@
+{
+  "id": "qf5-pricing-portfolio-risk",
+  "revision": 1,
+  "title": "Covariance risk, VaR and expected shortfall",
+  "module": "qf5-pricing",
+  "order": 6,
+  "estMinutes": 22,
+  "objectives": [
+    {
+      "conceptId": "qf5-pricing-portfolio-risk.portfolio-variance",
+      "text": "Compute two-asset same-horizon portfolio variance with explicit covariance/correlation and valid positive-semidefinite input assumptions,without confusing volatility with tail loss."
+    },
+    {
+      "conceptId": "qf5-pricing-portfolio-risk.tail-risk",
+      "text": "Calculate an own empirical left-quantile VaR and quantile-integral expected shortfall including fractional boundary mass/ties,stating loss sign,horizon,scenario weights and sample limitations."
+    }
+  ],
+  "prerequisites": [
+    "qf5-pricing-monte-carlo"
+  ],
+  "blocks": [
+    {
+      "type": "text",
+      "id": "covariance-contract",
+      "markdown": "For same-horizon return vector R,weights w,and covariance Sigma,Var(w^T R)=w^T Sigmaw. With two assets and weights(w,1-w),variance=w\u00b2*sigma1\u00b2+(1-w)\u00b2*sigma2\u00b2+2w(1-w)*sigma1*sigma2*rho. Volatilities are standard deviations in DECIMAL return units over the same horizon;variance is squared return units. Correlation matters,so portfolio volatility is not generally a weighted average of individual volatilities. Positive-semidefinite covariance is required;arbitrary pairwise correlations in larger matrices can be jointly invalid."
+    },
+    {
+      "type": "worked",
+      "id": "two-asset-risk",
+      "title": "Variance is not a tail-loss forecast",
+      "steps": [
+        {
+          "text": "Equal weights,sigma1=0.2,sigma2=0.3,rho0give variance0.25*0.04+0.25*0.09=0.0325,volatility sqrt(0.0325)\u22480.180278. This is return dispersion,not a currency loss threshold."
+        },
+        {
+          "text": "At rho1,variance=(0.5*0.2+0.5*0.3)^2=0.0625. At rho-1with equal vol0.2and equal weights,variance0under this exact two-factor model. Neither correlation is a promise about future assets."
+        },
+        {
+          "text": "Mapping returns to portfolio currency PnL requires positions/notional,pricing/nonlinearity and horizon conventions. Option portfolios may need full revaluation/scenarios rather than one fixed linear covariance approximation."
+        }
+      ]
+    },
+    {
+      "type": "code",
+      "id": "two-asset-covariance-risk",
+      "language": "python",
+      "source": "import math\n\ndef two_asset_variance(weight,vol1,vol2,correlation):\n    # Same-horizon return volatilities;weights(weight,1-weight),no leverage.\n    for value,low,high in ((weight,0.0,1.0),(vol1,0.0,2.0),(vol2,0.0,2.0),(correlation,-1.0,1.0)):\n        if type(value) is not float or not math.isfinite(value) or not low<=value<=high:\n            raise ValueError(\"invalid covariance-model input\")\n    a=weight*vol1\n    b=(1.0-weight)*vol2\n    # Two-factor decomposition equals a*a+b*b+2*a*b*correlation.\n    return (a+b*correlation)**2+b*b*(1.0-correlation*correlation)\n\nprint(f\"{two_asset_variance(0.5,0.2,0.3,0.0):.6f}\")\nprint(two_asset_variance(0.5,0.2,0.2,-1.0))\nprint(f\"{two_asset_variance(0.5,0.2,0.3,1.0):.6f}\")",
+      "caption": "Expected0.032500;0.0;0.062500. Own exact-float interface weights0..1,vols0..2,correlation[-1,1]. A two-factor sum-of-squares decomposition preserves nonnegative variance for this two-asset domain without a blanket max(variance,0)that would hide invalid larger covariance matrices. It does not estimate covariance,annualize data or implement leveraged portfolios.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "inline-0",
+      "questionId": "qf5-pricing-portfolio-risk.check-1"
+    },
+    {
+      "type": "check",
+      "id": "inline-4",
+      "questionId": "qf5-pricing-portfolio-risk.check-5"
+    },
+    {
+      "type": "text",
+      "id": "loss-and-quantile",
+      "markdown": "Define loss L=-PnL,so larger is worse,and name horizon,currency,valuation model and scenario probabilities. Own left quantile VaR_alpha=inf{x:F_L(x)>=alpha}. It is a threshold,not maximum possible loss and not the mean loss beyond it. Quantile software interpolation conventions differ;the code uses the left quantile of the equal-weight empirical distribution,not an unlabelled library default. Negative VaR is allowed when even that quantile is a gain;do not silently floor it to0without saying the risk policy changed."
+    },
+    {
+      "type": "text",
+      "id": "tail-integral",
+      "markdown": "Use ES_alpha=(1/(1-alpha))*integral_alpha^1 Q_L(u)du,where Q_Lis that left quantile. For finite equal-weight scenarios,take exactly the worst n*(1-alpha)scenario units,including fractional boundary weight,then average over that tail mass. This handles atoms/ties. E[L|L>VaR]or E[L|L>=VaR]can differ from this ESwhen there is probability mass at VaR;do not call either conditional average universally equivalent. BIS terminology is a high-level description;the detailed sample convention here is explicit."
+    },
+    {
+      "type": "worked",
+      "id": "fractional-tail-mass",
+      "title": "Fractional mass and a tied quantile",
+      "steps": [
+        {
+          "text": "Losses[0,10,20],alpha0.5. Left VaR10. Worst tail is1.5scenario units:all20plus half of10. ES=(20+0.5*10)/1.5=50/3,not20and not the unweighted average15."
+        },
+        {
+          "text": "Losses[0,10,10,20],alpha0.5. Left VaR10and worst2units are20and10,ES15. Averaging only losses strictly>VaRgives20and overstates this defined tail average."
+        },
+        {
+          "text": "Losses[-5,-2,-1],alpha0.5have VaR-2,ES-4/3. These are negative losses,gains under our sign convention. No floor is applied. All calculations describe only this declared finite scenario distribution."
+        }
+      ]
+    },
+    {
+      "type": "code",
+      "id": "empirical-var-es-boundary",
+      "language": "python",
+      "source": "from fractions import Fraction as F\n\ndef empirical_tail(losses,alpha):\n    # Equal scenario masses,positive loss means bad;left quantile convention.\n    if type(losses) is not list or not 1<=len(losses)<=100:\n        raise ValueError(\"invalid bounded scenario list\")\n    if any(type(x) is not int or not -1000000<=x<=1000000 for x in losses):\n        raise ValueError(\"invalid exact loss\")\n    if type(alpha) is not F or not 0<alpha<1:\n        raise ValueError(\"invalid confidence level\")\n    ordered=sorted(losses)\n    n=len(ordered)\n    index=(alpha.numerator*n+alpha.denominator-1)//alpha.denominator-1\n    var=F(ordered[index])\n    mass=F(n)*(1-alpha) # tail measured in equal-scenario units\n    remaining=mass\n    total=F(0)\n    for loss in reversed(ordered):\n        take=min(F(1),remaining)\n        total+=take*loss\n        remaining-=take\n        if remaining==0:break\n    return var,total/mass\n\nprint(empirical_tail([0,10,20],F(1,2)))\nprint(empirical_tail([0,10,10,20],F(1,2)))\nprint(empirical_tail([-5,-2,-1],F(1,2)))",
+      "caption": "Expected(Fraction(10, 1), Fraction(50, 3));(Fraction(10, 1), Fraction(15, 1));(Fraction(-2, 1), Fraction(-4, 3)). Exact integer losses[-1e6,1e6],1..100equal-weight scenarios,Fraction confidence strictly between0and1. Sorts a copy;caller inputs unchanged. No statistical uncertainty estimate,scenario generation,current holdings or regulatory capital implementation.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "inline-1",
+      "questionId": "qf5-pricing-portfolio-risk.check-2"
+    },
+    {
+      "type": "check",
+      "id": "inline-2",
+      "questionId": "qf5-pricing-portfolio-risk.check-3"
+    },
+    {
+      "type": "check",
+      "id": "inline-3",
+      "questionId": "qf5-pricing-portfolio-risk.check-4"
+    },
+    {
+      "type": "check",
+      "id": "inline-5",
+      "questionId": "qf5-pricing-portfolio-risk.check-6"
+    },
+    {
+      "type": "text",
+      "id": "limits-and-stress",
+      "markdown": "A low historical VaR/EScan reflect missing crisis scenarios,short samples,stale positions,wrong correlations,liquidity/impact/credit omissions or regime change. ESlooks deeper into modeled tails than VaR,but rare-tail estimation is noisy and neither statistic is a worst-case guarantee. Stress tests specify additional adverse scenarios;they do not magically supply calibrated probabilities. Report horizon,confidence,loss convention,weights,window/scenario coverage and valuation assumptions alongside the number. Do not sqrt-time-scale tails/covariance without the needed temporal assumptions."
+    },
+    {
+      "type": "text",
+      "id": "transfer",
+      "markdown": "Independent transfer:build empirical CDFquantile intervals of width1/nand integrate their overlap with(alpha,1]exactly;compare with the worst-mass algorithm across small enumerated loss lists and rational confidence levels. Test ties,all-equal,all-gain,confidence near0or1,fractional mass,input permutation and translation/positive scale. For covariance,compare with direct quadratic form and enumerated two-factor scenarios. Then explain why a larger correlation matrix needs a full PSDcheck and why model risk is separate from exact sample arithmetic."
+    },
+    {
+      "type": "check",
+      "id": "inline-6",
+      "questionId": "qf5-pricing-portfolio-risk.check-7"
+    },
+    {
+      "type": "text",
+      "id": "sources",
+      "markdown": "Sources:[Columbia portfolio variance/correlation lecture](https://www.columbia.edu/~amm26/lecture%20files/marketEquilibriumRelativeRisk.pdf),[BISmarket-risk terminology](https://www.bis.org/committees/bcbs/basel-framework/standard/mar/10/inforce/2023-01-01/published/2020-03-27),[Acerbi/Tasche expected-shortfall paper hosted as BISconsultation response](https://www.bis.org/2026-07/acertasc.pdf). The last source is an authored research/consultation contribution,not BISpolicy. It uses lower-tail PnL and tail-probability alpha;our upper-loss/confidence convention is explicitly transformed. No regulatory capital-compliance claim is made."
+    }
+  ],
+  "practice": {
+    "problemIds": []
+  },
+  "summary": "Portfolio covariance includes cross terms and depends on horizon/valid inputs. VaR is a declared loss quantile,not maximum loss;ESaverages exact worst tail mass,including ties/fractional boundaries. Exact empirical arithmetic does not establish real future tail coverage or regulatory readiness."
+}

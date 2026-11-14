@@ -9,6 +9,7 @@ const nextConfig: NextConfig = {
   // without this, every lesson page 500s on serverless hosts like Vercel.
   outputFileTracingIncludes: {
     "/**": ["./content/**/*"],
+    "/api/v5/code": ["./src/lib/v5/server-problems/**/*"],
   },
 };
 

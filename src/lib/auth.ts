@@ -1,5 +1,5 @@
 import 'server-only';
-import { randomBytes, scryptSync, timingSafeEqual, createHmac } from 'crypto';
+import { randomBytes, scryptSync, timingSafeEqual, createHmac, createHash } from 'crypto';
 import { cookies } from 'next/headers';
 import { db } from '@/lib/db';
 
@@ -76,6 +76,23 @@ export async function destroySession(): Promise<void> {
     if (id) await db.session.deleteMany({ where: { id } });
   }
   jar.delete(SESSION_COOKIE);
+}
+
+/** Non-secret, one-way tag of a session id. Lets the client name WHICH session a sign-out is for without ever seeing the httpOnly cookie. */
+export const sessionTag = (id: string) => createHash('sha256').update('qf-sess-tag:' + id).digest('hex').slice(0, 16);
+export async function currentSessionTag(): Promise<string | null> {
+  const raw = (await cookies()).get(SESSION_COOKIE)?.value; const id = raw ? cookieToSessionId(raw) : null; return id ? sessionTag(id) : null;
+}
+/** Sign-out that can only end the session the learner meant. A late (queued/offline) sign-out must never end a session created by a LATER sign-in.
+ *  `tag` names the session: only that session is ended. `confirmCurrent` is an explicit, user-confirmed "end whatever session this browser holds right now".
+ *  Neither given: nothing is ended (fail safe). There is deliberately no client-clock fallback.
+ *  Conditional paths send no cookie-delete header, since a late response could otherwise clear a newer login's cookie; the session row is gone, so a stale cookie is inert. */
+export async function destroySessionFor(opts: { tag?: string; confirmCurrent?: boolean }): Promise<'ended' | 'skipped' | 'none'> {
+  const jar = await cookies(); const raw = jar.get(SESSION_COOKIE)?.value; const id = raw ? cookieToSessionId(raw) : null;
+  if (!id) return 'none';
+  if (opts.tag !== undefined) { if (sessionTag(id) !== opts.tag) return 'skipped'; }
+  else if (opts.confirmCurrent !== true) return 'skipped';
+  await db.session.deleteMany({ where: { id } }); return 'ended';
 }
 
 export async function getCurrentUser() {

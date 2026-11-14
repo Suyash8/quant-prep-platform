@@ -1,0 +1,918 @@
+{
+  "id": "qf5-algorithms-dp-greedy",
+  "revision": 5,
+  "title": "Dynamic programming and greedy counterexamples",
+  "module": "qf5-algorithms",
+  "order": 8,
+  "estMinutes": 253,
+  "objectives": [
+    {
+      "conceptId": "qf5-algorithms-dp-greedy.recurrence",
+      "text": "Define states, base cases and dependency order for bounded-item knapsack and unbounded coin-count dynamic programs."
+    },
+    {
+      "conceptId": "qf5-algorithms-dp-greedy.greedy-counterexample",
+      "text": "Use a concrete counterexample to reject an unjustified local greedy rule rather than assume every fast choice is optimal."
+    },
+    {
+      "conceptId": "qf5-algorithms-dp-greedy.fixed-point-count",
+      "text": "Partition permutations by exactly k fixed positions and derive the derangement recurrence with correct empty/one-element bases."
+    },
+    {
+      "conceptId": "qf5-algorithms-dp-greedy.modular-binomial",
+      "text": "Compute binomial factors under a prime modulus with invertible factorials only when n is below that modulus."
+    },
+    {
+      "conceptId": "qf5-algorithms-dp-greedy.killed-walk-state",
+      "text": "Count exactly timed bounded walks whose every prefix remains inside an inclusive band."
+    },
+    {
+      "conceptId": "qf5-algorithms-dp-greedy.rolling-time-layers",
+      "text": "Use separate rolling time layers with offset indexing, explicit killed boundaries and O(n times width) work."
+    },
+    {
+      "conceptId": "qf5-algorithms-dp-greedy.coin-combination-state",
+      "text": "Count unlimited coin multisets with a type-prefix state, empty-sum base and distinct-denomination contract."
+    },
+    {
+      "conceptId": "qf5-algorithms-dp-greedy.coin-loop-order",
+      "text": "Explain coin-first ascending-amount iteration versus ordered sequences and 0/1 subsets."
+    },
+    {
+      "conceptId": "qf5-algorithms-dp-greedy.lcs-prefix-state",
+      "text": "Define two-prefix LCS length with empty bases and subsequence semantics."
+    },
+    {
+      "conceptId": "qf5-algorithms-dp-greedy.lcs-match-skip",
+      "text": "Prove match/skip recurrence and preserve rolling-row dependencies without claiming reconstruction."
+    },
+    {
+      "conceptId": "qf5-algorithms-dp-greedy.edit-prefix-state",
+      "text": "Define unit-cost insertion/deletion/substitution distance over two prefixes."
+    },
+    {
+      "conceptId": "qf5-algorithms-dp-greedy.edit-operation-recurrence",
+      "text": "Derive a minimum over final alignment columns and use separate rolling rows with exact adapter semantics."
+    },
+    {
+      "conceptId": "qf5-algorithms-dp-greedy.interval-exchange",
+      "text": "Prove maximum-cardinality selection by earliest-finish exchange."
+    },
+    {
+      "conceptId": "qf5-algorithms-dp-greedy.half-open-selection",
+      "text": "Apply half-open compatibility and distinguish weighted scheduling or hosting all jobs."
+    },
+    {
+      "conceptId": "qf5-algorithms-dp-greedy.mincoin-sentinel-contract",
+      "text": "Adapt the taught amount DP to source-allowed duplicate denominations and list-line output."
+    },
+    {
+      "conceptId": "qf5-algorithms-dp-greedy.mincoin-parser-bridge",
+      "text": "Bound an unreachable sentinel and distinguish zero-cost base from combination counts."
+    },
+    {
+      "conceptId": "qf5-algorithms-dp-greedy.kadane-nonempty-state",
+      "text": "Derive the nonempty best-ending recurrence and maintain the best interval across all ending positions."
+    },
+    {
+      "conceptId": "qf5-algorithms-dp-greedy.subset-count-layer",
+      "text": "Count indexed 0/1 subsets modulo a prime using a downward sum scan, keeping repeated values as different items."
+    },
+    {
+      "conceptId": "qf5-algorithms-dp-greedy.lis-minimum-tail",
+      "text": "Maintain minimum attainable tails by length and use lower_bound to compute strict LIS length in O(n log n)."
+    }
+  ],
+  "prerequisites": [
+    "qf5-algorithms-union-find"
+  ],
+  "blocks": [
+    {
+      "type": "text",
+      "id": "state-first",
+      "markdown": "Dynamic programming reuses answers to overlapping subproblems. A state must name exactly what its answer means; a table index alone is not a specification. Before writing code, state the domain, objective, allowed reuse, base cases, recurrence, dependency order and result extraction. Top-down memoization caches a recursively defined state; bottom-up tabulation computes states in an order that has their dependencies ready. Neither technique turns a wrong recurrence into a correct algorithm."
+    },
+    {
+      "type": "text",
+      "id": "knapsack-state",
+      "markdown": "In 0/1 knapsack, each item has a positive integer weight and a nonnegative integer value, and can be selected at most once. Capacity is an upper bound, not an exact-fill requirement. Let F(i,c) be the maximum value achievable using the first i items with total weight at most c. F(0,c)=0. For item i with weight w and value v, either skip it, giving F(i-1,c), or take it when c>=w, giving F(i-1,c-w)+v. The best is the maximum of those feasible choices. This split covers every legal subset by whether it contains item i."
+    },
+    {
+      "type": "worked",
+      "id": "knapsack-trace",
+      "title": "Trace a bounded choice, not an unlimited repeat",
+      "steps": [
+        {
+          "text": "Items (weight,value) are (2,3),(3,4),(4,5); capacity 5."
+        },
+        {
+          "text": "Taking the first two uses weight 5 and value 7. The third item alone gives value 5."
+        },
+        {
+          "text": "No item can be used twice. The best value is 7."
+        },
+        {
+          "text": "With just item (2,3) and capacity 4, the best value remains 3, not 6. This case exposes an accidental unlimited-item recurrence."
+        }
+      ]
+    },
+    {
+      "type": "code",
+      "id": "knapsack-01",
+      "language": "python",
+      "source": "def knapsack_01(items, capacity):\n    if type(capacity) is not int or capacity < 0:\n        raise ValueError(\"invalid capacity\")\n    if any(type(weight) is not int or weight <= 0 or type(value) is not int or value < 0\n           for weight, value in items):\n        raise ValueError(\"expected positive integer weights and nonnegative integer values\")\n    best = [0] * (capacity + 1)\n    for weight, value in items:\n        for room in range(capacity, weight - 1, -1):\n            best[room] = max(best[room], best[room - weight] + value)\n    return best[capacity]\n\nprint(knapsack_01([(2, 3), (3, 4), (4, 5)], 5))\nprint(knapsack_01([(2, 3)], 4))\nprint(knapsack_01([], 5))",
+      "caption": "Expected output: 7, then 3, then 0. For each item, capacities run DOWNWARD so best[room-weight] still represents the prior item layer. Upward iteration could reuse the same item within this layer. Zero capacity and no items both have value 0 under the at-most-capacity contract.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "inline-0",
+      "questionId": "qf5-algorithms-dp-greedy.check-1"
+    },
+    {
+      "type": "text",
+      "id": "loop-invariant",
+      "markdown": "Before processing an item, best[c] equals the optimum using only earlier items. During its downward capacity scan, entries above the current room may already include this item, while the lower dependency room-weight still comes from the previous layer because weight>0. This preserves 0/1 use. Zero weights are excluded by this interface and must not be slipped into the proof. The returned optimum value does not reconstruct a chosen item set; reconstruction needs additional parent/history decisions and tie policy."
+    },
+    {
+      "type": "text",
+      "id": "cost",
+      "markdown": "The loops have O(number_of_items*capacity) table work and O(capacity) storage in this unit-cost model. This is pseudo-polynomial in numeric capacity: a huge capacity written with few digits can still require an infeasible table. Validate resource bounds before allocation in an actual service. This worked local function validates numeric domains but does not claim a production memory quota or safe acceptance of arbitrary huge inputs."
+    },
+    {
+      "type": "text",
+      "id": "coin-state",
+      "markdown": "Minimum coins is a different reuse contract: positive integer denominations may be used any number of times. Let C(a) be the minimum number of coins making EXACT amount a. C(0)=0. For a>0, consider each coin d<=a whose C(a-d) is reachable, and minimize C(a-d)+1. If no choice is reachable, retain None. Computing amounts from small to large makes all smaller dependencies available. A zero or negative denomination would break this dependency argument and is rejected."
+    },
+    {
+      "type": "code",
+      "id": "minimum-coins",
+      "language": "python",
+      "source": "def minimum_coins(denominations, amount):\n    if type(amount) is not int or amount < 0:\n        raise ValueError(\"invalid amount\")\n    if any(type(coin) is not int or coin <= 0 for coin in denominations):\n        raise ValueError(\"expected positive integer denominations\")\n    best = [None] * (amount + 1)\n    best[0] = 0\n    for total in range(1, amount + 1):\n        choices = [best[total - coin] + 1 for coin in denominations\n                   if coin <= total and best[total - coin] is not None]\n        best[total] = min(choices) if choices else None\n    return best[amount]\n\nprint(minimum_coins([1, 3, 4], 6))\nprint(minimum_coins([2], 3))\nprint(minimum_coins([], 0))",
+      "caption": "Expected output: 2, then None, then 0. Amount 6 can use 3+3; amount 3 cannot be formed using only denomination 2. None is unreachable, not a zero-coin solution. This recurrence permits unlimited reuse, unlike 0/1 knapsack.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "inline-1",
+      "questionId": "qf5-algorithms-dp-greedy.check-2"
+    },
+    {
+      "type": "check",
+      "id": "inline-2",
+      "questionId": "qf5-algorithms-dp-greedy.check-3"
+    },
+    {
+      "type": "text",
+      "id": "greedy-rule",
+      "markdown": "A greedy algorithm commits to a local choice without keeping all alternatives. It needs a proof that its choice can be part of an optimal solution under the exact domain, often an exchange argument. The rule take the largest coin that fits is not universally valid. For denominations 1, 3, 4 and amount 6, it takes 4+1+1, using three coins, while 3+3 uses two. A single valid counterexample disproves universal optimality; many passing examples cannot replace a proof."
+    },
+    {
+      "type": "code",
+      "id": "greedy-counterexample",
+      "language": "python",
+      "source": "def greedy_coin_count(denominations, amount):\n    count = 0\n    for coin in sorted(denominations, reverse=True):\n        used, amount = divmod(amount, coin)\n        count += used\n    return count if amount == 0 else None\n\nprint(greedy_coin_count([1, 3, 4], 6))\nprint(3 + 3 == 6)",
+      "caption": "Expected output: 3, then True. The equality only confirms that 3+3 reaches 6; the prior dynamic program supplies the two-coin optimum for this fixture. This greedy helper is deliberately a counterexample target, not the recommended solver. Its inputs are prevalidated positive denominations and a nonnegative amount.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "inline-3",
+      "questionId": "qf5-algorithms-dp-greedy.check-4"
+    },
+    {
+      "type": "text",
+      "id": "distinctions",
+      "markdown": "A coin system having a unit coin makes every amount reachable but does NOT make the largest-first rule optimal. Changing the objective, allowing fractional items, limiting available copies or requiring exact fill all change the recurrence/proof. Do not relabel bounded knapsack, unbounded coin change, edit distance and interval scheduling as the same DP task. This lesson does not yet teach edit-distance alignment, longest increasing subsequence, reconstruction, or a general theorem for when greedy works."
+    },
+    {
+      "type": "text",
+      "id": "transfer",
+      "markdown": "Independent transfer: enumerate all subsets for tiny bounded knapsack and compare optimum values to the DP, especially one item with excess capacity. For minimum coins, compare to a breadth-first search over reachable amounts on small fixtures. Include empty denominations, zero amount and unreachable amounts. Deliberately reverse knapsack loop direction, observe the one-item failure, then restore it. State resource bounds and do not use these exponential/reference solvers for large production workloads."
+    },
+    {
+      "type": "check",
+      "id": "inline-4",
+      "questionId": "qf5-algorithms-dp-greedy.check-5"
+    },
+    {
+      "type": "check",
+      "id": "inline-5",
+      "questionId": "qf5-algorithms-dp-greedy.check-6"
+    },
+    {
+      "type": "text",
+      "id": "source-scope",
+      "markdown": "References: [0/1 versus complete knapsack](https://cp-algorithms.com/dynamic_programming/knapsack.html) and [DP introduction](https://cp-algorithms.com/dynamic_programming/intro-to-dp.html). State meanings, proof arguments and counterexamples are explicit here. The local examples use synthetic integer weights/values, not an investment optimization recommendation or a service resource guarantee."
+    },
+    {
+      "type": "text",
+      "id": "counting-recurrences-prerequisites",
+      "markdown": "Two counting extensions use the same discipline as knapsack: define exactly what a state counts before choosing storage. Review Python loops, lists, functions and exact integer arithmetic first. A permutation is a bijection of n labelled positions; a fixed position i has p(i)=i. A walk is a sequence of exactly n moves, each +1 or -1, starting at zero. These are counting questions, not optimizations. Reducing a count modulo M preserves addition and multiplication, not ordinary division."
+    },
+    {
+      "type": "text",
+      "id": "counting-recurrences-fixed-partition",
+      "markdown": "For exactly k fixed positions, first choose the k positions. Every remaining position must NOT be fixed. There are C(n,k) choices for that set, then D(n-k) derangements on the rest. Sets are disjoint because a permutation has one exact fixed set. Therefore count=C(n,k)*D(n-k). Choosing k positions then freely permuting the rest is wrong: it also counts additional fixed points. D(0)=1 is the one empty permutation, not zero. D(1)=0 because one object cannot avoid itself."
+    },
+    {
+      "type": "worked",
+      "id": "counting-recurrences-derangement-proof",
+      "title": "Derive D(m) by the cycle containing one distinguished label",
+      "steps": [
+        {
+          "text": "Take label 1. In a derangement it points to one of m-1 other labels j. If j points back to 1, remove the two-cycle. The remaining m-2 labels form a derangement: D(m-2) choices for each j."
+        },
+        {
+          "text": "Otherwise the cycle of 1 has length at least three. Remove 1 from that cycle by redirecting its predecessor to j. This gives a derangement of m-1 labels. Conversely, insert 1 immediately before j in such a derangement. These operations are inverses, so this case contributes D(m-1) for each j."
+        },
+        {
+          "text": "The cases are disjoint and cover every derangement, giving D(m)=(m-1)*(D(m-1)+D(m-2)) for m>=2. Thus D(2)=1, D(3)=2, D(4)=9. For n=4,k=2, choose the two fixed labels in 6 ways and swap the remaining pair: 6*1=6. For k=3, D(1)=0, so result is zero."
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "id": "counting-recurrences-factorial-bridge",
+      "markdown": "Combinatorics bridge: n! (factorial) is the product 1*2*...*n, with 0!=1. Choosing an unordered set of k positions gives C(n,k)=n!/[k!(n-k)!]: there are n! ordered arrangements, but the k selected positions and n-k unselected positions can each be reordered without changing that set. Modulo M means keeping the remainder class; x and y are congruent when M divides x-y. A modular inverse u of x satisfies x*u congruent to 1, not real-number 1/x. In the code pow(x,exponent,M) evaluates modular exponentiation by repeated squaring without constructing x**exponent first. Exponent notation in prose is not Python XOR syntax."
+    },
+    {
+      "type": "text",
+      "id": "counting-recurrences-modular-division",
+      "markdown": "Here M=1000000007 is prime and n<=100000<M. All factors 1..n are nonzero modulo M, so factorials are invertible. Fermat: for nonzero x, x^(M-1)=1 modulo M, hence x^(-1)=x^(M-2). Compute C(n,k)=fact[n]*inverse(fact[k])*inverse(fact[n-k]) modulo M. The code uses modular pow, not integer // on residues. If n>=M, factorial can be zero and this formula fails; that general case is outside the source contract. For many queries, precompute factorial and inverse-factorial arrays up to the largest n once."
+    },
+    {
+      "type": "code",
+      "id": "counting-recurrences-permutation-count",
+      "language": "python",
+      "source": "MOD = 1000000007\n\ndef count_permutations(n, k):\n    if any((type(x) is not int for x in (n, k))) or not 1 <= n <= 100000 or (not 0 <= k <= n):\n        raise ValueError('invalid permutation bounds')\n    factorial = [1] * (n + 1)\n    for i in range(1, n + 1):\n        factorial[i] = factorial[i - 1] * i % MOD\n    choose = factorial[n] * pow(factorial[k], MOD - 2, MOD) % MOD * pow(factorial[n - k], MOD - 2, MOD) % MOD\n    m = n - k\n    (d0, d1) = (1, 0)\n    for i in range(2, m + 1):\n        (d0, d1) = (d1, (i - 1) * (d0 + d1) % MOD)\n    derangements = d0 if m == 0 else d1\n    return [str(choose * derangements % MOD)]\nprint(count_permutations(4, 2))\nprint(count_permutations(4, 3))\nprint(count_permutations(1, 1))\nprint(count_permutations(1, 0))\n",
+      "caption": "Expected ['6'], ['0'], ['1'], ['0']. Complete Python 3.12 function. Source qfp-fixed-point-permutations at 73d6975 has n=1..100000, k=0..n. It returns a LIST of output lines for the supplied adapter, not a bare integer/string. One query costs O(n+log M) modular arithmetic operations and O(n) storage. Inputs exclude bool via exact int checks. The tuple update computes both right-hand sides from the old d0,d1, preserving the previous two derangement states.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "counting-recurrences-inline-0",
+      "questionId": "qf5-algorithms-dp-greedy.counting-recurrences-check-1"
+    },
+    {
+      "type": "check",
+      "id": "counting-recurrences-inline-1",
+      "questionId": "qf5-algorithms-dp-greedy.counting-recurrences-check-2"
+    },
+    {
+      "type": "check",
+      "id": "counting-recurrences-inline-4",
+      "questionId": "qf5-algorithms-dp-greedy.counting-recurrences-check-5"
+    },
+    {
+      "type": "text",
+      "id": "counting-recurrences-cxx-permutation-bounds",
+      "markdown": "In C++, reduce after each multiplication and promote BEFORE multiplying, for example 1LL*left*right%M. Two residues give a product at most (M-1)^2, below 2^63-1, but chaining three unreduced residues is not safe. In the derangement step, (m-1)*(d0+d1) is less than 100000*2*M, also below 2^63-1 after promotion. Keep all returned residues in 0..M-1. These bounds explain 64-bit intermediates for modular arithmetic; they do not make the exact combinatorial count fit 64 bits."
+    },
+    {
+      "type": "check",
+      "id": "counting-recurrences-inline-2",
+      "questionId": "qf5-algorithms-dp-greedy.counting-recurrences-check-3"
+    },
+    {
+      "type": "check",
+      "id": "counting-recurrences-inline-3",
+      "questionId": "qf5-algorithms-dp-greedy.counting-recurrences-check-4"
+    },
+    {
+      "type": "check",
+      "id": "counting-recurrences-inline-5",
+      "questionId": "qf5-algorithms-dp-greedy.counting-recurrences-check-6"
+    },
+    {
+      "type": "text",
+      "id": "counting-recurrences-walk-state",
+      "markdown": "For qfp-bounded-walk-count at 73d6975, n=1..2000; -1000<=lo<=0<=hi<=1000; endpoint e is inside the band. Every prefix position must stay inside the INCLUSIVE band. Let f_t(x) count valid length-t paths ending at x. Base f_0(0)=1, every other state zero. For x in [lo,hi], f_(t+1)(x)=f_t(x-1)+f_t(x+1), with outside predecessors defined as zero. A path that leaves is killed, not reflected, clamped or allowed back later. This invariant follows by disjointly appending the last step to a valid predecessor."
+    },
+    {
+      "type": "worked",
+      "id": "counting-recurrences-walk-trace",
+      "title": "A band changes the path set at each time, not only at the end",
+      "steps": [
+        {
+          "text": "With lo=-1, hi=1, initialize time 0 as [0,1,0] for positions [-1,0,1]. Time 1 is [1,0,1]; time 2 is [0,2,0]; time 3 is [2,0,2]; time 4 is [0,4,0]. Thus 4 valid paths finish at zero after 4 steps."
+        },
+        {
+          "text": "Without the band there are C(4,2)=6 return paths. The paths ++-- and --++ reach +/-2 and are killed even though they finish at zero. Filtering endpoints alone would incorrectly keep them."
+        },
+        {
+          "text": "Use array index j=x-lo, so start index is -lo and result index is e-lo. Out-of-array predecessor means zero, not a Python negative index wrapping to the other end. A singleton [0,0] kills every first move, so all n>=1 answers are zero. Odd n cannot end at zero; more generally n and e must have the same parity."
+        }
+      ]
+    },
+    {
+      "type": "code",
+      "id": "counting-recurrences-bounded-walk",
+      "language": "python",
+      "source": "MOD = 1000000007\n\ndef count_walks(n, lo, hi, e):\n    if any((type(x) is not int for x in (n, lo, hi, e))) or not 1 <= n <= 2000 or (not -1000 <= lo <= 0 <= hi <= 1000) or (not lo <= e <= hi):\n        raise ValueError('invalid walk bounds')\n    width = hi - lo + 1\n    old = [0] * width\n    old[-lo] = 1\n    for _ in range(n):\n        new = [0] * width\n        for j in range(width):\n            new[j] = ((old[j - 1] if j else 0) + (old[j + 1] if j + 1 < width else 0)) % MOD\n        old = new\n    return [str(old[e - lo])]\nprint(count_walks(4, -1, 1, 0))\nprint(count_walks(2, 0, 0, 0))\nprint(count_walks(3, -1, 1, 0))\n",
+      "caption": "Expected ['4'], ['0'], ['0']. Complete Python 3.12 function returns LISTLINES for the supplied adapter. The implementation does not optimize away parity cases; the recurrence already handles them. Width w=hi-lo+1<=2001, work O(n*w) with at most 4002000 cell updates and O(w) rolling storage. This is an operation bound, not an external judge timing guarantee.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "counting-recurrences-inline-7",
+      "questionId": "qf5-algorithms-dp-greedy.counting-recurrences-check-8"
+    },
+    {
+      "type": "check",
+      "id": "counting-recurrences-inline-8",
+      "questionId": "qf5-algorithms-dp-greedy.counting-recurrences-check-9"
+    },
+    {
+      "type": "check",
+      "id": "counting-recurrences-inline-11",
+      "questionId": "qf5-algorithms-dp-greedy.counting-recurrences-check-12"
+    },
+    {
+      "type": "text",
+      "id": "counting-recurrences-why-new-layer",
+      "markdown": "The old array means one exact time t. Write every new time t+1 into a different zeroed array, then replace old after the full sweep. Updating old left-to-right mixes new t+1 values with old t values and changes the counted process. Reading old[-1] at the left boundary wraps in Python and invents a transition. Reducing each sum modulo M is valid because reduction commutes with addition. C++ can store each reduced state in int; the sum of two residues is <=2000000012, within signed 32-bit int, though a wider intermediate is a safe convention."
+    },
+    {
+      "type": "check",
+      "id": "counting-recurrences-inline-9",
+      "questionId": "qf5-algorithms-dp-greedy.counting-recurrences-check-10"
+    },
+    {
+      "type": "check",
+      "id": "counting-recurrences-inline-10",
+      "questionId": "qf5-algorithms-dp-greedy.counting-recurrences-check-11"
+    },
+    {
+      "type": "check",
+      "id": "counting-recurrences-inline-12",
+      "questionId": "qf5-algorithms-dp-greedy.counting-recurrences-check-13"
+    },
+    {
+      "type": "text",
+      "id": "counting-recurrences-independent-transfer",
+      "markdown": "Independent transfer: enumerate every permutation through n=7 and tabulate its exact fixed-point count, checking all k. Compare the modular binomial against math.comb and derangements against independent inclusion-exclusion. For walks, enumerate +/-1 sequences through n=8, reject as soon as any prefix exits, and tabulate every inside endpoint. Try asymmetric and singleton bands, wrong parity and boundaries. At max bounds, compare rolling recurrence with an independent sparse forward-distribution implementation. A second implementation of the same in-place bug is not independent evidence."
+    },
+    {
+      "type": "check",
+      "id": "counting-recurrences-inline-6",
+      "questionId": "qf5-algorithms-dp-greedy.counting-recurrences-check-7"
+    },
+    {
+      "type": "check",
+      "id": "counting-recurrences-inline-13",
+      "questionId": "qf5-algorithms-dp-greedy.counting-recurrences-check-14"
+    },
+    {
+      "type": "text",
+      "id": "counting-recurrences-sources",
+      "markdown": "Sources: [cycle/hat proof of the derangement recurrence](https://math.stackexchange.com/questions/203899/combinatorial-argument-to-prove-the-recurrence-relation-for-number-of-derangemen/203908), [prime modular inverse and its conditions](https://cp-algorithms.com/algebra/module-inverse.html). The finite-state walk recurrence and operation/overflow bounds above are derived here from the exact problem contract, not borrowed judge tests."
+    },
+    {
+      "type": "callout",
+      "id": "coverage-extension-scope",
+      "tone": "note",
+      "markdown": "The earlier core section deliberately excluded alignment and general greedy algorithms. The following explicit extensions now teach coin combination counting, LCS length, unit edit distance and half-open interval selection. They do not claim LIS, reconstruction, weighted scheduling or a universal greedy theorem. Take these as separate 20-30 minute parts rather than one uninterrupted sitting."
+    },
+    {
+      "type": "text",
+      "id": "coin-multisets-0",
+      "markdown": "Not minimum coins\n\nCount combinations, not the smallest number of coins. Source: 1..100 distinct positive denominations, each<=20000, target 0..20000, modulo 1000000007. A solution is a multiplicity vector giving how many of each denomination; rearrangements are the SAME solution. count_ways(amount,coins) returns a list of one output line. This helper rejects duplicates under the source distinct-input contract rather than treating equal values as extra types."
+    },
+    {
+      "type": "text",
+      "id": "coin-multisets-1",
+      "markdown": "Disjoint recurrence\n\nW(i,s) counts ways to make exact s with the first i types. W(0,0)=1 and W(0,s>0)=0. For positive coin c_i, W(i,s)=W(i-1,s)+(W(i,s-c_i) if s>=c_i else 0). Partition by zero versus at-least-one copy of type i. Removing one current coin bijects the latter case to W(i,s-c_i). Thus the cases are exhaustive and do not overlap."
+    },
+    {
+      "type": "text",
+      "id": "coin-multisets-2",
+      "markdown": "Loop proof and trace\n\nBefore a coin pass, ways[s]=W(i-1,s). Ascending s makes ways[s-c] a CURRENT-type state, permitting unlimited reuse. Coin outermost fixes a canonical type order. Amount-first last-coin summation counts ordered sequences; descending amounts instead count 0/1 copies. For coins [1,2], target3: start [1,0,0,0], after1 [1,1,1,1], after2 [1,1,2,2]. Two multisets are 111 and12; ordered counting would also count21. Processing duplicate value1 twice would create extra type buckets and overcount. Reject duplicates here; normalize only under a separately declared contract."
+    },
+    {
+      "type": "text",
+      "id": "coin-multisets-3",
+      "markdown": "Bounds and independent transfer\n\nO(n*A) modular additions and O(A) entries, at most 100*20001 cell visits. Reduction preserves addition. C++ sum of two residues is <=2000000012; use an appropriate wide intermediate. Independently enumerate multiplicity vectors on tiny inputs, including amount0, unreachable targets and shuffled types. Exercise maximum dimensions separately; operation bounds are not remote judge timing qualification."
+    },
+    {
+      "type": "code",
+      "id": "coin-multisets-complete",
+      "language": "python",
+      "source": "MOD = 1000000007\n\ndef count_ways(amount, coins):\n    if type(amount) is not int or not 0 <= amount <= 20000:\n        raise ValueError('invalid amount')\n    if not 1 <= len(coins) <= 100 or any((type(c) is not int or not 1 <= c <= 20000 for c in coins)):\n        raise ValueError('invalid denominations')\n    if len(set(coins)) != len(coins):\n        raise ValueError('denominations must be distinct')\n    ways = [0] * (amount + 1)\n    ways[0] = 1\n    for coin in coins:\n        for total in range(coin, amount + 1):\n            ways[total] = (ways[total] + ways[total - coin]) % MOD\n    return [str(ways[amount])]\n\nprint(count_ways(3, [1, 2]))\nprint(count_ways(0, [2, 5]))\nprint(count_ways(3, [2]))\n",
+      "caption": "Expected ['2'], ['1'], ['0']. Complete Python3.12 list-lines function with exact bounds and duplicate rejection.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "coin-multisets-inline-1",
+      "questionId": "qf5-algorithms-dp-greedy.coin-multisets-check-1"
+    },
+    {
+      "type": "check",
+      "id": "coin-multisets-inline-2",
+      "questionId": "qf5-algorithms-dp-greedy.coin-multisets-check-2"
+    },
+    {
+      "type": "check",
+      "id": "coin-multisets-inline-3",
+      "questionId": "qf5-algorithms-dp-greedy.coin-multisets-check-3"
+    },
+    {
+      "type": "check",
+      "id": "coin-multisets-inline-4",
+      "questionId": "qf5-algorithms-dp-greedy.coin-multisets-check-4"
+    },
+    {
+      "type": "check",
+      "id": "coin-multisets-inline-5",
+      "questionId": "qf5-algorithms-dp-greedy.coin-multisets-check-5"
+    },
+    {
+      "type": "check",
+      "id": "coin-multisets-inline-6",
+      "questionId": "qf5-algorithms-dp-greedy.coin-multisets-check-6"
+    },
+    {
+      "type": "check",
+      "id": "coin-multisets-inline-7",
+      "questionId": "qf5-algorithms-dp-greedy.coin-multisets-check-7"
+    },
+    {
+      "type": "text",
+      "id": "coin-multisets-sources",
+      "markdown": "Sources: [1](https://arunank.com/dsa-book/kata-229.html). Exact public task contract hash 14a16030d08a05ad8ad0e1e260d9f30fbec26ee61755df8b54e5a9ebe1b22572. This is main algorithm/contract teaching,not current app or judge signoff."
+    },
+    {
+      "type": "text",
+      "id": "two-prefix-lcs-0",
+      "markdown": "Two prefixes\n\nSource arrays contain1..1500 integer IDs each, absolute value<=1e9. A subsequence deletes entries without reordering; it need not be contiguous. Repeated IDs are separate occurrences. L(i,j) is the best common length in a[:i] and b[:j]. L(0,j)=L(i,0)=0. lcs(a,b) returns a one-line list. The task asks for length, not a unique alignment, substring or edit distance."
+    },
+    {
+      "type": "text",
+      "id": "two-prefix-lcs-1",
+      "markdown": "Match/skip proof\n\nIf final values differ, a noncrossing alignment cannot use both final positions, so skip at least one: L(i,j)=max(L(i-1,j),L(i,j-1)). If final values agree, some optimum pairs them. If neither is used, appending the pair improves it; otherwise move the final matched occurrence of that symbol to these final positions without losing length/order. Thus L(i,j)=1+L(i-1,j-1). This is existence of some optimum, not every optimum."
+    },
+    {
+      "type": "text",
+      "id": "two-prefix-lcs-2",
+      "markdown": "Trace and dependencies\n\nFor a=[1,2,1], b=[2,1,2], rows are [0,0,0,0], [0,0,1,1], [0,1,1,2], [0,1,2,2]. Answer2, with alternatives12 or21. At a mismatch take max, not sum or unconditional diagonal. Substring DP has a different state. Increasing i,j exposes top/diagonal in old row and left in new row. Do not alias the rows. Input swapping can minimize width because length is symmetric."
+    },
+    {
+      "type": "text",
+      "id": "two-prefix-lcs-3",
+      "markdown": "Bounds and independent transfer\n\nO(n*m) updates, at most2250000, and O(min(n,m)) row entries. No recursion required. Rolling lengths do not preserve parent history for alignment reconstruction. Enumerate all subsequences of a tiny sequence, test occurrence in the other and maximize length. Include repeated/disjoint/equal/reversed cases and maximum1500 arrays. A second copy of the recurrence is not the only oracle."
+    },
+    {
+      "type": "code",
+      "id": "two-prefix-lcs-complete",
+      "language": "python",
+      "source": "MOD = 1000000007\n\ndef lcs(a, b):\n    if not 1 <= len(a) <= 1500 or not 1 <= len(b) <= 1500:\n        raise ValueError('invalid sequence lengths')\n    if any((type(x) is not int or abs(x) > 10 ** 9 for seq in (a, b) for x in seq)):\n        raise ValueError('invalid sequence value')\n    if len(b) > len(a):\n        (a, b) = (b, a)\n    old = [0] * (len(b) + 1)\n    for x in a:\n        new = [0] * (len(b) + 1)\n        for (j, y) in enumerate(b, 1):\n            new[j] = old[j - 1] + 1 if x == y else max(old[j], new[j - 1])\n        old = new\n    return [str(old[-1])]\n\nprint(lcs([1, 2, 1], [2, 1, 2]))\nprint(lcs([7, 7], [7]))\nprint(lcs([1], [2]))\n",
+      "caption": "Expected ['2'], ['1'], ['0']. Complete Python3.12 length-only list-lines function. Empty prefixes are internal bases, not broadened public inputs.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "two-prefix-lcs-inline-1",
+      "questionId": "qf5-algorithms-dp-greedy.two-prefix-lcs-check-1"
+    },
+    {
+      "type": "check",
+      "id": "two-prefix-lcs-inline-2",
+      "questionId": "qf5-algorithms-dp-greedy.two-prefix-lcs-check-2"
+    },
+    {
+      "type": "check",
+      "id": "two-prefix-lcs-inline-3",
+      "questionId": "qf5-algorithms-dp-greedy.two-prefix-lcs-check-3"
+    },
+    {
+      "type": "check",
+      "id": "two-prefix-lcs-inline-4",
+      "questionId": "qf5-algorithms-dp-greedy.two-prefix-lcs-check-4"
+    },
+    {
+      "type": "check",
+      "id": "two-prefix-lcs-inline-5",
+      "questionId": "qf5-algorithms-dp-greedy.two-prefix-lcs-check-5"
+    },
+    {
+      "type": "check",
+      "id": "two-prefix-lcs-inline-6",
+      "questionId": "qf5-algorithms-dp-greedy.two-prefix-lcs-check-6"
+    },
+    {
+      "type": "check",
+      "id": "two-prefix-lcs-inline-7",
+      "questionId": "qf5-algorithms-dp-greedy.two-prefix-lcs-check-7"
+    },
+    {
+      "type": "text",
+      "id": "two-prefix-lcs-sources",
+      "markdown": "Sources: [1](https://ocw.mit.edu/courses/6-006-introduction-to-algorithms-spring-2020/28461a74f81101874a13d9679a40584d_MIT6_006S20_lec16.pdf). Exact public task contract hash c4a4b8836d067dea4058bd0b013803b19315a15be3f65a29eec2bd9122162531. This is main algorithm/contract teaching,not current app or judge signoff."
+    },
+    {
+      "type": "text",
+      "id": "unit-edit-distance-0",
+      "markdown": "Different from LCS\n\nSource strings have1..1000 lowercase ASCII letters. Insert/delete/substitute cost1; equal-character match costs0. Adjacent transposition is NOT an operation. D(i,j) is the minimum edits from a[:i] to b[:j]. D(i,0)=i deletions; D(0,j)=j insertions. edit_distance(a,b) returns a one-line list. This extension supplies the missing main algorithm rather than relabelling LCS prerequisites."
+    },
+    {
+      "type": "text",
+      "id": "unit-edit-distance-1",
+      "markdown": "Final-column proof\n\nEvery order-preserving edit alignment ends by deleting a last character (D(i-1,j)+1), inserting a last target character (D(i,j-1)+1), or pairing/substituting (D(i-1,j-1)+(a[i-1]!=b[j-1])). Conversely append each operation to an optimal smaller alignment to obtain a feasible candidate. Standard unit edit scripts admit such an alignment without increased cost. Therefore take the MINIMUM of these three cases, not maximum or sum."
+    },
+    {
+      "type": "text",
+      "id": "unit-edit-distance-2",
+      "markdown": "Trace and boundaries\n\ncat to cut costs1 substitution. ab to ba costs2, not one forbidden swap. a to b costs1 here, whereas len(a)+len(b)-2*LCS gives2: that identity is for insertion/deletion-only costs. Initialize old[j]=j; row i starts new[0]=i, then fill ascending j from top,left,diagonal. Zero LCS bases would give false cheap insertions. Symmetric unit costs permit swapping inputs to minimize row width."
+    },
+    {
+      "type": "text",
+      "id": "unit-edit-distance-3",
+      "markdown": "Work and independent transfer\n\nO(n*m) updates <=1000000, O(min(n,m)) entries. Distance<=max(n,m)<=1000. Rolling lengths do not reconstruct an edit script. For tiny {a,b} strings, BFS over strings using all insert/delete/substitute neighbors independently finds the fewest operations. Bound intermediate lengths by max source/target length for these unit costs. Test equal,disjoint,repeated,transposition and maximum1000 cases."
+    },
+    {
+      "type": "code",
+      "id": "unit-edit-distance-complete",
+      "language": "python",
+      "source": "MOD = 1000000007\n\ndef edit_distance(a, b):\n    if any((type(s) is not str or not 1 <= len(s) <= 1000 or any((not 'a' <= ch <= 'z' for ch in s)) for s in (a, b))):\n        raise ValueError('invalid strings')\n    if len(b) > len(a):\n        (a, b) = (b, a)\n    old = list(range(len(b) + 1))\n    for (i, x) in enumerate(a, 1):\n        new = [i] + [0] * len(b)\n        for (j, y) in enumerate(b, 1):\n            new[j] = min(old[j] + 1, new[j - 1] + 1, old[j - 1] + (x != y))\n        old = new\n    return [str(old[-1])]\n\nprint(edit_distance('cat', 'cut'))\nprint(edit_distance('ab', 'ba'))\nprint(edit_distance('a', 'b'))\n",
+      "caption": "Expected ['1'], ['2'], ['1']. Complete Python3.12 list-lines unit edit distance; no swaps, weights or script reconstruction.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "unit-edit-distance-inline-1",
+      "questionId": "qf5-algorithms-dp-greedy.unit-edit-distance-check-1"
+    },
+    {
+      "type": "check",
+      "id": "unit-edit-distance-inline-2",
+      "questionId": "qf5-algorithms-dp-greedy.unit-edit-distance-check-2"
+    },
+    {
+      "type": "check",
+      "id": "unit-edit-distance-inline-3",
+      "questionId": "qf5-algorithms-dp-greedy.unit-edit-distance-check-3"
+    },
+    {
+      "type": "check",
+      "id": "unit-edit-distance-inline-4",
+      "questionId": "qf5-algorithms-dp-greedy.unit-edit-distance-check-4"
+    },
+    {
+      "type": "check",
+      "id": "unit-edit-distance-inline-5",
+      "questionId": "qf5-algorithms-dp-greedy.unit-edit-distance-check-5"
+    },
+    {
+      "type": "check",
+      "id": "unit-edit-distance-inline-6",
+      "questionId": "qf5-algorithms-dp-greedy.unit-edit-distance-check-6"
+    },
+    {
+      "type": "check",
+      "id": "unit-edit-distance-inline-7",
+      "questionId": "qf5-algorithms-dp-greedy.unit-edit-distance-check-7"
+    },
+    {
+      "type": "text",
+      "id": "unit-edit-distance-sources",
+      "markdown": "Sources: [1](https://en.wikipedia.org/wiki/Wagner%E2%80%93Fischer_algorithm). Exact public task contract hash 631ffb5c0373236dbf38c89ede10df4d3ef79951a1288810f87ae4b55ac85cfa. This is main algorithm/contract teaching,not current app or judge signoff."
+    },
+    {
+      "type": "text",
+      "id": "earliest-finish-0",
+      "markdown": "Cardinality and half-open endpoints\n\nSource:1..100000 intervals [s,e), 0<=s<e<=1e9. Select the most pairwise nonoverlapping intervals. start_next=end_previous is compatible because the earlier end is excluded. max_meetings(intervals) returns a list with one count. No weighted reward or selected IDs are requested. Sort a copy, preserving caller order."
+    },
+    {
+      "type": "text",
+      "id": "earliest-finish-1",
+      "markdown": "Exchange proof\n\nAmong intervals compatible with a chosen prefix, let g finish earliest. An optimal completion has first interval o. Replace o by g: finish(g)<=finish(o), so all later optimal starts remain compatible. Count is unchanged. Thus some optimum starts with g. Induct on the compatible remaining suffix. Earliest start, shortest duration and fewest conflicts do not have this proof."
+    },
+    {
+      "type": "text",
+      "id": "earliest-finish-2",
+      "markdown": "Worked choice\n\nFor [(0,6),(1,2),(2,3),(3,4)], earliest start may pick only(0,6). Earliest finish picks the three short touching intervals. Test start>=last_end, not strict>. Equal-finish ties can use start as a deterministic secondary key; the proof needs only no-later finish. Positive duration excludes empty-interval complications."
+    },
+    {
+      "type": "text",
+      "id": "earliest-finish-3",
+      "markdown": "Cost and transfer\n\nO(n log n) sort plus scan, O(n) copy/sort storage. Count<=100000; timestamps are not summed. Brute-force tiny subsets and check pairwise half-open compatibility, including ties,nesting,duplicates and disjoint intervals. Test max100000 separately. Weighted rewards invalidate this count-only exchange proof."
+    },
+    {
+      "type": "code",
+      "id": "earliest-finish-complete",
+      "language": "python",
+      "source": "MOD = 1000000007\n\ndef valid_intervals(intervals):\n    if not 1 <= len(intervals) <= 100000:\n        raise ValueError('invalid interval count')\n    if any((type(s) is not int or type(e) is not int or (not 0 <= s < e <= 10 ** 9) for (s, e) in intervals)):\n        raise ValueError('invalid half-open interval')\n\ndef max_meetings(intervals):\n    valid_intervals(intervals)\n    chosen = 0\n    last_end = None\n    for (start, end) in sorted(intervals, key=lambda item: (item[1], item[0])):\n        if last_end is None or start >= last_end:\n            chosen += 1\n            last_end = end\n    return [str(chosen)]\n\nprint(max_meetings([(0, 6), (1, 2), (2, 3), (3, 4)]))\nprint(max_meetings([(1, 2), (2, 3)]))\n",
+      "caption": "Expected ['3'], ['2']. Complete list-lines Python3.12 implementation with validator and source half-open convention.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "earliest-finish-inline-1",
+      "questionId": "qf5-algorithms-dp-greedy.earliest-finish-check-1"
+    },
+    {
+      "type": "check",
+      "id": "earliest-finish-inline-2",
+      "questionId": "qf5-algorithms-dp-greedy.earliest-finish-check-2"
+    },
+    {
+      "type": "check",
+      "id": "earliest-finish-inline-3",
+      "questionId": "qf5-algorithms-dp-greedy.earliest-finish-check-3"
+    },
+    {
+      "type": "check",
+      "id": "earliest-finish-inline-4",
+      "questionId": "qf5-algorithms-dp-greedy.earliest-finish-check-4"
+    },
+    {
+      "type": "check",
+      "id": "earliest-finish-inline-5",
+      "questionId": "qf5-algorithms-dp-greedy.earliest-finish-check-5"
+    },
+    {
+      "type": "check",
+      "id": "earliest-finish-inline-6",
+      "questionId": "qf5-algorithms-dp-greedy.earliest-finish-check-6"
+    },
+    {
+      "type": "check",
+      "id": "earliest-finish-inline-7",
+      "questionId": "qf5-algorithms-dp-greedy.earliest-finish-check-7"
+    },
+    {
+      "type": "text",
+      "id": "earliest-finish-sources",
+      "markdown": "Sources: [1](https://www.cs.princeton.edu/~wayne/kleinberg-tardos/pearson/04GreedyAlgorithms.pdf). Exact public task contract hash df720c16a84d00b2510c273d5a3610b2c8b80deb7164af8034d320b4719853b3. This is main algorithm/contract teaching,not current app or judge signoff."
+    },
+    {
+      "type": "text",
+      "id": "minimum-coin-adapter-0",
+      "markdown": "Existing DP,explicit public bridge\n\nThe earlier minimum_coins teaching supplies the recurrence and greedy counterexample,but its return shape is not this task. Here min_coins(coins,amount)must return exactly ONE STRING line in a list. Source allows1..20 denominations,positive values<=10000,not necessarily distinct;amount0..10000. Zero amount yields[\"0\"],impossible yields[\"-1\"]. Do not import the later combination-count helper's duplicate rejection:duplicates do not change a minimum and are allowed here."
+    },
+    {
+      "type": "text",
+      "id": "minimum-coin-adapter-1",
+      "markdown": "Remove-one-coin proof and sentinel\n\nFor x>0,an optimum ends in some positive coin c<=x. Removing it leaves an optimum for x-c,otherwise substituting a better remainder improves the whole. Conversely each reachable remainder plus c is feasible. Thus dp[x]=min(dp[x-c]+1),dp[0]=0. Initialize other states to A+1. Any reachable count<=A because each coin contributes at least1. An unreachable predecessor gives A+2,which cannot improve the sentinel. All predecessors x-c<x are settled by ascending amounts. Repeated coin values repeat an identical min candidate and cannot alter the answer."
+    },
+    {
+      "type": "text",
+      "id": "minimum-coin-adapter-2",
+      "markdown": "Trace and precise transfer\n\nFor coins[2,2],A3:dp[0]=0,dp[1]=4,dp[2]=1,dp[3]=4,return[\"-1\"],not[\"4\"]. With coins[1,5,11],A15,greedy takes five coins while DP finds three5s. A0 stays0 even when every coin is larger. O(n*A) work<=200000relaxations and O(A)space. Source positive coins are trusted;zero/negative denomination behavior is not broadened here. Independently BFS exact sums0..A with one coin per edge and compare shortest level,including duplicates,unreachable targets and maximum dimensions. No need to reconstruct the coin multiset because output asks for count only."
+    },
+    {
+      "type": "code",
+      "id": "minimum-coin-adapter-complete",
+      "language": "python",
+      "source": "MOD = 1000000007\n\ndef min_coins(coins, amount):\n    \"\"\"Source allows repeated denominations; they do not create new choices.\"\"\"\n    unreachable = amount + 1\n    dp = [0] + [unreachable] * amount\n    for total in range(1, amount + 1):\n        for coin in coins:\n            if coin <= total:\n                dp[total] = min(dp[total], dp[total - coin] + 1)\n    return [str(dp[amount] if dp[amount] <= amount else -1)]\n\nprint(min_coins([2, 2], 3))\nprint(min_coins([9], 0))\nprint(min_coins([1, 5, 11], 15))\n",
+      "caption": "Expected ['-1'], ['0'], ['3']. Exact supplied function name,argument order,and one-string-list output.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "minimum-coin-adapter-inline-1",
+      "questionId": "qf5-algorithms-dp-greedy.minimum-coin-adapter-check-1"
+    },
+    {
+      "type": "check",
+      "id": "minimum-coin-adapter-inline-2",
+      "questionId": "qf5-algorithms-dp-greedy.minimum-coin-adapter-check-2"
+    },
+    {
+      "type": "check",
+      "id": "minimum-coin-adapter-inline-3",
+      "questionId": "qf5-algorithms-dp-greedy.minimum-coin-adapter-check-3"
+    },
+    {
+      "type": "check",
+      "id": "minimum-coin-adapter-inline-4",
+      "questionId": "qf5-algorithms-dp-greedy.minimum-coin-adapter-check-4"
+    },
+    {
+      "type": "check",
+      "id": "minimum-coin-adapter-inline-5",
+      "questionId": "qf5-algorithms-dp-greedy.minimum-coin-adapter-check-5"
+    },
+    {
+      "type": "check",
+      "id": "minimum-coin-adapter-inline-6",
+      "questionId": "qf5-algorithms-dp-greedy.minimum-coin-adapter-check-6"
+    },
+    {
+      "type": "check",
+      "id": "minimum-coin-adapter-inline-7",
+      "questionId": "qf5-algorithms-dp-greedy.minimum-coin-adapter-check-7"
+    },
+    {
+      "type": "text",
+      "id": "minimum-coin-adapter-sources",
+      "markdown": "Sources: [1](https://www.dsaprep.dev/blog/coin-change-leetcode-solution). Exact public task contract hash 75e9a736d506d44cc5c12bb046218f62252c212039bfa8c99f328ce66146cade. This is main algorithm/contract teaching,not current app or judge signoff."
+    },
+    {
+      "type": "text",
+      "id": "nonempty-ending-state-0",
+      "markdown": "Choose a state that preserves contiguity\n\nLet ending_j be the maximum sum of a NONEMPTY subarray ending at position j. A candidate either consists of a[j] alone or extends a nonempty subarray ending at j-1. Therefore ending_j=max(a[j],ending_(j-1)+a[j]). Let best_j=max(best_(j-1),ending_j). Every nonempty interval has one ending position, so the final best is the global optimum."
+    },
+    {
+      "type": "text",
+      "id": "nonempty-ending-state-1",
+      "markdown": "Initialization is part of the contract\n\nInitialize ending=best=a[0], since n>=1. Starting best=0 would admit an empty interval and incorrectly return0 for all-negative input. For [-5,-2,-7], ending values are -5,-2,-7 and best is -2. For [4,-6,3,5,-2], endings are 4,-2,3,8,6 and best is8 from [3,5]. A negative day may remain inside an optimal interval; sorting would destroy contiguity."
+    },
+    {
+      "type": "text",
+      "id": "nonempty-ending-state-2",
+      "markdown": "Arithmetic and transfer\n\nn<=100000 and abs(a_i)<=1000000000 give sums within signed64-bit range; Python integers are exact. The iterator implementation scans once with O(1) numeric state beyond the input/output, without slicing copies. It returns only the optimal value, not boundaries or a tie-broken interval. Test one value, all negative, all zero, a best prefix/suffix and a best interior streak against exhaustive nonempty interval sums."
+    },
+    {
+      "type": "code",
+      "id": "nonempty-ending-state-complete",
+      "language": "python",
+      "source": "from collections import OrderedDict, deque\nfrom bisect import bisect_left\nimport heapq\n\ndef max_subarray(a):\n    values = iter(a)\n    ending = best = next(values)\n    for value in values:\n        ending = max(value, ending + value)\n        best = max(best, ending)\n    return [str(best)]\n\nprint(*max_subarray([-5, -2, -7]))\nprint(*max_subarray([4, -6, 3, 5, -2]))\n",
+      "caption": "Expected stdout:\n-2\n8\n\nPrevalidated inputs follow the captured public contract. This completes the named Python function using its original supplied main/parser. It does not claim independent parser, C++, app-runner or judge qualification.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "nonempty-ending-state-inline-1",
+      "questionId": "qf5-algorithms-dp-greedy.nonempty-ending-state-check-1"
+    },
+    {
+      "type": "check",
+      "id": "nonempty-ending-state-inline-2",
+      "questionId": "qf5-algorithms-dp-greedy.nonempty-ending-state-check-2"
+    },
+    {
+      "type": "check",
+      "id": "nonempty-ending-state-inline-3",
+      "questionId": "qf5-algorithms-dp-greedy.nonempty-ending-state-check-3"
+    },
+    {
+      "type": "check",
+      "id": "nonempty-ending-state-inline-4",
+      "questionId": "qf5-algorithms-dp-greedy.nonempty-ending-state-check-4"
+    },
+    {
+      "type": "check",
+      "id": "nonempty-ending-state-inline-5",
+      "questionId": "qf5-algorithms-dp-greedy.nonempty-ending-state-check-5"
+    },
+    {
+      "type": "check",
+      "id": "nonempty-ending-state-inline-6",
+      "questionId": "qf5-algorithms-dp-greedy.nonempty-ending-state-check-6"
+    },
+    {
+      "type": "check",
+      "id": "nonempty-ending-state-inline-7",
+      "questionId": "qf5-algorithms-dp-greedy.nonempty-ending-state-check-7"
+    },
+    {
+      "type": "text",
+      "id": "nonempty-ending-state-sources",
+      "markdown": "References: [1](https://cp-algorithms.com/others/maximum_average_segment.html). Public task hash 608cfce8a53fb28fc8233802a434079672e4494086a3f979282bdeb1b68a85d8. These references establish language/container semantics; the exact task framing is the captured public contract. This extension preserves the earlier bounded examples and their policies rather than silently broadening those APIs."
+    },
+    {
+      "type": "text",
+      "id": "indexed-subset-count-0",
+      "markdown": "Counting indexed choices needs addition, not maximum\n\nLet F(i,s) count subsets of the first i positions with total exactly s, modulo1000000007. There is one empty subset, so F(0,0)=1 and F(0,s>0)=0. Split subsets by whether position i is omitted or included: F(i,s)=F(i-1,s)+F(i-1,s-a_i), where the second term exists only for s>=a_i. Unlike knapsack value optimization, this recurrence adds counts rather than taking a maximum."
+    },
+    {
+      "type": "text",
+      "id": "indexed-subset-count-1",
+      "markdown": "Downward scan protects 0/1 use\n\nStore one row ways and scan sums from target down to a_i. Because a_i>0, dependency ways[s-a_i] has not yet been updated for this item, so each index is used at most once. An upward scan would permit unbounded reuse, like a different coin problem. Repeated numerical values are still separate positions: for [2,2,2] and target4, the three pairs of indexes count separately. Do not deduplicate a."
+    },
+    {
+      "type": "text",
+      "id": "indexed-subset-count-2",
+      "markdown": "Trace, modulo and limits\n\nFor [1,2,2], target3, the first1 gives ways1=1; the first2 adds one way to2 and one to3; the second2 adds another way to3, so answer2. target is positive in the public contract, but ways0=1 is essential to create subsets starting with an item. Reduce each addition modulo the stated prime. n<=200,target<=20000 give O(n*target) updates and O(target) state. Small oracle: enumerate every index mask, not combinations of distinct values."
+    },
+    {
+      "type": "code",
+      "id": "indexed-subset-count-complete",
+      "language": "python",
+      "source": "from collections import OrderedDict, deque\nfrom bisect import bisect_left\nimport heapq\n\ndef count_subsets(target, a):\n    modulus = 1000000007\n    ways = [0] * (target + 1)\n    ways[0] = 1\n    for value in a:\n        for total in range(target, value - 1, -1):\n            ways[total] = (ways[total] + ways[total - value]) % modulus\n    return [str(ways[target])]\n\nprint(*count_subsets(4, [2, 2, 2]))\nprint(*count_subsets(3, [1, 2, 2]))\n",
+      "caption": "Expected stdout:\n3\n2\n\nPrevalidated inputs follow the captured public contract. This completes the named Python function using its original supplied main/parser. It does not claim independent parser, C++, app-runner or judge qualification.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "indexed-subset-count-inline-1",
+      "questionId": "qf5-algorithms-dp-greedy.indexed-subset-count-check-1"
+    },
+    {
+      "type": "check",
+      "id": "indexed-subset-count-inline-2",
+      "questionId": "qf5-algorithms-dp-greedy.indexed-subset-count-check-2"
+    },
+    {
+      "type": "check",
+      "id": "indexed-subset-count-inline-3",
+      "questionId": "qf5-algorithms-dp-greedy.indexed-subset-count-check-3"
+    },
+    {
+      "type": "check",
+      "id": "indexed-subset-count-inline-4",
+      "questionId": "qf5-algorithms-dp-greedy.indexed-subset-count-check-4"
+    },
+    {
+      "type": "check",
+      "id": "indexed-subset-count-inline-5",
+      "questionId": "qf5-algorithms-dp-greedy.indexed-subset-count-check-5"
+    },
+    {
+      "type": "check",
+      "id": "indexed-subset-count-inline-6",
+      "questionId": "qf5-algorithms-dp-greedy.indexed-subset-count-check-6"
+    },
+    {
+      "type": "check",
+      "id": "indexed-subset-count-inline-7",
+      "questionId": "qf5-algorithms-dp-greedy.indexed-subset-count-check-7"
+    },
+    {
+      "type": "text",
+      "id": "indexed-subset-count-sources",
+      "markdown": "References: [1](https://cp-algorithms.com/dynamic_programming/knapsack.html). Public task hash 90395d728ec2f794969db098e726429e7b6b77bc981e2389b32e0ed9fa290b16. These references establish language/container semantics; the exact task framing is the captured public contract. This extension preserves the earlier bounded examples and their policies rather than silently broadening those APIs."
+    },
+    {
+      "type": "text",
+      "id": "strict-lis-frontier-0",
+      "markdown": "Compress many subsequences by dominance\n\nAfter a processed prefix, tails[length-1] is the smallest achievable final value of a strictly increasing subsequence of that length. A smaller tail is never worse for future extension: every larger future value that extends a higher tail also extends the smaller one. Therefore keep only the minimum tail for each length. tails is strictly increasing, since removing the final element of a longer increasing subsequence leaves a shorter subsequence with a smaller last value."
+    },
+    {
+      "type": "text",
+      "id": "strict-lis-frontier-1",
+      "markdown": "One lower-bound update, with an existence proof\n\nFor new x, find the first position p with tails[p]>=x using bisect_left. If p==len(tails), append x; otherwise replace tails[p] with x. For p>0, tails[p-1]<x, so a length-p subsequence exists that x extends to length p+1. No longer length can be created because the minimal tail of the next shorter required length is already >=x. Replacing a tail does not discard attainable longer subsequences; their recorded values remain valid from earlier prefixes. Equal x replaces, never extends, preserving STRICT increase."
+    },
+    {
+      "type": "text",
+      "id": "strict-lis-frontier-2",
+      "markdown": "Trace and what tails is not\n\nFor [3,1,2,2,5,4], frontiers are [3],[1],[1,2],[1,2],[1,2,5],[1,2,4], answer3. The final tails array need not itself be an original subsequence: [3,5,6,1] leaves [1,5,6] although1 arrived last. This function returns only the length, not a witness. It uses O(n log n) comparisons and O(n) frontier storage for n<=200000; sorting the input would answer a different question. Compare with an independent quadratic ending-index DP on small signed arrays."
+    },
+    {
+      "type": "code",
+      "id": "strict-lis-frontier-complete",
+      "language": "python",
+      "source": "from collections import OrderedDict, deque\nfrom bisect import bisect_left\nimport heapq\n\ndef lis_length(a):\n    tails = []\n    for value in a:\n        at = bisect_left(tails, value)\n        if at == len(tails):\n            tails.append(value)\n        else:\n            tails[at] = value\n    return [str(len(tails))]\n\nprint(*lis_length([3, 1, 2, 2, 5, 4]))\nprint(*lis_length([4, 4, 4]))\n",
+      "caption": "Expected stdout:\n3\n1\n\nPrevalidated inputs follow the captured public contract. This completes the named Python function using its original supplied main/parser. It does not claim independent parser, C++, app-runner or judge qualification.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "strict-lis-frontier-inline-1",
+      "questionId": "qf5-algorithms-dp-greedy.strict-lis-frontier-check-1"
+    },
+    {
+      "type": "check",
+      "id": "strict-lis-frontier-inline-2",
+      "questionId": "qf5-algorithms-dp-greedy.strict-lis-frontier-check-2"
+    },
+    {
+      "type": "check",
+      "id": "strict-lis-frontier-inline-3",
+      "questionId": "qf5-algorithms-dp-greedy.strict-lis-frontier-check-3"
+    },
+    {
+      "type": "check",
+      "id": "strict-lis-frontier-inline-4",
+      "questionId": "qf5-algorithms-dp-greedy.strict-lis-frontier-check-4"
+    },
+    {
+      "type": "check",
+      "id": "strict-lis-frontier-inline-5",
+      "questionId": "qf5-algorithms-dp-greedy.strict-lis-frontier-check-5"
+    },
+    {
+      "type": "check",
+      "id": "strict-lis-frontier-inline-6",
+      "questionId": "qf5-algorithms-dp-greedy.strict-lis-frontier-check-6"
+    },
+    {
+      "type": "check",
+      "id": "strict-lis-frontier-inline-7",
+      "questionId": "qf5-algorithms-dp-greedy.strict-lis-frontier-check-7"
+    },
+    {
+      "type": "text",
+      "id": "strict-lis-frontier-sources",
+      "markdown": "References: [1](https://cp-algorithms.com/dynamic_programming/longest_increasing_subsequence.html), [2](https://docs.python.org/3.12/library/bisect.html). Public task hash f9f2ff28d2c1b4b9f735fa09db4c265c38ce93aa18e62c63db720ca7330ddf90. These references establish language/container semantics; the exact task framing is the captured public contract. This extension preserves the earlier bounded examples and their policies rather than silently broadening those APIs."
+    }
+  ],
+  "practice": {
+    "problemIds": [
+      "qfp-fixed-point-permutations",
+      "qfp-bounded-walk-count",
+      "qfp-coin-ways-count",
+      "qfp-lcs-length",
+      "qfp-edit-distance",
+      "qfp-interval-scheduling",
+      "qfp-coin-change-min",
+      "qfp-max-subarray-sum",
+      "qfp-subset-sum-count",
+      "qfp-longest-increasing-subsequence",
+      "qfp-knapsack-01"
+    ]
+  },
+  "summary": "Define DP states, base cases and dependency order; reject unjustified greedy rules with counterexamples. Counting extensions derive exact fixed-point permutations with modular binomials and prefix-surviving bounded walks with separate time layers. Extension: coin multisets. Extension: two prefix lcs. Extension: unit edit distance. Extension: earliest finish. Extension: minimum coin adapter. Practice transfer: nonempty ending state. Practice transfer: indexed subset count. Practice transfer: strict lis frontier."
+}

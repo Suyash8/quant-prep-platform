@@ -1,4 +1,6 @@
 'use client';
+import { announceAuthChange } from '@/lib/v5/auth-broadcast';
+import { clearLock } from '@/lib/v5/signout';
 
 import { useState } from 'react';
 import Link from 'next/link';
@@ -55,6 +57,8 @@ export function AuthForm({ mode, stats }: { mode: 'login' | 'register'; stats?: 
         return;
       }
       toast.success(mode === 'register' ? 'Account created, welcome aboard.' : `Welcome back, ${data.name}.`);
+      clearLock();   // a knowing sign-in ends the local sign-out lock
+      announceAuthChange('login');
       window.location.assign(destination());
     } catch {
       setError('Network error, is the server running?');

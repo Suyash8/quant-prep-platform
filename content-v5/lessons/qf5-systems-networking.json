@@ -1,0 +1,129 @@
+{
+  "id": "qf5-systems-networking",
+  "revision": 1,
+  "title": "TCP/UDP, framing and partial I/O",
+  "module": "qf5-systems",
+  "order": 3,
+  "estMinutes": 22,
+  "objectives": [
+    {
+      "conceptId": "qf5-systems-networking.framing",
+      "text": "Decode a bounded length-prefixed byte stream independently of receive chunk boundaries and distinguish transport delivery from application acceptance."
+    },
+    {
+      "conceptId": "qf5-systems-networking.partial-io",
+      "text": "Preserve unsent suffixes and distinguish progress, would-block, EOF, truncation, timeout and failure under a declared stream API."
+    }
+  ],
+  "prerequisites": [
+    "qf5-systems-os-processes"
+  ],
+  "blocks": [
+    {
+      "type": "text",
+      "id": "transport-contract",
+      "markdown": "TCP provides an ordered reliable byte stream between endpoints while the connection operates; it does not preserve application write/message boundaries. A peer can split one application frame across several receives or combine several frames in one receive. Successful local send means the API accepted bytes, not that the remote application validated, committed or durably stored an order. Connections can fail and timing is not bounded by the word reliable. TCP alone supplies neither encryption nor authenticated business identity."
+    },
+    {
+      "type": "text",
+      "id": "udp-boundary",
+      "markdown": "UDP carries datagrams rather than a stream. Delivery, ordering and duplicate protection are not guaranteed by UDP; the application must define loss/reordering/duplicate/sequence/session handling if those matter. A datagram can be truncated/discarded when the receive buffer is too small under the specific socket API, so buffer sizing and truncation detection matter. A valid empty UDP datagram must not be misclassified as stream EOF. Neither TCP nor UDP turns an IP address or a successful receive into an authenticated trading instruction. This lesson models raw bytes only and opens no network connection."
+    },
+    {
+      "type": "text",
+      "id": "wire-contract",
+      "markdown": "Own toy protocol: a two-octet UNSIGNED big-endian payload length followed by exactly that many raw octets. Length is payload-only, not total frame length. Allowed payload length is 0..8; zero is an empty frame encoded 00 00. Empty input is instead zero frames. There is no text encoding, checksum, instrument schema, authentication or idempotency policy in this framing format. Reject a length above 8 before waiting for that body. Reject a trailing partial header/body at explicit end-of-stream; a temporarily incomplete receive is not end-of-stream."
+    },
+    {
+      "type": "worked",
+      "id": "fragment-trace",
+      "title": "Carry the header and leftovers across arbitrary chunks",
+      "steps": [
+        {
+          "text": "Wire bytes are 00 03 41 42 43 00 00 00 02 58 59. They represent payloads ABC, empty, XY: 2+3, 2+0 and 2+2 = 11 octets."
+        },
+        {
+          "text": "First receive gives only 00. It is an incomplete length, so keep it. Next gives 03 41 42: now size=3 but only AB is available. Keep the partial body, not an invented message."
+        },
+        {
+          "text": "Next receive gives 43 00 00 00. Emit ABC and the empty frame; retain the last 00 as the next partial header. Final receive 02 58 59 completes XY. A single receive of all 11 bytes must produce the same three frames."
+        }
+      ]
+    },
+    {
+      "type": "code",
+      "id": "bounded-length-frame-decoder",
+      "language": "python",
+      "source": "def decode_chunks(chunks):\n    # Own bounded two-octet big-endian LENGTH + raw payload protocol.\n    # Empty input is a clean empty stream; an empty frame has header 00 00.\n    if type(chunks) is not list or len(chunks)>32:\n        raise ValueError(\"expected at most 32 chunks\")\n    if any(type(c) is not bytes or len(c)>32 for c in chunks):\n        raise ValueError(\"expected bytes chunks of at most 32 octets\")\n    if sum(map(len,chunks))>256:\n        raise ValueError(\"stream budget exceeded\")\n    pending=b\"\"\n    frames=[]\n    for chunk in chunks:\n        pending+=chunk\n        while len(pending)>=2:\n            size=int.from_bytes(pending[:2],\"big\")\n            if size>8:\n                raise ValueError(\"payload length exceeds 8\")\n            if len(pending)<2+size:\n                break\n            frames.append(pending[2:2+size])\n            pending=pending[2+size:]\n    if pending:\n        raise ValueError(\"truncated frame at end of stream\")\n    return frames\n\nwire=b\"\\x00\\x03ABC\\x00\\x00\\x00\\x02XY\"\nprint(decode_chunks([wire[:1],wire[1:4],wire[4:8],wire[8:]]))\nprint(decode_chunks([wire]))\ntry:\n    decode_chunks([b\"\\x00\\x03AB\"])\nexcept ValueError as error:\n    print(error)",
+      "caption": "Expected first two lines both [b'ABC', b'', b'XY']; third line truncated frame at end of stream. Input chunks are supplied by a test, NOT real recv calls. The entire list denotes a finite stream ending after its last chunk; b'' entries here are harmless test partitions, not live socket events. Returns all frames only on complete valid input; errors return none to the caller. Total input <=256 octets, <=32 chunks, each <=32; pending concatenation is bounded. List slicing/concatenation is clarity-first, not a high-throughput zero-copy design.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "inline-0",
+      "questionId": "qf5-systems-networking.check-1"
+    },
+    {
+      "type": "check",
+      "id": "inline-1",
+      "questionId": "qf5-systems-networking.check-2"
+    },
+    {
+      "type": "check",
+      "id": "inline-4",
+      "questionId": "qf5-systems-networking.check-5"
+    },
+    {
+      "type": "text",
+      "id": "partial-operations",
+      "markdown": "For a positive-size Python stream recv, nonempty bytes are progress; b'' marks receive EOF. Do not treat an incomplete frame as an EOF marker: preserve parser state until more bytes arrive or explicit closure/error/deadline. A nonblocking operation can raise BlockingIOError when it cannot progress now; wait for readiness rather than busy-spinning, then attempt again because readiness is not a full-message guarantee. Timeout and other exceptions need separate policy. For send on a nonempty remainder, advance only by the returned positive count, keeping the unsent suffix. Never resend an already accepted prefix merely because the next call would block."
+    },
+    {
+      "type": "code",
+      "id": "partial-send-offset-model",
+      "language": "python",
+      "source": "def advance_send(payload,offset,outcome):\n    # Model ONE nonblocking stream send result, not a live socket call.\n    if type(payload) is not bytes or len(payload)>64:\n        raise ValueError(\"expected at most 64 payload octets\")\n    if type(offset) is not int or not 0<=offset<=len(payload):\n        raise ValueError(\"invalid offset\")\n    if offset==len(payload):\n        return offset,\"done\" # do not call send with an empty remainder\n    if outcome is None:\n        return offset,\"wait-writable\" # models BlockingIOError, not recv EOF\n    if type(outcome) is not int or not 0<=outcome<=len(payload)-offset:\n        raise ValueError(\"invalid reported progress\")\n    if outcome==0:\n        raise ConnectionError(\"no progress on nonempty send\")\n    offset+=outcome\n    return offset,\"done\" if offset==len(payload) else \"pending\"\n\npayload=b\"HELLO\"\noffset=0\nfor outcome in [2,None,1,2]:\n    offset,state=advance_send(payload,offset,outcome)\n    print(offset,state)\nprint(payload[offset:])",
+      "caption": "Expected lines: 2 pending; 2 wait-writable; 3 pending; 5 done; b''. None is an authored MODEL token for would-block, not a Python socket return value. Invalid counts raise ValueError; zero on a nonempty send raises ConnectionError as this adapter's no-progress policy. A done result means only this finite local payload was accepted by the modeled sender, not remote receipt/business acceptance. No socket, readiness loop, retries or timers run.",
+      "runnable": true
+    },
+    {
+      "type": "text",
+      "id": "retries-and-limits",
+      "markdown": "A live adapter must bound frame size, buffered input/output, per-peer work and deadlines; otherwise a peer can advertise a huge body or drip bytes forever. Persistent connections need ongoing parser state, bounded dispatch and fair work limits; the finite batch decoder above intentionally returns nothing until a complete finite input validates. Fatal malformed input should end that parser/session under a documented policy, not resume from guessed alignment. Python sendall handles repeated sends but an exception does not tell the caller how much data was successfully sent. Blind replay after reconnect can duplicate an application effect. Request IDs, acknowledgements, session sequencing and reconciliation belong to the application protocol, not this byte decoder."
+    },
+    {
+      "type": "check",
+      "id": "inline-2",
+      "questionId": "qf5-systems-networking.check-3"
+    },
+    {
+      "type": "check",
+      "id": "inline-3",
+      "questionId": "qf5-systems-networking.check-4"
+    },
+    {
+      "type": "check",
+      "id": "inline-5",
+      "questionId": "qf5-systems-networking.check-6"
+    },
+    {
+      "type": "text",
+      "id": "transfer",
+      "markdown": "Independent transfer: encode bounded payload lists, enumerate every split of a small wire stream, and show identical decoded frames for each partition. Include zero payload, a split two-octet header, several frames in one chunk, a split body, oversized length and truncated EOF. For sends, record accepted prefix plus pending suffix after every progress/would-block event and verify their concatenation is always the original payload. Do not turn toy partition equivalence into a claim that a live socket handles deadlines, peer authentication, cancellation or recovery."
+    },
+    {
+      "type": "check",
+      "id": "inline-6",
+      "questionId": "qf5-systems-networking.check-7"
+    },
+    {
+      "type": "text",
+      "id": "sources",
+      "markdown": "Sources: [TCP RFC 9293](https://www.rfc-editor.org/rfc/rfc9293), [UDP RFC 768](https://www.rfc-editor.org/rfc/rfc768), [Python socket HOWTO](https://docs.python.org/3/howto/sockets.html), and [socket API](https://docs.python.org/3/library/socket.html). The HOWTO is explanatory and has historical simplifications, including an HTTP example that must not be generalized to modern persistent HTTP. The specific current socket API and own protocol contract govern these examples. [Linux recv result/empty datagram/truncation distinctions](https://www.man7.org/linux/man-pages/man2/recv.2.html) ground the OS-scoped receive caveats."
+    }
+  ],
+  "practice": {
+    "problemIds": []
+  },
+  "summary": "Message boundaries belong to the application protocol. Preserve partial headers/bodies and unsent suffixes, bound work/memory, and separate would-block from EOF/error. Local transport progress is not remote application acceptance or a safe-replay guarantee."
+}

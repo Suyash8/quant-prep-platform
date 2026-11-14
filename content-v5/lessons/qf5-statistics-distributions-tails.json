@@ -1,0 +1,261 @@
+{
+  "id": "qf5-statistics-distributions-tails",
+  "revision": 3,
+  "title": "Useful distributions and tail behaviour",
+  "module": "qf5-statistics",
+  "order": 3,
+  "estMinutes": 65,
+  "objectives": [
+    {
+      "conceptId": "qf5-statistics-distributions-tails.distribution-choice",
+      "text": "Choose a distribution by support, mechanism and parameter meaning, then compute a bounded count probability under explicit assumptions."
+    },
+    {
+      "conceptId": "qf5-statistics-distributions-tails.moment-existence",
+      "text": "Check whether population moments exist before applying mean/variance-based reasoning, and distinguish a finite truncation from its infinite model."
+    },
+    {
+      "conceptId": "qf5-statistics-distributions-tails.coupon-waiting-stages",
+      "text": "Derive coupon collection expectation from geometric waiting stages and linearity without assuming independence merely to add means."
+    },
+    {
+      "conceptId": "qf5-statistics-distributions-tails.linear-modular-inverses",
+      "text": "Map rational expectation into a prime field and prove a linear inverse recurrence with nonzero smaller-index dependencies."
+    }
+  ],
+  "prerequisites": [
+    "qf5-statistics-random-variables"
+  ],
+  "blocks": [
+    {
+      "type": "text",
+      "id": "choice-contract",
+      "markdown": "A distribution is a probability model, not a label chosen because a histogram looks familiar. Start with the variable and unit: a binary flag, bounded success count, nonnegative arrival count, or continuous measurement. Then state support, parameters, dependence assumptions and tail behavior. A model can produce numbers while contradicting the allowed support or information process. Synthetic examples here demonstrate model implications, not a claim that market observations follow these families."
+    },
+    {
+      "type": "text",
+      "id": "bernoulli-binomial",
+      "markdown": "A Bernoulli(p) variable is 1 for one declared success and 0 otherwise, with P(1)=p and P(0)=1-p. Its mean is p and variance p(1-p). A binomial(n,p) variable counts successes among a FIXED number n of independent Bernoulli trials with the SAME p. Its support is integers 0 through n, mean np and variance np(1-p). Different success rates or correlated trials do not generally give this binomial model. Success means the event definition, not necessarily a profitable or desirable outcome."
+    },
+    {
+      "type": "text",
+      "id": "binomial-formula",
+      "markdown": "For k successes, each particular success/failure sequence has probability $p^k(1-p)^{n-k}$ under independence. There are $\\binom{n}{k}$ choices of success positions. Hence $P(K=k)=\\binom{n}{k}p^k(1-p)^{n-k}$ for integers 0\u2264k\u2264n. Add these masses for a count event. This reasoning explains why both the same-p and independent-trials assumptions matter, rather than merely memorizing a formula."
+    },
+    {
+      "type": "code",
+      "id": "exact-binomial",
+      "language": "python",
+      "source": "from fractions import Fraction\nfrom math import comb\n\ndef binomial_pmf(n, p):\n    if type(n) is not int or not 0 <= n <= 50:\n        raise ValueError(\"this teaching helper requires integer n in [0,50]\")\n    if type(p) is not Fraction or not 0 <= p <= 1:\n        raise ValueError(\"expected Fraction probability in [0,1]\")\n    return {k: comb(n, k) * p**k * (1-p)**(n-k) for k in range(n+1)}\n\npmf = binomial_pmf(4, Fraction(1,4))\nmean = sum(k * mass for k, mass in pmf.items())\nvariance = sum((k-mean)**2 * mass for k, mass in pmf.items())\nprint(sum(pmf.values()))\nprint(mean)\nprint(variance)\nprint(sum(mass for k, mass in pmf.items() if k >= 2))",
+      "caption": "Expected output: 1, then 1, then 3/4, then 67/256. For four independent trials with p=1/4, P(K\u22652)=1-P(K=0)-P(K=1)=1-81/256-108/256=67/256. This exact finite helper caps n at 50 for the teaching interface; it is not a large-n production tail algorithm.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "applied-numeric-check",
+      "questionId": "qf5-statistics-distributions-tails.check-7"
+    },
+    {
+      "type": "check",
+      "id": "inline-0",
+      "questionId": "qf5-statistics-distributions-tails.check-1"
+    },
+    {
+      "type": "check",
+      "id": "inline-1",
+      "questionId": "qf5-statistics-distributions-tails.check-2"
+    },
+    {
+      "type": "text",
+      "id": "poisson",
+      "markdown": "A Poisson(\u03bb) variable counts events over a specified exposure, with integer support 0,1,2,..., and mean and variance \u03bb. For \u03bb>0, $P(K=k)=e^{-\\lambda}\\lambda^k/k!$. Here \u03bb means expected count over the entire exposure, not automatically a per-second rate. A constant rate r over duration t gives \u03bb=rt only when that process model is justified. A homogeneous Poisson process is one sufficient model: independent disjoint-time increments, constant rate, and negligible multiple arrivals in a sufficiently short interval relative to its length. Bursts, varying intensity or dependent arrivals can violate that process model; a list of timestamps alone proves none of it. At \u03bb=0 the distribution is a point mass at 0."
+    },
+    {
+      "type": "text",
+      "id": "normal",
+      "markdown": "A normal model is continuous with support over the whole real line. This lesson writes N(\u03bc,\u03c3\u00b2), with \u03bc the mean and \u03c3>0 the standard deviation; a software function may instead ask for \u03c3, so read its parameter contract. Probabilities are areas under a density, not density heights. An exact point has probability 0, even though finite measurement rounding can give repeated recorded values. A normal model assigns some probability to every nonempty real interval, including negative ones: this can be inappropriate for strictly positive prices or waiting times. Symmetry near the center does not establish normal tails."
+    },
+    {
+      "type": "text",
+      "id": "tail-check",
+      "markdown": "Ask which tail event the task cares about and whether the model assigns it realistic support and mass. An empirical histogram with no rare loss does not prove that the population tail is absent. Binomial counts are bounded; Poisson counts are unbounded but nonnegative; normal and Cauchy variables extend both ways without bound. These families are candidates with assumptions, not an automatic ranking from good to bad. Model checking and out-of-sample evidence remain necessary."
+    },
+    {
+      "type": "check",
+      "id": "inline-2",
+      "questionId": "qf5-statistics-distributions-tails.check-3"
+    },
+    {
+      "type": "text",
+      "id": "moment-existence",
+      "markdown": "For a discrete distribution with possibly infinite support, a finite usual expectation requires $\\sum_x |x|p(x)<\\infty$. A finite second moment requires $\\sum_x x^2p(x)<\\infty$; it implies a finite mean and variance. Cancellation of positive and negative divergent tails does not manufacture a finite expectation. For nonnegative variables, expectation may be +\u221e rather than finite. A finite list of observed values always has finite arithmetic moments, but that does not prove population moment existence."
+    },
+    {
+      "type": "worked",
+      "id": "dyadic-tail-proof",
+      "title": "Finite mean with an infinite second moment",
+      "steps": [
+        {
+          "text": "Define X=2^k with probability 3/4^k for k=1,2,... . These masses sum to 1 by the geometric series: 3*(1/4)/(1-1/4)=1."
+        },
+        {
+          "text": "The first-moment term is 2^k * 3/4^k = 3/2^k. Summing the geometric series gives E[X]=3."
+        },
+        {
+          "text": "The second-moment term is (2^k)^2 * 3/4^k = 3 for every k. Its first m terms sum to 3m, which grows without bound."
+        },
+        {
+          "text": "Thus this population has finite mean 3 but infinite variance. Making a finite truncation or observing a finite sample changes what can be calculated, not the infinite model theorem."
+        }
+      ]
+    },
+    {
+      "type": "code",
+      "id": "dyadic-partial-moments",
+      "language": "python",
+      "source": "from fractions import Fraction\n# Partial sums of an INFINITE model, not a renormalized finite PMF.\nfor m in (4, 8):\n    terms = [(2**k, Fraction(3,4**k)) for k in range(1,m+1)]\n    mass = sum(p for x, p in terms)\n    partial_mean = sum(x*p for x, p in terms)\n    partial_second_moment = sum(x*x*p for x, p in terms)\n    print(m, mass, partial_mean, partial_second_moment)",
+      "caption": "Expected output: 4 255/256 45/16 12, then 8 65535/65536 765/256 24. The omitted probability after m is 1/4^m. The partial first moment approaches 3 while the second-moment partial sum is 3m. Neither line is a normalized finite population model; do not pass its partial masses to the prior lesson helper as a complete PMF.",
+      "runnable": true
+    },
+    {
+      "type": "text",
+      "id": "geometric-series",
+      "markdown": "The geometric-series step above can be checked without calculus: for |r|<1, (1-r)(r+r\u00b2+...+r^m)=r-r^(m+1), so the finite sum is r(1-r^m)/(1-r) and approaches r/(1-r). This supplies the normalization and first-moment limits. The second-moment sum has constant positive terms instead, so no finite limit exists."
+    },
+    {
+      "type": "check",
+      "id": "inline-3",
+      "questionId": "qf5-statistics-distributions-tails.check-4"
+    },
+    {
+      "type": "check",
+      "id": "inline-4",
+      "questionId": "qf5-statistics-distributions-tails.check-5"
+    },
+    {
+      "type": "text",
+      "id": "cauchy-boundary",
+      "markdown": "The Cauchy family is a cited continuous contrast: its usual mean and variance are undefined, despite a symmetric shape and a defined location/median. Calling its center the mean confuses a location parameter with an existing expectation. The integral proof is outside this lesson; the discrete worked example above provides the full derivation of a different finite-mean/infinite-variance model. Standard finite-variance error formulas must not be imported into either example without checking their assumptions."
+    },
+    {
+      "type": "text",
+      "id": "transfer",
+      "markdown": "Independent transfer: enumerate all binary sequences for n=3 and p=1/2 and aggregate by number of successes. Compare the resulting exact masses to the binomial helper, including n=0 and p at 0 or 1. Then explain why six perfectly copied copies of one Bernoulli result are not binomial(6,p). For the dyadic model, derive the omitted mass and compare partial first/second moments as m increases without relabeling partial mass as a complete distribution."
+    },
+    {
+      "type": "check",
+      "id": "inline-5",
+      "questionId": "qf5-statistics-distributions-tails.check-6"
+    },
+    {
+      "type": "text",
+      "id": "sources",
+      "markdown": "References: [NIST binomial](https://www.itl.nist.gov/div898/handbook/eda/section3/eda366i.htm), [Poisson](https://www.itl.nist.gov/div898/handbook/eda/section3/eda366j.htm), [normal](https://www.itl.nist.gov/div898/handbook/pmc/section5/pmc51.htm), [Cauchy](https://itl.nist.gov/div898/handbook/eda/section3/eda3663.htm), and the independent-trial binomial definition in [Python 3.12 random](https://docs.python.org/3.12/library/random.html). Own synthetic dyadic example and finite derivation are given in full. No fit to financial observations is asserted."
+    },
+    {
+      "type": "text",
+      "id": "coupon-mod-contract",
+      "markdown": "Foundation extension for qfp-coupon-collector-mod, corrected source 73d6975: n=1..1000000 coupon types; each draw is iid uniform on those types, with replacement. Count draws through the first time all types have appeared. Output the rational expectation modulo prime M=1000000007 as P*inverse(Q) mod M, not a decimal approximation. expected_draws(n) returns a LIST of output lines for the source adapter. This expectation does not promise a completion deadline."
+    },
+    {
+      "type": "text",
+      "id": "coupon-mod-geometric-proof",
+      "markdown": "After j distinct types have appeared, the next draw is new with probability p=(n-j)/n. Repeats leave the stage unchanged. Let W be the number of draws through the next success, including that success. Its distribution is P(W=t)=(1-p)^(t-1)*p for t>=1, so this is the positive-support geometric convention. A first-step mean equation gives E[W]=1+(1-p)*E[W], hence E[W]=1/p. Finiteness also follows from the geometric tail sum sum_(t>=0)(1-p)^t=1/p for p>0. Do not confuse failures-before-success, whose mean is (1-p)/p."
+    },
+    {
+      "type": "worked",
+      "id": "coupon-mod-three-coupons",
+      "title": "Three coupon types: late discoveries dominate the waiting",
+      "steps": [
+        {
+          "text": "For n=3, with j=0,1,2 types already seen, success probabilities are 1,2/3,1/3. Waiting means are 1,3/2,3. The total time is the sum of these stages on each sample path."
+        },
+        {
+          "text": "Linearity of expectation gives E[T]=1+3/2+3=11/2. In general sum_(j=0)^(n-1) n/(n-j)=n*sum_(i=1)^n 1/i=n*H_n. Independence of stages is not required just to add their expectations. The iid uniform-draw mechanism supplied each stage probability."
+        },
+        {
+          "text": "Modulo M, inverse(2)=500000004, so (11*500000004)%M=500000009. For n=1, the very first draw completes collection, giving expectation and output 1. The approximation n*log(n) is not an exact modular answer and is particularly wrong as a replacement at n=1."
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "id": "coupon-mod-field-bridge",
+      "markdown": "Modular arithmetic bridge: a residue is a remainder class. For prime M, every nonzero residue x has a unique multiplicative inverse, the residue u with x*u congruent to 1. For example, modulo 7 the inverse of 3 is 5 because 3*5=15 leaves remainder 1. This is not integer division 1//3. We use % to keep residues in 0..M-1. The notation H_n names the finite harmonic sum 1+1/2+...+1/n; it is not an extra distribution assumption. You can understand this extension without taking the algorithms-module binomial section first."
+    },
+    {
+      "type": "text",
+      "id": "coupon-mod-field-meaning",
+      "markdown": "A modular rational is not real division rounded, and the residue is not a time measured in draws. Every denominator i in H_n has 1<=i<=1000000<M. Because M is prime, each is invertible. Thus evaluating n*sum inverse(i) gives the same field element as reducing the exact rational P/Q and multiplying by inverse(Q). The denominator of the finite sum divides a product of 1..n, so it cannot acquire a factor M. This argument would fail if a required denominator were zero modulo M or if a composite modulus introduced a nonunit."
+    },
+    {
+      "type": "text",
+      "id": "coupon-mod-linear-proof",
+      "markdown": "Computing each inverse by modular exponentiation takes O(n log M). To get O(n) modular operations, initialize inv[1]=1. For i>=2 write M=q*i+r, with q=M//i and r=M%i. Since i<M and M is prime, 1<=r<i. Modulo M, r=-q*i; multiply by inverses of r and i to get inv[i]=-q*inv[r] mod M. inv[r] is already computed because r<i. Therefore an ascending loop works. The recurrence is specific to this prime/range setting; invertibility of i alone under an arbitrary composite modulus does not guarantee invertibility of r."
+    },
+    {
+      "type": "code",
+      "id": "coupon-mod-coupon-linear",
+      "language": "python",
+      "source": "MOD = 1000000007\n\ndef expected_draws(n):\n    if type(n) is not int or not 1 <= n <= 1000000:\n        raise ValueError('invalid coupon bounds')\n    inverses = [0] * (n + 1)\n    inverses[1] = 1\n    harmonic = 1\n    for i in range(2, n + 1):\n        inverses[i] = -(MOD // i) * inverses[MOD % i] % MOD\n        harmonic = (harmonic + inverses[i]) % MOD\n    return [str(n * harmonic % MOD)]\nprint(expected_draws(1))\nprint(expected_draws(2))\nprint(expected_draws(3))\n",
+      "caption": "Expected ['1'], ['3'], ['500000009']. Complete Python 3.12. Initializes n=1 safely; validates the corrected n upper bound. A running harmonic residue avoids huge rational numerators/denominators. O(n) modular operations and O(n) inverse entries. This is an educational implementation, not an unmeasured external judge memory/time claim.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "coupon-mod-inline-0",
+      "questionId": "qf5-statistics-distributions-tails.coupon-mod-check-1"
+    },
+    {
+      "type": "check",
+      "id": "coupon-mod-inline-1",
+      "questionId": "qf5-statistics-distributions-tails.coupon-mod-check-2"
+    },
+    {
+      "type": "check",
+      "id": "coupon-mod-inline-4",
+      "questionId": "qf5-statistics-distributions-tails.coupon-mod-check-5"
+    },
+    {
+      "type": "text",
+      "id": "coupon-mod-cpp-resource",
+      "markdown": "For C++, vector<int> inv(n+1) uses roughly 4*(n+1) bytes of element storage when int is 32 bits, about 4 MB at n=1e6, excluding allocator/program overhead. Promote (M/i)*inv[M%i] to long long before multiplying. A conservative product bound is M*(M-1)<2^63-1. Keep the rolling harmonic sum reduced each iteration. Python list/int objects use more memory than the C++ element bound; do not claim a 4 MB Python total. The local upper-bound harness records runtime/RSS without claiming to meet an unspecified remote limit."
+    },
+    {
+      "type": "check",
+      "id": "coupon-mod-inline-2",
+      "questionId": "qf5-statistics-distributions-tails.coupon-mod-check-3"
+    },
+    {
+      "type": "check",
+      "id": "coupon-mod-inline-3",
+      "questionId": "qf5-statistics-distributions-tails.coupon-mod-check-4"
+    },
+    {
+      "type": "check",
+      "id": "coupon-mod-inline-5",
+      "questionId": "qf5-statistics-distributions-tails.coupon-mod-check-6"
+    },
+    {
+      "type": "text",
+      "id": "coupon-mod-transfer",
+      "markdown": "Independent transfer: solve expected remaining draws by the conditional-state equation E_j=1+(j/n)*E_j+((n-j)/n)*E_(j+1), with E_n=0. This gives E_j=n/(n-j)+E_(j+1), a backward exact-Fraction oracle for small n. Compare its result mapped into the prime field. Independently compare every precomputed inverse with modular exponentiation for a substantial prefix, and test i*inv[i]%M=1. Include n=1,2,3 and the maximum n; reject zero/out-of-range values. Repeated simulation is not proof of an exact residue."
+    },
+    {
+      "type": "check",
+      "id": "coupon-mod-inline-6",
+      "questionId": "qf5-statistics-distributions-tails.coupon-mod-check-7"
+    },
+    {
+      "type": "text",
+      "id": "coupon-mod-sources",
+      "markdown": "Sources: [Tufts coupon collector waiting stages and linearity](https://www.cs.tufts.edu/comp/250P/classpages/coupon.html), [prime modular inverse recurrence and range assumptions](https://cp-algorithms.com/algebra/module-inverse.html). The explicit geometric convention, first-step proof, field-denominator argument and implementation bounds above make the assumptions inspectable. No claim about a real collection campaign or professional forecasting is made. [MIT coupon-collection lecture](https://ocw.mit.edu/courses/6-856j-randomized-algorithms-fall-2002/2e00cd3ccdd9e9e9aa3f4b8305a6abef_n4.pdf) independently supports geometric phases, linearity and the harmonic expectation."
+    }
+  ],
+  "practice": {
+    "problemIds": [
+      "qfp-coupon-collector-mod"
+    ]
+  },
+  "summary": "Choose distributions from mechanisms/support, and check whether population moments exist. The coupon extension derives positive-support geometric waits, linearity, exact harmonic expectation and prime-field inverse recurrence."
+}

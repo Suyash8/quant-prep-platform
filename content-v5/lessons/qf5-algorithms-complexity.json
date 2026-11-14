@@ -1,0 +1,127 @@
+{
+  "id": "qf5-algorithms-complexity",
+  "revision": 1,
+  "title": "Complexity and measured costs",
+  "module": "qf5-algorithms",
+  "order": 1,
+  "estMinutes": 22,
+  "objectives": [
+    {
+      "conceptId": "qf5-algorithms-complexity.asymptotics",
+      "text": "Count dominant operations and state the input/cost assumptions behind an asymptotic upper bound."
+    },
+    {
+      "conceptId": "qf5-algorithms-complexity.cost-measurement",
+      "text": "Design a repeatable local benchmark without confusing timing noise or setup choices with production guarantees."
+    }
+  ],
+  "prerequisites": [
+    "qf5-python-trade-validator"
+  ],
+  "blocks": [
+    {
+      "type": "text",
+      "id": "cost-model",
+      "markdown": "An algorithm is a rule for transforming inputs into outputs. Its cost model says what operation we count and what input size means. Let n be the number of list entries. If comparisons, indexing and fixed-size arithmetic are treated as unit-cost, one full scan makes n visits. A scan that exits on its first match can have a constant best case and a linear worst case. State which case and assumptions you mean; real Python large-integer arithmetic and expensive custom comparisons need a richer model."
+    },
+    {
+      "type": "text",
+      "id": "big-o",
+      "markdown": "For nonnegative costs f(n), saying $f(n)=O(g(n))$ means there are positive constants C and N such that $f(n)\\le Cg(n)$ for all integer n at least N. It is an eventual upper bound, not an exact operation count or number of milliseconds. A tight order is written $\\Theta(g(n))$ when an eventual lower bound of the same order also holds. The function 3n+7 is in O(n); it is also in the looser O(n\u00b2), so an O label alone does not assert tightness."
+    },
+    {
+      "type": "code",
+      "id": "count-models",
+      "language": "python",
+      "source": "def counted_scan(n):\n    visits = 0\n    for _ in range(n):\n        visits += 1\n    return visits\n\ndef counted_pairs(n):\n    pairs = 0\n    for i in range(n):\n        for _ in range(i + 1, n):\n            pairs += 1\n    return pairs\n\ndef counted_halvings(n):\n    steps = 0\n    while n > 1:\n        n //= 2\n        steps += 1\n    return steps\n\nfor n in [8, 16]:\n    print(n, counted_scan(n), counted_pairs(n), counted_halvings(n))",
+      "caption": "Expected output: 8 8 28 3, then 16 16 120 4. The pair loop visits unordered distinct index pairs, n(n-1)/2, not n\u00b2 exactly. The halving loop takes floor(log2(n)) steps for positive integer n in this code. Empty input needs separate boundary reasoning.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "inline-0",
+      "questionId": "qf5-algorithms-complexity.check-1"
+    },
+    {
+      "type": "worked",
+      "id": "growth-trace",
+      "title": "Compare counts before naming a winner",
+      "steps": [
+        {
+          "text": "A scan over 8 items counts 8 visits; over 16 items counts 16. Doubling n doubles this count."
+        },
+        {
+          "text": "Pair counts grow 28 to 120 here, approaching a factor 4 as n gets large; the exact ratio is not 4 for every finite n."
+        },
+        {
+          "text": "Halving steps grow 3 to 4 for 8 to 16. Each size doubling adds one such step at these powers of 2."
+        },
+        {
+          "text": "Constants, allocation, data locality, comparison cost and workload can still make a small-n timing disagree with the large-n growth order."
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "id": "space",
+      "markdown": "Distinguish input storage, returned output and auxiliary workspace. An algorithm that returns n selected values needs output storage even if it scans with only a few extra counters. Copying a slice or sorting a new list can allocate memory. Do not call an entire operation constant-space after ignoring its copied inputs/output. A fixed number of arbitrary-precision integer counters is also not an absolute fixed number of bytes for unbounded values."
+    },
+    {
+      "type": "check",
+      "id": "inline-1",
+      "questionId": "qf5-algorithms-complexity.check-2"
+    },
+    {
+      "type": "text",
+      "id": "benchmark",
+      "markdown": "A benchmark must first verify the implementations compute the same contract. Choose representative sizes/distributions and name runtime, hardware and versions. Decide whether allocation, preprocessing, I/O and cache warmup belong in the measured boundary. Repeat measurements; a single noisy run is not a meaningful comparison. timeit measures a callable repeatedly and returns elapsed seconds. Its default treatment of garbage collection and setup must be understood for allocation-heavy workloads."
+    },
+    {
+      "type": "code",
+      "id": "repeat-benchmark",
+      "language": "python",
+      "source": "from timeit import repeat\nvalues = list(range(100))\nsamples = repeat(lambda: sum(values), number=1000, repeat=5)\nprint(len(samples))\nprint(all(seconds >= 0 for seconds in samples))\n# Inspect samples to see this machine's total seconds per1000calls.\n# min(samples) /1000 is the best observed per-call time in this setup,\n# not a portable prediction or a measured production tail latency.",
+      "caption": "Expected output: 5, then True. samples contains five actual elapsed totals for 1000 calls each; values are intentionally not hard-coded. Dividing a total by 1000 estimates average per-call time within that trial. The minimum is a best-observed local timing, not a guarantee, tail percentile or result on another machine.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "inline-2",
+      "questionId": "qf5-algorithms-complexity.check-3"
+    },
+    {
+      "type": "text",
+      "id": "interpretation",
+      "markdown": "For microbenchmarks, inspect repeats and explain noise rather than print many digits as fake precision. A production latency goal needs representative workload, concurrency, I/O and percentile measurements; the fastest repeat of sum(values) cannot prove it. When comparing algorithms, include the cost of sorting or building an index if the real use pays it. If preprocessing is reused over many queries, say how many queries amortize it rather than silently dropping that work."
+    },
+    {
+      "type": "check",
+      "id": "inline-3",
+      "questionId": "qf5-algorithms-complexity.check-4"
+    },
+    {
+      "type": "text",
+      "id": "transfer",
+      "markdown": "Independent transfer: count comparisons for a scan that finds the first matching ID. Test first-position, last-position and absent targets for several n. Record best/worst case and cost assumptions. Then benchmark only implementations with the same returned answer, with and without one-time preprocessing inside the timed boundary. Report repeat data and environment, and do not claim an industry latency result from this local exercise."
+    },
+    {
+      "type": "check",
+      "id": "inline-4",
+      "questionId": "qf5-algorithms-complexity.check-5"
+    },
+    {
+      "type": "check",
+      "id": "inline-5",
+      "questionId": "qf5-algorithms-complexity.check-6"
+    },
+    {
+      "type": "text",
+      "id": "source-scope",
+      "markdown": "References: [Python timeit](https://docs.python.org/3/library/timeit.html) for timing mechanics and caveats; [bisect performance notes](https://docs.python.org/3/library/bisect.html) for separating logarithmic search from linear list insertion. The count formulas above are derived from the shown loops under their stated cost model, not claims about a production workload."
+    }
+  ],
+  "practice": {
+    "problemIds": []
+  },
+  "summary": "Define input size, counted operation, case and memory boundary. Growth bounds are not exact timings. Verify equal contracts before benchmarking, include paid preprocessing and report repeat/environment evidence without universal latency claims."
+}

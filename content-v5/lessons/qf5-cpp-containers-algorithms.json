@@ -1,0 +1,134 @@
+{
+  "id": "qf5-cpp-containers-algorithms",
+  "revision": 1,
+  "title": "Containers, iterators and algorithms",
+  "module": "qf5-cpp",
+  "order": 3,
+  "estMinutes": 22,
+  "objectives": [
+    {
+      "conceptId": "qf5-cpp-containers-algorithms.iterator-validity",
+      "text": "Use vector capacity/size and iterator invalidation rules to mutate/erase safely without retaining invalid element/end observers."
+    },
+    {
+      "conceptId": "qf5-cpp-containers-algorithms.container-choice",
+      "text": "Choose an order/duplicate-preserving representation and apply a strict-order stable algorithm without silently changing identity, tie or caller-mutation policy."
+    }
+  ],
+  "prerequisites": [
+    "qf5-cpp-ownership-raii"
+  ],
+  "blocks": [
+    {
+      "type": "text",
+      "id": "representation",
+      "markdown": "Choose a container from the data contract before guessing at speed. An ordinary std::vector<T> (excluding the specialized vector<bool>) is a contiguous dynamic sequence that preserves order and repeated values; it is a natural starting point for a small replay/snapshot sequence. A unique-key associative map stores at most one value per key, so a construction/assignment keyed only by a repeated trade label can lose multiplicity. A set represents uniqueness, not a counted event log. Stable business identity and chronological ordering are separate metadata, not properties inferred from a container type. This lesson uses synthetic labels, not authenticated execution IDs."
+    },
+    {
+      "type": "text",
+      "id": "size-capacity",
+      "markdown": "vector.size() counts constructed elements; capacity() counts storage available before growth requires reallocation. reserve(n) may increase capacity but does not create elements or change size. Indexing a reserved-but-unconstructed slot is not made valid by capacity. For this lesson, use at(i) for checked element access; an out-of-range access raises std::out_of_range rather than supplying a valid missing value. Do not read or write end(): it is a one-past position, not an element."
+    },
+    {
+      "type": "text",
+      "id": "iterator-contract",
+      "markdown": "An iterator is a position/access mechanism under a container-specific validity contract, not a permanent business identifier. For vector, capacity-changing reserve invalidates all element iterators/references/pointers and end(); reserve without capacity change does not. push_back with reallocation invalidates all; without reallocation it still invalidates the old end(). erase invalidates the erased position and everything at/after it, including end(). Sorting can permute values even if storage remains, so a still-dereferenceable slot need not denote the same business record. Reacquire positions from current valid state; do not probe an invalid old iterator to see whether the bytes survived."
+    },
+    {
+      "type": "worked",
+      "id": "erase-iterator-trace",
+      "title": "Erase without stepping through an invalid iterator",
+      "steps": [
+        {
+          "text": "Start [1,2,3,4] at begin(). Keep 1 and increment. On 2, erase returns the next valid position now holding 3; assign that return to it, without incrementing the invalid old iterator."
+        },
+        {
+          "text": "Keep 3 and increment. On 4, erase returns the updated end(); the next condition ends the loop. Survivors [1,3] keep their original order."
+        },
+        {
+          "text": "A naive erase(it); ++it uses an invalidated iterator and can skip values or have undefined behavior. This explanation does not execute that invalid program."
+        }
+      ]
+    },
+    {
+      "type": "code",
+      "id": "cpp-vector-erase-capacity",
+      "language": "cpp",
+      "source": "#include <iostream>\n#include <vector>\n\nvoid remove_even(std::vector<int>& values) {\n    for (auto it = values.begin(); it != values.end();) {\n        if (*it % 2 == 0) {\n            it = values.erase(it);\n        } else {\n            ++it;\n        }\n    }\n}\n\nint main() {\n    std::vector<int> values{1, 2, 3, 4};\n    remove_even(values);\n    std::cout << values.size() << '\\n';\n    values.reserve(16); // Capacity may change; no old observer is retained.\n    std::cout << values.size() << '\\n';\n    std::cout << values.at(1) << '\\n';\n    values.push_back(5);\n    for (const int value : values) {\n        std::cout << value << '\\n';\n    }\n}\n",
+      "caption": "Expected output: 2, 2, 3, 1, 3, 5 on separate lines. After removal size is 2; reserve(16) leaves it 2. at(1) reacquires the current second value 3. Adding 5 then iterating current begin/end is safe. No address/capacity growth factor or stale-iterator behavior is assumed.",
+      "runnable": false
+    },
+    {
+      "type": "check",
+      "id": "inline-0",
+      "questionId": "qf5-cpp-containers-algorithms.check-1"
+    },
+    {
+      "type": "check",
+      "id": "inline-1",
+      "questionId": "qf5-cpp-containers-algorithms.check-2"
+    },
+    {
+      "type": "check",
+      "id": "inline-4",
+      "questionId": "qf5-cpp-containers-algorithms.check-5"
+    },
+    {
+      "type": "text",
+      "id": "mutation-cost",
+      "markdown": "The explicit single-erase loop makes validity easy to trace, but repeated vector erases can shift many elements and cost quadratic time in total. For bulk filtering, erase-remove or C++20 std::erase_if can compact once under their contracts. Do not claim all vector operations are constant time: element access is constant time, end insertion is amortized constant time, and arbitrary middle erase/insertion shifts elements. reserve can reduce reallocations when a useful bound is known, but reserving exact next size before every append can defeat geometric growth. Measure realistic use rather than swapping containers on slogans."
+    },
+    {
+      "type": "text",
+      "id": "sort-contract",
+      "markdown": "Algorithms require more than a compilable callable. Sorting comparison must define a strict weak ordering: a<a is false; if a<b then not b<a; ordered comparisons and equivalence classes must be consistent/transitive. The integer price comparator below uses <, not <=. Equal-price elements are equivalent under that comparator. stable_sort preserves their original relative order; std::sort does not promise that tie preservation. Stability is a declared snapshot policy, not a claim that a venue uses price-time priority or that a repeated label is a retried fill."
+    },
+    {
+      "type": "code",
+      "id": "cpp-stable-event-snapshot",
+      "language": "cpp",
+      "source": "#include <algorithm>\n#include <iostream>\n#include <string>\n#include <vector>\n\nstruct Event {\n    std::string label;\n    int price;\n};\n\nbool cheaper(const Event& left, const Event& right) {\n    return left.price < right.price;\n}\n\nstd::vector<Event> sorted_snapshot(std::vector<Event> events) {\n    std::stable_sort(events.begin(), events.end(), cheaper);\n    return events;\n}\n\nint main() {\n    const std::vector<Event> original{{\"T1\",20},{\"T2\",10},{\"T1\",10}};\n    const auto sorted = sorted_snapshot(original);\n    for (const auto& event : sorted) {\n        std::cout << event.label << ':' << event.price << '\\n';\n    }\n    std::cout << original.front().label << ':' << original.front().price << '\\n';\n    std::cout << sorted.size() << '\\n';\n}\n",
+      "caption": "Expected lines: T2:10, T1:10, T1:20, T1:20, 3. The first three lines are the stable sorted copy; equal-price T2 precedes the later T1. The fourth confirms the original first record is unchanged. All 3 records survive, including repeated labels. No map overwrite, deduplication, live book or execution guarantee is implied.",
+      "runnable": false
+    },
+    {
+      "type": "check",
+      "id": "inline-2",
+      "questionId": "qf5-cpp-containers-algorithms.check-3"
+    },
+    {
+      "type": "check",
+      "id": "inline-3",
+      "questionId": "qf5-cpp-containers-algorithms.check-4"
+    },
+    {
+      "type": "check",
+      "id": "inline-5",
+      "questionId": "qf5-cpp-containers-algorithms.check-6"
+    },
+    {
+      "type": "text",
+      "id": "container-boundary",
+      "markdown": "Do not retain raw element pointers across mutations unless the exact operation/type contract proves them valid. Node-based and hash containers have different iterator/reference rules, ordering guarantees, memory costs and performance profiles; choose/read those contracts before substituting one. For persistence or parallel mutation, synchronization, versioned identity and durable replay are additional requirements. This lesson is a single-threaded in-memory demonstration."
+    },
+    {
+      "type": "text",
+      "id": "transfer",
+      "markdown": "Independent transfer: filter a vector with no matches, all matches and adjacent even values, checking survivor order and size. Replace the repeated-erase implementation with C++20 std::erase_if and compare outputs, without dereferencing stale iterators. Sort a snapshot with many equal prices and repeated labels, proving multiplicity, stable ties, sortedness and original immutability separately. Explain why changing < to <= violates the comparator contract even if one small run appears sorted."
+    },
+    {
+      "type": "check",
+      "id": "inline-6",
+      "questionId": "qf5-cpp-containers-algorithms.check-7"
+    },
+    {
+      "type": "text",
+      "id": "sources",
+      "markdown": "Sources: [vector contracts](https://en.cppreference.com/w/cpp/container/vector.html), [erase and returned iterator](https://en.cppreference.com/w/cpp/container/vector/erase.html), [reserve](https://en.cppreference.com/w/cpp/container/vector/reserve.html), and [stable_sort](https://en.cppreference.com/w/cpp/algorithm/stable_sort.html). Ordinary successful single-threaded operations are used; allocation/throwing element operations and other containers need their own reviewed exception/validity contracts."
+    }
+  ],
+  "practice": {
+    "problemIds": []
+  },
+  "summary": "Containers carry ordering, duplication, mutation and invalidation contracts. Preserve identity/multiplicity, reacquire valid vector positions after mutation, and use a strict-order comparator with an explicit tie policy rather than trusting a plausible sorted output."
+}

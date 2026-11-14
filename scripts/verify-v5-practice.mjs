@@ -1,0 +1,75 @@
+// node scripts/verify-v5-practice.mjs [baseUrl]  real /v5/practice routes + real /api/v5/code runtime. MODE: server started WITHOUT QF_V5_CODE_DEV => run with MODE=prod (nothing open);
+// with QF_V5_CODE_DEV=1 on the server => MODE=dev (ledger-replay python opens; real Python run/check through the UI, mobile viewport).
+import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);
+const { chromium } = require(process.env.PW_PATH ?? 'playwright');
+const base = process.argv[2] ?? 'http://localhost:3112'; const MODE = process.env.MODE ?? 'prod'; let fails = 0; const check = (n, ok, x = '') => { console.log(ok ? 'PASS' : 'FAIL', n, ok ? '' : String(x)); if (!ok) fails++; };
+const browser = await chromium.launch(); const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+check('login', (await ctx.request.post(base + '/api/auth/login', { data: { email: process.env.QF_DEMO_EMAIL, password: process.env.QF_DEMO_PASSWORD } })).ok());
+const page = await ctx.newPage(); const errs = []; page.on('pageerror', (e) => errs.push(String(e)));
+await page.goto(base + '/v5/learn', { timeout: 100000 }); await page.getByText('Offline library ready').waitFor({ timeout: 60000 }).catch(() => {});
+await page.goto(base + '/v5/practice'); await page.getByRole('heading', { name: 'Practice problems', exact: true }).waitFor({ timeout: 30000 });
+await page.waitForTimeout(1500);
+let t = await page.locator('body').innerText();
+if (MODE === 'prod') {   // normal mode: production list populated from qualification evidence, runner isolated and on baseline
+  const n = await page.locator('a[href^="/v5/practice/qfp-"]').count();
+  check('prod: all 78 qualified problems are listed (Python and C++), no development note', n === 78 && t.includes('Python, C++') && !t.includes('Development test mode'), `links ${n}`);
+  await page.goto(base + '/v5/practice/qfp-ledger-replay'); await page.getByLabel('Practice source code').waitFor({ timeout: 30000 });
+  t = await page.locator('body').innerText();
+  check('prod: direct problem URL opens the statement and the editor, no not-open notice', !t.includes('This problem is not open yet.') && await page.getByLabel('Practice source code').count() === 1, t.slice(0, 200));
+} else {
+  check('dev: only ledger-replay (python and C++, test-only) listed, dev-mode note shown', await page.locator('a[href^="/v5/practice/qfp-"]').count() >= 1 && t.includes('Python') && t.includes('C++') && t.includes('Development test mode'), t.slice(0, 500));
+  await page.locator('a[href="/v5/practice/qfp-ledger-replay"]').click(); await page.getByLabel('Practice source code').waitFor({ timeout: 30000 });
+  const lang = await page.getByLabel('Code language').locator('option').allInnerTexts(); check('language list is exactly the ready languages (Python, C++)', JSON.stringify(lang) === '["Python","C++"]', lang);
+  const starter = await page.getByLabel('Practice source code').inputValue(); check('starter loaded from the stored problem pack', starter.includes('def main'), starter.slice(0, 80));
+  t = await page.locator('body').innerText(); check('statement, constraints, example shown; no editorial/solution/hidden tests', t.includes('Constraints') && t.includes('Example 1') && !/editorial/i.test(t), t.slice(0, 200));
+  const sol = (await import('node:fs')).readFileSync(new URL('../content-v5/problems-src/ledger-replay.json', import.meta.url), 'utf8'); const solution = JSON.parse(sol).solutions.python;
+  await page.getByLabel('Practice source code').fill('print("hello")\n');
+  await page.getByLabel('Custom input for Run').fill('x'); await page.getByRole('button', { name: 'Run with my input', exact: true }).click();
+  await page.getByRole('heading', { name: 'Run output, not a correctness check', exact: true }).waitFor({ timeout: 30000 });
+  t = await page.locator('[aria-label="Code result"]').innerText(); check('real run: output shown with no correctness claim', t.includes('hello') && !/passed|correct/i.test(t.replace('not a correctness check', '')), t);
+  await page.getByLabel('Practice source code').fill('def f(:\n'); await page.getByRole('button', { name: 'Run with my input', exact: true }).click();
+  await page.getByText(/SyntaxError/).first().waitFor({ timeout: 30000 }).catch(() => {}); check('real syntax error shown as compile error with its message', await page.getByText(/SyntaxError/).count() > 0);
+  await page.getByLabel('Practice source code').fill(solution); await page.getByRole('button', { name: 'Check against tests', exact: true }).click();
+  await page.getByRole('heading', { name: 'Server judge result', exact: true }).waitFor({ timeout: 60000 });
+  t = await page.locator('[aria-label="Code result"]').innerText(); check('real check: reference solution passes all tests, provisional limits stated, no XP claim', /10 of 10 tests passed/.test(t) && /provisional/i.test(t), t);
+  await page.getByLabel('Practice source code').fill('print(1)\n'); await page.getByRole('button', { name: 'Check against tests', exact: true }).click();
+  await page.waitForFunction(() => /of \d+ tests passed/.test(document.querySelector('[aria-label="Code result"]')?.textContent ?? '') && !/10 of 10/.test(document.querySelector('[aria-label="Code result"]')?.textContent ?? ''), null, { timeout: 60000 });
+  t = await page.locator('[aria-label="Code result"]').innerText(); check('real check: wrong program fails, no hidden test data shown', !/10 of 10/.test(t), t);
+  await page.getByLabel('Practice source code').fill('print(42)\n'); await page.getByText(/Saved on this device at/).waitFor({ timeout: 10000 }).catch(() => {});
+  check('draft: saving status shown only after the write succeeded, with "not checked by the server"', await page.getByText(/Saved on this device at .*Not checked by the server/).count() === 1);
+  await page.reload(); await page.getByLabel('Practice source code').waitFor({ timeout: 30000 });
+  check('draft: reload restores the saved source and says so', (await page.getByLabel('Practice source code').inputValue()) === 'print(42)\n' && await page.getByText('Restored your code saved on this device.').count() === 1);
+  await page.getByRole('button', { name: 'Check against tests', exact: true }).click(); await page.getByRole('heading', { name: 'Server judge result', exact: true }).waitFor({ timeout: 60000 });
+  check('source retained through check', (await page.getByLabel('Practice source code').inputValue()) === 'print(42)\n');
+  // older-version draft discovery: write a draft keyed to a DIFFERENT starter hash directly, reload, expect offer (not applied), apply only after confirm, and the applied code is saved
+  await page.evaluate(async () => { const db = await new Promise((res) => { const o = indexedDB.open('qf-v5:' + (JSON.parse(localStorage.getItem('qf5.account') ? JSON.stringify(localStorage.getItem('qf5.account')) : 'null') ?? 'anon')); o.onsuccess = () => res(o.result); });
+    const m = await new Promise((res) => { const g = db.transaction('meta').objectStore('meta').get('manifest'); g.onsuccess = () => res(g.result.v); }); const sha = m.packs.find((p) => p.id === 'qfp-ledger-replay').sha256;
+    await new Promise((res) => { const tx = db.transaction('meta', 'readwrite'); tx.objectStore('meta').put({ k: 'cdraft:qfp-ledger-replay:python:oldpacksha:oldstarter', v: { problemId: 'qfp-ledger-replay', language: 'python', problemSha: 'oldpacksha', starterSha: 'oldstarter', source: 'print("OLD")\n', savedAt: 5 } }); tx.oncomplete = res; }); db.close(); });
+  await page.reload(); await page.getByLabel('Practice source code').waitFor({ timeout: 30000 });
+  check('older draft: offered, NOT applied (editor still shows the current saved code)', (await page.getByText(/saved for an earlier version of this problem/).count()) === 1 && (await page.getByLabel('Practice source code').inputValue()) === 'print(42)\n', (await page.getByText(/saved for an earlier version of this problem/).count()) + '|' + JSON.stringify(await page.getByLabel('Practice source code').inputValue()));
+  await page.getByRole('button', { name: 'Review older saved code' }).click(); page.once('dialog', (d) => d.dismiss()); await page.getByRole('button', { name: 'Use this code in the editor' }).click();
+  check('older draft: dismissing the confirm leaves the editor unchanged', (await page.getByLabel('Practice source code').inputValue()) === 'print(42)\n');
+  page.once('dialog', (d) => d.accept()); await page.getByRole('button', { name: 'Use this code in the editor' }).click(); await page.waitForFunction(() => document.querySelector('textarea[aria-label="Practice source code"]')?.value === 'print("OLD")\n', null, { timeout: 10000 });
+  await page.getByText(/Saved on this device at/).waitFor({ timeout: 10000 }); await page.reload(); await page.getByLabel('Practice source code').waitFor({ timeout: 30000 });
+  check('older draft: after confirm the applied code is SAVED for the current version (survives reload)', (await page.getByLabel('Practice source code').inputValue()) === 'print("OLD")\n');
+  // blocked language switch on a failed save (readiness mocked to offer both languages; IndexedDB writes of code drafts forced to fail with a quota error)
+  const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 } }); await ctx2.request.post(base + '/api/auth/login', { data: { email: process.env.QF_DEMO_EMAIL, password: process.env.QF_DEMO_PASSWORD } }); const p2 = await ctx2.newPage(); await p2.goto(base + '/v5/learn'); await p2.getByText('Offline library ready').waitFor({ timeout: 60000 }).catch(() => {}); const errs2 = []; p2.on('pageerror', (e) => errs2.push(String(e)));
+  await p2.addInitScript(() => { const orig = IDBObjectStore.prototype.put; IDBObjectStore.prototype.put = function (v, k) { if (window.__failPut && v && typeof v.k === 'string' && v.k.startsWith('cdraft:')) throw new DOMException('quota', 'QuotaExceededError'); return orig.call(this, v, k); }; });
+  await p2.route('**/api/v5/code', async (r) => { if (r.request().method() === 'GET') return r.fulfill({ contentType: 'application/json', body: JSON.stringify({ ready: { 'qfp-ledger-replay': ['python', 'cpp'] }, devTestOnly: true }) }); return r.continue(); });
+  await p2.goto(base + '/v5/practice/qfp-ledger-replay'); await p2.getByLabel('Practice source code').waitFor({ timeout: 30000 });
+  const starterTxt = await p2.getByLabel('Practice source code').inputValue();
+  check('unchanged starter does NOT claim "saved": says nothing needs saving yet', await p2.getByText(/unchanged starter code, so nothing needs saving yet/).count() === 1 && await p2.getByText(/current source is saved on this device/).count() === 0, starterTxt.length);
+  await p2.evaluate(() => { window.__failPut = true; }); await p2.getByLabel('Practice source code').fill('print("unsaved")\n'); await p2.getByRole('alert').filter({ hasText: 'not saved' }).first().waitFor({ timeout: 10000 });
+  check('failed save is shown (alert), editor keeps the code', (await p2.getByLabel('Practice source code').inputValue()) === 'print("unsaved")\n');
+  await p2.getByLabel('Code language').selectOption('cpp'); await p2.getByText(/language was not changed/).waitFor({ timeout: 10000 });
+  check('switch refused: code kept, language still Python, retry/discard offered', (await p2.getByLabel('Practice source code').inputValue()) === 'print("unsaved")\n' && (await p2.getByLabel('Code language').inputValue()) === 'python' && await p2.getByRole('button', { name: 'Discard unsaved code and switch' }).count() === 1);
+  await p2.getByRole('button', { name: 'Retry saving and switch' }).click(); await p2.waitForTimeout(600);
+  check('retry while storage still fails keeps the block and the code', await p2.getByText(/language was not changed/).count() === 1 && (await p2.getByLabel('Practice source code').inputValue()) === 'print("unsaved")\n');
+  p2.once('dialog', (d) => d.accept()); await p2.getByRole('button', { name: 'Discard unsaved code and switch' }).click(); await p2.waitForFunction(() => document.querySelector('select[aria-label="Code language"]')?.value === 'cpp', null, { timeout: 10000 });
+  check('explicit discard switches to C++ with its own starter', /#include|int main/.test(await p2.getByLabel('Practice source code').inputValue()));
+  check('no page errors (second page)', errs2.length === 0, errs2.join('|')); await p2.close();
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1); check('390px: no horizontal overflow', overflow);
+  await page.screenshot({ path: '/downloads/practice-dev-390.png', fullPage: true });
+  await ctx.setOffline(true); await page.getByRole('button', { name: 'Run with my input', exact: true }).click(); await page.getByText(/offline/i).first().waitFor({ timeout: 10000 }).catch(() => {}); t = await page.locator('[aria-label="Code result"]').innerText().catch(() => ''); check('offline: run makes no request and says nothing was run or judged', /offline/i.test(t) && /Nothing was run or judged/.test(t), t); await ctx.setOffline(false);
+}
+check('no page errors', errs.length === 0, errs.join('|')); await browser.close(); console.log(fails ? 'FAILED ' + fails : 'ALL PASS'); process.exit(fails ? 1 : 0);

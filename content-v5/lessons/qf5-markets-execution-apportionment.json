@@ -1,0 +1,342 @@
+{
+  "id": "qf5-markets-execution-apportionment",
+  "revision": 3,
+  "title": "TWAP/VWAP schedules and largest-remainder apportionment",
+  "module": "qf5-markets",
+  "order": 7,
+  "estMinutes": 70,
+  "objectives": [
+    {
+      "conceptId": "qf5-markets-execution-apportionment.schedule-weights",
+      "text": "Distinguish forecast-based quantity schedules from realized price benchmarks, deriving time/volume weights and identifying timing, fill and cost assumptions."
+    },
+    {
+      "conceptId": "qf5-markets-execution-apportionment.largest-remainder",
+      "text": "Derive and implement exact largest-remainder allocation with total conservation, quota and declared deterministic ties, while recognizing recomputation/nonmonotonicity limits."
+    },
+    {
+      "conceptId": "qf5-markets-execution-apportionment.twap-euclidean-split",
+      "text": "Derive equal-time integer slices from quotient/remainder, giving the earliest slices each leftover share."
+    },
+    {
+      "conceptId": "qf5-markets-execution-apportionment.volume-slice-contract",
+      "text": "Apply exact largest remainder at the full public bounds, preserving zero weights and earlier-index remainder ties."
+    },
+    {
+      "conceptId": "qf5-markets-execution-apportionment.vwap-scaled-rational-output",
+      "text": "Accumulate integer share/notional sums and round the exact dollar VWAP to four decimals with half-even quotient/remainder."
+    }
+  ],
+  "prerequisites": [
+    "qf5-markets-options-payoffs"
+  ],
+  "blocks": [
+    {
+      "type": "text",
+      "id": "schedule-versus-benchmark",
+      "markdown": "A parent execution plan divides a target quantity across a time window; it is not a fill report or permission to submit child orders. A simple equal-time TWAP schedule targets equal fractions per equal-duration bucket, or weights proportional to duration when bucket lengths differ. A VWAP-style schedule can target fractions proportional to FORECAST market volume in each bucket, normalized to sum 1. Forecasts must use information available when the plan is formed; using realized full-day volume to choose historical earlier orders leaks future information."
+    },
+    {
+      "type": "text",
+      "id": "benchmark-definitions",
+      "markdown": "A realized trade-based VWAP over a stated instrument/venue/window is sum(price_i*volume_i)/sum(volume_i), excluding/including records only under an explicit feed policy. If total volume 0, it is undefined, not a zero price. A TWAP benchmark is a time-weighted price measure; an arithmetic mean of prices is valid only for equal time weights under the chosen sampled/held-price convention. Own average execution price weights OWN filled quantities and can differ from market VWAP. Benchmarks need timestamp, session, currency, tick/lot and fee/auction/odd-lot scope, not only an acronym."
+    },
+    {
+      "type": "text",
+      "id": "integer-allocation",
+      "markdown": "Targets must often be integer shares or lots. For nonnegative weights w_i with W=sum w_i > 0 and integer target Q >= 0, ideal bucket quantity q_i = Q*w_i/W can be fractional. Independently rounding each q_i can lose or create shares. Largest remainder gives base_i=floor(q_i), then distributes exactly R = Q-sum(base_i) remaining units to the largest fractional remainders, one extra per selected bucket. This implementation breaks exact ties by earlier input index, a declared bucket-order policy. Zero-weight buckets receive zero; no political minimum-one-seat rule applies."
+    },
+    {
+      "type": "text",
+      "id": "allocation-proof",
+      "markdown": "Because sum q_i=Q, R=sum fractional(q_i) is a nonnegative integer smaller than the number of positive fractional parts unless all are 0. Thus enough positive-remainder buckets exist to give each selected bucket at most one extra unit. Final quantities are nonnegative integers summing exactly Q, with each between floor(q_i) and ceil(q_i). Compute base with integer quotient (Q*w_i)//W and compare integer remainders (Q*w_i)%W, avoiding floating near-ties. Conservation/quota follow from this proof, not from a lucky example."
+    },
+    {
+      "type": "worked",
+      "id": "allocation-trace",
+      "title": "Resolve indivisibility without changing the parent total",
+      "steps": [
+        {
+          "text": "Q = 10 and equal three weights give ideals 10/3 each, floors [3,3,3], one leftover. All remainders tie, so earlier-index policy gives [4,3,3]. There is no claim the first bucket is economically better."
+        },
+        {
+          "text": "Weights [1,2,1] give ideals [2.5,5,2.5], floors [2,5,2], one leftover. Tied first/third remainders resolve to [3,5,2]."
+        },
+        {
+          "text": "The result is a target plan only. If early buckets partially fill, remaining exposure must be reconciled from confirmed fills/open orders before any replan. Blindly subtracting desired slices as though filled can overtrade."
+        },
+        {
+          "text": "Increasing target size need not increase every largest-remainder bucket. Weights [1500,1000,100] give [21,14,2] at 37 units but [22,15,1] at 38. Recomputed targets can therefore reduce a bucket; do not blindly apply differences as independent new orders."
+        }
+      ]
+    },
+    {
+      "type": "code",
+      "id": "exact-largest-remainder-schedule",
+      "language": "python",
+      "source": "def largest_remainder(total,weights):\n    if type(total) is not int or not 0<=total<=1000000:\n        raise ValueError(\"expected bounded nonnegative integer units\")\n    if type(weights) is not list or not 1<=len(weights)<=1000 or any(type(w) is not int or not 0<=w<=1000000 for w in weights):\n        raise ValueError(\"expected1..1000bounded nonnegative integer weights\")\n    denominator=sum(weights)\n    if denominator==0:\n        raise ValueError(\"all-zero weights have no proportional allocation\")\n    base=[total*w//denominator for w in weights]\n    remainders=[total*w%denominator for w in weights]\n    left=total-sum(base)\n    priority=sorted(range(len(weights)),key=lambda i:(-remainders[i],i))\n    for i in priority[:left]:\n        base[i]+=1\n    return base\n\nprint(largest_remainder(10,[1,1,1]))\nprint(largest_remainder(10,[1,2,1]))\nprint(largest_remainder(0,[0,1]))\nprint(largest_remainder(37,[1500,1000,100]))\nprint(largest_remainder(38,[1500,1000,100]))",
+      "caption": "Expected output: [4, 3, 3]; [3, 5, 2]; [0, 0]; [21, 14, 2]; [22, 15, 1]. All weights/units are bounded integers and ties use input index. The Alabama-paradox counterexample is a mathematical recomputation warning, not a claim about any broker scheduler. If target is in lots, multiply by the stated lot size after allocating; that does not solve a leftover non-lot parent quantity automatically.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "inline-0",
+      "questionId": "qf5-markets-execution-apportionment.check-1"
+    },
+    {
+      "type": "check",
+      "id": "inline-1",
+      "questionId": "qf5-markets-execution-apportionment.check-2"
+    },
+    {
+      "type": "text",
+      "id": "execution-boundaries",
+      "markdown": "VWAP/TWAP algorithms can miss benchmarks or leave quantities unfilled because of limits, missing liquidity, halts, participation caps and timing. A schedule alone does not estimate market impact, information leakage or adverse selection. Participation-of-volume is another policy and must not be silently substituted for a fixed forecast curve. Bucket times need actual trading calendars/session boundaries; this lesson uses ordered synthetic buckets without dates, routing, live connectivity or commitments."
+    },
+    {
+      "type": "code",
+      "id": "realized-price-benchmarks",
+      "language": "python",
+      "source": "from fractions import Fraction\n\ndef snapshot_benchmarks(rows):\n    # Each row is(price_cents,trade_volume,time_duration)for a declared interval.\n    if type(rows) is not list or not 1<=len(rows)<=1000:\n        raise ValueError(\"expected1..1000interval records\")\n    for row in rows:\n        if type(row) is not tuple or len(row)!=3 or any(type(v) is not int for v in row):\n            raise ValueError(\"expected integer price/volume/duration tuples\")\n        price,volume,duration=row\n        if not 1<=price<=1000000 or not 0<=volume<=1000000 or not 1<=duration<=1000000:\n            raise ValueError(\"invalid bounded price/volume/duration\")\n    volume=sum(row[1] for row in rows)\n    vwap=None if volume==0 else Fraction(sum(p*v for p,v,t in rows),volume)\n    twap=Fraction(sum(p*t for p,v,t in rows),sum(t for p,v,t in rows))\n    return vwap,twap\n\nprint(*(str(x) for x in snapshot_benchmarks([(100,1,1),(110,3,1)])))\nprint(*(str(x) for x in snapshot_benchmarks([(100,0,1),(110,0,3)])))\n# Actual own executions have a separate quantity-weighted average.\nprint(Fraction(3*100+2*110,5))",
+      "caption": "Expected lines: 215/2 105; None 215/2; then 104. First market VWAP is 107.5 cents while equal-duration TWAP is 105. With zero volume the VWAP is None, but the declared held-price duration-weighted TWAP can still be 107.5. Own fills 3 at 100 and 2 at 110 average 104. These are three different descriptive measures. This aggregated interval fixture is not a raw-market-data cleaning/benchmark-compliance implementation.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "inline-2",
+      "questionId": "qf5-markets-execution-apportionment.check-3"
+    },
+    {
+      "type": "check",
+      "id": "inline-3",
+      "questionId": "qf5-markets-execution-apportionment.check-4"
+    },
+    {
+      "type": "text",
+      "id": "benchmark-risk",
+      "markdown": "A buy execution below benchmark is favorable by that chosen price comparison, but total economics also include fees, missed/late quantities, financing, market movement and risk. Define sign: buy slippage=own_average-benchmark, while sell slippage may reverse the sign for a common cost-positive convention. Report filled quantity and timing alongside a favorable average; an unfilled hard part can make filled-only performance look deceptively good. Do not compare different instrument/windows or call a plan guaranteed VWAP."
+    },
+    {
+      "type": "text",
+      "id": "transfer",
+      "markdown": "Independent transfer: allocate 11 units across [0,1,1,2] with the stated tie rule and show floor/ceiling/total checks. Reverse bucket order and identify when tie outcomes change by policy. Compute VWAP from actual eligible trades and TWAP from unequal interval durations. Then construct a schedule with a partial first fill and explain what confirmed/open-state evidence is needed before replanning the remainder."
+    },
+    {
+      "type": "check",
+      "id": "inline-4",
+      "questionId": "qf5-markets-execution-apportionment.check-5"
+    },
+    {
+      "type": "check",
+      "id": "inline-5",
+      "questionId": "qf5-markets-execution-apportionment.check-6"
+    },
+    {
+      "type": "check",
+      "id": "inline-6",
+      "questionId": "qf5-markets-execution-apportionment.check-7"
+    },
+    {
+      "type": "text",
+      "id": "sources",
+      "markdown": "References: [IBKR best-efforts VWAP tradeoffs](https://www.interactivebrokers.com/docs/general/order-types/algorithmic-orders/ib-algorithms/vwap), [clock-based TWAP example](https://www.interactivebrokers.com/campus/glossary-terms/csfb-twap/), [OpenStax largest-remainder steps](https://openstax.org/books/contemporary-mathematics/pages/11-4-apportionment-methods), [house-size paradox](https://openstax.org/books/contemporary-mathematics/pages/11-5-fairness-in-apportionment-methods), and [Toronto Hamilton example](https://www.math.utoronto.ca/~alfonso/MC/Apportionment.pdf). Political minimum-seat rules and compressed broader theorem wording are not imported into the own bucket policy. No broker parameters/account capability are assumed."
+    },
+    {
+      "type": "text",
+      "id": "equal-time-slices-0",
+      "markdown": "Equal weights admit a simpler construction\n\nFor Q shares and n equal time buckets, Euclidean division gives Q=n*b+r, with b=Q//n and 0<=r<n. Give every bucket b shares, then one extra to indexes 0..r-1. The sum is n*b+r=Q and bucket sizes differ by at most one. This is the equal-weight case of largest remainder with the declared earlier-index tie rule, not a realized price benchmark."
+    },
+    {
+      "type": "text",
+      "id": "equal-time-slices-1",
+      "markdown": "Boundary traces\n\nQ=10,n=3 gives [4,3,3]. Q=2,n=5 gives [1,1,0,0,0], and Q=0 gives all zeros. n=1 gets all Q. The first r buckets are favored by deterministic tie policy, not predicted liquidity. Return one joined line per (Q,n) query using its original chronological bucket order."
+    },
+    {
+      "type": "text",
+      "id": "equal-time-slices-2",
+      "markdown": "Work follows emitted buckets\n\nThe public Q can reach 1000000000 and n 100000, with at most 200000 buckets across queries. Do O(n) work per query rather than looping once per share. Extra allocation state can be O(1) beyond the output construction; the returned strings themselves occupy output-sized memory. The earlier bounded allocation API remains unchanged. These are target quantities, not actual fills or authority to place orders."
+    },
+    {
+      "type": "code",
+      "id": "equal-time-slices-complete",
+      "language": "python",
+      "source": "from collections import deque\nimport heapq\n\ndef twap(queries):\n    lines = []\n    for (total, count) in queries:\n        (base, left) = divmod(total, count)\n        lines.append(' '.join((str(base + (i < left)) for i in range(count))))\n    return lines\n\nprint(*twap([(10, 3), (2, 5), (0, 2)]), sep='\\n')\n",
+      "caption": "Expected stdout:\n4 3 3\n1 1 0 0 0\n0 0\n\nPrevalidated inputs follow the captured public contract. This completes the named Python function using its original supplied main/parser. It does not claim independent parser, C++, app-runner or judge qualification.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "equal-time-slices-inline-1",
+      "questionId": "qf5-markets-execution-apportionment.equal-time-slices-check-1"
+    },
+    {
+      "type": "check",
+      "id": "equal-time-slices-inline-2",
+      "questionId": "qf5-markets-execution-apportionment.equal-time-slices-check-2"
+    },
+    {
+      "type": "check",
+      "id": "equal-time-slices-inline-3",
+      "questionId": "qf5-markets-execution-apportionment.equal-time-slices-check-3"
+    },
+    {
+      "type": "check",
+      "id": "equal-time-slices-inline-4",
+      "questionId": "qf5-markets-execution-apportionment.equal-time-slices-check-4"
+    },
+    {
+      "type": "check",
+      "id": "equal-time-slices-inline-5",
+      "questionId": "qf5-markets-execution-apportionment.equal-time-slices-check-5"
+    },
+    {
+      "type": "check",
+      "id": "equal-time-slices-inline-6",
+      "questionId": "qf5-markets-execution-apportionment.equal-time-slices-check-6"
+    },
+    {
+      "type": "check",
+      "id": "equal-time-slices-inline-7",
+      "questionId": "qf5-markets-execution-apportionment.equal-time-slices-check-7"
+    },
+    {
+      "type": "text",
+      "id": "equal-time-slices-sources",
+      "markdown": "References: [1](https://docs.python.org/3.12/library/stdtypes.html). Public task hash 52b3f76e809337e18a6c2bc792b10ca6503f4caa43de3b2554b37e859d809ce7. These references establish language/container semantics; the exact task framing is the captured public contract. This extension preserves the earlier bounded examples and their policies rather than silently broadening those APIs."
+    },
+    {
+      "type": "text",
+      "id": "large-volume-slices-0",
+      "markdown": "Extend bounds explicitly, preserve the original API\n\nThe existing largest_remainder function validates Q<=1000000 and <=1000 weights. Its algorithm is main teaching, but its API does NOT accept this practice task, where Q<=1000000000 and n<=100000. The separate slice_order below uses the already-validated starter values at these public bounds; it does not silently weaken the old helper validation."
+    },
+    {
+      "type": "text",
+      "id": "large-volume-slices-1",
+      "markdown": "Keep exact remainders and index ties\n\nLet V=sum(v)>0. Compute base_i=(Q*v_i)//V and rem_i=(Q*v_i)%V using integers. Since every fraction shares denominator V, comparing remainders compares fractional quotas exactly. Sort indexes by (-rem_i,i), then add one to the first Q-sum(base) buckets. Restore chronological order by updating base at those indexes, not by printing the priority order. Zero-weight buckets never receive leftovers: positive leftover count has enough positive remainders by the existing proof."
+    },
+    {
+      "type": "text",
+      "id": "large-volume-slices-2",
+      "markdown": "Limits, trace and transfer\n\nQ=10,v=[1,2,1] gives [3,5,2]; Q=2,v=[0,1,1,1] gives [0,1,1,0]. Q=0 is legal, but V=0 is excluded. Products Q*v_i<=10^15 and V<=10^11 are exact integers. Work is O(n log n), state/output O(n), with no loop over Q. Conservation and floor/ceiling quotas are necessary checks, not a proof that a forecast or market-impact model is good. This is a fixed-volume target plan, not a market VWAP calculation."
+    },
+    {
+      "type": "code",
+      "id": "large-volume-slices-complete",
+      "language": "python",
+      "source": "from collections import deque\nimport heapq\n\ndef slice_order(total, v):\n    denominator = sum(v)\n    base = [total * w // denominator for w in v]\n    remainders = [total * w % denominator for w in v]\n    left = total - sum(base)\n    priority = sorted(range(len(v)), key=lambda i: (-remainders[i], i))\n    for i in priority[:left]:\n        base[i] += 1\n    return [' '.join(map(str, base))]\n\nprint(*slice_order(10, [1, 2, 1]))\nprint(*slice_order(2, [0, 1, 1, 1]))\n",
+      "caption": "Expected stdout:\n3 5 2\n0 1 1 0\n\nPrevalidated inputs follow the captured public contract. This completes the named Python function using its original supplied main/parser. It does not claim independent parser, C++, app-runner or judge qualification.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "large-volume-slices-inline-1",
+      "questionId": "qf5-markets-execution-apportionment.large-volume-slices-check-1"
+    },
+    {
+      "type": "check",
+      "id": "large-volume-slices-inline-2",
+      "questionId": "qf5-markets-execution-apportionment.large-volume-slices-check-2"
+    },
+    {
+      "type": "check",
+      "id": "large-volume-slices-inline-3",
+      "questionId": "qf5-markets-execution-apportionment.large-volume-slices-check-3"
+    },
+    {
+      "type": "check",
+      "id": "large-volume-slices-inline-4",
+      "questionId": "qf5-markets-execution-apportionment.large-volume-slices-check-4"
+    },
+    {
+      "type": "check",
+      "id": "large-volume-slices-inline-5",
+      "questionId": "qf5-markets-execution-apportionment.large-volume-slices-check-5"
+    },
+    {
+      "type": "check",
+      "id": "large-volume-slices-inline-6",
+      "questionId": "qf5-markets-execution-apportionment.large-volume-slices-check-6"
+    },
+    {
+      "type": "check",
+      "id": "large-volume-slices-inline-7",
+      "questionId": "qf5-markets-execution-apportionment.large-volume-slices-check-7"
+    },
+    {
+      "type": "text",
+      "id": "large-volume-slices-sources",
+      "markdown": "References: [1](https://docs.python.org/3.12/library/stdtypes.html). Public task hash bfcd66e96c8876bac7bc2d3cbac53d718e738417e4f9d3e1b82a7d988cf4f7e8. These references establish language/container semantics; the exact task framing is the captured public contract. This extension preserves the earlier bounded examples and their policies rather than silently broadening those APIs."
+    },
+    {
+      "type": "text",
+      "id": "four-decimal-exact-vwap-0",
+      "markdown": "Keep benchmark and schedule separate\n\nThe tape gives(quantity,price_cents) with positive quantity. Market VWAP in cents is N/V, where N=sum(quantity*price_cents),V=sum(quantity). Dollar VWAP is N/(100*V). This computes a realized weighted price benchmark from eligible synthetic fills; it does not allocate a parent order or guarantee future executions. Positive quantities ensure V>0 in this public task."
+    },
+    {
+      "type": "text",
+      "id": "four-decimal-exact-vwap-1",
+      "markdown": "Scale before exact rounding\n\nFour-decimal dollar units are10000*VWAP_dollars=100*N/V. Use divmod(100*N,V) to get units and remainder. Increment if twice the remainder exceeds V, or on equality when units is odd, implementing nearest ties-to-even. The public fixtures exclude exact halves, but the complete function states the policy anyway. Format units//10000 and four zero-padded fractional digits. Do not accidentally print the cent VWAP as dollars or divide by 100 twice."
+    },
+    {
+      "type": "text",
+      "id": "four-decimal-exact-vwap-2",
+      "markdown": "Limits and tests\n\nN<=10^14,V<=10^9 and100*N<=10^16, all exact in Python and within signed 64-bit range at these bounds. Accumulate integers and divide once conceptually; no float notional is required. For one share at 1234 cents and one share at 1214 cents, average 1224 cents prints 12.2400. O(n) work and scalar sum state, with one output line. Test one trade, unequal weights, price-unit conversion and constructed half-even ties against Decimal exact rational division. Actual benchmark eligibility/session/fee conventions remain caller assumptions, as in the existing lesson."
+    },
+    {
+      "type": "code",
+      "id": "four-decimal-exact-vwap-complete",
+      "language": "python",
+      "source": "from collections import OrderedDict, deque\nfrom bisect import bisect_left\nimport heapq\nimport math\n\ndef vwap(fills):\n    volume = sum((quantity for (quantity, price) in fills))\n    notional = sum((quantity * price for (quantity, price) in fills))\n    (units, remainder) = divmod(100 * notional, volume)\n    if 2 * remainder > volume or (2 * remainder == volume and units % 2):\n        units += 1\n    return [f'{units // 10000}.{units % 10000:04d}']\n\nprint(*vwap([(1, 1234), (1, 1214)]))\nprint(*vwap([(1, 1), (1, 2)]))\n",
+      "caption": "Expected stdout:\n12.2400\n0.0150\n\nPrevalidated inputs follow the captured public contract. This completes the named Python function using its original supplied main/parser. It does not claim independent parser, C++, app-runner or judge qualification.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "four-decimal-exact-vwap-inline-1",
+      "questionId": "qf5-markets-execution-apportionment.four-decimal-exact-vwap-check-1"
+    },
+    {
+      "type": "check",
+      "id": "four-decimal-exact-vwap-inline-2",
+      "questionId": "qf5-markets-execution-apportionment.four-decimal-exact-vwap-check-2"
+    },
+    {
+      "type": "check",
+      "id": "four-decimal-exact-vwap-inline-3",
+      "questionId": "qf5-markets-execution-apportionment.four-decimal-exact-vwap-check-3"
+    },
+    {
+      "type": "check",
+      "id": "four-decimal-exact-vwap-inline-4",
+      "questionId": "qf5-markets-execution-apportionment.four-decimal-exact-vwap-check-4"
+    },
+    {
+      "type": "check",
+      "id": "four-decimal-exact-vwap-inline-5",
+      "questionId": "qf5-markets-execution-apportionment.four-decimal-exact-vwap-check-5"
+    },
+    {
+      "type": "check",
+      "id": "four-decimal-exact-vwap-inline-6",
+      "questionId": "qf5-markets-execution-apportionment.four-decimal-exact-vwap-check-6"
+    },
+    {
+      "type": "check",
+      "id": "four-decimal-exact-vwap-inline-7",
+      "questionId": "qf5-markets-execution-apportionment.four-decimal-exact-vwap-check-7"
+    },
+    {
+      "type": "text",
+      "id": "four-decimal-exact-vwap-sources",
+      "markdown": "References: [1](https://docs.python.org/3.12/library/decimal.html), [2](https://docs.python.org/3.12/library/stdtypes.html). Public task hash 3f1c59c17441e93e9a6505f3052ed03dc4f5bca3932284bc345bc33876c9c514. These references establish language/container semantics; the exact task framing is the captured public contract. This extension preserves the earlier bounded examples and their policies rather than silently broadening those APIs."
+    }
+  ],
+  "practice": {
+    "problemIds": [
+      "qfp-twap-schedule",
+      "qfp-vwap-slicing",
+      "qfp-vwap-calc"
+    ]
+  },
+  "summary": "A schedule is a target, not a fill or benchmark guarantee. Largest remainder conserves exact integer quantity with declared ties/quota, but recomputation can reduce a bucket; real replanning must reconcile confirmed fills and open exposure. Practice transfer: equal time slices. Practice transfer: large volume slices. Practice transfer: four decimal exact vwap."
+}

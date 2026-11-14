@@ -1,4 +1,4 @@
-const B='http://127.0.0.1:3002';
+const B = process.argv[2] ?? 'http://127.0.0.1:3002';
 let r=await fetch(B+'/api/auth/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email:(process.env.QF_DEMO_EMAIL || ''),password:(process.env.QF_DEMO_PASSWORD || '')})});
 console.log('login',r.status);const ck=r.headers.getSetCookie().map(c=>c.split(';')[0]).join('; ');
 r=await fetch(B+'/api/judge/submit',{method:'POST',headers:{'content-type':'application/json',cookie:ck},body:JSON.stringify({slug:'anagram-groups',language:'python',code:'print(0)'})});

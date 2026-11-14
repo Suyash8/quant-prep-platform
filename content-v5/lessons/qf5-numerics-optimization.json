@@ -1,0 +1,147 @@
+{
+  "id": "qf5-numerics-optimization",
+  "revision": 1,
+  "title": "Gradients, constrained optimisation and safeguards",
+  "module": "qf5-numerics",
+  "order": 6,
+  "estMinutes": 22,
+  "objectives": [
+    {
+      "conceptId": "qf5-numerics-optimization.constraint-optimality",
+      "text": "Distinguish feasible global/local/stationary points and derive the convex first-order constrained condition, including a boundary optimum with nonzero gradient."
+    },
+    {
+      "conceptId": "qf5-numerics-optimization.step-safeguards",
+      "text": "Derive and trace a bounded Armijo backtracking step for a stated quadratic, preserving the iterate on search failure and distinguishing acceptance/stationarity from a general optimum certificate."
+    }
+  ],
+  "prerequisites": [
+    "qf5-numerics-derivatives"
+  ],
+  "blocks": [
+    {
+      "type": "text",
+      "id": "problem-contract",
+      "markdown": "An optimization problem specifies an objective f to minimize, a domain and a feasible set C. A feasible point belongs to C; a global minimizer has f(x*)\u2264f(y)for every feasible y. A local minimizer needs this only for feasible y in a neighborhood. A stationary differentiable interior point has\u2207f=0, but without convexity it may be a minimum, maximum or saddle. A solver exit status is not a substitute for feasibility, derivative correctness, objective meaning or a global-optimality argument."
+    },
+    {
+      "type": "text",
+      "id": "gradient-and-geometry",
+      "markdown": "For differentiable f, the first-order change along d is\u2207f(x)\u1d40d. A direction with negative directional derivative is locally descending for sufficiently small positive steps that stay in the domain. In the chosen Euclidean coordinate geometry, d=-\u2207f gives slope-||\u2207f||\u00b2when the gradient is nonzero. It need not remain feasible under constraints. Coordinates with different units require an explicit scaling/metric; a bare learning rate is not invariant to changing the units of one coordinate."
+    },
+    {
+      "type": "text",
+      "id": "convex-criterion",
+      "markdown": "A convex feasible set contains every segment between its points; a differentiable convex f lies above each tangent plane: f(y)\u2265f(x)+\u2207f(x)\u1d40(y-x). For x\u2208C, the condition\u2207f(x)\u1d40(y-x)\u22650for ALL y\u2208Ctherefore proves global optimality. Conversely, if the condition fails for a feasible y, convexity of Ckeeps x+t(y-x)feasible and the negative derivative decreases f for small positive t, contradicting optimality. This gives a necessary/sufficient condition for differentiable convex optimization, not a blanket certificate for arbitrary nonlinear constraints/objectives."
+    },
+    {
+      "type": "worked",
+      "id": "boundary-optimum",
+      "title": "A constrained optimum need not have zero gradient",
+      "steps": [
+        {
+          "text": "Minimize f(x)=(x-3)\u00b2over0\u2264x\u22641. Its unconstrained minimizer3is infeasible. On this interval f'(x)=2(x-3)<0, so increasing x decreases f."
+        },
+        {
+          "text": "The constrained solution is x*=1, with objective4and derivative-4. For every feasible y\u22641, (-4)(y-1)\u22650. The convex first-order condition holds despite nonzero derivative."
+        },
+        {
+          "text": "For a general target t on a nonempty interval[l,u], minimizing(x-t)\u00b2gives min(u,max(l,t)). If t is inside, it gives zero loss; if t>u, every feasible point is farther from t than u, and similarly at lwhen t<l."
+        },
+        {
+          "text": "A singleton feasible interval has only one possible point, whatever the derivative. This is a feasibility fact, not evidence that the unconstrained gradient vanished."
+        }
+      ]
+    },
+    {
+      "type": "code",
+      "id": "exact-interval-optimum",
+      "language": "python",
+      "source": "from fractions import Fraction\n\ndef constrained_square(target,lower,upper):\n    values = (target,lower,upper)\n    if any(type(v) not in (int,Fraction) or abs(v)>1000 for v in values):\n        raise ValueError(\"expected bounded int/Fraction values, excluding bool\")\n    target,lower,upper = map(Fraction,values)\n    if lower>upper:\n        raise ValueError(\"empty interval\")\n    answer = min(upper,max(lower,target))\n    return answer,(answer-target)**2,2*(answer-target)\n\nfor target in (3,-2,Fraction(1,2)):\n    print(*(str(v) for v in constrained_square(target,0,1)))\nprint(constrained_square(3,1,1)[0])",
+      "caption": "Expected lines: 1 4 -4; 0 4 4; 1/2 0 0; then1. This helper solves ONLY one exact squared-distance objective on one closed interval. Clipping a general unconstrained optimizer is not a valid general constrained-optimization method.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "inline-0",
+      "questionId": "qf5-numerics-optimization.check-1"
+    },
+    {
+      "type": "check",
+      "id": "inline-1",
+      "questionId": "qf5-numerics-optimization.check-2"
+    },
+    {
+      "type": "text",
+      "id": "stationary-counterexamples",
+      "markdown": "Without convexity, f'(0)=0for f(x)=-x\u00b2but0is a maximum; f(x)=x\u00b3has a stationary non-extremum at0. In two variables x\u00b2-y\u00b2has a saddle at(0,0). Convexity can make a stationary point globally optimal; strict convexity gives at most one minimizer but does not by itself ensure one is attained on an open or unbounded domain. Nonempty constraints and a stopping tolerance alone do not establish existence."
+    },
+    {
+      "type": "text",
+      "id": "step-size-trace",
+      "markdown": "A descent direction does not justify any step length. For f=(x-3)\u00b2at x=0, gradient=-6and d=6. Step t=1gives x+=6and objective9, unchanged from9; t=2gives x+=12and objective81, worse. Step t=1/2gives x+=3and objective0. Step-size choice matters even on a one-dimensional convex quadratic."
+    },
+    {
+      "type": "text",
+      "id": "armijo-derivation",
+      "markdown": "Armijo sufficient decrease requires f(x+t*d)\u2264f(x)+c*t*\u2207f(x)\u1d40d, with0<c<1and positive t. Because the directional slope is negative, the right-hand side is below f(x). Differentiability gives f(x+t*d)=f(x)+t*slope+o(t); subtracting the Armijo right side leaves(1-c)*t*slope+o(t), negative for sufficiently small positive tprovided the domain allows those steps. Backtracking shrinks tby \u03b2\u2208(0,1)until this check holds. This local existence argument assumes a true descent derivative and an evaluable smooth neighborhood; it is not an iteration-count or global-convergence guarantee."
+    },
+    {
+      "type": "code",
+      "id": "exact-armijo-square-step",
+      "language": "python",
+      "source": "from fractions import Fraction\n\ndef square_step(x,initial_step=1,max_attempts=12):\n    if type(x) not in (int,Fraction) or abs(x)>1000:\n        raise ValueError(\"expected bounded int/Fraction iterate\")\n    if type(initial_step) not in (int,Fraction) or not 0<initial_step<=1000:\n        raise ValueError(\"expected bounded positive int/Fraction step\")\n    if type(max_attempts) is not int or not 1<=max_attempts<=100:\n        raise ValueError(\"expected1..100attempts, excluding bool\")\n    x,step = Fraction(x),Fraction(initial_step)\n    objective = (x-3)**2\n    gradient = 2*(x-3)\n    if gradient==0:\n        return {\"status\":\"stationary\",\"x\":x,\"step\":Fraction(0),\"backtracks\":0}\n    direction = -gradient\n    slope = gradient*direction\n    for backtracks in range(max_attempts):\n        candidate = x+step*direction\n        # Armijo c=1/4, beta=1/2 on this exact fixed quadratic only.\n        if (candidate-3)**2 <= objective+Fraction(1,4)*step*slope:\n            return {\"status\":\"accepted\",\"x\":candidate,\"step\":step,\"backtracks\":backtracks}\n        step /= 2\n    return {\"status\":\"line-search-limit\",\"x\":x,\"step\":Fraction(0),\"backtracks\":max_attempts}\n\nfor kwargs in ({\"x\":0},{\"x\":3},{\"x\":0,\"max_attempts\":1}):\n    result = square_step(**kwargs)\n    print(result[\"status\"],str(result[\"x\"]),str(result[\"step\"]),result[\"backtracks\"])",
+      "caption": "Expected lines: accepted 3 1/2 1; stationary 3 0 0; line-search-limit 0 0 1. The fixed exact quadratic uses c=1/4, beta=1/2. At t=1the Armijo RHS is0while the candidate objective is9, so the first trial fails; t=1/2has RHS4.5and objective0, so it succeeds. A one-attempt budget cannot reach the accepted step and returns the original iterate, not a fake optimum.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "inline-2",
+      "questionId": "qf5-numerics-optimization.check-3"
+    },
+    {
+      "type": "check",
+      "id": "inline-3",
+      "questionId": "qf5-numerics-optimization.check-4"
+    },
+    {
+      "type": "text",
+      "id": "safe-execution",
+      "markdown": "The helper computes a SINGLE unconstrained step on one fixed exact rational polynomial. It does not run a general optimizer, implement projected Armijo, KKT multipliers or certify production risk allocation. A floating general implementation also needs finite objective/gradient checks, representable positive steps, domain/feasibility checks, evaluation/iteration budgets, tolerance/scaling policy and explicit search/gradient failure states. Projection changes the path and acceptance logic; do not reuse the unprojected slope formula blindly after clipping."
+    },
+    {
+      "type": "text",
+      "id": "stopping-versus-proof",
+      "markdown": "Record why a run stopped: small gradient under its chosen geometry, feasible projected-gradient/KKT residual when applicable, small step, objective-change tolerance, evaluation cap or failed line search. A tiny step can mean rounding or a bad direction; a small objective change can mean poor scaling. Assess feasibility and residuals against tolerances, compare analytic/small reference cases, and separate numerical stationarity from model validation and out-of-sample utility. No method here authorizes a live allocation or transaction."
+    },
+    {
+      "type": "text",
+      "id": "transfer",
+      "markdown": "Independent transfer: derive the interval optimum for target-2on[0,1], verify the feasible-direction condition and compare with target3. Trace the fixed quadratic step with initial t=2and predict rejected trials before code. Construct a stationary maximum and explain why a gradient norm check would miss the distinction. Specify what an iteration/evaluation cap should report without mislabeling an unfinished run converged."
+    },
+    {
+      "type": "check",
+      "id": "inline-4",
+      "questionId": "qf5-numerics-optimization.check-5"
+    },
+    {
+      "type": "check",
+      "id": "inline-5",
+      "questionId": "qf5-numerics-optimization.check-6"
+    },
+    {
+      "type": "check",
+      "id": "inline-6",
+      "questionId": "qf5-numerics-optimization.check-7"
+    },
+    {
+      "type": "text",
+      "id": "sources",
+      "markdown": "References: [Boyd/Vandenberghe convexity and feasible first-order criterion, sections3.1.3and4.2.3](https://stanford.edu/~boyd/cvxbook/bv_cvxbook.pdf), [CMU gradient descent/backtracking](https://www.stat.cmu.edu/~ryantibs/convexopt-F16/lectures/grad-descent.pdf), and [Stanford descent methods](https://web.stanford.edu/class/ee364a/lectures/unconstrained.pdf). Own fixed-quadratic code is standard-library only and makes no general numerical optimizer/runtime claim."
+    }
+  ],
+  "practice": {
+    "problemIds": []
+  },
+  "summary": "Feasibility and the objective define optimality. Convex first-order conditions explain boundary solutions with nonzero gradients; safeguarded step acceptance, stationary status and search-budget failure are distinct from general convergence or model validity."
+}

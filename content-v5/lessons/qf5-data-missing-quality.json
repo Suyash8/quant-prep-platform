@@ -1,0 +1,108 @@
+{
+  "id": "qf5-data-missing-quality",
+  "revision": 2,
+  "title": "Missing values and data-quality checks",
+  "module": "qf5-data",
+  "order": 2,
+  "estMinutes": 22,
+  "objectives": [
+    {
+      "conceptId": "qf5-data-missing-quality.missing-policy",
+      "text": "Distinguish missing, non-finite and valid zero values under an explicit field contract."
+    },
+    {
+      "conceptId": "qf5-data-missing-quality.data-checks",
+      "text": "Produce a quality report that records rejection reasons and reconciles input counts."
+    }
+  ],
+  "prerequisites": [
+    "qf5-data-arrays-views"
+  ],
+  "blocks": [
+    {
+      "type": "text",
+      "id": "semantics",
+      "markdown": "A missing value is not automatically zero. A zero-volume observation can be valid while a missing volume means no usable observation was supplied. For a price field this lesson requires a finite, strictly positive float in one stated currency. That policy rejects zero; it does not mean every numeric field or every financial product has the same policy. We use None for a missing scalar and NaN as a non-finite floating representation. NaN is not a reliable equality sentinel: use an explicit missing/finiteness check rather than value == NaN."
+    },
+    {
+      "type": "code",
+      "id": "quality-cases",
+      "language": "python",
+      "source": "import math\nvalues = [100.0, None, 0.0, float(\"nan\"), float(\"inf\"), 102.0]\nreasons = []\naccepted = []\nfor index, value in enumerate(values):\n    if value is None:\n        reasons.append((index, \"missing\"))\n    elif type(value) is not float:\n        reasons.append((index, \"type\"))\n    elif not math.isfinite(value):\n        reasons.append((index, \"nonfinite\"))\n    elif value <= 0:\n        reasons.append((index, \"nonpositive\"))\n    else:\n        accepted.append(value)\nprint(accepted)\nprint(reasons)\nprint(len(accepted) + len(reasons))",
+      "caption": "Expected output: [100.0, 102.0], then [(1, 'missing'), (2, 'nonpositive'), (3, 'nonfinite'), (4, 'nonfinite')], then 6. The exact-float contract is deliberate: a production parser may accept other representations, but must declare the conversion before this boundary.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "inline-0",
+      "questionId": "qf5-data-missing-quality.check-1"
+    },
+    {
+      "type": "text",
+      "id": "vector-mask",
+      "markdown": "Once parsing has produced a floating NumPy array with missing numeric entries represented as NaN, np.isfinite returns one Boolean per element: False for NaN and either infinity. Finiteness is necessary under our price contract but is not the whole contract: zero and negative finite values still need a separate range check. The symbol & combines array masks elementwise; parentheses around each comparison avoid Python operator-precedence mistakes. np.count_nonzero counts True positions in this Boolean mask."
+    },
+    {
+      "type": "code",
+      "id": "finite-mask",
+      "language": "python",
+      "source": "import numpy as np\nprices = np.array([100.0, np.nan, 0.0, np.inf, 102.0])\nvalid = np.isfinite(prices) & (prices > 0)\nprint(valid.tolist())\nprint(int(np.count_nonzero(valid)))\nprint(prices[valid].tolist())",
+      "caption": "Expected output: [True, False, False, False, True], then 2, then [100.0, 102.0]. A single mask selects data but loses separate rejection reasons unless you record those too. NumPy dependency illustration: not runnable in the app until its runner explicitly supports NumPy. Copy into a prepared local Python environment with NumPy to execute. No installation is required to read or answer this lesson.",
+      "runnable": false
+    },
+    {
+      "type": "check",
+      "id": "inline-1",
+      "questionId": "qf5-data-missing-quality.check-2"
+    },
+    {
+      "type": "text",
+      "id": "denominators",
+      "markdown": "Dropping invalid prices changes which observations the calculation describes. The arithmetic mean of observed valid prices is not automatically the mean for the original intended timeline. Report the accepted count, rejected count and time/identity coverage along with the statistic. If every value is rejected, return an explicit no-result state or documented error; do not silently invent a zero mean or divide by zero. This lesson does not claim that deleting missing observations removes statistical bias."
+    },
+    {
+      "type": "text",
+      "id": "imputation",
+      "markdown": "Forward fill carries the last observation into a later missing position. It is a modeling rule, not a fact about the unobserved price. Any use needs a maximum allowed age and explicit handling of identity/session boundaries and corporate actions. Backward fill can import future information into an earlier decision. Do not apply it to a historical trading signal and call that an available-at-the-time observation. The next lesson distinguishes event and availability timestamps; for now, preserve the missing flag and do not invent data."
+    },
+    {
+      "type": "text",
+      "id": "quality-report",
+      "markdown": "A useful quality report names schema and field policy, total records, accepted/rejected counts, reason counts, duplicate-key checks and time coverage. Counts should reconcile: accepted plus rejected equals total when every row goes to exactly one branch. Several invalid fields can be tracked per row, but then summed reason counts can exceed rejected row count. State whether reasons are first-error-only or multi-label. Missingness by instrument or session can matter more than one overall percentage."
+    },
+    {
+      "type": "check",
+      "id": "inline-4",
+      "questionId": "qf5-data-missing-quality.check-5"
+    },
+    {
+      "type": "text",
+      "id": "transfer",
+      "markdown": "Independent transfer: implement a validator for synthetic volumes that accepts exact nonnegative integers including zero and excludes bool, None and non-finite values. Report rejected indexes and reasons and reconcile counts. Compare it with the price policy: zero is accepted for volume but rejected for this price interface. Then design an all-invalid input case and state the no-result behavior before computing an average."
+    },
+    {
+      "type": "check",
+      "id": "consolidation-1",
+      "questionId": "qf5-data-missing-quality.check-3"
+    },
+    {
+      "type": "check",
+      "id": "consolidation-2",
+      "questionId": "qf5-data-missing-quality.check-4"
+    },
+    {
+      "type": "check",
+      "id": "inline-5",
+      "questionId": "qf5-data-missing-quality.check-6"
+    },
+    {
+      "type": "text",
+      "id": "source-scope",
+      "markdown": "Technical references: [NumPy isfinite reference](https://numpy.org/doc/stable/reference/generated/numpy.isfinite.html) for NaN and infinities are non-finite. The financial schemas, policies and synthetic cases in this lesson are declared teaching contracts, not claims about a particular venue or employer."
+    }
+  ],
+  "practice": {
+    "problemIds": []
+  },
+  "summary": "Missing, invalid, non-finite and zero are distinct states. Declare policy by field, retain rejection reasons and coverage, and do not confuse imputation with an observation or hide all-invalid results as zero."
+}

@@ -1,0 +1,9 @@
+/** Preserve authored formulas before markdown consumes TeX underscores or escapes. Code stays byte-for-byte. */
+export type MathToken={kind:'text'|'math';value:string;display?:boolean};
+export function mathTokens(text:string):MathToken[]{const out:MathToken[]=[];let plain='';let i=0;const flush=()=>{if(plain){out.push({kind:'text',value:plain});plain='';}};while(i<text.length){if(text[i]==='\\'&&text[i+1]==='$'){plain+='$';i+=2;continue;}if(text[i]==='$'){const display=text[i+1]==='$';const delim=display?'$$':'$';const start=i+delim.length;let end=start;while(end<text.length){if(text[end]==='\\'){end+=2;continue;}if(text.slice(end,end+delim.length)===delim)break;end++;}if(end<text.length&&end>start){flush();out.push({kind:'math',value:text.slice(start,end),display});i=end+delim.length;continue;}}plain+=text[i++];}flush();return out;}
+export function protectMathMarkdown(source:string):{markdown:string;bank:MathToken[]}{let markdown='';const bank:MathToken[]=[];let i=0;function put(t:MathToken){const index=bank.push(t)-1;markdown+='\uE100'+index+'\uE101';}
+ while(i<source.length){if(source[i]==='`'||(source[i]==='~'&&source.slice(i,i+3)==='~~~')){const char=source[i];let n=1;while(source[i+n]===char)n++;const delimiter=char.repeat(n);const end=source.indexOf(delimiter,i+n);if(end!==-1){markdown+=source.slice(i,end+n);i=end+n;continue;}}
+ if(source[i]==='\\'&&source[i+1]==='$'){put({kind:'text',value:'$'});i+=2;continue;}
+ if(source[i]==='$'){const display=source[i+1]==='$';const delim=display?'$$':'$';const start=i+delim.length;let end=start;while(end<source.length){if(source[end]==='\\'){end+=2;continue;}if(source.slice(end,end+delim.length)===delim)break;end++;}if(end<source.length&&end>start){put({kind:'math',value:source.slice(start,end),display});i=end+delim.length;continue;}}
+ markdown+=source[i++];}
+ return{markdown,bank};}

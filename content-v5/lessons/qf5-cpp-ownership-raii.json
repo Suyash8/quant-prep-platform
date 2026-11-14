@@ -1,0 +1,134 @@
+{
+  "id": "qf5-cpp-ownership-raii",
+  "revision": 1,
+  "title": "Lifetime, ownership and RAII",
+  "module": "qf5-cpp",
+  "order": 2,
+  "estMinutes": 22,
+  "objectives": [
+    {
+      "conceptId": "qf5-cpp-ownership-raii.object-lifetime",
+      "text": "Trace object and observer lifetimes across scopes and ownership transfer without using a dangling pointer or equating scope with dynamic allocation lifetime."
+    },
+    {
+      "conceptId": "qf5-cpp-ownership-raii.raii",
+      "text": "Explain and test resource cleanup through RAII on normal scope exit and handled exception unwinding, distinguishing ownership from raw observation and cleanup from transaction rollback."
+    }
+  ],
+  "prerequisites": [
+    "qf5-cpp-types-toolchain"
+  ],
+  "blocks": [
+    {
+      "type": "text",
+      "id": "object-versus-storage",
+      "markdown": "An object has a lifetime: broadly, appropriately sized/aligned storage and completed initialization begin it, and destruction or storage release/reuse can end it, subject to language-specific cases. A name being in scope is not enough to make every object it once referred to alive. An automatic local object normally lives until its scope is left; a dynamically allocated object can outlive the local pointer variable if another owner retains it. This lesson avoids manual placement/reuse/union exceptions and teaches ordinary initialized objects."
+    },
+    {
+      "type": "text",
+      "id": "owner-observer",
+      "markdown": "An owner is responsible for the resource lifetime. An observer accesses an existing resource but must not outlive it. C++ raw pointer/reference syntax does not itself encode ownership: the Core Guidelines convention treats ordinary T*/T& parameters as non-owning unless an explicit legacy contract says otherwise. A raw pointer can be null; an ordinary reference must refer to a suitable object when bound and cannot be reseated. Neither automatically extends an arbitrary target lifetime or checks validity at each access. Prefer a plain scoped value when dynamic lifetime/indirection is unnecessary."
+    },
+    {
+      "type": "text",
+      "id": "raii-principle",
+      "markdown": "RAII binds resource ownership to an initialized object whose destructor releases it: memory, a file handle, a lock or a registration can use this pattern. On ordinary scope exit, and when a handled exception unwinds fully constructed automatic objects, destructors release their resources in reverse construction order within the relevant scope. A failed constructor does not run the destructor of the never-fully-constructed object, but already-constructed bases/members are cleaned up. Acquire resources into RAII members rather than leaving a raw handle unprotected across a later throwing operation."
+    },
+    {
+      "type": "worked",
+      "id": "scope-unwind-trace",
+      "title": "Count live ownership tokens without touching a dead object",
+      "steps": [
+        {
+          "text": "Initially live=0. Construct outer:1. Enter the nested block and construct inner:2."
+        },
+        {
+          "text": "Leaving the nested block destroys inner and restores1. Throwing the stated exception then unwinds outer before reaching the surrounding catch, restoring0."
+        },
+        {
+          "text": "The counter is synthetic bookkeeping, not an operating-system handle. Deleted copy/move operations prevent accidentally making multiple bookkeeping owners. The example demonstrates lifetime cleanup, not rollback of arbitrary external effects."
+        }
+      ]
+    },
+    {
+      "type": "code",
+      "id": "cpp-scope-unwinding",
+      "language": "cpp",
+      "source": "#include <iostream>\n#include <stdexcept>\n\nclass ScopeToken {\npublic:\n    static int live;\n    ScopeToken() { ++live; }\n    ScopeToken(const ScopeToken&) = delete;\n    ScopeToken& operator=(const ScopeToken&) = delete;\n    ScopeToken(ScopeToken&&) = delete;\n    ScopeToken& operator=(ScopeToken&&) = delete;\n    ~ScopeToken() noexcept { --live; }\n};\nint ScopeToken::live = 0;\n\nint main() {\n    std::cout << ScopeToken::live << '\\n';\n    try {\n        ScopeToken outer;\n        std::cout << ScopeToken::live << '\\n';\n        {\n            ScopeToken inner;\n            std::cout << ScopeToken::live << '\\n';\n        }\n        std::cout << ScopeToken::live << '\\n';\n        throw std::runtime_error(\"synthetic failure\");\n    } catch (const std::runtime_error&) {\n        std::cout << ScopeToken::live << '\\n';\n    }\n}\n",
+      "caption": "Expected output: 0, 1, 2, 1, 0 on separate lines. Fully constructed nested objects are destroyed on the shown exits before control reaches the handler. The destructor only decrements a small bounded synthetic count and is noexcept. No dead object is dereferenced and no crash/abort/process-kill cleanup guarantee is inferred.",
+      "runnable": false
+    },
+    {
+      "type": "check",
+      "id": "inline-0",
+      "questionId": "qf5-cpp-ownership-raii.check-1"
+    },
+    {
+      "type": "check",
+      "id": "inline-1",
+      "questionId": "qf5-cpp-ownership-raii.check-2"
+    },
+    {
+      "type": "check",
+      "id": "inline-4",
+      "questionId": "qf5-cpp-ownership-raii.check-5"
+    },
+    {
+      "type": "text",
+      "id": "unique-ownership",
+      "markdown": "std::unique_ptr<T> is a standard owning handle for a dynamically allocated T with its associated deleter. make_unique constructs the object and returns its owner. Copying the owner is disabled; moving transfers ownership. After moving the unique_ptr in this example, the source is empty and the destination owns the same Position object at the same address. std::move is a cast enabling move-aware operations, not itself a request to relocate the managed Position. Other moved-from types need their own contracts; do not generalize unique_ptr emptiness to every type."
+    },
+    {
+      "type": "code",
+      "id": "cpp-unique-owner-observer",
+      "language": "cpp",
+      "source": "#include <iostream>\n#include <memory>\n#include <utility>\n\nstruct Position {\n    int shares;\n    static int destroyed;\n    explicit Position(int value) : shares{value} {}\n    ~Position() noexcept { ++destroyed; }\n};\nint Position::destroyed = 0;\n\nint main() {\n    std::cout << std::boolalpha;\n    {\n        auto owner = std::make_unique<Position>(7);\n        Position* observer = owner.get();\n        auto next_owner = std::move(owner);\n        std::cout << (owner == nullptr) << '\\n';\n        std::cout << observer->shares << '\\n';\n        observer = nullptr; // Stop observing before destruction; aliases do not auto-null.\n        next_owner.reset();\n        std::cout << (next_owner == nullptr) << '\\n';\n        std::cout << Position::destroyed << '\\n';\n    }\n    std::cout << Position::destroyed << '\\n';\n}\n",
+      "caption": "Expected output: true, 7, true, 1, 1 on separate lines. The observer remains valid across this unique_ptr ownership transfer because the Position object is not destroyed/moved. The program deliberately stops observing before reset destroys it. Other aliases would not be automatically nulled. Empty owners do not destroy the object again on scope exit, so the total destructor count stays1.",
+      "runnable": false
+    },
+    {
+      "type": "check",
+      "id": "inline-2",
+      "questionId": "qf5-cpp-ownership-raii.check-3"
+    },
+    {
+      "type": "check",
+      "id": "inline-3",
+      "questionId": "qf5-cpp-ownership-raii.check-4"
+    },
+    {
+      "type": "check",
+      "id": "inline-5",
+      "questionId": "qf5-cpp-ownership-raii.check-6"
+    },
+    {
+      "type": "text",
+      "id": "dangling-counterexample",
+      "markdown": "A function returning a pointer or reference to its ordinary local Position leaves the caller an observer to a destroyed object; do not dereference it to see whether it \"still works\". Returning an owning value or an appropriate unique_ptr can carry the lifetime instead. Likewise a pointer obtained with get() becomes unusable to access the target after its owner resets/destroys it. get() does not release ownership; release() gives up ownership and requires a correct new owner/deleter plan, so this lesson does not call release() or manual delete."
+    },
+    {
+      "type": "text",
+      "id": "exceptions-and-limits",
+      "markdown": "Destructors should not throw during cleanup. Throwing while another exception is unwinding can terminate the program; std::unique_ptr deleter behavior must satisfy its contract. RAII does not undo a submitted order, restore a database transaction, guarantee a buffered write reached disk or clean up after arbitrary process termination. Use explicit error reporting/transaction protocols for those outcomes. Shared ownership is a separate lifetime policy, not a default cure for uncertainty; choose it only when the contract actually requires shared ownership."
+    },
+    {
+      "type": "text",
+      "id": "transfer",
+      "markdown": "Independent transfer: write a function with one scoped ScopeToken and two nested scopes, testing early return and a handled thrown exception. Verify live returns to0 on both paths. Add a make_unique Position, transfer its owner once and count exactly one destruction without dereferencing an expired observer. Then explain why a pointer/reference to a local variable is unsafe to return even if the compiler accepts the declaration."
+    },
+    {
+      "type": "check",
+      "id": "inline-6",
+      "questionId": "qf5-cpp-ownership-raii.check-7"
+    },
+    {
+      "type": "text",
+      "id": "sources",
+      "markdown": "Sources: [ordinary object lifetime](https://en.cppreference.com/w/cpp/language/lifetime.html), [unique_ptr ownership and disposal](https://en.cppreference.com/w/cpp/memory/unique_ptr.html), and [Core Guidelines R.1/R.3/R.5/R.20/R.21](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines.html). These are language/library/design references, not evidence for app execution or production resource protocols."
+    }
+  ],
+  "practice": {
+    "problemIds": []
+  },
+  "summary": "Object lifetime, scope, ownership and observation are different. RAII releases owned resources on the stated scope/unwinding paths; unique_ptr transfers a single owner without moving its pointee. Observers still need a live target and cleanup is not external transaction rollback."
+}

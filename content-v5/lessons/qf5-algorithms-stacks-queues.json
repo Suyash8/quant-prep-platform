@@ -1,0 +1,529 @@
+{
+  "id": "qf5-algorithms-stacks-queues",
+  "revision": 7,
+  "title": "Stacks, queues and monotonic structures",
+  "module": "qf5-algorithms",
+  "order": 4,
+  "estMinutes": 129,
+  "objectives": [
+    {
+      "conceptId": "qf5-algorithms-stacks-queues.stack-invariants",
+      "text": "Maintain LIFO prefix/auxiliary invariants for nested brackets, minima and next-strictly-greater positions."
+    },
+    {
+      "conceptId": "qf5-algorithms-stacks-queues.queue-invariants",
+      "text": "Maintain FIFO order and expiring monotonic candidates without confusing a candidate deque with a complete event queue."
+    },
+    {
+      "conceptId": "qf5-algorithms-stacks-queues.histogram-left-boundary",
+      "text": "Preserve earliest feasible histogram rectangle starts in a monotone stack."
+    },
+    {
+      "conceptId": "qf5-algorithms-stacks-queues.histogram-flush-equals",
+      "text": "Prove pop widths, equal-height consolidation and sentinel completeness with linear amortized work."
+    },
+    {
+      "conceptId": "qf5-algorithms-stacks-queues.bracket-error-position",
+      "text": "Carry opener kind and original character position while ignoring nonbrackets."
+    },
+    {
+      "conceptId": "qf5-algorithms-stacks-queues.bracket-line-contract",
+      "text": "Distinguish immediate invalid closer from earliest leftover opener at end and preserve empty input lines."
+    },
+    {
+      "conceptId": "qf5-algorithms-stacks-queues.minstack-prefix-cache",
+      "text": "Prove prefix-minimum restoration including duplicate minima."
+    },
+    {
+      "conceptId": "qf5-algorithms-stacks-queues.minstack-operation-contract",
+      "text": "Implement exact PUSH/POP/TOP/MIN string operations with nonmutating EMPTY behavior."
+    },
+    {
+      "conceptId": "qf5-algorithms-stacks-queues.window-output-contract",
+      "text": "Apply the existing monotonic-index deque to negative, repeated and boundary-width input with one space-separated output line."
+    },
+    {
+      "conceptId": "qf5-algorithms-stacks-queues.round-robin-work-queue",
+      "text": "Replay bounded-quanta round-robin service with FIFOrequeueing, exact elapsed time and completion-order output."
+    }
+  ],
+  "prerequisites": [
+    "qf5-algorithms-maps-two-pointers"
+  ],
+  "blocks": [
+    {
+      "type": "text",
+      "id": "discipline",
+      "markdown": "A stack is last-in-first-out: add and remove at the same end. A Python list supports this with append and pop; stack[-1] peeks without removing. A queue is first-in-first-out: add at the back and remove at the front. deque supports append/popleft without list front-shifting. Peeking or popping an empty structure needs a declared policy. These are ordering disciplines; naming a list stack does not enforce correct use automatically."
+    },
+    {
+      "type": "text",
+      "id": "bracket-invariant",
+      "markdown": "For bracket-only input, the stack contains the opening brackets still unmatched after the processed prefix, in nesting order. An opening appends. A closing must match the MOST RECENT unmatched opening, or the string is invalid immediately. After the final character the stack must be empty. Counting opens/closes alone fails on ([)] because total counts can balance while nesting order is wrong. The empty string is balanced under this declared contract; non-bracket text is rejected rather than silently ignored."
+    },
+    {
+      "type": "code",
+      "id": "bracket-stack",
+      "language": "python",
+      "source": "def balanced_brackets(text):\n    closer_to_opener = {\")\": \"(\", \"]\": \"[\", \"}\": \"{\"}\n    stack = []\n    for char in text:\n        if char in \"([{\":\n            stack.append(char)\n        elif char in \")]}\":\n            if not stack or stack[-1] != closer_to_opener[char]:\n                return False\n            stack.pop()\n        else:\n            raise ValueError(\"expected bracket-only input\")\n    return not stack\n\nprint(balanced_brackets(\"([])\"))\nprint(balanced_brackets(\"([)]\"))\nprint(balanced_brackets(\"((\"))\nprint(balanced_brackets(\"\"))",
+      "caption": "Expected output: True, False, False, True on separate lines. The mismatched closing in ([)] cannot be repaired by a later bracket. A nonempty final stack means some openings remain unmatched.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "inline-0",
+      "questionId": "qf5-algorithms-stacks-queues.check-1"
+    },
+    {
+      "type": "text",
+      "id": "minimum-invariant",
+      "markdown": "A minimum stack can store (value,prefix_minimum) per entry. On push, new_minimum=min(value,old_minimum), or value when empty. On pop, discard that whole entry; the next entry already holds the correct minimum for the remaining prefix. Duplicate minima require no special deletion guess because each pushed position carries its own prefix minimum. Each operation uses a bounded number of list-end/minimum operations under the stated unit-cost model; the auxiliary storage grows with stack size."
+    },
+    {
+      "type": "code",
+      "id": "minimum-stack",
+      "language": "python",
+      "source": "def push(stack, value):\n    minimum = value if not stack else min(value, stack[-1][1])\n    stack.append((value, minimum))\n\ndef minimum(stack):\n    if not stack:\n        raise ValueError(\"empty stack\")\n    return stack[-1][1]\n\nstack = []\nfor value in [3, 1, 1, 2]:\n    push(stack, value)\nprint(minimum(stack))\nprint(stack.pop()[0])\nprint(stack.pop()[0])\nprint(minimum(stack))\nprint(stack.pop()[0])\nprint(minimum(stack))",
+      "caption": "Expected output: 1, then 2, then 1, then 1, then 1, then 3. Popping one of the two 1 values leaves the other minimum 1 visible. Calling minimum on empty raises ValueError. The push/pop discipline preserves the prefix-minimum invariant.",
+      "runnable": true
+    },
+    {
+      "type": "text",
+      "id": "monotonic-stack",
+      "markdown": "For next STRICTLY greater to the right, keep a stack of unresolved indexes in increasing position order, whose values are nonincreasing. A new larger value resolves every smaller value popped from the top; its index is their first greater position because intervening processed positions never resolved them. Equal values stay unresolved: use <, not <= for strict greater. Unresolved indexes remaining at the end get -1. Each index is pushed once and popped at most once, so total stack operations are linear even if one arrival pops many entries."
+    },
+    {
+      "type": "code",
+      "id": "next-greater",
+      "language": "python",
+      "source": "def next_strictly_greater(values):\n    answer = [-1] * len(values)\n    waiting = []\n    for index, value in enumerate(values):\n        while waiting and values[waiting[-1]] < value:\n            answer[waiting.pop()] = index\n        waiting.append(index)\n    return answer\n\nprint(next_strictly_greater([2, 2, 3, 1]))\nprint(next_strictly_greater([3, 2, 1]))",
+      "caption": "Expected output: [2, 2, -1, -1], then [-1, -1, -1]. Answers are zero-based INDEXES, not next greater values. For equal 2 values, neither resolves the other; index 2 holding 3 resolves both. This contract is not interchangeable with a problem asking values or one-based positions.",
+      "runnable": true
+    },
+    {
+      "type": "text",
+      "id": "index-output-contract",
+      "markdown": "An algorithm index and its wire/output representation are different contracts. The worked next-greater function returns zero-based indexes with -1 for absent. A practice statement may ask one-based indexes with 0 for absent. Adapt only at the output boundary: map -1 to 0, and each real index j to j+1. Do not add 1 to an input VALUE or change the strict comparison. Preserve duplicates and answer order. For [2,2,3,1], the zero-based result [2,2,-1,-1] becomes the output line 3 3 0 0. The supplied practice parser handles integer input; the learner still owns the declared answer formatting."
+    },
+    {
+      "type": "code",
+      "id": "next-greater-output-adapter",
+      "language": "python",
+      "source": "zero_based = [2, 2, -1, -1]\n# Algorithm result: zero-based next indexes; -1 means absent.\none_based = [0 if index == -1 else index + 1 for index in zero_based]\nprint(\" \".join(str(index) for index in one_based))",
+      "caption": "Expected output: 3 3 0 0. join creates one space-separated line; it does not print Python list brackets or commas. This output adapter changes representation, not which later index is the first strictly greater.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "next-greater-index-check",
+      "questionId": "qf5-algorithms-stacks-queues.output-index"
+    },
+    {
+      "type": "check",
+      "id": "inline-1",
+      "questionId": "qf5-algorithms-stacks-queues.check-2"
+    },
+    {
+      "type": "code",
+      "id": "fifo-queue",
+      "language": "python",
+      "source": "from collections import deque\npending = deque([\"A\", \"B\"])\npending.append(\"C\")\nprint(pending.popleft())\nprint(list(pending))",
+      "caption": "Expected output: A, then ['B', 'C']. This queue retains every pending event in arrival order. It is different from the candidate deque below, which deliberately discards dominated values.",
+      "runnable": true
+    },
+    {
+      "type": "text",
+      "id": "monotonic-queue",
+      "markdown": "For fixed-width sliding maxima, store candidate INDEXES in increasing order with strictly decreasing values in this implementation. First expire indexes at or before index-width. Then remove trailing candidates whose value is no larger than the new value: the newer index is at least as large and expires later, so those older candidates cannot win any future window that also contains the new index. Append the new index. Once a full window exists, its maximum is the value at the front. This deque is not a complete FIFO record log."
+    },
+    {
+      "type": "code",
+      "id": "window-maximum",
+      "language": "python",
+      "source": "from collections import deque\n\ndef window_maximum(values, width):\n    if type(width) is not int or not 1 <= width <= len(values):\n        raise ValueError(\"width outside1..n\")\n    candidates = deque()\n    result = []\n    for index, value in enumerate(values):\n        while candidates and candidates[0] <= index - width:\n            candidates.popleft()\n        while candidates and values[candidates[-1]] <= value:\n            candidates.pop()\n        candidates.append(index)\n        if index >= width - 1:\n            result.append(values[candidates[0]])\n    return result\n\nprint(window_maximum([1, 3, 3, 2, 5], 3))",
+      "caption": "Expected output: [3, 3, 5]. Keeping the newer equal 3 candidate is safe for maxima because it expires later. Indexes, rather than only values, let the code expire precisely. A width outside 1..n raises ValueError; empty input therefore has no valid width in this interface.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "inline-2",
+      "questionId": "qf5-algorithms-stacks-queues.check-3"
+    },
+    {
+      "type": "check",
+      "id": "inline-3",
+      "questionId": "qf5-algorithms-stacks-queues.check-4"
+    },
+    {
+      "type": "text",
+      "id": "amortized",
+      "markdown": "One new value can remove many waiting/candidate entries, so an individual update is not guaranteed constant-time. Across n inputs each index enters once and leaves at most once, giving O(n) total deque/stack actions in this model. That is an amortized argument, not a low-tail-latency guarantee for every update. Memory can still be O(n) for an unresolved stack or O(width) for the sliding window candidates."
+    },
+    {
+      "type": "text",
+      "id": "transfer",
+      "markdown": "Independent transfer: test brackets against a hand trace including empty, leading closer, unclosed and crossed nesting. For a minimum stack, compare every operation with min of a simple reference list, especially repeated minima and empty queries. Compare next-greater indexes and window maxima with quadratic small-input oracles, including all-equal, ascending, descending, width 1 and width n. Record whether ties mean strictly greater or greater-or-equal and whether an answer is an index or value."
+    },
+    {
+      "type": "check",
+      "id": "inline-4",
+      "questionId": "qf5-algorithms-stacks-queues.check-5"
+    },
+    {
+      "type": "check",
+      "id": "inline-5",
+      "questionId": "qf5-algorithms-stacks-queues.check-6"
+    },
+    {
+      "type": "text",
+      "id": "source-scope",
+      "markdown": "References: [Python containers/deque](https://docs.python.org/3/library/collections.html), [stack/queue tutorial](https://docs.python.org/3/tutorial/datastructures.html), and [minimum stack/queue](https://cp-algorithms.com/data_structures/stack_queue_modification.html). Adapted invariants and worked contracts are explicit here. A shared topic name alone does not approve every problem's indexing, error or tie conventions."
+    },
+    {
+      "type": "text",
+      "id": "histogram-boundaries-0",
+      "markdown": "New objective,exact bounds\n\nSource:1..100000 width-one bars, heights0..1e9. Rectangle covers a consecutive run, height at most its minimum. largest_rectangle(heights) returns a one-line list of maximum area. Next-greater positions alone do not teach these widths. Area<=1e14 needs promoted64-bit C++ arithmetic; Python uses exact integers."
+    },
+    {
+      "type": "text",
+      "id": "histogram-boundaries-1",
+      "markdown": "Stack invariant and width\n\nStore(left,height) pairs with strictly increasing heights. Before index i, every bar from left through i-1 is at least height; left carries the earliest feasible start after larger/equal pairs were popped. For new h, start=i. While top.height>=h, pop(left,H), evaluate H*(i-left), then start=left. [left,i) has width i-left. A STRICTLY lower h ends the positive-height candidate at i. Extending left would cross a lower boundary. Every computed rectangle is feasible."
+    },
+    {
+      "type": "text",
+      "id": "histogram-boundaries-2",
+      "markdown": "Equality is an explicit policy\n\nWith >=, an equal-height pop is NOT a strictly-smaller right boundary. It evaluates a feasible prefix and transfers earliest left to the new equal representative, which later covers the plateau. A > version can retain equal bars, but requires consistent state/width reasoning. Do not mix that representation with this proof."
+    },
+    {
+      "type": "text",
+      "id": "histogram-boundaries-3",
+      "markdown": "Sentinel trace\n\nFor[2,1,2]:i0 push(0,2);i1 pops2(width1,area2),push(0,1);i2 push(2,2). At logical sentinel i3,h0, pop2(width1,area2),then1(width3,area3). Answer3. The extra zero is read without mutating/indexing past input. It flushes positive increasing suffixes. For[2,2],second2 inherits left0;sentinel yields area4."
+    },
+    {
+      "type": "text",
+      "id": "histogram-boundaries-4",
+      "markdown": "Completeness and transfer\n\nChoose a minimum-height bar of an optimal positive rectangle. It extends until lower boundaries. Consolidating equal heights preserves earliest left for a representative;when the next lower bar/sentinel arrives,it evaluates at least that full width. Thus some candidate reaches the optimum. Each pair is pushed once and popped at most once:O(n)work,O(n)storage. Independently inspect all tiny contiguous runs and min-height*width. Test zeros,plateaus,increasing/decreasing,singletons and100000bars of1e9height."
+    },
+    {
+      "type": "code",
+      "id": "histogram-boundaries-complete",
+      "language": "python",
+      "source": "MOD = 1000000007\n\ndef largest_rectangle(heights):\n    if not 1 <= len(heights) <= 100000 or any((type(h) is not int or not 0 <= h <= 10 ** 9 for h in heights)):\n        raise ValueError('invalid histogram')\n    pending = []\n    best = 0\n    for i in range(len(heights) + 1):\n        current = heights[i] if i < len(heights) else 0\n        start = i\n        while pending and pending[-1][1] >= current:\n            (left, height) = pending.pop()\n            best = max(best, height * (i - left))\n            start = left\n        pending.append((start, current))\n    return [str(best)]\n\nprint(largest_rectangle([2, 1, 2]))\nprint(largest_rectangle([2, 2]))\nprint(largest_rectangle([0, 0]))\n",
+      "caption": "Expected ['3'], ['4'], ['0']. Complete list-lines Python3.12 source with(start,height),>= consolidation and a logical zero sentinel;input is unchanged.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "histogram-boundaries-inline-1",
+      "questionId": "qf5-algorithms-stacks-queues.histogram-boundaries-check-1"
+    },
+    {
+      "type": "check",
+      "id": "histogram-boundaries-inline-2",
+      "questionId": "qf5-algorithms-stacks-queues.histogram-boundaries-check-2"
+    },
+    {
+      "type": "check",
+      "id": "histogram-boundaries-inline-3",
+      "questionId": "qf5-algorithms-stacks-queues.histogram-boundaries-check-3"
+    },
+    {
+      "type": "check",
+      "id": "histogram-boundaries-inline-4",
+      "questionId": "qf5-algorithms-stacks-queues.histogram-boundaries-check-4"
+    },
+    {
+      "type": "check",
+      "id": "histogram-boundaries-inline-5",
+      "questionId": "qf5-algorithms-stacks-queues.histogram-boundaries-check-5"
+    },
+    {
+      "type": "check",
+      "id": "histogram-boundaries-inline-6",
+      "questionId": "qf5-algorithms-stacks-queues.histogram-boundaries-check-6"
+    },
+    {
+      "type": "check",
+      "id": "histogram-boundaries-inline-7",
+      "questionId": "qf5-algorithms-stacks-queues.histogram-boundaries-check-7"
+    },
+    {
+      "type": "text",
+      "id": "histogram-boundaries-sources",
+      "markdown": "Sources: [1](https://flykiller.github.io/leetcode/0084.html). Exact public task contract hash 2eb26e21d28bfd8e06fb843628bf4d40a323ce0c53bcf8b9adf1071dbd41ef0b. This is main algorithm/contract teaching,not current app or judge signoff."
+    },
+    {
+      "type": "text",
+      "id": "positioned-brackets-0",
+      "markdown": "Position and line contract\n\nFor each of up to1000 expressions with total length<=1000000, check (),[] and{}. All other characters are ignored for matching, but still count toward the original 1-based character position. check(expr) returns one STRING, not a Boolean or list. The supplied main splits on newline and keeps empty expressions/spaces. Do not replace it with split() over whitespace: that loses expressions and changes positions."
+    },
+    {
+      "type": "text",
+      "id": "positioned-brackets-1",
+      "markdown": "Invariant with positions\n\npending stores exactly the still-unmatched openers of the scanned prefix in their original order, as(kind,position). An opener appends. A matching closer pops only the last opener because properly nested pairs close last-in-first-out. A closer with an empty stack or wrong top cannot be repaired by any later suffix; return ERR current_position immediately. Counting kinds alone misses ([)]. Nonbrackets change no stack state."
+    },
+    {
+      "type": "text",
+      "id": "positioned-brackets-2",
+      "markdown": "End-of-line precedence\n\nIf no invalid closer occurred, empty pending means OK, including empty text. Otherwise return ERR position of pending[0],the earliest unclosed opener, not the newest top. This is a source-specific end rule: an opener is not proved unclosed until the scan ends. In \" ([x\",openers at2 and3 remain,so ERR2. In \"([)]\",the closer at3 proves a mismatch immediately,so ERR3 even though an earlier opener remains. For \"a]\",the nonbracket counts,so ERR2."
+    },
+    {
+      "type": "text",
+      "id": "positioned-brackets-3",
+      "markdown": "Trace, complexity and limits\n\nFor \"a(b[c]d)\":a leaves empty,( pushes2,[ pushes4,] matches4,) matches2;OK. One pass O(length) time and O(depth) stack, worst length. Quotes and comments are NOT lexed: bracket characters inside them still count. This is not a full expression parser. Python enumerates string characters; no byte/codepoint equivalence across languages is claimed for non-ASCII text because the public contract does not fix encoding-position semantics. Independently parse nested groups on tiny strings and compare exact first error/earliest leftover positions; exercise million-character input and empty lines through supplied main."
+    },
+    {
+      "type": "code",
+      "id": "positioned-brackets-complete",
+      "language": "python",
+      "source": "MOD = 1000000007\n\ndef check(expr):\n    \"\"\"Ignore nonbrackets but count their character positions.\"\"\"\n    pairs = {')': '(', ']': '[', '}': '{'}\n    pending = []\n    for (pos, char) in enumerate(expr, 1):\n        if char in '([{':\n            pending.append((char, pos))\n        elif char in pairs:\n            if not pending or pending[-1][0] != pairs[char]:\n                return f'ERR {pos}'\n            pending.pop()\n    return f'ERR {pending[0][1]}' if pending else 'OK'\n\nprint(check('a(b[c]d)'))\nprint(check('([)]'))\nprint(check(' ([x'))\nprint(check(''))\n",
+      "caption": "Expected OK, ERR 3, ERR 2, OK on separate lines. Original characters, including spaces, determine positions.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "positioned-brackets-inline-1",
+      "questionId": "qf5-algorithms-stacks-queues.positioned-brackets-check-1"
+    },
+    {
+      "type": "check",
+      "id": "positioned-brackets-inline-2",
+      "questionId": "qf5-algorithms-stacks-queues.positioned-brackets-check-2"
+    },
+    {
+      "type": "check",
+      "id": "positioned-brackets-inline-3",
+      "questionId": "qf5-algorithms-stacks-queues.positioned-brackets-check-3"
+    },
+    {
+      "type": "check",
+      "id": "positioned-brackets-inline-4",
+      "questionId": "qf5-algorithms-stacks-queues.positioned-brackets-check-4"
+    },
+    {
+      "type": "check",
+      "id": "positioned-brackets-inline-5",
+      "questionId": "qf5-algorithms-stacks-queues.positioned-brackets-check-5"
+    },
+    {
+      "type": "check",
+      "id": "positioned-brackets-inline-6",
+      "questionId": "qf5-algorithms-stacks-queues.positioned-brackets-check-6"
+    },
+    {
+      "type": "check",
+      "id": "positioned-brackets-inline-7",
+      "questionId": "qf5-algorithms-stacks-queues.positioned-brackets-check-7"
+    },
+    {
+      "type": "text",
+      "id": "positioned-brackets-sources",
+      "markdown": "Sources: [1](https://algorithm.tamnd.com/balanced-parentheses.md). Exact public task contract hash 992a57fcebce746c48fe095d5d4af90401c344c8e6045c9ab9387182be1aa7f9. This is main algorithm/contract teaching,not current app or judge signoff."
+    },
+    {
+      "type": "text",
+      "id": "minstack-dispatch-0",
+      "markdown": "From helper to exact dispatch\n\nSource gives1..200000 operations with |value|<=1e9. PUSH x emits NOTHING;POP emits the removed value;TOP reads without removing;MIN reads the minimum. If empty,POP/TOP/MIN emit EMPTY and leave state empty. run_stack returns a list of STRING lines. Supplied parser leaves PUSH x as a STRING. Convert int(op[1]) before numeric comparison: lexicographic order puts10 before2 and would corrupt a minimum."
+    },
+    {
+      "type": "text",
+      "id": "minstack-dispatch-1",
+      "markdown": "Cached-prefix invariant\n\nEach entry(value,prefix_min)stores the exact minimum of values from bottom through this entry. On push x,cache x if empty,else min(x,old_top_min). This establishes the invariant by induction. Pop removes one whole entry and exposes the preceding prefix,whose cached minimum remains correct. TOP reads field0;MIN reads field1. Duplicate minima need no special counter because each duplicate entry carries its own prefix minimum. No rescan or heap needed."
+    },
+    {
+      "type": "text",
+      "id": "minstack-dispatch-2",
+      "markdown": "Trace and empty behavior\n\nPUSH5,PUSH3,PUSH3 gives[(5,5),(3,3),(3,3)]. POP prints3,MIN still prints3;POP prints3,MIN now prints5. POP prints5;the next POP,TOP,MIN each print EMPTY with no mutation. Only PUSH changes an empty stack to nonempty. Convert every emitted number to str:the outer parser already prints each returned line. Do not emit a placeholder for PUSH or return only the final minimum."
+    },
+    {
+      "type": "text",
+      "id": "minstack-dispatch-3",
+      "markdown": "Work model and transfer\n\nEach operation does O(1) cached-value work with O(n) entries and at mostn output lines. Python list append/pop are the standard dynamic-array stack with amortized constant update cost;this is not a hard real-time latency guarantee or a claim every individual allocation takes constant time. There is no min(stack)scan in MIN. Avoid arithmetic encoding that risks fixed-width overflow. Compare against a deliberately slow raw-list/min oracle on short random traces,including duplicate minima,negatives,string10versus2 and repeated empty operations. Exercise200000 operations separately."
+    },
+    {
+      "type": "code",
+      "id": "minstack-dispatch-complete",
+      "language": "python",
+      "source": "MOD = 1000000007\n\ndef run_stack(ops):\n    \"\"\"PUSH argument is a string in the supplied parser.\"\"\"\n    entries = []\n    out = []\n    for op in ops:\n        key = op[0]\n        if key == 'PUSH':\n            value = int(op[1])\n            minimum = value if not entries else min(value, entries[-1][1])\n            entries.append((value, minimum))\n        elif key not in ('POP', 'TOP', 'MIN'):\n            raise ValueError('unknown operation')\n        elif not entries:\n            out.append('EMPTY')\n        elif key == 'POP':\n            out.append(str(entries.pop()[0]))\n        elif key == 'TOP':\n            out.append(str(entries[-1][0]))\n        else:\n            out.append(str(entries[-1][1]))\n    return out\n\nprint(run_stack([['PUSH', '5'], ['PUSH', '3'], ['PUSH', '3'], ['POP'], ['MIN'], ['POP'], ['MIN']]))\nprint(run_stack([['POP'], ['TOP'], ['MIN']]))\n",
+      "caption": "Expected ['3', '3', '3', '5'], then ['EMPTY', 'EMPTY', 'EMPTY']. PUSH arguments match the supplied string parser.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "minstack-dispatch-inline-1",
+      "questionId": "qf5-algorithms-stacks-queues.minstack-dispatch-check-1"
+    },
+    {
+      "type": "check",
+      "id": "minstack-dispatch-inline-2",
+      "questionId": "qf5-algorithms-stacks-queues.minstack-dispatch-check-2"
+    },
+    {
+      "type": "check",
+      "id": "minstack-dispatch-inline-3",
+      "questionId": "qf5-algorithms-stacks-queues.minstack-dispatch-check-3"
+    },
+    {
+      "type": "check",
+      "id": "minstack-dispatch-inline-4",
+      "questionId": "qf5-algorithms-stacks-queues.minstack-dispatch-check-4"
+    },
+    {
+      "type": "check",
+      "id": "minstack-dispatch-inline-5",
+      "questionId": "qf5-algorithms-stacks-queues.minstack-dispatch-check-5"
+    },
+    {
+      "type": "check",
+      "id": "minstack-dispatch-inline-6",
+      "questionId": "qf5-algorithms-stacks-queues.minstack-dispatch-check-6"
+    },
+    {
+      "type": "check",
+      "id": "minstack-dispatch-inline-7",
+      "questionId": "qf5-algorithms-stacks-queues.minstack-dispatch-check-7"
+    },
+    {
+      "type": "text",
+      "id": "minstack-dispatch-sources",
+      "markdown": "Sources: [1](https://buicongnguyen.github.io/Leetcode/chapter_11_composite_structures/min_stack/). Exact public task contract hash a621a5bc6e92e378d02f4e91531bb16bf5b360f50e3665ea9079f2ec0bee5c78. This is main algorithm/contract teaching,not current app or judge signoff."
+    },
+    {
+      "type": "text",
+      "id": "window-max-lines-0",
+      "markdown": "Keep the existing algorithm, adapt its interface\n\nwindow_maximum already proves and implements the main algorithm. The public starter instead calls window_max(k,a) and expects a list containing ONE string, not a list of maxima printed one per line. This complete version makes that output boundary visible without changing the candidate invariant."
+    },
+    {
+      "type": "text",
+      "id": "window-max-lines-1",
+      "markdown": "Boundaries and a trace\n\nFor a=[-2,-2,-3,1], k=2 the maxima are -2,-2,1. At index 1, removing the older equal -2 is safe because the newer equal expires later. Expire indexes <=i-k before reading the front. k=1 emits every value; k=n emits the global maximum once. A zero initializer would be wrong on an all-negative window."
+    },
+    {
+      "type": "text",
+      "id": "window-max-lines-2",
+      "markdown": "Linear work, not constant worst-case updates\n\nEvery index is appended once and removed at most once. Total work is O(n), candidate storage O(k), and the returned line/output O(n-k+1). One arrival can pop many candidates, so this is an amortized bound. n reaches 200000; compare small outputs with max(a[i:i+k]) and verify the number of emitted values is n-k+1."
+    },
+    {
+      "type": "code",
+      "id": "window-max-lines-complete",
+      "language": "python",
+      "source": "from collections import deque\nimport heapq\n\ndef window_max(k, a):\n    candidates = deque()\n    maxima = []\n    for (i, value) in enumerate(a):\n        while candidates and candidates[0] <= i - k:\n            candidates.popleft()\n        while candidates and a[candidates[-1]] <= value:\n            candidates.pop()\n        candidates.append(i)\n        if i >= k - 1:\n            maxima.append(str(a[candidates[0]]))\n    return [' '.join(maxima)]\n\nprint(*window_max(2, [-2, -2, -3, 1]), sep='\\n')\n",
+      "caption": "Expected stdout:\n-2 -2 1\n\nPrevalidated inputs follow the captured public contract. This completes the named Python function using its original supplied main/parser. It does not claim independent parser, C++, app-runner or judge qualification.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "window-max-lines-inline-1",
+      "questionId": "qf5-algorithms-stacks-queues.window-max-lines-check-1"
+    },
+    {
+      "type": "check",
+      "id": "window-max-lines-inline-2",
+      "questionId": "qf5-algorithms-stacks-queues.window-max-lines-check-2"
+    },
+    {
+      "type": "check",
+      "id": "window-max-lines-inline-3",
+      "questionId": "qf5-algorithms-stacks-queues.window-max-lines-check-3"
+    },
+    {
+      "type": "check",
+      "id": "window-max-lines-inline-4",
+      "questionId": "qf5-algorithms-stacks-queues.window-max-lines-check-4"
+    },
+    {
+      "type": "check",
+      "id": "window-max-lines-inline-5",
+      "questionId": "qf5-algorithms-stacks-queues.window-max-lines-check-5"
+    },
+    {
+      "type": "check",
+      "id": "window-max-lines-inline-6",
+      "questionId": "qf5-algorithms-stacks-queues.window-max-lines-check-6"
+    },
+    {
+      "type": "check",
+      "id": "window-max-lines-inline-7",
+      "questionId": "qf5-algorithms-stacks-queues.window-max-lines-check-7"
+    },
+    {
+      "type": "text",
+      "id": "window-max-lines-sources",
+      "markdown": "References: [1](https://docs.python.org/3.12/library/collections.html). Public task hash 6dcdeb39a441ca975625837966bab713b23264d8a9c1fe102493c29d5b02ac44. These references establish language/container semantics; the exact task framing is the captured public contract. This extension preserves the earlier bounded examples and their policies rather than silently broadening those APIs."
+    },
+    {
+      "type": "text",
+      "id": "quantum-completion-queue-0",
+      "markdown": "One queue entry per unfinished job\n\nAll jobs arrive at time 0 in supplied order. Pop the front job (name, left), serve used=min(quantum, left), increment elapsed by used and subtract it from left. If left>0, requeue the job at the back with its remaining duration. Otherwise emit its name and the current elapsed time, without requeueing. New arrivals/context-switch costs are not modeled."
+    },
+    {
+      "type": "text",
+      "id": "quantum-completion-queue-1",
+      "markdown": "Work conservation and trace\n\nAfter every service, elapsed equals total processing already performed, and each unfinished job appears exactly once in queue order. For quantum 2, jobs A3, B1, C2: serve A2 (elapsed 2, requeue A1), B1 (completes 3), C2 (completes 5), A1 (completes 6). Output is B3, C5, A6, not input order or sorted completion identifiers. A partial final quantum consumes only remaining time, not the whole quantum."
+    },
+    {
+      "type": "text",
+      "id": "quantum-completion-queue-2",
+      "markdown": "The real complexity bound is quanta\n\nA job of duration d needs ceil(d/q) visits. The task bounds the sum of these visits by 2000000, so direct queue simulation is appropriate. Claiming O(n) independent of durations would be false. Duration/quantum can each reach 1000000000, and total elapsed can reach 10^14 for 100000 jobs, so use exact wide totals. deque endpoint actions avoid list.pop(0) shifts. State O(n), output one line per completion. Duplicate identifiers, if present, do not merge jobs; each queue entry is a separate occurrence."
+    },
+    {
+      "type": "code",
+      "id": "quantum-completion-queue-complete",
+      "language": "python",
+      "source": "from collections import OrderedDict, deque\nfrom bisect import bisect_left\nimport heapq\n\ndef round_robin(quantum, jobs):\n    pending = deque(jobs)\n    elapsed = 0\n    lines = []\n    while pending:\n        (name, left) = pending.popleft()\n        used = min(quantum, left)\n        elapsed += used\n        left -= used\n        if left:\n            pending.append((name, left))\n        else:\n            lines.append(f'{name} {elapsed}')\n    return lines\n\nprint(*round_robin(2, [('A', 3), ('B', 1), ('C', 2)]), sep='\\n')\n",
+      "caption": "Expected stdout:\nB 3\nC 5\nA 6\n\nPrevalidated inputs follow the captured public contract. This completes the named Python function using its original supplied main/parser. It does not claim independent parser, C++, app-runner or judge qualification.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "quantum-completion-queue-inline-1",
+      "questionId": "qf5-algorithms-stacks-queues.quantum-completion-queue-check-1"
+    },
+    {
+      "type": "check",
+      "id": "quantum-completion-queue-inline-2",
+      "questionId": "qf5-algorithms-stacks-queues.quantum-completion-queue-check-2"
+    },
+    {
+      "type": "check",
+      "id": "quantum-completion-queue-inline-3",
+      "questionId": "qf5-algorithms-stacks-queues.quantum-completion-queue-check-3"
+    },
+    {
+      "type": "check",
+      "id": "quantum-completion-queue-inline-4",
+      "questionId": "qf5-algorithms-stacks-queues.quantum-completion-queue-check-4"
+    },
+    {
+      "type": "check",
+      "id": "quantum-completion-queue-inline-5",
+      "questionId": "qf5-algorithms-stacks-queues.quantum-completion-queue-check-5"
+    },
+    {
+      "type": "check",
+      "id": "quantum-completion-queue-inline-6",
+      "questionId": "qf5-algorithms-stacks-queues.quantum-completion-queue-check-6"
+    },
+    {
+      "type": "check",
+      "id": "quantum-completion-queue-inline-7",
+      "questionId": "qf5-algorithms-stacks-queues.quantum-completion-queue-check-7"
+    },
+    {
+      "type": "text",
+      "id": "quantum-completion-queue-sources",
+      "markdown": "References: [1](https://docs.python.org/3.12/library/collections.html). Public task hash 56fe708b25126e36437aeafea0f68c1cdfba9df6a527029a3952803d40da9c11. These references establish language/container semantics; the exact task framing is the captured public contract. This extension preserves the earlier bounded examples and their policies rather than silently broadening those APIs."
+    }
+  ],
+  "practice": {
+    "problemIds": [
+      "qfp-largest-rectangle-histogram",
+      "qfp-balanced-brackets",
+      "qfp-min-stack",
+      "qfp-sliding-window-max",
+      "qfp-next-greater-element",
+      "qfp-queue-serve"
+    ]
+  },
+  "summary": "LIFO and FIFO require different state invariants. Store prefix minima for duplicate-safe minimum stacks and indexes for strict next-greater or expiring window candidates. Prove tie/expiry policy and amortized totals without promising constant latency per event. Extension: histogram boundaries. Extension: positioned brackets. Extension: minstack dispatch. Practice transfer: window max lines. Practice transfer: quantum completion queue."
+}

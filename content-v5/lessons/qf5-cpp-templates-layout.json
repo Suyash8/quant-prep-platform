@@ -1,0 +1,332 @@
+{
+  "id": "qf5-cpp-templates-layout",
+  "revision": 4,
+  "title": "Templates, layout and numeric representations",
+  "module": "qf5-cpp",
+  "order": 6,
+  "estMinutes": 85,
+  "objectives": [
+    {
+      "conceptId": "qf5-cpp-templates-layout.template-contracts",
+      "text": "Constrain a reusable C++20 unsigned-integral checked-add template, exclude bool deliberately and distinguish compile-time type requirements from runtime units/range checks."
+    },
+    {
+      "conceptId": "qf5-cpp-templates-layout.layout-assumptions",
+      "text": "Separate object/value representation and ABI/padding/endian assumptions from an explicit bounded four-octet serialization contract with independently checked bytes/roundtrips."
+    },
+    {
+      "conceptId": "qf5-cpp-templates-layout.mask-popcount-parity",
+      "text": "Separate bitwise mask intersection from population-count parity over the nonnegative63-bit public domain."
+    },
+    {
+      "conceptId": "qf5-cpp-templates-layout.pimpl-boundary",
+      "text": "Implement an opaque owned implementation with out-of-line lifetime operations and explain its ABI and performance limits."
+    },
+    {
+      "conceptId": "qf5-cpp-templates-layout.static-dynamic-policy",
+      "text": "Implement static and runtime dispatch with equivalent bounded semantics and explain what a fair performance comparison can and cannot establish."
+    }
+  ],
+  "prerequisites": [
+    "qf5-cpp-interfaces-errors"
+  ],
+  "blocks": [
+    {
+      "type": "text",
+      "id": "template-interface",
+      "markdown": "A function template supplies a family of typed functions; concepts/constraints specify which template arguments participate in the interface. They are checked at compile time for those instantiations, not after a live price arrives. Here UnsignedAmount means a type satisfying unsigned_integral, explicitly excluding bool. The standard unsigned_integral concept itself can accept bool; a name alone is not the full contract. Signed int, floating point and bool are rejected by this interface rather than implicitly reinterpreted as amounts."
+    },
+    {
+      "type": "text",
+      "id": "template-proof",
+      "markdown": "For an accepted integral type T with nonnegative values left/right and M=max(), the exact sum fits precisely when right<=M-left. The subtraction is safe because left<=M. Only then evaluate the addition and cast the representable result back to T; small integer promotions do not require an out-of-range final result here. An empty optional means overflow; a present 0 remains a value. Template deduction requires the same T for both parameters, so mixed argument types need an explicit reviewed conversion/type choice, not a silent fallback to a guessed common amount type."
+    },
+    {
+      "type": "worked",
+      "id": "template-contract-trace",
+      "title": "Type constraints and arithmetic guards answer different questions",
+      "steps": [
+        {
+          "text": "checked_add(3U,4U) deduces unsigned int, passes the type requirement and returns 7."
+        },
+        {
+          "text": "checked_add(M,1U) has an accepted type but fails the runtime bound because 1>M-M. Type acceptance did not guarantee that values fit."
+        },
+        {
+          "text": "checked_add(true,false) and checked_add(-1,2) fail the template constraint. A compiler rejection is not the same result as a runtime empty optional, and neither identifies currencies or share/cent units."
+        }
+      ]
+    },
+    {
+      "type": "code",
+      "id": "cpp-constrained-checked-add",
+      "language": "cpp",
+      "source": "#include <concepts>\n#include <iostream>\n#include <limits>\n#include <optional>\n#include <type_traits>\n\ntemplate<class T>\nconcept UnsignedAmount = std::unsigned_integral<T>\n    && (!std::same_as<std::remove_cv_t<T>, bool>);\n\ntemplate<UnsignedAmount T>\nstd::optional<T> checked_add(T left, T right) {\n    if (right > std::numeric_limits<T>::max() - left) {\n        return std::nullopt;\n    }\n    return static_cast<T>(left + right);\n}\n\nint main() {\n    std::cout << *checked_add(3U, 4U) << '\\n';\n    const auto high = std::numeric_limits<unsigned int>::max();\n    std::cout << std::boolalpha << checked_add(high, 1U).has_value() << '\\n';\n    const auto small = checked_add(static_cast<unsigned char>(10), static_cast<unsigned char>(20));\n    std::cout << static_cast<unsigned int>(*small) << '\\n';\n    static_assert(!UnsignedAmount<bool>);\n    static_assert(!UnsignedAmount<int>);\n}\n",
+      "caption": "Expected lines: 7, false, 30. This complete C++20 program rejects overflow before addition and excludes bool/signed int at compile time. It does not claim a generic arithmetic type constraint validates financial units, wire compatibility, account identity or arbitrary user-defined numeric classes.",
+      "runnable": false
+    },
+    {
+      "type": "check",
+      "id": "inline-0",
+      "questionId": "qf5-cpp-templates-layout.check-1"
+    },
+    {
+      "type": "check",
+      "id": "inline-1",
+      "questionId": "qf5-cpp-templates-layout.check-2"
+    },
+    {
+      "type": "check",
+      "id": "inline-4",
+      "questionId": "qf5-cpp-templates-layout.check-5"
+    },
+    {
+      "type": "text",
+      "id": "type-versus-business",
+      "markdown": "Two unsigned integers can both type-check while one means shares and the other cents. Concepts can express chosen syntactic/type predicates, but they do not automatically establish every semantic property suggested by a name. Add strong unit wrappers and explicit conversion contracts when cross-unit mistakes matter. Requirements also need laws/tests: for an ordering comparator, a callable with the right signature still has to satisfy strict-order semantics. Templates multiply reuse, including bugs, if range and effect assumptions stay hidden. Deduced signed/bool argument rejection does not validate an earlier explicit conversion: converting a negative input to unsigned before this call can erase the original sign. Validate source representation/range before such conversion."
+    },
+    {
+      "type": "text",
+      "id": "representation-boundary",
+      "markdown": "Object representation is the bytes occupied by an object; value representation is the subset of bits that contribute to its value. Padding/alignment can make a struct larger than the sum of fields. Native integer width, endian order, padding bytes and ABI are not a portable network/file format. A trivially copyable object may support certain byte-copy roundtrips within its language rules; that does not authorize treating arbitrary incoming bytes as a live object, expose padding as a stable equality/hash key, or make raw struct dumps portable across processes/compiler versions. bit_cast likewise is not a protocol schema or endian conversion."
+    },
+    {
+      "type": "text",
+      "id": "wire-contract",
+      "markdown": "Define a small explicit format instead: exactly 4 octets, most-significant first, representing an unsigned integer 0 through 2^32-1. This implementation requires CHAR_BIT==8 with static_assert and uses unsigned long long, whose minimum standard range is enough for the arithmetic. Each encoded field is (value>>shift)&255, provably fitting one octet before its cast. Decode repeats value=256*value+byte; after k<=4 octets the partial value is at most 256^k-1, never exceeding 2^32-1. The arithmetic format does not depend on host endian or sizeof a packed struct."
+    },
+    {
+      "type": "code",
+      "id": "cpp-explicit-four-octet-format",
+      "language": "cpp",
+      "source": "#include <array>\n#include <climits>\n#include <iostream>\n#include <optional>\n\nstatic_assert(CHAR_BIT == 8, \"this four-octet format requires 8-bit bytes\");\nusing Wire32 = std::array<unsigned char, 4>;\nconstexpr unsigned long long wire_max = 0xFFFFFFFFULL;\n\nstd::optional<Wire32> encode_be32(unsigned long long value) {\n    if (value > wire_max) {\n        return std::nullopt;\n    }\n    return Wire32{\n        static_cast<unsigned char>((value >> 24) & 0xFFULL),\n        static_cast<unsigned char>((value >> 16) & 0xFFULL),\n        static_cast<unsigned char>((value >> 8) & 0xFFULL),\n        static_cast<unsigned char>(value & 0xFFULL)\n    };\n}\n\nunsigned long long decode_be32(const Wire32& bytes) {\n    unsigned long long value = 0;\n    for (const auto byte : bytes) {\n        value = value * 256ULL + byte;\n    }\n    return value;\n}\n\nint main() {\n    const auto encoded = encode_be32(0x01020304ULL);\n    for (const auto byte : *encoded) {\n        std::cout << static_cast<unsigned int>(byte) << '\\n';\n    }\n    std::cout << decode_be32(*encoded) << '\\n';\n    std::cout << std::boolalpha << encode_be32(wire_max + 1ULL).has_value() << '\\n';\n}\n",
+      "caption": "Expected lines: 1, 2, 3, 4, 16909060, false. encode_be32 rejects 2^32 rather than truncating it; decode handles a fixed exact 4-octet array. Cast to unsigned int prints each byte numerically rather than as a character. This is one unsigned field codec, not a complete length/version/type/currency/checksum/authentication or network-I/O protocol.",
+      "runnable": false
+    },
+    {
+      "type": "check",
+      "id": "inline-2",
+      "questionId": "qf5-cpp-templates-layout.check-3"
+    },
+    {
+      "type": "check",
+      "id": "inline-3",
+      "questionId": "qf5-cpp-templates-layout.check-4"
+    },
+    {
+      "type": "check",
+      "id": "inline-5",
+      "questionId": "qf5-cpp-templates-layout.check-6"
+    },
+    {
+      "type": "text",
+      "id": "format-unknowns",
+      "markdown": "The byte codec does not claim IEEE754, a particular long size, packed alignment or little-endian hosts. std::endian can report native scalar ordering but does not by itself define a file format, and mixed-endian cases exist. A real decoder of variable incoming data must first enforce length/resource/version/field constraints and then interpret the specific schema, including signedness, decimal scale, missing sentinels and integrity/authenticity. Avoid reinterpret_cast-based access that assumes alignment, lifetime or aliasing rules without a proof."
+    },
+    {
+      "type": "text",
+      "id": "transfer",
+      "markdown": "Independent transfer: test checked_add for zero, max()+0, max()+1 and representative unsigned widths, plus compile-only signed/bool/mixed-type rejection fixtures. Prove the guard before using any narrowing cast. For the byte codec, test 0, 255, 256, 2^32-1, independently known byte vectors and rejection of 2^32. Compare against an independent big-endian reference, not only encode/decode built from the same potentially wrong convention."
+    },
+    {
+      "type": "check",
+      "id": "inline-6",
+      "questionId": "qf5-cpp-templates-layout.check-7"
+    },
+    {
+      "type": "text",
+      "id": "sources",
+      "markdown": "Sources: [unsigned_integral including bool caveat](https://en.cppreference.com/w/cpp/concepts/unsigned_integral.html), [concepts/constraints](https://en.cppreference.com/w/cpp/language/constraints.html), [object representation](https://en.cppreference.com/w/cpp/language/object.html), [std::endian](https://en.cppreference.com/w/cpp/types/endian.html), and [living draft object/value/padding wording](https://eel.is/c++draft/basic.types). The format and bound proof are explicitly authored contracts, not an asserted existing broker wire format."
+    },
+    {
+      "type": "text",
+      "id": "mask-intersection-parity-0",
+      "markdown": "Masks are sets of bit positions\n\nFor nonnegative integer masks x, y, bit i of x&y is 1 exactly when bit i is 1 in both masks. The task asks whether the number of such COMMON feature positions is odd. It does not ask whether x&y itself is an odd integer, which would inspect only bit 0. For x=6(binary 110), y=3(binary 011), intersection 2(binary 010) has one set bit, so output ODD although the integer 2 is even."
+    },
+    {
+      "type": "text",
+      "id": "mask-intersection-parity-1",
+      "markdown": "Population count and parity\n\nPython int.bit_count() counts set bits. Applied to x&y, then modulo 2, it gives the required parity. An independent iterative form repeatedly clears the lowest set bit with z&=z-1 and toggles a parity bit until z=0; the number of toggles equals the popcount. The input 0<=x, y<2^63 excludes negative signed-representation questions. This section teaches the public Python solution; its location beside C++ representation discussion does not qualify a C++ submission."
+    },
+    {
+      "type": "text",
+      "id": "mask-intersection-parity-2",
+      "markdown": "Scope and transfer\n\nAt most 100000 pairs, each bounded to 63 bits. A fixed number of bounded-width bit operations per pair gives O(t) work in this fixed-word model and output-sized returned storage. Python arbitrary-width costs are not universally constant outside this domain. Test zero/disjoint masks, one common bit, two common bits and the highest allowed bit. Do not infer wire endianness or network format from the arithmetic value alone."
+    },
+    {
+      "type": "code",
+      "id": "mask-intersection-parity-complete",
+      "language": "python",
+      "source": "from collections import OrderedDict, deque\nfrom bisect import bisect_left\nimport heapq\n\ndef classify(pairs):\n    return ['ODD' if (x & y).bit_count() % 2 else 'EVEN' for (x, y) in pairs]\n\nprint(*classify([(6, 3), (7, 3), (0, 9), (1 << 62, 1 << 62)]), sep='\\n')\n",
+      "caption": "Expected stdout:\nODD\nEVEN\nEVEN\nODD\n\nPrevalidated inputs follow the captured public contract. This completes the named Python function using its original supplied main/parser. It does not claim independent parser, C++, app-runner or judge qualification.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "mask-intersection-parity-inline-1",
+      "questionId": "qf5-cpp-templates-layout.mask-intersection-parity-check-1"
+    },
+    {
+      "type": "check",
+      "id": "mask-intersection-parity-inline-2",
+      "questionId": "qf5-cpp-templates-layout.mask-intersection-parity-check-2"
+    },
+    {
+      "type": "check",
+      "id": "mask-intersection-parity-inline-3",
+      "questionId": "qf5-cpp-templates-layout.mask-intersection-parity-check-3"
+    },
+    {
+      "type": "check",
+      "id": "mask-intersection-parity-inline-4",
+      "questionId": "qf5-cpp-templates-layout.mask-intersection-parity-check-4"
+    },
+    {
+      "type": "check",
+      "id": "mask-intersection-parity-inline-5",
+      "questionId": "qf5-cpp-templates-layout.mask-intersection-parity-check-5"
+    },
+    {
+      "type": "check",
+      "id": "mask-intersection-parity-inline-6",
+      "questionId": "qf5-cpp-templates-layout.mask-intersection-parity-check-6"
+    },
+    {
+      "type": "check",
+      "id": "mask-intersection-parity-inline-7",
+      "questionId": "qf5-cpp-templates-layout.mask-intersection-parity-check-7"
+    },
+    {
+      "type": "text",
+      "id": "mask-intersection-parity-sources",
+      "markdown": "References: [1](https://docs.python.org/3.12/library/stdtypes.html). Public task hash 52860f1c430d9b692354229d3c164b657ce1bd9f314737888a595f475d696d93. These references establish language/container semantics; the exact task framing is the captured public contract. This extension preserves the earlier bounded examples and their policies rather than silently broadening those APIs."
+    },
+    {
+      "type": "text",
+      "id": "pimpl-boundary-0",
+      "markdown": "Hide implementation, not the contract\n\nPIMPL means pointer to implementation. A public class contains an owning pointer to a forward-declared private Impl rather than exposing implementation fields in its class definition. Clients can compile calls from the interface declaration without seeing Impl. In a real library place that declaration in quote.h, define Impl and the forwarding functions in quote.cpp, and compile a separate client against the header. The standalone example shows those sections together so its lifetime and move behavior can be executed as one teaching unit. Separate-translation-unit verification must still test the real split; a single-file compile alone does not establish build isolation."
+    },
+    {
+      "type": "text",
+      "id": "pimpl-boundary-1",
+      "markdown": "Incomplete types determine where destruction is defined\n\nunique_ptr<Impl> can be declared while Impl is incomplete, but default deletion needs the complete type when the relevant destructor is instantiated. Declare Quote destruction in the interface and default it out of line after defining Impl. Move operations are likewise declared and defaulted out of line here. Copy is explicitly deleted rather than pretending ownership is shared or silently copying an incomplete implementation. A deep-copy value API would need its own defined copying behavior, allocation failures and tests. make_unique cleans up its allocation if Impl construction throws; the constructor rejects a negative amount before a Quote can be used."
+    },
+    {
+      "type": "text",
+      "id": "pimpl-boundary-2",
+      "markdown": "Moved-from state is part of the API\n\nAfter moving a unique_ptr the source no longer owns the implementation. The source Quote may be destroyed or assigned again. This design explicitly rejects cents() on an empty moved-from object with logic_error; do not dereference a null pointer and call it an unspecified but safe value. Move assignment releases the destination old implementation and transfers ownership. The source check here is observable behavior, not a property every PIMPL library promises. Self-move policies and thread sharing would need separate contracts. The loop tests 1001 initial values, move construction, moved-from rejection, move assignment and negative-construction rejection."
+    },
+    {
+      "type": "text",
+      "id": "pimpl-boundary-3",
+      "markdown": "ABI isolation has conditions and costs\n\nChanging private Impl fields can avoid recompiling clients under a supported stable public ABI. It does not make arbitrary compiler versions, standard-library ABIs, architectures, build flags or exported signatures compatible. Keep public class layout, interface and ABI policy stable, and verify linkage in the actual deployment matrix. PIMPL usually adds allocation, pointer indirection and reduced visibility for inlining, although optimizers and allocation strategies can change observed costs. The example records no nanosecond claim and does not assert sizeof(Quote)==sizeof(void*): unique_ptr layout is implementation-dependent. Consider a directly represented value when locality and simplicity matter more than implementation hiding."
+    },
+    {
+      "type": "code",
+      "id": "pimpl-boundary-executable",
+      "language": "cpp",
+      "source": "#include <iostream>\n#include <memory>\n#include <stdexcept>\n#include <utility>\n// Header section: users need only this declaration and <memory>.\nclass Quote {\n    class Impl;\n    std::unique_ptr<Impl> p_;\npublic:\n    explicit Quote(int cents);\n    ~Quote();\n    Quote(Quote&&) noexcept;\n    Quote& operator=(Quote&&) noexcept;\n    Quote(const Quote&) = delete;\n    Quote& operator=(const Quote&) = delete;\n    int cents() const; // moved-from objects reject this query\n};\n// Implementation section: in a real library, move to quote.cpp.\nclass Quote::Impl {\npublic:\n    int cents;\n    explicit Impl(int x) : cents(x) {\n        if (x < 0) throw std::invalid_argument(\"negative cents\");\n    }\n};\nQuote::Quote(int x) : p_(std::make_unique<Impl>(x)) {}\nQuote::~Quote() = default;\nQuote::Quote(Quote&&) noexcept = default;\nQuote& Quote::operator=(Quote&&) noexcept = default;\nint Quote::cents() const {\n    if (!p_) throw std::logic_error(\"moved-from quote\");\n    return p_->cents;\n}\nint main() {\n    int cases = 0;\n    for (int x = 0; x <= 1000; ++x) {\n        Quote a(x);\n        Quote b(std::move(a));\n        if (b.cents() != x) return 1;\n        try { (void)a.cents(); return 2; } catch (const std::logic_error&) {}\n        Quote c(0); c = std::move(b);\n        if (c.cents() != x) return 3;\n        ++cases;\n    }\n    try { Quote bad(-1); return 4; } catch (const std::invalid_argument&) {}\n    std::cout << cases << \" ownership transfers; negative rejected\\n\";\n}\n",
+      "runnable": false,
+      "caption": "Complete standalone C++20 teaching program. Local GCC11.4 and GCC12.3 C++20 compile/run verified; app runner remains a separate gate. Expected local stdout:\n1001 ownership transfers; negative rejected\n"
+    },
+    {
+      "type": "check",
+      "id": "pimpl-boundary-inline-1",
+      "questionId": "qf5-cpp-templates-layout.pimpl-boundary-check-1"
+    },
+    {
+      "type": "check",
+      "id": "pimpl-boundary-inline-2",
+      "questionId": "qf5-cpp-templates-layout.pimpl-boundary-check-2"
+    },
+    {
+      "type": "check",
+      "id": "pimpl-boundary-inline-3",
+      "questionId": "qf5-cpp-templates-layout.pimpl-boundary-check-3"
+    },
+    {
+      "type": "check",
+      "id": "pimpl-boundary-inline-4",
+      "questionId": "qf5-cpp-templates-layout.pimpl-boundary-check-4"
+    },
+    {
+      "type": "text",
+      "id": "pimpl-boundary-independent",
+      "markdown": "Guided transfer: split the displayed source into quote.h, quote.cpp and main.cpp. Hints: (1) put only declarations and required public includes in the header, (2) keep the destructor definition beside complete Impl, (3) include the header from both translation units. Solution structure: header with include guard, quote.cpp with Impl and forwarded methods, client with tests and only the public header. Compile both with -c and link the objects.\n\nIndependent transfer: add a private Impl revision field without changing the public interface. Recompile the implementation object, relink the unchanged client object, and run the ownership tests. Hints: (1) record the old client object hash, (2) do not expose Impl size in an inline function, (3) keep the supported ABI/toolchain constant. Review rubric: client did not need the private definition, object reuse is demonstrated, ownership and moved-from behavior remain tested. This local experiment does not certify cross-platform ABI stability."
+    },
+    {
+      "type": "text",
+      "id": "pimpl-boundary-references",
+      "markdown": "References: [1](https://en.cppreference.com/cpp/language/pimpl), [2](https://en.cppreference.com/w/cpp/memory/unique_ptr.html), [3](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines.html). PIMPL and unique_ptr sources cover incomplete types, ownership and out-of-line special members; the Core Guidelines I.27 explains the ABI boundary and its costs."
+    },
+    {
+      "type": "text",
+      "id": "static-dynamic-policy-0",
+      "markdown": "Separate three compile-time mechanisms\n\nA policy class supplies a selected behavior to a template; StaticAdjust<Cap10> and StaticAdjust<Identity> are different concrete types. Tag dispatch selects overloads by a type such as true_type versus false_type. The tag is a compile-time template argument, not a value read at runtime. CRTP, the curiously recurring template pattern, passes the derived class as a base template argument so the base can refer to a known derived interface. Here Twice<StaticAdjust<Policy>> calls the derived adjust member through a static_cast, sharing twice behavior without a virtual function. These mechanisms can be combined, but they solve different organization problems."
+    },
+    {
+      "type": "text",
+      "id": "static-dynamic-policy-1",
+      "markdown": "Static downcasts need a real derived object\n\nA CRTP base must be a subobject of the stated derived type when a method performs its downcast. Constructing a stand-alone Twice<SomeOtherType> and calling twice would not become safe because the code compiles. This example makes the base constructor private and friends only the intended Derived, then makes the concrete class final. It uses only two reviewed policy types whose const call is nonthrowing and maps x in 0..100 to values in 0..100. The multiplication by two and tag conversion by 100 therefore fit int even on the minimum standard int range. A generic unrestricted policy or arbitrary int input would need stronger constraints and range/error contracts. noexcept in this example is justified only for the shown instantiations and bounded operations."
+    },
+    {
+      "type": "text",
+      "id": "static-dynamic-policy-2",
+      "markdown": "Runtime selection is a different capability\n\nDynamicAdjust exposes a virtual adjust and a virtual destructor, allowing runtime_twice to use an implementation selected at runtime through the base interface. The example DynamicCap gives the same bounded result as Cap10. The virtual destructor matters if deletion later occurs through a base pointer; this example uses automatic objects and does not require heap allocation for virtual dispatch. Static template types are not one heterogeneous runtime collection without another wrapper. Do not replace a required runtime plugin boundary with CRTP unless selection and binary deployment requirements actually allow compile-time choice."
+    },
+    {
+      "type": "text",
+      "id": "static-dynamic-policy-3",
+      "markdown": "A semantic comparison before a timing claim\n\nFor each x in 0..100 the program checks both implementations against the independently expressed min(x,10), then accumulates twice values to checksum 1910. It also checks both tag paths: 7 cents stays 7; 7 whole currency units becomes 700 cents. That is an executable equivalence and unit-selection demonstration, not a speed benchmark. In optimized code the compiler may devirtualize the visible DynamicCap, making its machine code resemble the static path. A virtual call does not necessarily perform an indirect call after optimization; a template does not guarantee successful inlining."
+    },
+    {
+      "type": "text",
+      "id": "static-dynamic-policy-4",
+      "markdown": "Cost mechanisms and a fair experiment\n\nPotential static-dispatch benefits are visible callee bodies, inlining and specialization; costs include instantiation/code-size growth and recompilation. Potential virtual-dispatch costs include indirect control flow and less visible bodies; benefits include runtime substitution and a stable interface under an explicitly supported ABI. Neither language mechanism prescribes an exact vtable layout or cost. To time them, use equivalent data and semantics, representative runtime-selected implementations, warmup, many repetitions, observable checksums, identical optimization/LTO flags and a recorded compiler/CPU. Inspect generated code and report whether devirtualization occurred. Measure whole-loop throughput and, where required, tail latency rather than subtracting two noisy tiny call durations. Separately measure object layout/cache and code size instead of attributing every difference to the call instruction. Do not use volatile as a universal realistic-workload substitute. No always-faster claim or production speedup is earned by the checksum test."
+    },
+    {
+      "type": "code",
+      "id": "static-dynamic-policy-executable",
+      "language": "cpp",
+      "source": "#include <iostream>\n#include <type_traits>\n\nstruct Identity {\n    int operator()(int x) const noexcept { return x; }\n};\nstruct Cap10 {\n    int operator()(int x) const noexcept { return x > 10 ? 10 : x; }\n};\ntemplate<class Derived> class Twice {\n    friend Derived;\n    Twice() = default; // only the intended derived can construct its base\n    Twice(const Twice&) = default;\n    Twice& operator=(const Twice&) = default;\nprotected:\n    ~Twice() = default; // prevent standalone sliced base objects\npublic:\n    int twice(int x) const noexcept {\n        // CRTP precondition: this really is a Derived base subobject.\n        return static_cast<const Derived&>(*this).adjust(x) * 2;\n    }\n};\ntemplate<class Policy> class StaticAdjust final : public Twice<StaticAdjust<Policy>> {\n    Policy policy_;\npublic:\n    int adjust(int x) const noexcept { return policy_(x); }\n};\nstruct DynamicAdjust {\n    virtual int adjust(int x) const noexcept = 0;\n    virtual ~DynamicAdjust() = default;\n};\nstruct DynamicCap final : DynamicAdjust {\n    int adjust(int x) const noexcept override { return x > 10 ? 10 : x; }\n};\nint runtime_twice(const DynamicAdjust& p, int x) noexcept { return 2 * p.adjust(x); }\n\n// Tags select implementations at compile time, not from a live market value.\nint units(int x, std::true_type) noexcept { return x; }\nint units(int x, std::false_type) noexcept { return x * 100; }\ntemplate<bool AlreadyCents> int to_cents(int x) noexcept {\n    return units(x, std::bool_constant<AlreadyCents>{});\n}\nint main() {\n    StaticAdjust<Cap10> capped;\n    StaticAdjust<Identity> identity;\n    DynamicCap dyn;\n    int checksum = 0;\n    for (int x = 0; x <= 100; ++x) {\n        const int wanted = x < 10 ? x : 10;\n        if (capped.twice(x) != 2 * wanted || identity.twice(x) != 2*x) return 1;\n        if (runtime_twice(dyn, x) != capped.twice(x)) return 2;\n        if (to_cents<true>(x) != x || to_cents<false>(x) != 100*x) return 3;\n        checksum += capped.twice(x);\n    }\n    std::cout << \"101 equivalent dispatch cases; checksum=\" << checksum << '\\n';\n    std::cout << to_cents<true>(7) << ' ' << to_cents<false>(7) << '\\n';\n}\n",
+      "runnable": false,
+      "caption": "Complete standalone C++20 teaching program. Local GCC11.4 and GCC12.3 C++20 compile/run verified; app runner remains a separate gate. Expected local stdout:\n101 equivalent dispatch cases; checksum=1910\n7 700\n"
+    },
+    {
+      "type": "check",
+      "id": "static-dynamic-policy-inline-1",
+      "questionId": "qf5-cpp-templates-layout.static-dynamic-policy-check-1"
+    },
+    {
+      "type": "check",
+      "id": "static-dynamic-policy-inline-2",
+      "questionId": "qf5-cpp-templates-layout.static-dynamic-policy-check-2"
+    },
+    {
+      "type": "check",
+      "id": "static-dynamic-policy-inline-3",
+      "questionId": "qf5-cpp-templates-layout.static-dynamic-policy-check-3"
+    },
+    {
+      "type": "check",
+      "id": "static-dynamic-policy-inline-4",
+      "questionId": "qf5-cpp-templates-layout.static-dynamic-policy-check-4"
+    },
+    {
+      "type": "text",
+      "id": "static-dynamic-policy-independent",
+      "markdown": "Guided transfer: add a Cap5 policy without changing Twice. Hints: (1) preserve the bounded nonnegative domain, (2) implement a const nonthrowing adjustment, (3) compare against an independent min(x,5) formula. Solution outline: a policy returning x>5?5:x and StaticAdjust<Cap5>, with expected twice values 0, 8, 10, 10 for inputs 0, 4, 5, 6.\n\nIndependent transfer: implement two runtime policies selected from an input flag and compare their outputs with the corresponding static specializations. Hints: (1) the choice must occur at runtime, (2) compare both branches before measuring, (3) inspect assembly and record LTO/devirtualization. Review rubric: semantic equality over the full declared domain, valid CRTP downcast construction, no overflow, and an honest measurement plan. A missing benchmark is not a failed semantic test, but a semantic pass is not evidence of faster execution."
+    },
+    {
+      "type": "text",
+      "id": "static-dynamic-policy-references",
+      "markdown": "References: [1](https://en.cppreference.com/cpp/language/crtp), [2](https://en.cppreference.com/cpp/types/integral_constant), [3](https://en.cppreference.com/cpp/language/virtual), [4](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines.html). CRTP covers static downcasts and derived interfaces; integral_constant covers bool_constant/true_type/false_type tags; virtual covers runtime dispatch. Core Guidelines T.65 covers tag dispatch; the template policy example in this lesson is an authored bounded design, not a separate standard-library facility. These are mechanism references, not evidence of a measured speedup."
+    }
+  ],
+  "practice": {
+    "problemIds": [
+      "qfp-bit-count-parity"
+    ]
+  },
+  "summary": "Templates need type constraints, semantic laws and runtime bounds. Object layout/ABI is not a portable schema: define bytes, ordering, range and scale explicitly, prove conversions, and test an independent representation reference. Practice transfer: mask intersection parity."
+}

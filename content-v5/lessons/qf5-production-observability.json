@@ -1,0 +1,126 @@
+{
+  "id": "qf5-production-observability",
+  "revision": 1,
+  "title": "Logs, metrics, traces and actionable alerts",
+  "module": "qf5-production",
+  "order": 3,
+  "estMinutes": 22,
+  "objectives": [
+    {
+      "conceptId": "qf5-production-observability.signal-design",
+      "text": "Compute an explicit bounded terminal-outcome window with error denominators,unknown timeout latency,known-sample nearest-rank percentile and noncumulative histogram units."
+    },
+    {
+      "conceptId": "qf5-production-observability.alert-diagnosis",
+      "text": "Distinguish metrics/logs/traces and design actionable user-impact alerts with window,threshold,sample/no-data policy and diagnosis limits rather than equating a quiet rule with healthy service."
+    }
+  ],
+  "prerequisites": [
+    "qf5-production-persistence-consistency"
+  ],
+  "blocks": [
+    {
+      "type": "text",
+      "id": "signals",
+      "markdown": "Metrics summarize numerical behavior across a declared population/window;structured logs record events;traces connect spans across a request path. None alone explains every failure. Correlation IDs help link evidence butare not authentication or metric labels to attach unboundedly. OpenTelemetrydescribes broad baseline signals plus deeper system-specific diagnostics. GoogleSREemphasizes useful latency/traffic/error/saturation signals and alerts tied to user experience. This example computes only terminal-observation error/latency summaries,not saturation,distributed traces or a live exporter."
+    },
+    {
+      "type": "text",
+      "id": "window-contract",
+      "markdown": "Own rows are(observed_at_ms,known_duration_ms_or_None,outcome ok/error/timeout). Select terminal observation timestamps in[start,end),not request-start cohorts. Error ratio=(error+timeout)/all selected terminal observations. Timeout duration is UNKNOWNin this schema and cannot be inserted as zero. Known durations include ok ANDerror rows. A completed-only window can miss stuck requests until timeout events arrive;independent in-flight/deadline/black-box instrumentation is needed. Events may be late/missing/duplicated at ingestion;this pure array function does not authenticate or deduplicate them."
+    },
+    {
+      "type": "worked",
+      "id": "window-evidence",
+      "title": "Error and latency denominators differ",
+      "steps": [
+        {
+          "text": "At window[0,400),observe okduration10,error duration100and timeout duration unknown. A later terminal observation1400with duration1000is outside. Events3,bad2,error ratio2/3."
+        },
+        {
+          "text": "Only2durations are known. Nearest-rank p95uses ceil(.95*2)=2,so known-sample p95=100ms. It is NOTa95th percentile for all requests because the timeout latency is censored/unknown."
+        },
+        {
+          "text": "Noncumulative bins<=10,(10,100],(100,1000],>1000are(1,1,0,0). Minimum5events yields insufficient-data;minimum3and strict bad_ratio>0.1yields alert. Empty window yields no-data,not zero-error health."
+        }
+      ]
+    },
+    {
+      "type": "code",
+      "id": "explicit-outcome-window",
+      "language": "python",
+      "source": "from fractions import Fraction\nimport json\n\ndef window_metrics(events,start,end):\n    # Own terminal observation records:(observed_at_ms,known_duration_ms_or_None,outcome).\n    if type(events) is not list or len(events)>256 or any(type(x) is not int for x in (start,end)) or not 0<=start<end:\n        raise ValueError('invalid telemetry window')\n    for row in events:\n        if type(row) is not tuple or len(row)!=3:raise ValueError('invalid observation schema')\n        at,duration,outcome=row\n        if type(at) is not int or not 0<=at<=10**9 or type(outcome) is not str or outcome not in ('ok','error','timeout'):\n            raise ValueError('invalid observation fields')\n        if outcome=='timeout':\n            if duration is not None:raise ValueError('timeout latency unknown in this schema')\n        elif type(duration) is not int or not 0<=duration<=min(at,10**6):\n            raise ValueError('invalid known duration')\n    selected=[row for row in events if start<=row[0]<end]\n    durations=sorted(row[1] for row in selected if row[1] is not None)\n    count=len(selected);bad=sum(row[2]!='ok' for row in selected)\n    bins=[0,0,0,0]\n    for value in durations:\n        bucket=next((i for i,boundary in enumerate((10,100,1000)) if value<=boundary),3)\n        bins[bucket]+=1\n    return {'schema':1,'window_ms':(start,end),'events':count,'bad':bad,\n            'bad_ratio':Fraction(bad,count) if count else None,\n            'known_latency_events':len(durations),'unknown_latency_events':count-len(durations),\n            'p95_known_ms':durations[(95*len(durations)+99)//100-1] if durations else None,\n            'noncumulative_histogram_le_10_100_1000_over_ms':tuple(bins)}\n\ndef error_alert(events,start,end,min_events,max_bad_ratio):\n    # Own error-only teaching rule. Recompute from validated raw observations.\n    metrics=window_metrics(events,start,end)\n    if type(min_events) is not int or min_events<1 or type(max_bad_ratio) is not Fraction or not 0<=max_bad_ratio<=1:\n        raise ValueError('invalid alert rule')\n    if metrics['events']==0:return 'no-data'\n    if metrics['events']<min_events:return 'insufficient-data'\n    return 'alert' if metrics['bad_ratio']>max_bad_ratio else 'within-error-threshold'\n\nevents=[(100,10,'ok'),(200,100,'error'),(300,None,'timeout'),(1400,1000,'ok')]\nm=window_metrics(events,0,400)\nprint(m['events'],m['bad'],m['bad_ratio'])\nprint(m['known_latency_events'],m['unknown_latency_events'],m['p95_known_ms'])\nprint(m['noncumulative_histogram_le_10_100_1000_over_ms'])\nprint(error_alert(events,0,400,5,Fraction(1,10)))\nprint(error_alert(events,0,400,3,Fraction(1,10)))\nprint(error_alert([],0,400,3,Fraction(1,10)))",
+      "caption": "Expected3 2 2/3;2 1 100;(1,1,0,0);insufficient-data;alert;no-data. Complete pure source,max256rows,integer milliseconds,strict enum/type/domain checks. Alert helper recomputes from validated raw events/window rather than trusting a caller-supplied summary. Own error-only threshold is not an SLO/error-budget monitoring deployment. No dashboard,network,pager or persistent store created.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "inline-0",
+      "questionId": "qf5-production-observability.check-1"
+    },
+    {
+      "type": "check",
+      "id": "inline-1",
+      "questionId": "qf5-production-observability.check-2"
+    },
+    {
+      "type": "check",
+      "id": "inline-4",
+      "questionId": "qf5-production-observability.check-5"
+    },
+    {
+      "type": "text",
+      "id": "aggregation",
+      "markdown": "Aggregate error counts and total counts before dividing;unweighted mean of per-shard error ratios can misweight small shards. Do not average p95values and call it aggregate p95. Merge raw samples or compatible histogram bucket counts with their approximation/unknown-sample limits. Our bins are explicitly NONcumulative;some monitoring systems export cumulative buckets,so label semantics matter. Rate needs count divided by elapsed time with unit conversion;count alone is not requests per second."
+    },
+    {
+      "type": "text",
+      "id": "alert-contract",
+      "markdown": "An actionable alert names service/revision,SLIand eligible population,window,threshold,minimum-data/telemetry-loss policy,severity,owner,runbook,diagnostic links and recovery/reset conditions. Low traffic can make a single error dominate a ratio;GoogleSREdiscusses precision/recall/detection/reset and low-traffic tradeoffs. A blanket minimum sample can hide a severe rare-request failure,so it is a teaching rule here,not a universal recommendation. within-error-thresholdmeans only that this chosen rule did not fire,not proof of healthy latency/dependencies/security."
+    },
+    {
+      "type": "text",
+      "id": "privacy-and-cardinality",
+      "markdown": "Metric labels should use bounded useful dimensions like operation/outcome rather than unique request/user/token IDs. High cardinality consumes storage/query resources and may expose private data. Put approved minimal correlation details in access-controlled logs/traces with retention/integrity policy;never log credentials or full payloads by default. Structured encoding helps prevent newline/log injection butdoes not make arbitrary sensitive content safe. Instrumentation overhead,dropped/sampled traces and delayed telemetry need visibility too."
+    },
+    {
+      "type": "check",
+      "id": "inline-2",
+      "questionId": "qf5-production-observability.check-3"
+    },
+    {
+      "type": "check",
+      "id": "inline-3",
+      "questionId": "qf5-production-observability.check-4"
+    },
+    {
+      "type": "check",
+      "id": "inline-5",
+      "questionId": "qf5-production-observability.check-6"
+    },
+    {
+      "type": "text",
+      "id": "diagnosis",
+      "markdown": "Start with user impact and deployment/time scope,then inspect error classes,latency distribution,traffic and resource saturation,correlated dependency spans and safe logs. A correlated change is a lead,not root-cause proof. Distinguish error/timeout from business rejections and define denominator intentionally. A rule should not silently suppress the only evidence of a critical failure;test alert activation,reset,routing and missing-data behavior on the actual system. This source has no real on-call routing."
+    },
+    {
+      "type": "text",
+      "id": "transfer",
+      "markdown": "Independent transfer:enumerate window boundary and histogram boundary values,include all-timeout and empty windows,and reconstruct nearest rank with rational cumulative fractions. Merge two shards by counts and compare against combined raw events;construct a counterexample to averaging p95s. Propose a high-value low-traffic alert and explain why this minimum-count toy might miss it. Keep actual monitoring/backend/mobile visualization qualification separate."
+    },
+    {
+      "type": "check",
+      "id": "inline-6",
+      "questionId": "qf5-production-observability.check-7"
+    },
+    {
+      "type": "text",
+      "id": "sources",
+      "markdown": "Sources:[GoogleSREmonitoring](https://sre.google/workbook/monitoring/),[SLOalerting/low traffic](https://sre.google/workbook/alerting-on-slos/),[OpenTelemetrybroad/deep signals](https://opentelemetry.io/docs/specs/semconv/how-to-write-conventions/t-shaped-signals/). Own terminal-window/nearest-rank/error rule is a bounded teaching contract,not these systems' implementation."
+    }
+  ],
+  "practice": {
+    "problemIds": []
+  },
+  "summary": "Declare population,window,units and every denominator. Unknown timeout latency is not zero;known-sample percentiles do not describe missing samples. No-data/insufficient-data and a quiet error-only rule are not service health. Actionable alerts and safe bounded telemetry need actual operational tests."
+}

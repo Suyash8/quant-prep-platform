@@ -1,0 +1,337 @@
+{
+  "id": "qf5-data-streaming-statistics",
+  "revision": 3,
+  "title": "Online mean, variance and EMA",
+  "module": "qf5-data",
+  "order": 6,
+  "estMinutes": 70,
+  "objectives": [
+    {
+      "conceptId": "qf5-data-streaming-statistics.online-variance",
+      "text": "Update count, mean and centered sum of squares using a one-pass recurrence with explicit empty/singleton behavior."
+    },
+    {
+      "conceptId": "qf5-data-streaming-statistics.ema",
+      "text": "Trace a recursive EMA with declared alpha, first-value initialization and missing-data policy."
+    },
+    {
+      "conceptId": "qf5-data-streaming-statistics.ema-span-output",
+      "text": "Convert span to alpha, preserve the task floating operation order and emit the first-seeded EMA path to four decimals."
+    },
+    {
+      "conceptId": "qf5-data-streaming-statistics.window-mean-half-up",
+      "text": "Maintain an exact rolling sum and apply nonnegative rational half-up rounding only when formatting each window mean."
+    },
+    {
+      "conceptId": "qf5-data-streaming-statistics.inclusive-outlier-exact-predicate",
+      "text": "Apply post-ingest population statistics with an exact strict integer three-sigma decision, while retaining Welford recurrence and its floating boundary caveat."
+    }
+  ],
+  "prerequisites": [
+    "qf5-data-columnar-pipelines"
+  ],
+  "blocks": [
+    {
+      "type": "text",
+      "id": "definition",
+      "markdown": "For values $x_1,\\ldots,x_n$, the arithmetic mean is $\\mu_n=\\frac{1}{n}\\sum_{i=1}^{n}x_i$. The centered sum of squares is $M_{2,n}=\\sum_{i=1}^{n}(x_i-\\mu_n)^2$. Population variance of these values is $M_{2,n}/n$ when $n>0$. The usual sample variance uses $M_{2,n}/(n-1)$ when $n>1$. Interpreting it as an unbiased estimate of a population parameter needs statistical assumptions, which the later statistics module examines. Here the goal is computing the declared quantities, not proving an inference claim."
+    },
+    {
+      "type": "text",
+      "id": "recurrence",
+      "markdown": "Retain only $(n,\\mu,M_2)$ as state. For a new value $x$, first set $n'=n+1$ and $\\delta=x-\\mu$. Then $\\mu'=\\mu+\\delta/n'$ and $M_2'=M_2+\\delta(x-\\mu')$. The old and new means differ: using the old mean in both factors is wrong. To see the mean update, the new sum is $n\\mu+x$, and dividing by $n+1$ gives $\\mu+(x-\\mu)/(n+1)$. Expanding centered squared deviations yields the $M_2$ recurrence. These equations are exact-arithmetic identities; floating arithmetic still has rounding/range limits."
+    },
+    {
+      "type": "worked",
+      "id": "moment-trace",
+      "title": "Trace 2, 4, 6 without storing a growing history",
+      "steps": [
+        {
+          "text": "Start n=0, mean=0 and M2=0. After 2: delta 2, mean 2, M2=0."
+        },
+        {
+          "text": "After 4: delta 2, new mean 3, added 2*(4-3)=2, so M2=2."
+        },
+        {
+          "text": "After 6: delta 3, new mean 4, added 3*(6-4)=6, so M2=8."
+        },
+        {
+          "text": "The final mean is 4. Population variance is 8/3. Sample variance is 8/2=4. The variance units are squared input units."
+        }
+      ]
+    },
+    {
+      "type": "code",
+      "id": "online-moments",
+      "language": "python",
+      "source": "import math\n\ndef online_moments(values):\n    n, mean, m2 = 0, 0.0, 0.0\n    for value in values:\n        if type(value) is not float or not math.isfinite(value):\n            raise ValueError(\"expected finite float\")\n        next_n = n + 1\n        delta = value - mean\n        next_mean = mean + delta / next_n\n        next_m2 = m2 + delta * (value - next_mean)\n        if not math.isfinite(next_mean) or not math.isfinite(next_m2):\n            raise ValueError(\"nonfinite accumulator\")\n        n, mean, m2 = next_n, next_mean, next_m2\n    if n == 0:\n        return {\"count\": 0, \"mean\": None, \"population_variance\": None, \"sample_variance\": None}\n    return {\"count\": n, \"mean\": mean,\n            \"population_variance\": m2 / n,\n            \"sample_variance\": m2 / (n - 1) if n > 1 else None}\n\nresult = online_moments([2.0, 4.0, 6.0])\nprint(result[\"count\"])\nprint(result[\"mean\"])\nprint(result[\"population_variance\"])\nprint(result[\"sample_variance\"])\nprint(online_moments([])[\"mean\"])",
+      "caption": "Expected output: 3, then 4.0, then 2.6666666666666665, then 4.0, then None. Inputs are exact finite float objects under this boundary. Empty input has no mean/variance; a singleton has population variance 0 but sample variance None. Extreme finite inputs may still exceed floating accumulator range and are explicitly rejected, not silently accepted as an infinite result.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "inline-0",
+      "questionId": "qf5-data-streaming-statistics.check-1"
+    },
+    {
+      "type": "check",
+      "id": "inline-1",
+      "questionId": "qf5-data-streaming-statistics.check-2"
+    },
+    {
+      "type": "text",
+      "id": "numerics",
+      "markdown": "The raw formula mean(x*x)-mean(x)**2 subtracts two potentially large, nearly equal values. That can lose the small variance through cancellation. Centered updates avoid that particular raw-moment subtraction, but are not exact for every input magnitude or ordering. Compare against an independent reference with a scale-appropriate tolerance, and test large offsets with small spreads. Constant state here means a fixed number of accumulators, not a promise that any unbounded integer or arbitrary precision operation has constant cost."
+    },
+    {
+      "type": "text",
+      "id": "ema-definition",
+      "markdown": "The recursive EMA in this lesson uses $y_1=x_1$ and $y_t=(1-\\alpha)y_{t-1}+\\alpha x_t$ for later observations, with $0<\\alpha\\le1$. For alpha 0.5 and values 2, 4, 6, its path is 2, 3, 4.5. It is not the arithmetic mean, whose final value here is 4. Larger alpha weights the newest observation more. At alpha 1 the state becomes the latest value. This is observation-based decay, not time-based decay across irregular timestamps."
+    },
+    {
+      "type": "code",
+      "id": "recursive-ema",
+      "language": "python",
+      "source": "import math\n\ndef recursive_ema(values, alpha):\n    if type(alpha) is not float or not math.isfinite(alpha) or not 0 < alpha <= 1:\n        raise ValueError(\"alpha must be a finite float in (0, 1]\")\n    state = None\n    path = []\n    for value in values:\n        if type(value) is not float or not math.isfinite(value):\n            raise ValueError(\"expected finite float\")\n        state = value if state is None else (1 - alpha) * state + alpha * value\n        if not math.isfinite(state):\n            raise ValueError(\"nonfinite accumulator\")\n        path.append(state)\n    return path\n\nprint(recursive_ema([2.0, 4.0, 6.0], 0.5))\nprint(recursive_ema([], 0.5))",
+      "caption": "Expected output: [2.0, 3.0, 4.5], then []. The empty path contains no estimate. A non-finite/missing input raises under this declared policy; skipping, carrying forward and time-weighting would be different algorithms.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "inline-2",
+      "questionId": "qf5-data-streaming-statistics.check-3"
+    },
+    {
+      "type": "check",
+      "id": "inline-3",
+      "questionId": "qf5-data-streaming-statistics.check-4"
+    },
+    {
+      "type": "text",
+      "id": "variants",
+      "markdown": "Libraries can expose adjusted-weight and recursive EMA variants, different initialization, minimum observations and missing-value treatment. pandas ewm defaults to adjust=True; the recurrence above corresponds to adjust=False with first-value initialization on this complete finite input. Do not claim equivalence merely because both functions are called EMA. The example uses only the Python standard library and does not require pandas installed."
+    },
+    {
+      "type": "text",
+      "id": "transfer",
+      "markdown": "Independent transfer: compare online population/sample results with statistics.pvariance and statistics.variance for small complete float fixtures using a stated tolerance. Test empty and singleton input separately. Test translation by a large finite offset and explain why tiny floating differences are possible. For EMA, test alpha 1, invalid alpha 0, empty input and a missing value. State order and reset/session policy before applying an EMA to market events; shuffling input changes the recursive path."
+    },
+    {
+      "type": "check",
+      "id": "inline-4",
+      "questionId": "qf5-data-streaming-statistics.check-5"
+    },
+    {
+      "type": "check",
+      "id": "inline-5",
+      "questionId": "qf5-data-streaming-statistics.check-6"
+    },
+    {
+      "type": "text",
+      "id": "source-scope",
+      "markdown": "References: [variance algorithms](https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance) for centered online updates and cancellation; [Python statistics](https://docs.python.org/3/library/statistics.html) for population/sample denominators; [pandas ewm](https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.ewm.html) for recursive versus adjusted EMA. Worked policies and data are synthetic. No production stability or universal precision guarantee follows from these examples."
+    },
+    {
+      "type": "text",
+      "id": "span-ema-contract-0",
+      "markdown": "A declared EMA variant\n\nThe task uses alpha=2/(span+1), span 1..1000, first price as the initial state, and every later state alpha*price+(1-alpha)*previous. There is no adjusted normalization, warm-up suppression, missing price, irregular-time decay or session reset. Existing recursive_ema teaches the same real-arithmetic recurrence, but its operands are written in reverse addition order; the public version below keeps the exact stated floating operation order."
+    },
+    {
+      "type": "text",
+      "id": "span-ema-contract-1",
+      "markdown": "Trace and output boundary\n\nFor span=3, alpha=0.5. Prices [2,4,6] produce states 2,3,4.5 and lines 2.0000,3.0000,4.5000. For span=1, alpha=1, every state is the latest price. n>=1, so an empty path is not a public case. Do not seed from zero, round each intermediate state, or replace the recursive update with an arithmetic mean."
+    },
+    {
+      "type": "text",
+      "id": "span-ema-contract-2",
+      "markdown": "Precision, scope and cost\n\nThe public input contains positive two-decimal prices <=1000000 and explicitly requests ordinary double arithmetic, with printed values away from fourth-decimal ties. Format only the emitted copy; retain the full internal float. One pass costs O(n), with fixed recurrence state and O(n) returned strings for up to 100000 prices. pandas adjust=False documents the recursive variant; its default adjust=True must not be imported silently."
+    },
+    {
+      "type": "code",
+      "id": "span-ema-contract-complete",
+      "language": "python",
+      "source": "from collections import deque\nimport heapq\n\ndef ema(span, prices):\n    alpha = 2 / (span + 1)\n    state = None\n    lines = []\n    for price in prices:\n        state = price if state is None else alpha * price + (1 - alpha) * state\n        lines.append(f'{state:.4f}')\n    return lines\n\nprint(*ema(3, [2.0, 4.0, 6.0]), sep='\\n')\n",
+      "caption": "Expected stdout:\n2.0000\n3.0000\n4.5000\n\nPrevalidated inputs follow the captured public contract. This completes the named Python function using its original supplied main/parser. It does not claim independent parser, C++, app-runner or judge qualification.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "span-ema-contract-inline-1",
+      "questionId": "qf5-data-streaming-statistics.span-ema-contract-check-1"
+    },
+    {
+      "type": "check",
+      "id": "span-ema-contract-inline-2",
+      "questionId": "qf5-data-streaming-statistics.span-ema-contract-check-2"
+    },
+    {
+      "type": "check",
+      "id": "span-ema-contract-inline-3",
+      "questionId": "qf5-data-streaming-statistics.span-ema-contract-check-3"
+    },
+    {
+      "type": "check",
+      "id": "span-ema-contract-inline-4",
+      "questionId": "qf5-data-streaming-statistics.span-ema-contract-check-4"
+    },
+    {
+      "type": "check",
+      "id": "span-ema-contract-inline-5",
+      "questionId": "qf5-data-streaming-statistics.span-ema-contract-check-5"
+    },
+    {
+      "type": "check",
+      "id": "span-ema-contract-inline-6",
+      "questionId": "qf5-data-streaming-statistics.span-ema-contract-check-6"
+    },
+    {
+      "type": "check",
+      "id": "span-ema-contract-inline-7",
+      "questionId": "qf5-data-streaming-statistics.span-ema-contract-check-7"
+    },
+    {
+      "type": "text",
+      "id": "span-ema-contract-sources",
+      "markdown": "References: [1](https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.ewm.html), [2](https://docs.python.org/3.12/library/stdtypes.html). Public task hash 328a3991c0418799cfcc79702c8e0663b7542d73a536dbeb43263571d4ffd185. These references establish language/container semantics; the exact task framing is the captured public contract. This extension preserves the earlier bounded examples and their policies rather than silently broadening those APIs."
+    },
+    {
+      "type": "text",
+      "id": "integer-window-mean-0",
+      "markdown": "A fixed window is not an EMA\n\nFor window width k, maintain total=sum of its k nonnegative integer prices. The next window removes the oldest price and adds the entering one. Its mean is total/k. Unlike EMA, observations inside the window have equal weight and observations outside it have zero weight. k=1 returns each price; k=n produces one mean."
+    },
+    {
+      "type": "text",
+      "id": "integer-window-mean-1",
+      "markdown": "Derive exact two-decimal half-up\n\nThe mean in hundredths is100*total/k. For a nonnegative rational y, half-up is floor(y+1/2), so output cents=(200*total+k)//(2*k). Format cents//100 and a zero-padded cents%100. This applies the requested tie rule without floating conversion. For total=9, k=8 the value 1.125 is exactly 9/8 and IS exactly representable in binary; ties-even formatting can give1.12, whereas this task requests half-up1.13. The difference is the tie policy, not failure to represent9/8."
+    },
+    {
+      "type": "text",
+      "id": "integer-window-mean-2",
+      "markdown": "Order, limits and tests\n\nn<=100000, prices0..1000000. The initial sum is O(k), then each window update O(1), giving O(n) total arithmetic and output-sized storage. No intermediate window mean is fed back into the sum. Test zero prices, k endpoints, the exact1.125tie and a carry from fractional99to the next whole value. Compare with Decimal original-integer sums quantized using ROUND_HALF_UP."
+    },
+    {
+      "type": "code",
+      "id": "integer-window-mean-complete",
+      "language": "python",
+      "source": "from collections import OrderedDict, deque\nfrom bisect import bisect_left\nimport heapq\nimport math\n\ndef moving_average(k, p):\n    total = sum((p[i] for i in range(k)))\n    lines = []\n    for end in range(k, len(p) + 1):\n        if end > k:\n            total += p[end - 1] - p[end - k - 1]\n        cents = (200 * total + k) // (2 * k)\n        lines.append(f'{cents // 100}.{cents % 100:02d}')\n    return lines\n\nprint(*moving_average(2, [1, 2, 4]), sep='\\n')\nprint(*moving_average(8, [9, 0, 0, 0, 0, 0, 0, 0]))\n",
+      "caption": "Expected stdout:\n1.50\n3.00\n1.13\n\nPrevalidated inputs follow the captured public contract. This completes the named Python function using its original supplied main/parser. It does not claim independent parser, C++, app-runner or judge qualification.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "integer-window-mean-inline-1",
+      "questionId": "qf5-data-streaming-statistics.integer-window-mean-check-1"
+    },
+    {
+      "type": "check",
+      "id": "integer-window-mean-inline-2",
+      "questionId": "qf5-data-streaming-statistics.integer-window-mean-check-2"
+    },
+    {
+      "type": "check",
+      "id": "integer-window-mean-inline-3",
+      "questionId": "qf5-data-streaming-statistics.integer-window-mean-check-3"
+    },
+    {
+      "type": "check",
+      "id": "integer-window-mean-inline-4",
+      "questionId": "qf5-data-streaming-statistics.integer-window-mean-check-4"
+    },
+    {
+      "type": "check",
+      "id": "integer-window-mean-inline-5",
+      "questionId": "qf5-data-streaming-statistics.integer-window-mean-check-5"
+    },
+    {
+      "type": "check",
+      "id": "integer-window-mean-inline-6",
+      "questionId": "qf5-data-streaming-statistics.integer-window-mean-check-6"
+    },
+    {
+      "type": "check",
+      "id": "integer-window-mean-inline-7",
+      "questionId": "qf5-data-streaming-statistics.integer-window-mean-check-7"
+    },
+    {
+      "type": "text",
+      "id": "integer-window-mean-sources",
+      "markdown": "References: [1](https://docs.python.org/3.12/library/decimal.html), [2](https://docs.python.org/3.12/library/stdtypes.html). Public task hash 09e2866f19425137c74218de97eaafe8276ff2e64ab848200a2ebfb83887ffd5. These references establish language/container semantics; the exact task framing is the captured public contract. This extension preserves the earlier bounded examples and their policies rather than silently broadening those APIs."
+    },
+    {
+      "type": "text",
+      "id": "exact-inclusive-three-sigma-0",
+      "markdown": "Ingest first, then classify the same value\n\nThis public rule includes the current x in its own mean and population variance. That is deliberately different from comparing a new value with an uncontaminated prior baseline. Update n, Welford mean and M2 first; keep population denominator n, not sample denominator n-1. First observation has zero variance and prints ok. A descriptive three-sigma threshold is not proof of fraud, a calibrated false-positive guarantee, or permission to alter a real surveillance system."
+    },
+    {
+      "type": "text",
+      "id": "exact-inclusive-three-sigma-1",
+      "markdown": "Derive the exact strict decision\n\nAlongside Welford retain integer S=sum(x) and Q=sum(x*x). Let V=n*Q-S*S. Exact population variance is V/n^2, and current deviation is abs(n*x-S)/n. Multiplying positive n and squaring nonnegative sides gives (n*x-S)^2>9*V, with V>0. Equality is ok. The corrected task requires this exact mathematical decision, not an epsilon and not a direct float square-root comparison. Welford still teaches stable approximate moments; this exact integer companion decides only the bounded integer predicate."
+    },
+    {
+      "type": "text",
+      "id": "exact-inclusive-three-sigma-2",
+      "markdown": "Why nothing flags through the tenth value\n\nFor n>1, let d=x-mean be the latest centered deviation. All other centered deviations sum to -d, so by Cauchy-Schwarz their squared sum is at least d^2/(n-1). Therefore M2>=d^2*n/(n-1), and d^2/(M2/n)<=n-1. Exceeding squared z-score9 requires n>10. Nine zeros then 1 gives n=10, S=1, Q=1, V=9 and deviation_numerator=9: 81 equals 9*9, so ok. Ten zeros then 1 gives n=11, V=10 and deviation_numerator=10: 100>90, so outlier. This is a self-inclusion effect, not a reason to silently switch baseline policies."
+    },
+    {
+      "type": "text",
+      "id": "exact-inclusive-three-sigma-3",
+      "markdown": "A real float counterexample and explicit limits\n\nFor nine zeros then 1, Python Welford gives mean0.1,M2=0.9; abs(1-mean)=0.9 but3*sqrt(M2/10)=0.8999999999999999, so a naive strict float test incorrectly flags equality. The exact predicate prevents that flip. With n<=200000 and abs(x)<=1000000, abs(S)<=2e11,Q<=2e17,n*Q<=4e22 and squared numerator can be up to about1.6e23. Python integers suffice; signed 64-bit does NOT suffice for these products. A separately verified C++ implementation would need promoted wider arithmetic such as __int128, not inferred C++ signoff. O(n) work, fixed accumulator count plus returned strings; the supplied parser already stores input, so this is not a claim of end-to-end streaming input memory. Test exact tenth-value positive/negative spikes and Fraction-centered all-prefix classifications."
+    },
+    {
+      "type": "code",
+      "id": "exact-inclusive-three-sigma-complete",
+      "language": "python",
+      "source": "from collections import OrderedDict, deque\nfrom bisect import bisect_left\nimport heapq\nimport math\n\ndef flag_outliers(xs):\n    n = 0\n    mean = m2 = 0.0\n    total = squares = 0\n    lines = []\n    for value in xs:\n        n += 1\n        delta = value - mean\n        mean += delta / n\n        m2 += delta * (value - mean)\n        total += value\n        squares += value * value\n        variance_numerator = n * squares - total * total\n        deviation_numerator = n * value - total\n        flagged = variance_numerator > 0 and deviation_numerator * deviation_numerator > 9 * variance_numerator\n        lines.append('outlier' if flagged else 'ok')\n    return lines\n\nprint(*flag_outliers([0]*9+[1]), sep='\\n')\nprint(*flag_outliers([0]*10+[1])[-1:])\n",
+      "caption": "Expected stdout:\nok\nok\nok\nok\nok\nok\nok\nok\nok\nok\noutlier\n\nPrevalidated inputs follow the captured public contract. This completes the named Python function using its original supplied main/parser. It does not claim independent parser, C++, app-runner or judge qualification.",
+      "runnable": true
+    },
+    {
+      "type": "check",
+      "id": "exact-inclusive-three-sigma-inline-1",
+      "questionId": "qf5-data-streaming-statistics.exact-inclusive-three-sigma-check-1"
+    },
+    {
+      "type": "check",
+      "id": "exact-inclusive-three-sigma-inline-2",
+      "questionId": "qf5-data-streaming-statistics.exact-inclusive-three-sigma-check-2"
+    },
+    {
+      "type": "check",
+      "id": "exact-inclusive-three-sigma-inline-3",
+      "questionId": "qf5-data-streaming-statistics.exact-inclusive-three-sigma-check-3"
+    },
+    {
+      "type": "check",
+      "id": "exact-inclusive-three-sigma-inline-4",
+      "questionId": "qf5-data-streaming-statistics.exact-inclusive-three-sigma-check-4"
+    },
+    {
+      "type": "check",
+      "id": "exact-inclusive-three-sigma-inline-5",
+      "questionId": "qf5-data-streaming-statistics.exact-inclusive-three-sigma-check-5"
+    },
+    {
+      "type": "check",
+      "id": "exact-inclusive-three-sigma-inline-6",
+      "questionId": "qf5-data-streaming-statistics.exact-inclusive-three-sigma-check-6"
+    },
+    {
+      "type": "check",
+      "id": "exact-inclusive-three-sigma-inline-7",
+      "questionId": "qf5-data-streaming-statistics.exact-inclusive-three-sigma-check-7"
+    },
+    {
+      "type": "text",
+      "id": "exact-inclusive-three-sigma-sources",
+      "markdown": "References: [1](https://docs.python.org/3.12/library/stdtypes.html), [2](https://docs.python.org/3.12/library/math.html). Public task hash cabd3bdfa5d4b01ce2ebf7d760d7147e6ac1f2ecfb4f865f66d93a50277079d9. These references establish language/container semantics; the exact task framing is the captured public contract. This extension preserves the earlier bounded examples and their policies rather than silently broadening those APIs."
+    }
+  ],
+  "practice": {
+    "problemIds": [
+      "qfp-ema-series",
+      "qfp-moving-average",
+      "qfp-stream-outlier-stddev"
+    ]
+  },
+  "summary": "Retain count, mean and centered squared deviations; choose variance denominator and empty/singleton policy explicitly. EMA needs a declared recurrence, initialization, alpha, order and missing-data rule. Test numerical behavior without calling finite examples a universal proof. Practice transfer: span ema contract. Practice transfer: integer window mean. Practice transfer: exact inclusive three sigma."
+}

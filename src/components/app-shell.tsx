@@ -1,4 +1,5 @@
 'use client';
+import { signOutEverywhere } from '@/lib/v5/signout';
 
 import { APP_VERSION } from '@/lib/version';
 import Link from 'next/link';
@@ -62,7 +63,7 @@ function localHud(): HudData {
 }
 
 function useHud(enabled: boolean, refreshKey?: string) {
-  const [data, setData] = React.useState<HudData | null>(enabled ? localHud() : null);
+  const [data, setData] = React.useState<HudData | null>(null);   // the local mirror is read in the effect: reading it during render made server and client HTML differ (hydration #418)
   React.useEffect(() => {
     if (!enabled) return;
     let alive = true;
@@ -124,7 +125,8 @@ function UserMenu({ name, isAdmin }: { name: string; isAdmin?: boolean }) {
     return () => document.removeEventListener('mousedown', close);
   }, []);
   const signOut = async () => {
-    await fetch('/api/auth/logout', { method: 'POST' });
+    const r = await signOutEverywhere();
+    if (r === 'pending') { window.location.assign('/v5/learn'); return; }   // locked locally; the /v5 screen explains that server sign-out is still pending
     router.push('/');
     router.refresh();
   };
@@ -187,7 +189,7 @@ export function AppShell({ user, children, isAdmin }: { user: { name: string; em
       {/* Top bar */}
       <header className="sticky top-0 z-40 border-b-2 border-border bg-surface/95 backdrop-blur supports-[backdrop-filter]:bg-surface/90">
         <div className="max-w-6xl mx-auto flex h-16 items-center gap-2 sm:gap-3 px-4 lg:px-6">
-          <Link href="/dashboard" className="press flex items-center gap-2.5 font-black tracking-tight text-lg flex-none">
+          <Link href="/dashboard" aria-label="QuantFoundry, go to dashboard" className="press flex items-center gap-2.5 font-black tracking-tight text-lg flex-none">
             <span className="h-9 w-9 rounded-2xl bg-accent shadow-[0_3px_0_0_var(--accent-deep)] flex items-center justify-center">
               <Sigma className="h-5 w-5 text-on-accent" aria-hidden />
             </span>
