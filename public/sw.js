@@ -1,10 +1,10 @@
 /* QuantFoundry Service Worker — seamless offline packs, dynamic shell fallback, background sync */
 
-const VERSION = 'qf4-v4';
+const VERSION = 'qf4-v5';
 const CACHE_PACKS = `${VERSION}-packs`;
 const CACHE_SHELL = `${VERSION}-shell`;
 const CACHE_STATIC = `${VERSION}-static`;
-const META_KEY = 'qf4-manifest-stamp-v4';
+const META_KEY = 'qf4-manifest-stamp-v5';
 
 const DEV_MODE = new URL(self.location.href).searchParams.get('mode') === 'dev';
 
@@ -64,6 +64,7 @@ function isStaticAsset(pathname) {
 
 function isRscRequest(request, url) {
   if (url.searchParams.has('_rsc')) return true;
+  if (request.headers.get('rsc') === '1' || request.headers.get('next-router-state-tree')) return true;
   const accept = request.headers.get('accept') || '';
   return accept.includes('text/x-component');
 }
@@ -240,9 +241,12 @@ async function runDownloadAll(force = false) {
         const metaRes = await packCache.match(META_KEY);
         const prevStamp = metaRes ? await metaRes.text() : null;
         if (prevStamp === stamp) {
-          // Verify key shell is still present before skipping
-          const dashHit = await shellCache.match('/dashboard');
-          if (dashHit) {
+          // Verify key shell HTML and RSC Flight payload are still present before skipping
+          const [dashHit, dashRscHit] = await Promise.all([
+            shellCache.match('/dashboard'),
+            shellCache.match('/dashboard::rsc'),
+          ]);
+          if (dashHit && dashRscHit) {
             await broadcastMsg({ type: 'QF3_DL_DONE', total: (manifest.files || []).length, skipped: true });
             return;
           }
@@ -272,7 +276,7 @@ async function runDownloadAll(force = false) {
         await broadcastMsg({ type: 'QF3_DL_PROGRESS', done, total });
       }
 
-      // 2. Cache navigation HTML shells + static JS/CSS chunks referenced by them
+      // 2. Cache navigation HTML shells + RSC Flight payloads + static JS/CSS chunks referenced by them
       const seenAssets = new Set();
       for (let i = 0; i < SHELL_ROUTES.length; i += 4) {
         const slice = SHELL_ROUTES.slice(i, i + 4);
@@ -287,6 +291,19 @@ async function runDownloadAll(force = false) {
                 await cacheAssetFromHtml(text, staticCache, seenAssets);
               }
             } catch { /* ignore individual route failure */ }
+            try {
+              const rscRes = await fetch(route, {
+                credentials: 'same-origin',
+                headers: { RSC: '1', Accept: 'text/x-component' },
+              });
+              const ct = (rscRes.headers.get('content-type') || '').toLowerCase();
+              if (isCacheablePage(rscRes) && !ct.includes('text/html')) {
+                const rscClone = rscRes.clone();
+                await shellCache.put(`${route}::rsc`, rscRes);
+                const rscText = await rscClone.text();
+                await cacheAssetFromHtml(rscText, staticCache, seenAssets);
+              }
+            } catch { /* ignore individual RSC failure */ }
             done++;
           }),
         );
@@ -324,9 +341,10 @@ async function runDownloadAll(force = false) {
               credentials: 'same-origin',
               headers: { RSC: '1', Accept: 'text/x-component' },
             });
-            if (rscRes.ok) {
+            if (isCacheablePage(rscRes)) {
               const rscClone = rscRes.clone();
               await shellCache.put(entry.rscKey, rscRes);
+              await shellCache.put(`${entry.seed}::rsc`, rscClone.clone());
               const rscText = await rscClone.text();
               await cacheAssetFromHtml(rscText, staticCache, seenAssets);
             }
@@ -452,20 +470,36 @@ self.addEventListener('fetch', (event) => {
       (async () => {
         const cache = await caches.open(CACHE_SHELL);
         const key = rscCacheKey(url);
-        try {
-          const res = await fetch(request);
-          if (isCacheablePage(res)) {
-            await cache.put(key, res.clone());
-          }
-          return res;
-        } catch {
+        const matchCachedRsc = async () => {
           const exact = await cache.match(key);
           if (exact) return exact;
+          const byPath = await cache.match(`${url.pathname}::rsc`);
+          if (byPath) return byPath;
           const dyn = matchDynamicShell(url.pathname);
           if (dyn) {
             const dynRes = await cache.match(dyn.rscKey);
             if (dynRes) return dynRes;
           }
+          return null;
+        };
+        if (typeof self.navigator !== 'undefined' && self.navigator.onLine === false) {
+          const hit = await matchCachedRsc();
+          if (hit) return hit;
+        }
+        try {
+          const res = await fetch(request);
+          const ct = (res.headers.get('content-type') || '').toLowerCase();
+          if (isCacheablePage(res) && !ct.includes('text/html')) {
+            await cache.put(key, res.clone());
+            const dyn = matchDynamicShell(url.pathname);
+            if (dyn && !request.headers.get('next-router-segment-prefetch')) {
+              await cache.put(dyn.rscKey, res.clone());
+            }
+          }
+          return res;
+        } catch {
+          const cached = await matchCachedRsc();
+          if (cached) return cached;
           return new Response('', { status: 503 });
         }
       })(),
@@ -478,15 +512,7 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       (async () => {
         const cache = await caches.open(CACHE_SHELL);
-        try {
-          const res = await fetch(request);
-          if (isCacheablePage(res)) {
-            await cache.put(url.pathname, res.clone());
-            const dyn = matchDynamicShell(url.pathname);
-            if (dyn) await cache.put(dyn.htmlKey, res.clone());
-          }
-          return res;
-        } catch {
+        const matchCachedHtml = async () => {
           const exact = await cache.match(url.pathname);
           if (exact) return exact;
           const dyn = matchDynamicShell(url.pathname);
@@ -496,6 +522,23 @@ self.addEventListener('fetch', (event) => {
           }
           const rootHit = await cache.match('/');
           if (rootHit) return rootHit;
+          return null;
+        };
+        if (typeof self.navigator !== 'undefined' && self.navigator.onLine === false) {
+          const hit = await matchCachedHtml();
+          if (hit) return hit;
+        }
+        try {
+          const res = await fetch(request);
+          if (isCacheablePage(res)) {
+            await cache.put(url.pathname, res.clone());
+            const dyn = matchDynamicShell(url.pathname);
+            if (dyn) await cache.put(dyn.htmlKey, res.clone());
+          }
+          return res;
+        } catch {
+          const cached = await matchCachedHtml();
+          if (cached) return cached;
           return new Response(
             '<!doctype html><html><body style="font-family:sans-serif;padding:2rem"><h2>Offline</h2><p>This page has not been cached yet. Return to <a href="/dashboard">Dashboard</a> or <a href="/curriculum">Curriculum</a>.</p></body></html>',
             { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' } },

@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { getLessonPack } from '@/lib/client/packs';
-import { getState, subscribe, hydrate, recordReviews, deleteCard } from '@/lib/client/local-state';
+import { getState, subscribe, hydrate, cardStateOf, unretireCard } from '@/lib/client/local-state';
 import { RevisionSession, type DueCard } from '@/components/revision-session';
 
 const TYPE_META: Record<string, { Icon: LucideIcon; tile: string; fill: string }> = {
@@ -35,27 +35,41 @@ function formatDue(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
-/** cardKey is "<lessonId>:<idx>"; resolve front/back/type from the lesson pack. */
+/** cardKey is "<lessonId>:<idx>" or "quiz:<lessonId>:<qid>"; resolve front/back/type from the lesson pack. */
 async function resolveCards(keys: string[]): Promise<DueCard[]> {
-  const byLesson = new Map<string, string[]>();
+  const byLesson = new Map<string, { key: string; idxStr: string; source: 'quiz_miss' | 'flashcard' }[]>();
   for (const k of keys) {
-    const lessonId = k.includes(':') ? k.slice(0, k.lastIndexOf(':')) : '';
-    if (!lessonId) continue;
+    const isQuiz = k.startsWith('quiz:');
+    const raw = isQuiz ? k.slice(5) : k;
+    const colon = raw.lastIndexOf(':');
+    if (colon <= 0) continue;
+    const lessonId = raw.slice(0, colon);
+    const idxStr = raw.slice(colon + 1);
     if (!byLesson.has(lessonId)) byLesson.set(lessonId, []);
-    byLesson.get(lessonId)!.push(k);
+    byLesson.get(lessonId)!.push({ key: k, idxStr, source: isQuiz ? 'quiz_miss' : 'flashcard' });
   }
   const out: DueCard[] = [];
-  await Promise.all([...byLesson.entries()].map(async ([lessonId, lessonKeys]) => {
+  await Promise.all([...byLesson.entries()].map(async ([lessonId, entries]) => {
     try {
       const lesson = await getLessonPack(lessonId);
-      for (const k of lessonKeys) {
-        const idx = Number(k.slice(lessonId.length + 1));
-        const fc = lesson.flashcards[idx];
-        if (!fc) continue;
-        out.push({
-          cardKey: k, front: fc.front, back: fc.back, cardType: fc.type, source: 'lesson',
-          intervalDays: 0, repetitions: 0, lapses: 0,
-        });
+      for (const entry of entries) {
+        const st = cardStateOf(entry.key);
+        if (entry.source === 'quiz_miss') {
+          const q = lesson.quiz.find((x) => x.id === entry.idxStr);
+          if (!q) continue;
+          out.push({
+            cardKey: entry.key, front: q.prompt, back: q.explanation, cardType: 'quiz_miss', source: 'quiz_miss',
+            intervalDays: st?.intervalDays ?? 0, repetitions: st?.repetitions ?? 0, lapses: st?.lapses ?? 0,
+          });
+        } else {
+          const idx = Number(entry.idxStr);
+          const fc = lesson.flashcards[idx];
+          if (!fc) continue;
+          out.push({
+            cardKey: entry.key, front: fc.front, back: fc.back, cardType: fc.type || 'concept', source: 'lesson',
+            intervalDays: st?.intervalDays ?? 0, repetitions: st?.repetitions ?? 0, lapses: st?.lapses ?? 0,
+          });
+        }
       }
     } catch {
       /* lesson pack unavailable: skip */
@@ -65,8 +79,10 @@ async function resolveCards(keys: string[]): Promise<DueCard[]> {
 }
 
 export function RevisionClient() {
-  const [ready, setReady] = React.useState(false);
+  const [, setReady] = React.useState(false);
   const [dueCards, setDueCards] = React.useState<DueCard[]>([]);
+  const [sessionCards, setSessionCards] = React.useState<DueCard[] | null>(null);
+  const [sessionKey, setSessionKey] = React.useState(0);
   const [, setTick] = React.useState(0);
 
   React.useEffect(() => {
@@ -80,7 +96,12 @@ export function RevisionClient() {
         .sort((a, b) => new Date(a[1].dueAt).getTime() - new Date(b[1].dueAt).getTime())
         .slice(0, 40)
         .map(([k]) => k);
-      void resolveCards(keys).then(cards => { if (alive) { setDueCards(cards); setReady(true); } });
+      void resolveCards(keys).then(cards => {
+        if (!alive) return;
+        setDueCards(cards);
+        setSessionCards(prev => (prev === null && cards.length > 0 ? cards : prev));
+        setReady(true);
+      });
     };
     refresh();
     const unsub = subscribe(() => { setTick(t => t + 1); refresh(); });
@@ -89,6 +110,7 @@ export function RevisionClient() {
 
   const s = getState();
   const allCards = Object.entries(s.cards);
+  const retiredKeys = Object.keys(s.retiredCards ?? {});
   const now = Date.now();
   const upcoming = allCards
     .filter(([, c]) => new Date(c.dueAt).getTime() > now)
@@ -96,8 +118,12 @@ export function RevisionClient() {
     .slice(0, 8);
   const dueCount = allCards.filter(([, c]) => new Date(c.dueAt).getTime() <= now).length;
 
+  const dueTypeByKey = new Map(dueCards.map((c) => [c.cardKey, c.cardType]));
   const byType: Record<string, number> = {};
-  for (const [, c] of allCards) byType['concept'] = (byType['concept'] ?? 0) + 1;
+  for (const [k] of allCards) {
+    const t = k.startsWith('quiz:') ? 'quiz_miss' : (dueTypeByKey.get(k) ?? 'concept');
+    byType[t] = (byType[t] ?? 0) + 1;
+  }
   // richer types when the front can be sniffed from packs later; concept is the safe default
   const avgInterval = Math.round(allCards.reduce((n, [, c]) => n + c.intervalDays, 0) / Math.max(allCards.length, 1)) + 'd';
   // distinct lessons contributing cards to the deck (key is "<lessonId>:<idx>")
@@ -211,9 +237,16 @@ export function RevisionClient() {
       </div>
 
       {/* live session */}
-      {dueCards.length > 0 && (
+      {sessionCards && sessionCards.length > 0 && (
         <div id="review" className="mt-8 scroll-mt-6">
-          <RevisionSession cards={dueCards} />
+          <RevisionSession
+            key={sessionKey}
+            cards={sessionCards}
+            onComplete={() => {
+              setSessionCards(null);
+              setSessionKey((k) => k + 1);
+            }}
+          />
         </div>
       )}
 
@@ -242,7 +275,7 @@ export function RevisionClient() {
                       <li key={t.type}>
                         <div className="flex items-center gap-2.5 mb-1.5">
                           <span className={'icon-tile icon-tile-sm ' + t.tile}><Icon /></span>
-                          <span className="flex-1 min-w-0 text-[15px] font-semibold capitalize truncate">{cap(t.type.replace(/-/g, ' '))}</span>
+                          <span className="flex-1 min-w-0 text-[15px] font-semibold capitalize truncate">{cap(t.type.replace(/[-_]/g, ' '))}</span>
                           <span className="chip tnum">{t.n}</span>
                           <span className="chip tnum">{pct}%</span>
                         </div>
@@ -307,6 +340,35 @@ export function RevisionClient() {
           )}
         </section>
       </div>
+
+      {retiredKeys.length > 0 && (
+        <details className="mt-6 qf-card-flat p-5">
+          <summary className="cursor-pointer font-black text-[15px] select-none flex items-center justify-between gap-2">
+            <span>Retired cards ({retiredKeys.length})</span>
+            <span className="text-[12px] font-bold text-faint">Click to inspect or restore to queue</span>
+          </summary>
+          <ul className="mt-4 space-y-2">
+            {retiredKeys.map((key) => {
+              const label = key.replace(/^quiz:/, 'missed check: ').split(':').slice(0, -1).join(':').replace(/-/g, ' ');
+              return (
+                <li key={key} className="row-card">
+                  <span className="flex-1 min-w-0 text-[14px] font-semibold truncate">{label || key}</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      unretireCard(key);
+                      setSessionCards(null);
+                    }}
+                    className="btn3d btn3d-ghost btn3d-sm shrink-0"
+                  >
+                    Restore
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </details>
+      )}
     </div>
   );
 }

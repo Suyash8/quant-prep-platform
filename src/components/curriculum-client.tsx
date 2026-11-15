@@ -8,7 +8,7 @@ import type { CurriculumMap } from '@/lib/content';
 import type { RegistryLite } from '@/lib/client/packs';
 import { getMapPack } from '@/lib/client/packs';
 import { getState, subscribe } from '@/lib/client/local-state';
-import { topoOrderLessons } from '@/lib/planner-core';
+import { buildCurriculumGraph } from '@/lib/curriculum-graph';
 import { CurriculumSearch } from '@/components/curriculum-search';
 import { LearningPath } from '@/components/gamified/learning-path';
 import { resolvePhaseColor } from '@/lib/phase-styles';
@@ -62,10 +62,10 @@ export function CurriculumClient({
     );
     const totalEst = allLessons.filter((l) => published.has(l.id)).reduce((n, l) => n + l.estMinutes, 0);
     const byId = new Map(registry.lessons.map((l) => [l.id, l]));
-    const ordered = topoOrderLessons(registry.lessons);
-    const currentLessonId = ordered
-      .filter((l) => !done.has(l.id))
-      .find((l) => l.prereqs.every((p) => done.has(p)))?.id;
+    const graph = buildCurriculumGraph(map, registry.lessons);
+    const currentLessonId = graph.order
+      .filter((id) => published.has(id) && !done.has(id))
+      .find((id) => graph.byId.get(id)!.prereqs.every((p) => done.has(p)));
 
     return { map, registry, published, statusByLesson, done, allLessons, totalEst, byId, currentLessonId };
   }, [pack, lessonsState]);

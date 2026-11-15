@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { Eye, EyeOff, Check, X, Sparkles, Clock, Undo2 } from 'lucide-react';
+import { Eye, Check, X, Sparkles, Clock, Undo2, BookOpen, Archive } from 'lucide-react';
 import { toast } from 'sonner';
 import { QMath } from '@/components/quiz';
 import {
@@ -16,6 +16,12 @@ export interface DueCard {
   intervalDays: number; repetitions: number; lapses: number;
 }
 
+function sourceLessonId(cardKey: string): string | null {
+  const raw = cardKey.startsWith('quiz:') ? cardKey.slice(5) : cardKey;
+  const idx = raw.lastIndexOf(':');
+  return idx > 0 ? raw.slice(0, idx) : null;
+}
+
 const GRADE_BTN = 'w-full py-2.5 rounded-xl text-[13px] font-black hover:brightness-105 active:translate-y-[3px] active:shadow-none transition-all';
 
 const GRADES = [
@@ -26,11 +32,13 @@ const GRADES = [
   { g: 5, label: 'Instant', desc: 'Perfect, immediate recall', cls: `bg-gold text-[#4a3800] shadow-[0_3px_0_0_#d9ab00] ${GRADE_BTN}` },
 ];
 
-export function RevisionSession({ cards }: { cards?: DueCard[] }) {
+export function RevisionSession({ cards, onComplete }: { cards?: DueCard[]; onComplete?: () => void }) {
   const [queue, setQueue] = React.useState<DueCard[]>(cards ?? []);
   const [loading, setLoading] = React.useState(!cards);
   const [idx, setIdx] = React.useState(0);
   const [revealed, setRevealed] = React.useState(false);
+  const [note, setNote] = React.useState('');
+  const [snoozeHours, setSnoozeHours] = React.useState(24);
   const [done, setDone] = React.useState(0);
   const [lastAction, setLastAction] = React.useState<{
     card: DueCard;
@@ -130,17 +138,32 @@ export function RevisionSession({ cards }: { cards?: DueCard[] }) {
       setIdx(i => i + 1);
     }
     setRevealed(false);
+    setNote('');
     setDone(d => d + 1);
   }
 
-  function snooze() {
+  function snooze(hours = snoozeHours) {
     if (!card) return;
     const before = cardStateOf(card.cardKey);
-    snoozeCard(card.cardKey, 1);
+    snoozeCard(card.cardKey, hours / 24);
     setLastAction({ card, before, removed: false, prevIdx: idx, prevDone: done });
     setIdx(i => i + 1);
     setRevealed(false);
-    toast.info('Snoozed card for 24 hours.');
+    setNote('');
+    const label = hours === 1 ? '1 hour' : hours === 24 ? '24 hours' : '7 days';
+    toast.info(`Snoozed card for ${label}.`);
+  }
+
+  function retireCurrent() {
+    if (!card) return;
+    const before = cardStateOf(card.cardKey);
+    deleteCard(card.cardKey);
+    setLastAction({ card, before, removed: true, prevIdx: idx, prevDone: done });
+    setQueue(q => q.filter(c => c.cardKey !== card.cardKey));
+    if (idx >= queue.length - 1) setIdx(0);
+    setRevealed(false);
+    setNote('');
+    toast.info('Retired card from due queue. You can restore it anytime below.');
   }
 
   function undoLast() {
@@ -156,6 +179,7 @@ export function RevisionSession({ cards }: { cards?: DueCard[] }) {
     setIdx(lastAction.prevIdx);
     setDone(lastAction.prevDone);
     setRevealed(false);
+    setNote('');
     setLastAction(null);
     toast.info('Reverted last card.');
   }
@@ -179,13 +203,26 @@ export function RevisionSession({ cards }: { cards?: DueCard[] }) {
         <p className="mt-1.5 text-[15px] font-semibold text-muted max-w-md mx-auto">
           The scheduler has re-spaced everything you touched. Cards return as their intervals grow; lapsed cards come back sooner.
         </p>
-        <Link href="/revision" className="btn3d mt-4">Back to revision centre</Link>
+        <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
+          {lastAction && (
+            <button type="button" onClick={undoLast} className="btn3d btn3d-ghost btn3d-sm">
+              <Undo2 className="h-4 w-4" /> Undo last card
+            </button>
+          )}
+          {onComplete && (
+            <button type="button" onClick={onComplete} className="btn3d btn3d-ghost">
+              Refresh summary
+            </button>
+          )}
+          <Link href="/curriculum" className="btn3d">Browse curriculum</Link>
+        </div>
       </div>
     );
   }
 
   const typeWords = card.cardType.replace(/-/g, ' ');
   const typeTitle = typeWords.charAt(0).toUpperCase() + typeWords.slice(1);
+  const lessonRef = sourceLessonId(card.cardKey);
 
   return (
     <div className="max-w-xl mx-auto">
@@ -197,7 +234,7 @@ export function RevisionSession({ cards }: { cards?: DueCard[] }) {
               <Undo2 className="h-3 w-3" /> Undo
             </button>
           )}
-          <button type="button" onClick={snooze} className="inline-flex items-center gap-1 rounded-lg border border-border px-2 py-0.5 text-muted hover:text-foreground hover:bg-surface-2 transition-colors" title="Defer card 24 hours">
+          <button type="button" onClick={() => snooze(24)} className="inline-flex items-center gap-1 rounded-lg border border-border px-2 py-0.5 text-muted hover:text-foreground hover:bg-surface-2 transition-colors" title="Defer card 24 hours">
             <Clock className="h-3 w-3" /> Snooze +1d
           </button>
         </div>
@@ -211,9 +248,31 @@ export function RevisionSession({ cards }: { cards?: DueCard[] }) {
           <p className="mt-3 text-[12px] font-black uppercase tracking-[0.12em] text-faint">
             Card {idx + 1} of {queue.length} · {typeTitle}{card.source === 'quiz_miss' ? ' · from a missed question' : ''}
           </p>
+          <div className="mt-4 w-full text-left">
+            <label className="block text-[12px] font-bold text-faint mb-1.5">
+              Optional scratch space <span className="font-semibold">(private to this device)</span>
+            </label>
+            <textarea
+              aria-label="Optional scratch space"
+              rows={2}
+              maxLength={4000}
+              disabled={revealed}
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Write your recall attempt before revealing..."
+              className="w-full rounded-xl border-2 border-border bg-surface-2/60 px-3 py-2 text-[13px] font-medium text-foreground placeholder:text-faint focus:border-accent focus:outline-none disabled:opacity-75"
+            />
+          </div>
           {revealed && (
-            <div className="anim-slide-up mt-5 pt-5 border-t w-full text-[15px] text-muted leading-relaxed font-semibold">
+            <div className="anim-slide-up mt-5 pt-5 border-t w-full text-[15px] text-muted leading-relaxed font-semibold text-left">
               <QMath text={card.back} />
+              {lessonRef && (
+                <div className="mt-3 pt-2.5 border-t border-border/60">
+                  <Link href={`/learn/${encodeURIComponent(lessonRef)}`} className="inline-flex items-center gap-1.5 text-[13px] font-extrabold text-accent-deep dark:text-accent hover:underline">
+                    <BookOpen className="h-3.5 w-3.5" /> Revisit source lesson
+                  </Link>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -236,6 +295,31 @@ export function RevisionSession({ cards }: { cards?: DueCard[] }) {
           )}
         </div>
       </div>
+      <details className="mt-4 qf-card-flat px-4 py-3 text-[13px]">
+        <summary className="cursor-pointer font-extrabold text-muted select-none">Manage this review</summary>
+        <div className="mt-3 flex flex-wrap items-end justify-between gap-3">
+          <div className="flex items-end gap-2">
+            <label className="text-[12px] font-bold text-faint">
+              Snooze for
+              <select
+                value={snoozeHours}
+                onChange={(e) => setSnoozeHours(Number(e.target.value))}
+                className="mt-1 block qf-select !h-9 !text-[13px]"
+              >
+                <option value={1}>1 hour</option>
+                <option value={24}>24 hours</option>
+                <option value={168}>7 days</option>
+              </select>
+            </label>
+            <button type="button" onClick={() => snooze(snoozeHours)} className="btn3d btn3d-ghost btn3d-sm">
+              <Clock className="h-3.5 w-3.5" /> Snooze
+            </button>
+          </div>
+          <button type="button" onClick={retireCurrent} className="btn3d btn3d-ghost btn3d-sm text-muted">
+            <Archive className="h-3.5 w-3.5" /> Retire card
+          </button>
+        </div>
+      </details>
       {!revealed && <p className="mt-3 text-[13px] text-faint text-center font-semibold">Try to recall before revealing, retrieval effort is what builds memory.</p>}
       {revealed && <p className="mt-3 text-[13px] text-faint text-center font-semibold">Grade honestly: the SM-2 scheduler uses it to set the next interval.</p>}
     </div>

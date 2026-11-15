@@ -1,6 +1,5 @@
 'use client';
 
-import { APP_VERSION } from '@/lib/version';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useTheme } from 'next-themes';
@@ -298,7 +297,7 @@ export function AppShell({ user, children, isAdmin }: { user: { name: string; em
         </div>
         <div className="border-t-2 border-border">
           <div className="max-w-6xl mx-auto px-4 lg:px-6 py-3 flex flex-wrap items-center justify-between gap-2 text-[13px] font-semibold text-faint">
-            <span>QuantFoundry · {APP_VERSION} · Quantitative Engineering &amp; Interview Preparation</span>
+            <span>QuantFoundry · Quantitative Engineering &amp; Interview Preparation</span>
             <span className="flex flex-wrap items-center gap-4">
               <Link href="/about" className="hover:text-muted">About</Link>
               <Link href="/pricing" className="hover:text-muted">Pricing</Link>
@@ -408,7 +407,7 @@ export function PublicFooter() {
       </div>
       <div className="border-t-2 border-border">
         <div className="max-w-6xl mx-auto px-4 lg:px-6 py-4 flex flex-wrap items-center justify-between gap-2 text-[13px] font-semibold text-faint">
-          <span>QuantFoundry · {APP_VERSION} · Quantitative Engineering &amp; Interview Preparation</span>
+          <span>QuantFoundry · Quantitative Engineering &amp; Interview Preparation</span>
           <span className="flex flex-wrap items-center gap-4">
             <Link href="/privacy" className="hover:text-muted">Privacy</Link>
             <Link href="/terms" className="hover:text-muted">Terms</Link>

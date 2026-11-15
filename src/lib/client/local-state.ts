@@ -832,6 +832,15 @@ export function restoreCardSnapshot(cardKey: string, snapshot: CardLocal): void 
   done();
 }
 
+export function unretireCard(cardKey: string): void {
+  const s = S();
+  delete s.retiredCards[cardKey];
+  if (!s.cards[cardKey]) {
+    s.cards[cardKey] = { ease: 2.5, intervalDays: 1, repetitions: 0, lapses: 0, lastGrade: 0, dueAt: nowIso(), updatedAt: nowIso() };
+  }
+  done();
+}
+
 export function setDailyGoalXp(dailyGoalXp: number): void {
   const s = S();
   s.dailyGoalXp = Math.max(10, Math.min(400, Math.round(dailyGoalXp)));

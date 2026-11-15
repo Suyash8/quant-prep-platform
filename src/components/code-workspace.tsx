@@ -50,6 +50,9 @@ export function CodeWorkspace({ slug, stubs, examples, timeLimitMs }: WorkspaceP
   const [result, setResult] = React.useState<SubmitResult | null>(null);
   const [dirty, setDirty] = React.useState(false);
   const [prevCode, setPrevCode] = React.useState<string | null>(null);
+  const [prevAt, setPrevAt] = React.useState<number | null>(null);
+  const [prevOpen, setPrevOpen] = React.useState(false);
+  const [savedAt, setSavedAt] = React.useState<number | null>(null);
   const readiness = useCodeReadiness();
   useBackGuard(dirty);
 
@@ -57,7 +60,10 @@ export function CodeWorkspace({ slug, stubs, examples, timeLimitMs }: WorkspaceP
     let alive = true;
     getDraft(slug, language).then((draft) => {
       if (!alive || !draft) return;
-      setPrevCode(draft.prevCode && draft.prevCode !== codeByLang[language] ? draft.prevCode : null);
+      const hasPrev = Boolean(draft.prevCode && draft.prevCode !== codeByLang[language]);
+      setPrevCode(hasPrev ? draft.prevCode ?? null : null);
+      setPrevAt(hasPrev ? draft.prevAt ?? null : null);
+      if (draft.updatedAt) setSavedAt(draft.updatedAt);
       if (draft.code && (!codeByLang[language] || codeByLang[language] === (stubs[language] ?? ''))) {
         setCodeByLang((m) => ({ ...m, [language]: draft.code }));
       }
@@ -72,8 +78,10 @@ export function CodeWorkspace({ slug, stubs, examples, timeLimitMs }: WorkspaceP
       const activeCode = codeByLang[language];
       if (typeof activeCode === 'string') {
         void saveDraft(slug, language, activeCode, true).then((saved) => {
+          setSavedAt(saved?.updatedAt ?? Date.now());
           if (saved?.prevCode && saved.prevCode !== activeCode) {
             setPrevCode(saved.prevCode);
+            setPrevAt(saved.prevAt ?? null);
           }
         });
       }
@@ -91,11 +99,19 @@ export function CodeWorkspace({ slug, stubs, examples, timeLimitMs }: WorkspaceP
     const current = codeByLang[language] ?? '';
     setCodeByLang(m => ({ ...m, [language]: prevCode }));
     setPrevCode(current !== prevCode ? current : null);
+    setPrevAt(Date.now());
+    setPrevOpen(false);
     toast.info('Restored previous draft.');
   }
 
   function switchLang(l: string) {
+    try { localStorage.setItem(`qf-code-${slug}`, JSON.stringify(codeByLang)); } catch {}
+    const activeCode = codeByLang[language];
+    if (typeof activeCode === 'string') {
+      void saveDraft(slug, language, activeCode, true);
+    }
     setLanguage(l);
+    setPrevOpen(false);
     setResult(null);
   }
 
@@ -211,11 +227,15 @@ export function CodeWorkspace({ slug, stubs, examples, timeLimitMs }: WorkspaceP
               {/* one row: Reset / Run ghost, Submit is the only solid action */}
               <div className="ml-auto flex items-center gap-2 pl-1">
                 <span className="hidden text-[12px] font-semibold text-slate-400 sm:inline">
-                  {dirty ? 'saving…' : 'autosaves locally'}
+                  {dirty
+                    ? 'Saving on this device…'
+                    : savedAt
+                      ? `Saved at ${new Date(savedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`
+                      : 'Autosaves locally'}
                 </span>
                 {prevCode && (
-                  <button type="button" onClick={restorePrev} className="btn3d btn3d-ghost btn3d-sm shrink-0" title="Restore previous local snapshot">
-                    <History className="h-3.5 w-3.5" /> Restore
+                  <button type="button" onClick={() => setPrevOpen((o) => !o)} className="btn3d btn3d-ghost btn3d-sm shrink-0" title="Inspect or restore older local draft" aria-expanded={prevOpen}>
+                    <History className="h-3.5 w-3.5" /> Earlier draft
                   </button>
                 )}
                 <button onClick={resetCode} className="btn3d btn3d-ghost btn3d-sm shrink-0" title="Reset to template">
@@ -229,6 +249,26 @@ export function CodeWorkspace({ slug, stubs, examples, timeLimitMs }: WorkspaceP
                 </button>
               </div>
             </div>
+            {prevOpen && prevCode && (
+              <div className="border-b-2 px-3 py-2.5 text-[12px]" style={{ background: '#10161d', borderColor: PANEL_DIVIDER }}>
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                  <span className="font-bold text-slate-300">
+                    Previous snapshot on this device{prevAt ? ` (${new Date(prevAt).toLocaleString()})` : ''}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button type="button" onClick={restorePrev} className="btn3d btn3d-sm !py-1 !px-2.5 !text-[12px]">
+                      Use this snapshot
+                    </button>
+                    <button type="button" onClick={() => setPrevOpen(false)} className="btn3d btn3d-ghost btn3d-sm !py-1 !px-2.5 !text-[12px]">
+                      Dismiss
+                    </button>
+                  </div>
+                </div>
+                <pre className="thin-scroll max-h-32 overflow-auto rounded-lg border p-2 font-mono text-[11px] text-slate-300 whitespace-pre-wrap" style={{ background: PANEL_BG, borderColor: PANEL_BORDER }}>
+                  {prevCode}
+                </pre>
+              </div>
+            )}
             <MonacoCodeEditor
               value={code}
               language={monacoLang}

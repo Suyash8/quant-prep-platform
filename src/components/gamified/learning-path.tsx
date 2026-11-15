@@ -496,16 +496,16 @@ function ModuleTrail({
         </div>
         <span className="chip tnum shrink-0">{modDone}/{mod.lessons.length}</span>
       </div>
-      {/* trail sits on a soft band so the winding path reads as intentional, band width hugs the zigzag so there are no dead margins */}
-      <div className="relative flex flex-col items-center rounded-[36px] bg-surface-2/30 dark:bg-surface-2/15 border border-border/60 p-4 sm:p-8 max-w-[440px] mx-auto w-full overflow-visible">
+      {/* trail sits on a soft band so the winding path reads as intentional */}
+      <div className="relative flex flex-col items-center rounded-[36px] bg-surface-2/30 dark:bg-surface-2/15 border border-border/60 p-4 sm:p-6 max-w-[520px] mx-auto w-full overflow-visible">
         <Trail mod={mod} graph={graph} progress={progress} passed={passed} phaseColor={phaseColor} currentLessonId={currentLessonId} />
       </div>
     </div>
   );
 }
 
-const TRACK_WIDTH = 400;
-const PITCH = 192;
+const TRACK_WIDTH = 150;
+const PITCH = 122;
 
 /** Compute Catmull-Rom cubic Bézier segment from points[i] to points[i+1]. */
 function segmentCurve(points: { cx: number; cy: number }[], i: number): string {
@@ -557,10 +557,10 @@ function Trail({
     return () => window.removeEventListener('keydown', handleKey);
   }, []);
 
-  const totalHeight = Math.max(200, (mod.lessons.length - 1) * PITCH + 195);
+  const totalHeight = Math.max(180, (mod.lessons.length - 1) * PITCH + 168);
   const coords = mod.lessons.map((_, i) => ({
-    cx: TRACK_WIDTH / 2 + 56 * Math.sin(i * 0.85),
-    cy: 72 + i * PITCH,
+    cx: 75 + 22 * Math.sin(i * 1.05),
+    cy: 84 + i * PITCH,
   }));
 
   const fullPathD = buildContinuousSpline(coords);
@@ -581,7 +581,7 @@ function Trail({
 
   return (
     <div
-      className="relative w-full max-w-[400px] mx-auto select-none overflow-visible"
+      className="relative w-full max-w-[460px] mx-auto select-none overflow-visible"
       style={{ height: totalHeight }}
       onClick={(e) => {
         if (!(e.target as HTMLElement).closest('.path-node-wrapper')) {
@@ -589,9 +589,11 @@ function Trail({
         }
       }}
     >
-      {/* Background SVG continuous spline trail */}
+      {/* Background SVG continuous spline trail pinned pixel-exact to the left node track */}
       <svg
-        className="absolute inset-0 w-full h-full pointer-events-none overflow-visible"
+        width={TRACK_WIDTH}
+        height={totalHeight}
+        className="absolute left-0 top-0 pointer-events-none overflow-visible"
         viewBox={`0 0 ${TRACK_WIDTH} ${totalHeight}`}
       >
         <defs>
@@ -658,28 +660,52 @@ function Trail({
         const isSelected = selectedLesson === lesson.id;
 
         return (
-          <div
-            key={lesson.id}
-            className="path-node-wrapper absolute -translate-x-1/2 -translate-y-1/2"
-            style={{
-              left: coord.cx,
-              top: coord.cy,
-              zIndex: isSelected ? 40 : isCurrent ? 25 : 15,
-            }}
-          >
-            <PathNode
-              lessonId={lesson.id}
-              title={lesson.title}
-              minutes={lesson.estMinutes}
-              status={st}
-              unlocked={unlocked}
-              isCurrent={!!isCurrent}
-              color={phaseColor}
-              isSelected={isSelected}
-              onToggle={() => setSelectedLesson(prev => prev === lesson.id ? null : lesson.id)}
-              onClose={() => setSelectedLesson(null)}
-            />
-          </div>
+          <React.Fragment key={lesson.id}>
+            <div
+              className="path-node-wrapper absolute -translate-x-1/2 -translate-y-1/2"
+              style={{
+                left: coord.cx,
+                top: coord.cy,
+                zIndex: isSelected ? 40 : isCurrent ? 25 : 15,
+              }}
+            >
+              <PathNode
+                lessonId={lesson.id}
+                title={lesson.title}
+                minutes={lesson.estMinutes}
+                status={st}
+                unlocked={unlocked}
+                isCurrent={!!isCurrent}
+                color={phaseColor}
+                isSelected={isSelected}
+                onToggle={() => setSelectedLesson(prev => prev === lesson.id ? null : lesson.id)}
+                onClose={() => setSelectedLesson(null)}
+              />
+            </div>
+            {/* Lesson label sits beside the trail so the SVG spline remains 100% unbroken */}
+            <button
+              type="button"
+              onClick={() => setSelectedLesson(prev => prev === lesson.id ? null : lesson.id)}
+              className={cn(
+                'path-node-wrapper absolute -translate-y-1/2 left-[146px] right-1 text-left rounded-2xl px-3.5 py-2.5 border transition-colors',
+                isCurrent
+                  ? 'bg-surface border-accent/60 shadow-sm hover:border-accent'
+                  : unlocked
+                    ? 'bg-surface/85 border-border/70 hover:bg-surface hover:border-[var(--border-strong)]'
+                    : 'bg-surface-2/40 border-border/40 hover:border-border/70',
+              )}
+              style={{ top: coord.cy, zIndex: 10 }}
+            >
+              <p className={cn('text-[14px] font-extrabold leading-snug line-clamp-2', unlocked ? 'text-foreground' : 'text-faint')}>
+                {lesson.title}
+              </p>
+              <p className="mt-0.5 text-[12px] font-bold text-muted tnum flex items-center gap-1.5">
+                <span>{lesson.estMinutes} min</span>
+                {st === 'mastered' && <span className="text-warning">· Mastered</span>}
+                {st === 'passed' && <span className="text-success">· Completed</span>}
+              </p>
+            </button>
+          </React.Fragment>
         );
       })}
     </div>
@@ -753,30 +779,17 @@ function PathNode({
           'path-node relative z-10 rounded-full flex items-center justify-center border-[3.5px] border-white dark:border-[#0f1622] transition-transform duration-200 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-accent',
           size,
           ring,
-          unlocked ? 'cursor-pointer hover:scale-105 active:scale-95' : 'cursor-default opacity-85'
+          unlocked ? 'cursor-pointer hover:scale-105 active:scale-95' : 'cursor-pointer opacity-85'
         )}
         style={{ background: bg, boxShadow: `0 6px 0 0 ${shadow}` }}
       >
         {inner}
       </button>
 
-      {/* Node Label clearly below node + shadow so circle and spline never collide */}
-      <div className="absolute top-[calc(100%+11px)] left-1/2 -translate-x-1/2 w-[176px] text-center pointer-events-none z-20 rounded-xl bg-surface/90 dark:bg-[#0f1622]/90 backdrop-blur-sm px-2.5 py-1 border border-border/50 shadow-sm">
-        <p
-          className={cn(
-            'text-[12.5px] font-extrabold leading-snug line-clamp-2',
-            unlocked ? 'text-foreground' : 'text-faint'
-          )}
-        >
-          {title}
-        </p>
-        <span className="text-[11px] font-bold text-muted tnum">{minutes} min</span>
-      </div>
-
-      {/* Duolingo-Grade Interactive Popover Card */}
+      {/* Interactive Popover Card anchored cleanly near node */}
       {isSelected && (
         <div
-          className="absolute z-50 bottom-[95px] left-1/2 -translate-x-1/2 w-[260px] sm:w-[280px] p-4 rounded-2xl bg-surface/95 dark:bg-[#161f2e]/95 backdrop-blur-md border-2 border-border shadow-[0_16px_36px_rgba(0,0,0,0.35)] anim-pop-in text-left select-text"
+          className="absolute z-50 bottom-[92px] left-0 sm:left-1/2 sm:-translate-x-1/3 w-[250px] sm:w-[276px] p-4 rounded-2xl bg-surface/95 dark:bg-[#161f2e]/95 backdrop-blur-md border-2 border-border shadow-[0_16px_36px_rgba(0,0,0,0.35)] anim-pop-in text-left select-text"
         >
           <div className="flex items-center justify-between gap-2 mb-1.5">
             <span

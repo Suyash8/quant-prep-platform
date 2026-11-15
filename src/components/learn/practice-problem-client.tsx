@@ -13,7 +13,7 @@ import { ClientBlock } from '@/components/gamified/player-blocks';
 import type { Block } from '@/lib/content';
 import { CodeWorkspace } from '@/components/code-workspace';
 import { ProblemExamples } from '@/components/problem-examples';
-import { QMath } from '@/components/quiz';
+import { ClientMd } from '@/components/gamified/client-md';
 
 function resolveSlug(paramSlug?: string | string[], pathname?: string | null): string {
   if (pathname && pathname.startsWith('/practice/')) {
@@ -158,12 +158,12 @@ export function PracticeProblemClient() {
             <h2>Format &amp; constraints</h2>
           </div>
           <div className="space-y-2.5 rounded-2xl border-2 border-border bg-surface-2 p-4 text-[15px]">
-            <p><strong>Input:</strong> <QMath text={problem.inputFormat} /></p>
-            <p><strong>Output:</strong> <QMath text={problem.outputFormat} /></p>
+            <p><strong>Input:</strong> <ClientMd text={problem.inputFormat} /></p>
+            <p><strong>Output:</strong> <ClientMd text={problem.outputFormat} /></p>
             <div>
               <p className="font-bold">Constraints</p>
               <ul className="mt-1 list-disc space-y-1 pl-5 text-muted">
-                {problem.constraints.map((c, i) => <li key={i}><QMath text={c} /></li>)}
+                {problem.constraints.map((c, i) => <li key={i}><ClientMd text={c} /></li>)}
               </ul>
             </div>
           </div>
@@ -193,7 +193,7 @@ export function PracticeProblemClient() {
           </summary>
           <ul className="space-y-2.5 px-4 pb-4 pt-1 text-[15px]">
             {problem.hints.map((h, i) => (
-              <li key={i} className="rounded-xl border-2 border-border bg-surface-2 p-3 text-muted"><QMath text={h} /></li>
+              <li key={i} className="rounded-xl border-2 border-border bg-surface-2 p-3 text-muted"><ClientMd text={h} /></li>
             ))}
           </ul>
         </details>
