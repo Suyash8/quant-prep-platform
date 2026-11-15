@@ -1,21 +1,19 @@
-import { redirect } from 'next/navigation';
-import { getCurrentUser } from '@/lib/auth';
-import { AppShell } from '@/components/app-shell';
-import { RevisionClient } from '@/components/learn/revision-client';
+import { RevisionSession } from '@/components/revision-session';
+import { Repeat } from 'lucide-react';
 
-export const metadata = { title: 'Revision · QuantFoundry' };
+export const metadata = { title: 'Spaced repetition · QuantFoundry' };
 
-/**
- * v3 revision: thin auth shell. The deck, scheduling and grading all run
- * locally from the SM-2 store; reviews sync in the background.
- */
-export default async function RevisionPage() {
-  const user = await getCurrentUser();
-  if (!user) redirect('/login?next=/revision');
-
+export default function RevisionPage() {
   return (
-    <AppShell user={{ name: user.name, email: user.email, role: user.role }} isAdmin={user.role === 'admin'}>
-      <RevisionClient />
-    </AppShell>
+    <div className="max-w-3xl mx-auto px-4 lg:px-6 py-8">
+      <header className="page-hero mb-6">
+        <span className="icon-tile icon-tile-violet"><Repeat /></span>
+        <div>
+          <h1>Spaced repetition</h1>
+          <p className="page-sub">Review due flashcards and missed knowledge checks with SM-2 scheduling</p>
+        </div>
+      </header>
+      <RevisionSession />
+    </div>
   );
 }

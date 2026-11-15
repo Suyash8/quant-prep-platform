@@ -7,6 +7,7 @@ import '@fontsource/jetbrains-mono/700.css';
 import { ThemeProvider } from '@/components/theme-provider';
 import { Toaster } from '@/components/ui/sonner';
 import { ServiceWorkerRegistrar } from '@/components/sw-registrar';
+import { ChromeShell } from '@/components/chrome-shell';
 
 const siteUrl = (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000').replace(/\/$/, '');
 
@@ -62,7 +63,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" suppressHydrationWarning>
       <body className="min-h-screen flex flex-col">
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
-          {children}
+          <ChromeShell>{children}</ChromeShell>
           <Toaster position="bottom-right" richColors closeButton />
           <ServiceWorkerRegistrar />
         </ThemeProvider>

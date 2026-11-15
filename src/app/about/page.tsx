@@ -1,7 +1,6 @@
 import Link from 'next/link';
-import { getCurrentUser } from '@/lib/auth';
 import { getRegistry, listProblems, listProjects, listCompanies, getMap } from '@/lib/content';
-import { AppShell, PublicHeader, PublicFooter } from '@/components/app-shell';
+import { AuthAwareLink } from '@/components/auth-aware-link';
 import {
   BookOpen, Puzzle, FolderKanban, Building2, Clock, Layers, Info,
   ScrollText, ArrowRight, CheckCircle2, XCircle, GraduationCap, Code2, FlaskConical,
@@ -10,8 +9,7 @@ import {
 
 export const metadata = { title: 'About. QuantFoundry' };
 
-export default async function AboutPage() {
-  const user = await getCurrentUser();
+export default function AboutPage() {
   const reg = getRegistry();
   const map = getMap();
   const problems = listProblems();
@@ -186,20 +184,19 @@ export default async function AboutPage() {
         <span className="relative mx-auto icon-tile icon-tile-gold anim-bob"><GraduationCap className="h-7 w-7" /></span>
         <h2 className="relative mt-4 text-xl font-black tracking-tight">The path is long. It is also walkable.</h2>
         <p className="relative mt-2 text-[15px] font-semibold text-muted max-w-md mx-auto leading-relaxed">
-          {user ? 'Your streak, plan and next lesson are waiting where you left them.' : 'Start with the diagnostic, it places you on the path in about 20 minutes.'}
+          Start with the diagnostic, it places you on the path in about 20 minutes.
         </p>
         <div className="relative mt-5 flex gap-3 justify-center flex-wrap">
-          <Link href={user ? '/dashboard' : '/register'} className="btn3d">
-            {user ? 'Go to dashboard' : 'Create an account'} <ArrowRight className="h-4 w-4" />
-          </Link>
+          <AuthAwareLink
+            guestHref="/register"
+            authedHref="/dashboard"
+            className="btn3d"
+            guestContent={<>Create an account <ArrowRight className="h-4 w-4" /></>}
+            authedContent={<>Go to dashboard <ArrowRight className="h-4 w-4" /></>}
+          />
           <Link href="/methodology" className="btn3d btn3d-ghost">Learning methodology</Link>
         </div>
       </section>
     </div>
   );
-
-  if (!user) {
-    return <div className="min-h-screen flex flex-col"><PublicHeader user={null} /><main className="flex-1">{body}</main><PublicFooter /></div>;
-  }
-  return <AppShell user={{ name: user.name, email: user.email, role: user.role }} isAdmin={user.role === 'admin'}>{body}</AppShell>;
 }

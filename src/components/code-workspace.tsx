@@ -2,7 +2,10 @@
 
 import * as React from 'react';
 import { recordProblemAttempt } from '@/lib/client/local-state';
-import { CheckCircle2, FileCode2, Loader2, Play, RotateCcw, Send, Terminal, XCircle } from 'lucide-react';
+import { getDraft, saveDraft } from '@/lib/client/idb';
+import { useBackGuard } from '@/hooks/use-back-guard';
+import { useCodeReadiness } from '@/hooks/use-code-readiness';
+import { CheckCircle2, FileCode2, History, Loader2, Play, RotateCcw, Send, Terminal, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { MonacoCodeEditor } from '@/components/monaco-code-editor';
 
@@ -45,16 +48,50 @@ export function CodeWorkspace({ slug, stubs, examples, timeLimitMs }: WorkspaceP
   const [stdinOpen, setStdinOpen] = React.useState(false);
   const [busy, setBusy] = React.useState<'run' | 'submit' | null>(null);
   const [result, setResult] = React.useState<SubmitResult | null>(null);
+  const [dirty, setDirty] = React.useState(false);
+  const [prevCode, setPrevCode] = React.useState<string | null>(null);
+  const readiness = useCodeReadiness();
+  useBackGuard(dirty);
 
   React.useEffect(() => {
+    let alive = true;
+    getDraft(slug, language).then((draft) => {
+      if (!alive || !draft) return;
+      setPrevCode(draft.prevCode && draft.prevCode !== codeByLang[language] ? draft.prevCode : null);
+      if (draft.code && (!codeByLang[language] || codeByLang[language] === (stubs[language] ?? ''))) {
+        setCodeByLang((m) => ({ ...m, [language]: draft.code }));
+      }
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, [slug, language]);
+
+  React.useEffect(() => {
+    setDirty(true);
     const t = setTimeout(() => {
       try { localStorage.setItem(`qf-code-${slug}`, JSON.stringify(codeByLang)); } catch {}
+      const activeCode = codeByLang[language];
+      if (typeof activeCode === 'string') {
+        void saveDraft(slug, language, activeCode, true).then((saved) => {
+          if (saved?.prevCode && saved.prevCode !== activeCode) {
+            setPrevCode(saved.prevCode);
+          }
+        });
+      }
+      setDirty(false);
     }, 600);
     return () => clearTimeout(t);
-  }, [codeByLang, slug]);
+  }, [codeByLang, slug, language]);
 
   function setCode(v: string) {
     setCodeByLang(m => ({ ...m, [language]: v }));
+  }
+
+  function restorePrev() {
+    if (!prevCode) return;
+    const current = codeByLang[language] ?? '';
+    setCodeByLang(m => ({ ...m, [language]: prevCode }));
+    setPrevCode(current !== prevCode ? current : null);
+    toast.info('Restored previous draft.');
   }
 
   function switchLang(l: string) {
@@ -63,6 +100,11 @@ export function CodeWorkspace({ slug, stubs, examples, timeLimitMs }: WorkspaceP
   }
 
   async function doRun() {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      toast.info('Offline — draft saved locally. Reconnect to run code.');
+      setResult({ error: 'Offline — your edits are safely stored locally. Reconnect to compile and execute.' });
+      return;
+    }
     setBusy('run');
     setResult(null);
     try {
@@ -73,10 +115,18 @@ export function CodeWorkspace({ slug, stubs, examples, timeLimitMs }: WorkspaceP
       const data = await res.json();
       if (!res.ok) { toast.error(data.error ?? 'Run failed.'); return; }
       setResult(data as SubmitResult);
-    } catch { toast.error('Network error.'); } finally { setBusy(null); }
+    } catch {
+      toast.info('Offline — draft saved locally. Reconnect to run code.');
+      setResult({ error: 'Could not reach judge server. Draft saved locally.' });
+    } finally { setBusy(null); }
   }
 
   async function doSubmit() {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      toast.info('Offline — draft saved locally. Reconnect to grade against hidden tests.');
+      setResult({ error: 'Offline — your code is saved in IndexedDB. Reconnect to submit for full grading.' });
+      return;
+    }
     setBusy('submit');
     setResult(null);
     try {
@@ -100,7 +150,10 @@ export function CodeWorkspace({ slug, stubs, examples, timeLimitMs }: WorkspaceP
       }
       else if (v === 'compile_error') toast.error('Compilation failed, check the compiler output.');
       else toast.warning(`${(data as SubmitResult).passed}/${(data as SubmitResult).total} tests passed.`);
-    } catch { toast.error('Network error.'); } finally { setBusy(null); }
+    } catch {
+      toast.info('Offline — draft saved locally. Reconnect to grade.');
+      setResult({ error: 'Could not reach judge server. Draft saved locally.' });
+    } finally { setBusy(null); }
   }
 
   function resetCode() {
@@ -157,7 +210,14 @@ export function CodeWorkspace({ slug, stubs, examples, timeLimitMs }: WorkspaceP
               </select>
               {/* one row: Reset / Run ghost, Submit is the only solid action */}
               <div className="ml-auto flex items-center gap-2 pl-1">
-                <span className="hidden text-[12px] font-semibold text-slate-400 sm:inline">autosaves locally</span>
+                <span className="hidden text-[12px] font-semibold text-slate-400 sm:inline">
+                  {dirty ? 'saving…' : 'autosaves locally'}
+                </span>
+                {prevCode && (
+                  <button type="button" onClick={restorePrev} className="btn3d btn3d-ghost btn3d-sm shrink-0" title="Restore previous local snapshot">
+                    <History className="h-3.5 w-3.5" /> Restore
+                  </button>
+                )}
                 <button onClick={resetCode} className="btn3d btn3d-ghost btn3d-sm shrink-0" title="Reset to template">
                   <RotateCcw className="h-3.5 w-3.5" /> Reset
                 </button>
@@ -186,6 +246,11 @@ export function CodeWorkspace({ slug, stubs, examples, timeLimitMs }: WorkspaceP
             <div className="flex items-center gap-2 border-b-2 px-3 py-2" style={{ background: PANEL_HEADER_BG, borderColor: PANEL_DIVIDER }}>
               <Terminal className="h-4 w-4 shrink-0 text-accent" strokeWidth={2.5} />
               <span className="font-mono text-[13px] font-bold text-slate-300">Console</span>
+              {readiness.status !== 'ready' && readiness.status !== 'checking' && (
+                <span className="rounded-full border border-slate-700 bg-slate-800/80 px-2 py-0.5 font-sans text-[11px] font-bold text-slate-300">
+                  {readiness.label}
+                </span>
+              )}
               <div className="flex-1" />
               {statusChip}
               <button type="button" onClick={() => setStdinOpen(o => !o)} className={stdinToggleCls} aria-expanded={stdinOpen}>stdin</button>
@@ -252,6 +317,12 @@ export function CodeWorkspace({ slug, stubs, examples, timeLimitMs }: WorkspaceP
 
               {busy === 'run' && <p className="font-sans text-slate-500">Running example…</p>}
               {busy === 'submit' && <p className="font-sans text-slate-500">Running the full test suite…</p>}
+
+              {result?.error && (
+                <div className="mt-3 rounded-xl border border-amber-500/35 bg-amber-500/10 p-3 font-sans text-[13px] font-semibold text-amber-200">
+                  {result.error}
+                </div>
+              )}
 
               {compileFailed && (
                 <div className="anim-shake mt-3 rounded-xl border border-rose-500/40 bg-rose-500/10 p-3">

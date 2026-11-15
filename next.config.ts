@@ -4,6 +4,12 @@ const nextConfig: NextConfig = {
   output: "standalone",
   /* config options here */
   reactStrictMode: true,
+  // Next 16.4 enables reactDebugChannel by default in `next dev`, which blocks
+  // React Flight hydration until an HMR WebSocket REACT_DEBUG_CHUNK arrives —
+  // breaking offline reloads when developing/testing without a live socket.
+  experimental: {
+    reactDebugChannel: false,
+  },
   // Curriculum JSON (content/**) is read from disk at runtime via src/lib/content.ts.
   outputFileTracingIncludes: {
     "/**": ["./content/**/*"],

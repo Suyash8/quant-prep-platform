@@ -3,8 +3,6 @@ import {
   ArrowUpRight, BookOpen, ChevronRight, Coins, Cpu, Dices, FlaskConical, Landmark, RotateCcw, Sigma, Waves,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { getCurrentUser } from '@/lib/auth';
-import { AppShell, PublicHeader } from '@/components/app-shell';
 import { InteractiveBlock } from '@/components/interactive/registry';
 import { REGISTRY } from '@/components/interactive/registry';
 import { ClientMathFigure } from '@/components/gamified/client-md';
@@ -185,7 +183,6 @@ const pretty = (name: string) => name.replace(/([a-z0-9])([A-Z])/g, '$1 $2');
 const slideDelay = (i: number) => ({ animationDelay: i * 60 + 'ms' });
 
 export default async function LabPage({ searchParams }: { searchParams: Promise<{ lab?: string }> }) {
-  const user = await getCurrentUser();
   const sp = await searchParams;
 
   const groupOf = (name: string) => GROUPS.find(g => g.components.some(c => c.name === name));
@@ -200,7 +197,7 @@ export default async function LabPage({ searchParams }: { searchParams: Promise<
       ].slice(0, 6)
     : [];
 
-  const body = (
+  return (
     <div className="max-w-6xl mx-auto px-4 lg:px-6 py-8">
       <header className="page-hero">
         <span className="icon-tile icon-tile-info">
@@ -372,14 +369,4 @@ export default async function LabPage({ searchParams }: { searchParams: Promise<
       </div>
     </div>
   );
-
-  if (!user) {
-    return (
-      <div className="min-h-screen flex flex-col">
-        <PublicHeader user={null} />
-        {body}
-      </div>
-    );
-  }
-  return <AppShell user={{ name: user.name, email: user.email, role: user.role }} isAdmin={user.role === 'admin'}>{body}</AppShell>;
 }

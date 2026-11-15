@@ -1,6 +1,5 @@
 import Link from 'next/link';
-import { PublicHeader, PublicFooter } from '@/components/app-shell';
-import { getCurrentUser } from '@/lib/auth';
+import { AuthAwareLink } from '@/components/auth-aware-link';
 import { countLabs, getMap, getRegistry, listProblems, listProjects } from '@/lib/content';
 import { mathText } from '@/lib/math-text';
 import { Mascot } from '@/components/brand/mascot';
@@ -43,8 +42,7 @@ const FAQ = [
   },
 ];
 
-export default async function LandingPage() {
-  const user = await getCurrentUser();
+export default function LandingPage() {
   const map = getMap();
   const reg = getRegistry();
   const problems = listProblems();
@@ -97,9 +95,7 @@ export default async function LandingPage() {
   const tracks = Object.entries(map.tracks);
 
   return (
-    <div className="min-h-screen flex flex-col overflow-x-clip">
-      <PublicHeader user={user ? { name: user.name } : null} />
-
+    <div className="overflow-x-clip">
       <main className="flex-1">
         {/* 1. Hero */}
         <section className="border-b-2 border-border bg-surface relative overflow-hidden">
@@ -118,9 +114,13 @@ export default async function LandingPage() {
                 projects, one path from &ldquo;what is a variable&rdquo; to pricing libraries, order books and low-latency C++.
               </p>
               <div className="mt-7 flex flex-wrap gap-4 anim-slide-up" style={{ animationDelay: '0.2s' }}>
-                <Link href={user ? '/dashboard' : '/register'} className="btn3d btn3d-lg">
-                  {user ? 'Continue learning' : 'Start free, take the diagnostic'} <ArrowRight className="h-5 w-5" />
-                </Link>
+                <AuthAwareLink
+                  guestHref="/register"
+                  authedHref="/dashboard"
+                  className="btn3d btn3d-lg"
+                  guestContent={<>Start free, take the diagnostic <ArrowRight className="h-5 w-5" /></>}
+                  authedContent={<>Continue learning <ArrowRight className="h-5 w-5" /></>}
+                />
                 <Link href="/curriculum" className="btn3d btn3d-ghost btn3d-lg">See the curriculum</Link>
               </div>
               <div className="mt-7 flex flex-wrap items-center gap-2.5 anim-slide-up" style={{ animationDelay: '0.3s' }}>
@@ -424,18 +424,19 @@ export default async function LandingPage() {
                 It maps what you already know across 7 areas and drops you at the right phase. No account needed to look at the curriculum.
               </p>
               <div className="mt-2 flex flex-wrap items-center justify-center gap-3">
-                <Link href={user ? '/dashboard' : '/register'} className="btn3d btn3d-lg">
-                  {user ? 'Back to studying' : 'Start free'} <ArrowRight className="h-5 w-5" />
-                </Link>
+                <AuthAwareLink
+                  guestHref="/register"
+                  authedHref="/dashboard"
+                  className="btn3d btn3d-lg"
+                  guestContent={<>Start free <ArrowRight className="h-5 w-5" /></>}
+                  authedContent={<>Back to studying <ArrowRight className="h-5 w-5" /></>}
+                />
                 <Link href="/curriculum" className="btn3d btn3d-ghost btn3d-lg">Explore first</Link>
               </div>
             </div>
           </div>
         </section>
       </main>
-
-      {/* 12. Shared commercial & legal footer */}
-      <PublicFooter />
     </div>
   );
 }

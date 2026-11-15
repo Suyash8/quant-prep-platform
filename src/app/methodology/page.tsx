@@ -1,13 +1,10 @@
 import Link from 'next/link';
-import { getCurrentUser } from '@/lib/auth';
 import { getRegistry, getMap } from '@/lib/content';
-import { AppShell, PublicHeader, PublicFooter } from '@/components/app-shell';
 import { Brain, Repeat, Layers, Gauge, ClipboardCheck, ListChecks, GraduationCap, ArrowRight, BookCheck, Target, PencilLine, MessageSquareText, RefreshCcw } from 'lucide-react';
 
 export const metadata = { title: 'Methodology. QuantFoundry' };
 
-export default async function MethodologyPage() {
-  const user = await getCurrentUser();
+export default function MethodologyPage() {
   const reg = getRegistry();
   const map = getMap();
 
@@ -206,9 +203,4 @@ export default async function MethodologyPage() {
       </section>
     </div>
   );
-
-  if (!user) {
-    return <div className="min-h-screen flex flex-col"><PublicHeader user={null} /><main className="flex-1">{body}</main><PublicFooter /></div>;
-  }
-  return <AppShell user={{ name: user.name, email: user.email, role: user.role }} isAdmin={user.role === 'admin'}>{body}</AppShell>;
 }

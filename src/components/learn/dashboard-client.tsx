@@ -19,7 +19,8 @@ import {
 } from '@/lib/client/local-state';
 import { LearningPath } from '@/components/gamified/learning-path';
 
-export function DashboardClient({ name }: { name: string }) {
+export function DashboardClient({ name = 'Learner' }: { name?: string }) {
+  const [displayName, setDisplayName] = React.useState(name);
   const [map, setMap] = React.useState<CurriculumMap | null>(null);
   const [registryLessons, setRegistryLessons] = React.useState<RegistryEntry[]>([]);
   const [, setTick] = React.useState(0);
@@ -28,6 +29,17 @@ export function DashboardClient({ name }: { name: string }) {
 
   React.useEffect(() => {
     let alive = true;
+    const syncName = () => {
+      try {
+        const raw = window.localStorage.getItem('qf-chrome-user');
+        if (raw) {
+          const u = JSON.parse(raw) as { name?: string };
+          if (u?.name) setDisplayName(u.name);
+        }
+      } catch { /* ignore */ }
+    };
+    syncName();
+    window.addEventListener('qf:auth-refresh', syncName);
     void hydrate();
     getMapPack().then(({ map: m, registry }) => {
       if (!alive) return;
@@ -37,7 +49,7 @@ export function DashboardClient({ name }: { name: string }) {
     getProblemsIndex().then(p => { if (alive) setProblemCount(p.length); }).catch(() => {});
     getProjectsIndex().then(p => { if (alive) setProjectCount(p.length); }).catch(() => {});
     const unsub = subscribe(() => setTick(t => t + 1));
-    return () => { alive = false; unsub(); };
+    return () => { alive = false; unsub(); window.removeEventListener('qf:auth-refresh', syncName); };
   }, []);
 
   if (!map) {
@@ -95,7 +107,7 @@ export function DashboardClient({ name }: { name: string }) {
         <div className="flex items-center gap-4 flex-wrap">
           <div className="flex-1 min-w-[240px]">
             <h1 className="text-2xl sm:text-3xl font-black tracking-tight">
-              Hey {name.split(' ')[0]} {passedSet.size === 0 && <Hand className="inline-block h-7 w-7 align-text-bottom text-accent-ink" aria-hidden="true" />}
+              Hey {displayName.split(' ')[0]} {passedSet.size === 0 && <Hand className="inline-block h-7 w-7 align-text-bottom text-accent-ink" aria-hidden="true" />}
             </h1>
             <p className="mt-1 text-[15px] font-semibold text-muted">
               {nextLesson

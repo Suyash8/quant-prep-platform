@@ -12,6 +12,17 @@ interface ContactFormProps {
 export function ContactForm({ defaultName = '', defaultEmail = '', defaultSubject = 'General question' }: ContactFormProps) {
   const [name, setName] = React.useState(defaultName);
   const [email, setEmail] = React.useState(defaultEmail);
+  React.useEffect(() => {
+    if (defaultName && defaultEmail) return;
+    try {
+      const raw = window.localStorage.getItem('qf-chrome-user');
+      if (raw) {
+        const u = JSON.parse(raw) as { name?: string; email?: string };
+        setName((prev) => prev || u.name || '');
+        setEmail((prev) => prev || u.email || '');
+      }
+    } catch { /* ignore */ }
+  }, [defaultName, defaultEmail]);
   const [subject, setSubject] = React.useState(defaultSubject);
   const [message, setMessage] = React.useState('');
   const [busy, setBusy] = React.useState(false);

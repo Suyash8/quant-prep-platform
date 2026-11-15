@@ -10,14 +10,15 @@ import * as React from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import {
-  Clock, Target, AlertTriangle, Building2, TrendingUp, Layers, ArrowLeft,
+  Clock, Target, AlertTriangle, Building2, TrendingUp, Layers, ArrowLeft, Code2, ChevronRight,
 } from 'lucide-react';
 import type { CurriculumMap, Lesson } from '@/lib/content';
 import { sanitizedForClient } from '@/lib/grading';
 import { buildLessonCards } from '@/lib/lesson-cards';
 import { buildCurriculumGraph, isUnlockedInGraph, type CurriculumGraph } from '@/lib/curriculum-graph';
-import { getLessonPack, getMapPack, prefetchLesson } from '@/lib/client/packs';
+import { getLessonPack, getMapPack, getProblemsIndex, prefetchLesson, type ProblemLite } from '@/lib/client/packs';
 import { doneSet, subscribe, lessonProgressOf } from '@/lib/client/local-state';
+import { getLessonPosition, saveLessonPosition } from '@/lib/client/idb';
 import { LessonPlayer } from '@/components/gamified/lesson-player';
 import { ClientBlock } from '@/components/gamified/player-blocks';
 import { Quiz, QMath } from '@/components/quiz';
@@ -32,6 +33,7 @@ interface Loaded {
   prev: { id: string; title: string } | null;
   next: { id: string; title: string } | null;
   prereqs: { id: string; title: string }[];
+  relatedProblems: ProblemLite[];
 }
 
 function currentLessonId(): string {
@@ -43,8 +45,6 @@ function currentLessonId(): string {
 export function LearnClient({ initialLessonId }: { initialLessonId?: string }) {
   const searchParams = useSearchParams();
   const mode = searchParams.get('mode');
-  // v3: the id comes from the URL, not the server payload, so an offline
-  // shell cached once serves every lesson
   const [lessonId, setLessonId] = React.useState(initialLessonId ?? '');
   const [data, setData] = React.useState<Loaded | null>(null);
   const [missing, setMissing] = React.useState(false);
@@ -59,8 +59,11 @@ export function LearnClient({ initialLessonId }: { initialLessonId?: string }) {
     setMissing(false);
     (async () => {
       try {
-        const lesson = await getLessonPack(lessonId);
-        const { map, registry } = await getMapPack();
+        const [lesson, { map, registry }, problemIndex] = await Promise.all([
+          getLessonPack(lessonId),
+          getMapPack(),
+          getProblemsIndex().catch(() => [] as ProblemLite[]),
+        ]);
         if (!alive) return;
         const graph = buildCurriculumGraph(map as CurriculumMap, registry.lessons ?? []);
         const node = graph.byId.get(lessonId);
@@ -70,6 +73,20 @@ export function LearnClient({ initialLessonId }: { initialLessonId?: string }) {
         const idx = mod.lessons.findIndex(l => l.id === lessonId);
         const next = idx < mod.lessons.length - 1 ? mod.lessons[idx + 1] : null;
         const prev = idx > 0 ? mod.lessons[idx - 1] : null;
+        const skillSet = new Set(lesson.skills.map(s => s.toLowerCase()));
+        const relatedProblems = problemIndex
+          .map((p) => {
+            let hits = 0;
+            if (skillSet.has(p.category.toLowerCase())) hits += 2;
+            for (const tag of p.tags) {
+              if (skillSet.has(tag.toLowerCase())) hits += 2;
+            }
+            return { p, hits };
+          })
+          .filter((x) => x.hits >= 2)
+          .sort((a, b) => b.hits - a.hits || a.p.title.localeCompare(b.p.title))
+          .slice(0, 3)
+          .map((x) => x.p);
         setData({
           lesson,
           graph,
@@ -79,6 +96,7 @@ export function LearnClient({ initialLessonId }: { initialLessonId?: string }) {
           prev: prev ? { id: prev.id, title: prev.title } : null,
           next: next ? { id: next.id, title: next.title } : null,
           prereqs: node.prereqs.map(p => ({ id: p, title: graph.byId.get(p)?.title ?? p })),
+          relatedProblems,
         });
         if (next) prefetchLesson(next.id);
       } catch {
@@ -87,6 +105,30 @@ export function LearnClient({ initialLessonId }: { initialLessonId?: string }) {
     })();
     return () => { alive = false; };
   }, [lessonId]);
+
+  React.useEffect(() => {
+    if (mode !== 'reference' || !data) return;
+    let restored = false;
+    getLessonPosition(lessonId).then((pos) => {
+      if (!restored && pos && pos.scrollY > 120) {
+        restored = true;
+        window.scrollTo({ top: pos.scrollY, behavior: 'auto' });
+      }
+    }).catch(() => {});
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const onScroll = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        void saveLessonPosition(lessonId, 0, window.scrollY);
+      }, 400);
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      restored = true;
+      if (timer) clearTimeout(timer);
+      window.removeEventListener('scroll', onScroll);
+    };
+  }, [mode, lessonId, data]);
 
   React.useEffect(() => subscribe(() => setProgressTick(t => t + 1)), []);
 
@@ -269,6 +311,28 @@ export function LearnClient({ initialLessonId }: { initialLessonId?: string }) {
           </li>
         ))}
       </ul>
+
+      {data.relatedProblems.length > 0 && (
+        <>
+          <h2 className="h-lesson">Related practice problems</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-8">
+            {data.relatedProblems.map((prob) => (
+              <Link key={prob.slug} href={`/practice/${prob.slug}`} className="row-card">
+                <span className="icon-tile icon-tile-sm icon-tile-accent shrink-0">
+                  <Code2 />
+                </span>
+                <div className="flex-1 min-w-0">
+                  <span className="block font-bold text-[15px] truncate">{prob.title}</span>
+                  <span className="text-[12px] font-bold text-faint capitalize">
+                    {prob.difficulty} · ~{prob.estMinutes}m
+                  </span>
+                </div>
+                <ChevronRight className="h-4 w-4 text-faint shrink-0" />
+              </Link>
+            ))}
+          </div>
+        </>
+      )}
 
       {lesson.references && lesson.references.length > 0 && (
         <>

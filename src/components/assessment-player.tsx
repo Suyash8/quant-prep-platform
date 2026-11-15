@@ -85,7 +85,12 @@ export function AssessmentPlayer({ assessment, compactIntro = false, subduedIntr
   async function submit() {
     setBusy(true);
     try {
-      if (fullQuestions) {
+      const qs =
+        fullQuestions ??
+        (await getAssessmentPack(assessment.id)
+          .then((a) => a.sections.flatMap((sec) => sec.questions))
+          .catch(() => null));
+      if (qs) {
         const perQuestion: Record<string, { correct: boolean; explanation: string }> = {};
         const areaIndex = assessment.areaLabels ?? [];
         const areaTotals: Record<string, { correct: number; total: number }> = {};
@@ -94,7 +99,7 @@ export function AssessmentPlayer({ assessment, compactIntro = false, subduedIntr
         assessment.sections.forEach((section, si) => {
           let correct = 0;
           for (const q of section.questions) {
-            const full = fullQuestions.find(x => x.id === q.id);
+            const full = qs.find((x) => x.id === q.id);
             const isCorrect = full && answers[q.id] !== undefined ? gradeAnswer(full, answers[q.id]) : false;
             perQuestion[q.id] = { correct: isCorrect, explanation: full?.explanation ?? '' };
             if (isCorrect) correct++;

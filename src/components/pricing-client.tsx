@@ -17,7 +17,7 @@ interface PricingClientProps {
 }
 
 export function PricingClient({
-  user,
+  user: initialUser,
   lessonCount,
   problemCount,
   projectCount,
@@ -26,6 +26,25 @@ export function PricingClient({
   initialStatus,
 }: PricingClientProps) {
   const router = useRouter();
+  const [user, setUser] = React.useState(initialUser);
+  React.useEffect(() => {
+    if (initialUser) return;
+    try {
+      const raw = window.localStorage.getItem('qf-chrome-user');
+      if (raw) {
+        const u = JSON.parse(raw) as { name?: string; email?: string; plan?: string };
+        if (u?.name) setUser({ name: u.name, email: u.email ?? '', plan: u.plan ?? 'free' });
+      }
+    } catch { /* ignore */ }
+    if (navigator.onLine) {
+      fetch('/api/auth/me', { credentials: 'same-origin' })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d: { user?: { name: string; email: string; plan?: string | null } | null } | null) => {
+          if (d?.user) setUser(d.user);
+        })
+        .catch(() => {});
+    }
+  }, [initialUser]);
   const [interval, setInterval] = React.useState<'monthly' | 'annual'>('annual');
   const [loading, setLoading] = React.useState(false);
   const [notice, setNotice] = React.useState<string | null>(
@@ -35,6 +54,13 @@ export function PricingClient({
         ? 'Checkout was cancelled. You can upgrade anytime.'
         : null,
   );
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined' || initialStatus) return;
+    const checkout = new URLSearchParams(window.location.search).get('checkout');
+    if (checkout === 'success') setNotice('Payment confirmed. Your Pro access will finish activating shortly.');
+    else if (checkout === 'cancelled') setNotice('Checkout was cancelled. You can upgrade anytime.');
+  }, [initialStatus]);
 
   const proMonthlyEquivalent = interval === 'annual' ? 22 : 29;
   const currentPlan = user?.plan ?? 'free';

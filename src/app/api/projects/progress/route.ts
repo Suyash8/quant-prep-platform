@@ -10,6 +10,13 @@ const schema = z.object({
   notes: z.string().max(10000).optional(),
 });
 
+export async function GET() {
+  const user = await getCurrentUser();
+  if (!user) return NextResponse.json({ progress: [] }, { status: 401 });
+  const progress = await db.projectProgress.findMany({ where: { userId: user.id } });
+  return NextResponse.json({ progress });
+}
+
 export async function POST(req: NextRequest) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: 'Sign in first.' }, { status: 401 });

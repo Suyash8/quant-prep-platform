@@ -38,7 +38,34 @@ export interface ProblemFull {
   slug: string; title: string; difficulty: string; category: string; tags: string[];
   statement: unknown[]; inputFormat: string; outputFormat: string; constraints: string[];
   examples: unknown[]; hints: string[]; editorial: unknown[]; solutions: unknown[];
+  starter?: Record<string, string>; lessons?: string[];
   timeLimitMs: number; memoryLimitMb: number; estMinutes: number;
+}
+
+export interface ProjectFull {
+  slug: string; order: number; title: string; language: string; difficulty: string;
+  prereqLessons: string[]; context: string; problem: string; requirements: string[];
+  milestones: { title: string; detail: string; estHours: number }[];
+  designGuidance: unknown[];
+  starterFiles: { path: string; content: string }[];
+  evaluationCriteria: { criterion: string; weight: number }[];
+  documentationRequirements: string[];
+  extensionChallenges: string[];
+}
+
+export interface CompanyRole {
+  title: string; track: string; notes: string; confidence?: string; sourceUrl?: string; asOf?: string;
+}
+
+export interface CompanyFull {
+  slug: string; name: string; category: string; asOf?: string;
+  roles: CompanyRole[];
+  publishedExpectations: { claim: string; sourceUrl: string; retrievedAt?: string; asOf?: string; verificationStatus?: string; confidence?: string; scope?: string }[];
+  competencyAreas: string[];
+  prepModules: string[];
+  prepAssessments: string[];
+  notes: string;
+  verificationStatus?: string;
 }
 
 const BASE = '/packs/v3';
@@ -68,10 +95,23 @@ export const getProblemsIndex = () => getPack<ProblemLite[]>(`${BASE}/problems/i
 export const getProblemPack = (slug: string) => getPack<ProblemFull>(`${BASE}/problems/${slug}.json`);
 export const getAssessmentsIndex = () => getPack<AssessmentLite[]>(`${BASE}/assessments/index.json`);
 export const getProjectsIndex = () => getPack<ProjectLite[]>(`${BASE}/projects/index.json`);
+export const getProjectPack = (slug: string) => getPack<ProjectFull>(`${BASE}/projects/${slug}.json`);
+export const getCompaniesPack = () => getPack<{ companies: CompanyFull[] }>(`${BASE}/companies.json`);
+
+export function prefetchAllIndexes() {
+  prefetch(`${BASE}/map.json`);
+  prefetch(`${BASE}/problems/index.json`);
+  prefetch(`${BASE}/assessments/index.json`);
+  prefetch(`${BASE}/projects/index.json`);
+  prefetch(`${BASE}/companies.json`);
+}
 
 export interface AssessmentFull {
   id: string; title: string; kind: string; timeLimitMinutes: number; description: string;
   areas: string[];
+  passMark?: number;
+  passMarkPercent?: number;
+  scoreBands?: { label?: string; min?: number; max?: number; color?: string; note?: string; verdict?: string; summary?: string }[];
   sections: { title: string; questions: QuizQuestion[] }[];
 }
 export const getAssessmentPack = (id: string) => getPack<AssessmentFull>(`${BASE}/assessments/${id}.json`);

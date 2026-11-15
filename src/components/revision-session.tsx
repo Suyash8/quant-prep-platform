@@ -1,10 +1,15 @@
 'use client';
 
 import * as React from 'react';
-import { Eye, EyeOff, Check, X, Sparkles } from 'lucide-react';
+import Link from 'next/link';
+import { Eye, EyeOff, Check, X, Sparkles, Clock, Undo2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { QMath } from '@/components/quiz';
-import { recordReviews, deleteCard, cardStateOf } from '@/lib/client/local-state';
+import {
+  recordReviews, deleteCard, cardStateOf, snoozeCard, restoreCardSnapshot,
+  dueCardKeys, hydrate, type CardLocal,
+} from '@/lib/client/local-state';
+import { getLessonPack } from '@/lib/client/packs';
 
 export interface DueCard {
   cardKey: string; front: string; back: string; cardType: string; source: string;
@@ -21,11 +26,88 @@ const GRADES = [
   { g: 5, label: 'Instant', desc: 'Perfect, immediate recall', cls: `bg-gold text-[#4a3800] shadow-[0_3px_0_0_#d9ab00] ${GRADE_BTN}` },
 ];
 
-export function RevisionSession({ cards }: { cards: DueCard[] }) {
-  const [queue, setQueue] = React.useState<DueCard[]>(cards);
+export function RevisionSession({ cards }: { cards?: DueCard[] }) {
+  const [queue, setQueue] = React.useState<DueCard[]>(cards ?? []);
+  const [loading, setLoading] = React.useState(!cards);
   const [idx, setIdx] = React.useState(0);
   const [revealed, setRevealed] = React.useState(false);
   const [done, setDone] = React.useState(0);
+  const [lastAction, setLastAction] = React.useState<{
+    card: DueCard;
+    before: CardLocal | undefined;
+    removed: boolean;
+    prevIdx: number;
+    prevDone: number;
+  } | null>(null);
+
+  React.useEffect(() => {
+    if (cards) return;
+    let alive = true;
+    (async () => {
+      await hydrate().catch(() => {});
+      const keys = dueCardKeys(40);
+      if (keys.length === 0) {
+        if (alive) { setQueue([]); setLoading(false); }
+        return;
+      }
+      const byLesson = new Map<string, { key: string; idxStr: string; source: string }[]>();
+      for (const k of keys) {
+        const isQuiz = k.startsWith('quiz:');
+        const raw = isQuiz ? k.slice(5) : k;
+        const colon = raw.lastIndexOf(':');
+        if (colon <= 0) continue;
+        const lessonId = raw.slice(0, colon);
+        const idxStr = raw.slice(colon + 1);
+        const list = byLesson.get(lessonId) ?? [];
+        list.push({ key: k, idxStr, source: isQuiz ? 'quiz_miss' : 'flashcard' });
+        byLesson.set(lessonId, list);
+      }
+      const resolved: DueCard[] = [];
+      await Promise.all(
+        [...byLesson.entries()].map(async ([lessonId, entries]) => {
+          try {
+            const lesson = await getLessonPack(lessonId);
+            for (const entry of entries) {
+              const st = cardStateOf(entry.key);
+              if (entry.source === 'quiz_miss') {
+                const q = lesson.quiz.find((x) => x.id === entry.idxStr);
+                if (!q) continue;
+                resolved.push({
+                  cardKey: entry.key,
+                  front: q.prompt,
+                  back: q.explanation,
+                  cardType: 'concept',
+                  source: 'quiz_miss',
+                  intervalDays: st?.intervalDays ?? 0,
+                  repetitions: st?.repetitions ?? 0,
+                  lapses: st?.lapses ?? 0,
+                });
+              } else {
+                const i = parseInt(entry.idxStr, 10);
+                const fc = lesson.flashcards[i];
+                if (!fc) continue;
+                resolved.push({
+                  cardKey: entry.key,
+                  front: fc.front,
+                  back: fc.back,
+                  cardType: fc.type || 'concept',
+                  source: 'flashcard',
+                  intervalDays: st?.intervalDays ?? 0,
+                  repetitions: st?.repetitions ?? 0,
+                  lapses: st?.lapses ?? 0,
+                });
+              }
+            }
+          } catch { /* skip missing pack */ }
+        }),
+      );
+      if (alive) {
+        setQueue(resolved);
+        setLoading(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, [cards]);
 
   const card = queue[idx];
   const progressPct = queue.length > 0 ? Math.min(100, Math.round(((idx + 1) / queue.length) * 100)) : 0;
@@ -33,11 +115,12 @@ export function RevisionSession({ cards }: { cards: DueCard[] }) {
 
   function grade(g: number) {
     if (!card) return;
-    // v3: SM-2 runs locally, instantly, offline. Reviews sync in the background.
+    // SM-2 runs locally, instantly, offline. Reviews sync in the background.
     const before = cardStateOf(card.cardKey);
     recordReviews([{ cardKey: card.cardKey, grade: g }]);
     const after = cardStateOf(card.cardKey);
     const graduated = card.source === 'quiz_miss' && !!before && !!after && g >= 4 && after.repetitions >= 2;
+    setLastAction({ card, before, removed: graduated, prevIdx: idx, prevDone: done });
     if (graduated) {
       // solid twice in a row: retire the card (same rule the server used for quiz-miss cards)
       deleteCard(card.cardKey);
@@ -50,6 +133,42 @@ export function RevisionSession({ cards }: { cards: DueCard[] }) {
     setDone(d => d + 1);
   }
 
+  function snooze() {
+    if (!card) return;
+    const before = cardStateOf(card.cardKey);
+    snoozeCard(card.cardKey, 1);
+    setLastAction({ card, before, removed: false, prevIdx: idx, prevDone: done });
+    setIdx(i => i + 1);
+    setRevealed(false);
+    toast.info('Snoozed card for 24 hours.');
+  }
+
+  function undoLast() {
+    if (!lastAction) return;
+    if (lastAction.before) restoreCardSnapshot(lastAction.card.cardKey, lastAction.before);
+    if (lastAction.removed) {
+      setQueue(q => {
+        const next = [...q];
+        next.splice(Math.min(lastAction.prevIdx, next.length), 0, lastAction.card);
+        return next;
+      });
+    }
+    setIdx(lastAction.prevIdx);
+    setDone(lastAction.prevDone);
+    setRevealed(false);
+    setLastAction(null);
+    toast.info('Reverted last card.');
+  }
+
+  if (loading) {
+    return (
+      <div className="max-w-xl mx-auto px-4 py-12 animate-pulse">
+        <div className="h-3 w-full bg-surface-2 rounded mb-4" />
+        <div className="h-56 bg-surface-2 rounded-2xl" />
+      </div>
+    );
+  }
+
   if (!card) {
     return (
       <div className="qf-card p-8 text-center anim-pop-in">
@@ -60,7 +179,7 @@ export function RevisionSession({ cards }: { cards: DueCard[] }) {
         <p className="mt-1.5 text-[15px] font-semibold text-muted max-w-md mx-auto">
           The scheduler has re-spaced everything you touched. Cards return as their intervals grow; lapsed cards come back sooner.
         </p>
-        <a href="/revision" className="btn3d mt-4">Back to revision centre</a>
+        <Link href="/revision" className="btn3d mt-4">Back to revision centre</Link>
       </div>
     );
   }
@@ -70,6 +189,19 @@ export function RevisionSession({ cards }: { cards: DueCard[] }) {
 
   return (
     <div className="max-w-xl mx-auto">
+      <div className="flex items-center justify-between gap-2 mb-2 text-[12px] font-bold text-muted">
+        <span className="tnum">Card {idx + 1} of {queue.length}</span>
+        <div className="flex items-center gap-2">
+          {lastAction && (
+            <button type="button" onClick={undoLast} className="inline-flex items-center gap-1 rounded-lg border border-border px-2 py-0.5 text-muted hover:text-foreground hover:bg-surface-2 transition-colors">
+              <Undo2 className="h-3 w-3" /> Undo
+            </button>
+          )}
+          <button type="button" onClick={snooze} className="inline-flex items-center gap-1 rounded-lg border border-border px-2 py-0.5 text-muted hover:text-foreground hover:bg-surface-2 transition-colors" title="Defer card 24 hours">
+            <Clock className="h-3 w-3" /> Snooze +1d
+          </button>
+        </div>
+      </div>
       <div className="h-2.5 rounded-full gauge-track mb-4">
         <div className="gauge-fill bg-accent" style={{ width: progressWidth }} />
       </div>

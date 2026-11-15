@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Mascot } from '@/components/brand/mascot';
+import { broadcast } from '@/lib/client/broadcast';
 
 export function AuthForm({ mode, stats }: { mode: 'login' | 'register'; stats?: { lessons: number; labs: number; problems: number } }) {
   const router = useRouter();
@@ -54,8 +55,19 @@ export function AuthForm({ mode, stats }: { mode: 'login' | 'register'; stats?: 
         setBusy(false);
         return;
       }
-      toast.success(mode === 'register' ? 'Account created, welcome aboard.' : `Welcome back, ${data.name}.`);
-      window.location.assign(destination());
+      const cachedUser = {
+        id: data.id ?? '',
+        name: data.name ?? name ?? email.split('@')[0],
+        email: data.email ?? email,
+        role: data.role ?? 'learner',
+      };
+      try {
+        window.localStorage.setItem('qf-chrome-user', JSON.stringify(cachedUser));
+      } catch { /* ignore */ }
+      broadcast('auth-changed', cachedUser);
+      window.dispatchEvent(new CustomEvent('qf:auth-refresh', { detail: cachedUser }));
+      toast.success(mode === 'register' ? 'Account created, welcome aboard.' : `Welcome back, ${cachedUser.name}.`);
+      router.push(destination());
     } catch {
       setError('Network error, is the server running?');
       setBusy(false);

@@ -13,6 +13,17 @@ const schema = z.object({
   durationS: z.number().int().min(0).max(7200),
 });
 
+export async function GET() {
+  const user = await getCurrentUser();
+  if (!user) return NextResponse.json({ history: [] }, { status: 401 });
+  const history = await db.drillSession.findMany({
+    where: { userId: user.id },
+    orderBy: { createdAt: 'desc' },
+    take: 25,
+  });
+  return NextResponse.json({ history });
+}
+
 export async function POST(req: NextRequest) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: 'Sign in first.' }, { status: 401 });

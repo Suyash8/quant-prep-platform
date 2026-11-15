@@ -15,6 +15,7 @@ import type { QuizQuestion } from '@/lib/content';
 import { gradeAnswer } from '@/lib/grading';
 import { scoreQuiz } from '@/lib/mastery';
 import { recordLessonResult, recordExerciseDone, lessonProgressOf, xpSummary, subscribe, ensureLocalCards } from '@/lib/client/local-state';
+import { getLessonPosition, saveLessonPosition } from '@/lib/client/idb';
 import { ClientMd, ClientMathFigure } from '@/components/gamified/client-md';
 import { ClientBlock } from '@/components/gamified/player-blocks';
 import { Confetti } from '@/components/gamified/confetti';
@@ -100,14 +101,28 @@ export function LessonPlayer({
   const total = cards.length;
   const progressPct = finished ? 100 : Math.round(((state.idx + 1) / total) * 100);
 
-  // persist position for resume
-
+  // persist position for resume (localStorage + IndexedDB)
+  React.useEffect(() => {
+    let alive = true;
+    try {
+      const hasLs = window.localStorage.getItem(storageKey);
+      if (!hasLs) {
+        getLessonPosition(lessonId).then((pos) => {
+          if (alive && pos && pos.cardIndex > 0 && pos.cardIndex < cards.length) {
+            setState((s) => (s.idx === 0 ? { ...s, idx: pos.cardIndex } : s));
+          }
+        }).catch(() => {});
+      }
+    } catch { /* ignore */ }
+    return () => { alive = false; };
+  }, [lessonId, storageKey, cards.length]);
 
   React.useEffect(() => {
     if (!finished) {
       try { window.localStorage.setItem(storageKey, JSON.stringify(state)); } catch { /* ignore */ }
+      void saveLessonPosition(lessonId, state.idx, 0);
     }
-  }, [state, storageKey, finished]);
+  }, [state, lessonId, storageKey, finished]);
 
   React.useEffect(() => {
     cardRef.current?.scrollTo({ top: 0 });

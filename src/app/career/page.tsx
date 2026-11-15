@@ -1,9 +1,6 @@
 import Link from 'next/link';
-import { getCurrentUser } from '@/lib/auth';
-import { db } from '@/lib/db';
 import { listCompanies, getCompany, getMatrix, getMap } from '@/lib/content';
-import { AppShell, PublicHeader, PublicFooter } from '@/components/app-shell';
-import { ApplicationTracker } from '@/components/application-tracker';
+import { CareerApplicationSection } from '@/components/application-tracker';
 import {
   ArrowRight, BarChart3, Briefcase, Building2, ChevronRight, ClipboardList, Compass, FileText, Layers,
   ListChecks, Route, ShieldCheck, Table2, Target,
@@ -118,16 +115,10 @@ const RESUME_TIPS = [
   },
 ];
 
-export default async function CareerPage() {
-  const user = await getCurrentUser();
+export default function CareerPage() {
   const companies = listCompanies();
   const matrix = getMatrix();
   const map = getMap();
-
-  let applications: { id: string; company: string; role: string; status: string; note: string; updatedAt: Date }[] = [];
-  if (user) {
-    applications = await db.application.findMany({ where: { userId: user.id }, orderBy: { updatedAt: 'desc' } });
-  }
 
   const enriched = companies.map(c => {
     const full = getCompany(c.slug);
@@ -153,7 +144,7 @@ export default async function CareerPage() {
     { icon: Route, tile: 'icon-tile-info', value: String(tracksCount), label: 'Career tracks' },
   ];
 
-  const body = (
+  return (
     <div className="max-w-6xl mx-auto px-4 lg:px-6 py-8">
       <header className="page-hero anim-slide-up">
         <span className="icon-tile icon-tile-gold"><Briefcase /></span>
@@ -351,41 +342,8 @@ export default async function CareerPage() {
         </div>
       </section>
 
-      {/* Application tracker */}
-      {user ? (
-        <section className="mt-10">
-          <div className="section-head">
-            <span className="icon-tile icon-tile-sm icon-tile-accent"><ClipboardList /></span>
-            <h2>Application tracker</h2>
-            <span className="chip ml-auto tnum">{applications.length} logged</span>
-          </div>
-          <ApplicationTracker initial={applications.map(a => ({ id: a.id, company: a.company, role: a.role, status: a.status, note: a.note }))} />
-        </section>
-      ) : (
-        <section className="mt-10 rounded-2xl border-2 border-accent bg-accent-soft p-5 sm:p-6 anim-slide-up">
-          <div className="flex flex-wrap items-center gap-4 justify-between">
-            <div className="flex items-center gap-4 min-w-0">
-              <span className="icon-tile bg-surface text-accent-deep dark:text-accent"><Compass /></span>
-              <div>
-                <h2 className="font-extrabold text-lg tracking-tight">Not sure where you stand?</h2>
-                <p className="text-[15px] text-muted">Take the 28-question diagnostic and start at the phase that matches you, no wasted weeks.</p>
-              </div>
-            </div>
-            <Link href="/diagnostic" className="btn3d">Take the diagnostic <ArrowRight className="h-4 w-4" /></Link>
-          </div>
-        </section>
-      )}
+      {/* Application tracker or diagnostic CTA */}
+      <CareerApplicationSection />
     </div>
   );
-
-  if (!user) {
-    return (
-      <div className="min-h-screen flex flex-col">
-        <PublicHeader user={null} />
-        <main className="flex-1">{body}</main>
-        <PublicFooter />
-      </div>
-    );
-  }
-  return <AppShell user={{ name: user.name, email: user.email, role: user.role }} isAdmin={user.role === 'admin'}>{body}</AppShell>;
 }

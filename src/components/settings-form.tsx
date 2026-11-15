@@ -7,20 +7,36 @@ import { useRouter } from 'next/navigation';
 import {
   Target, UserRound, Palette, ShieldCheck, LogOut, Monitor, Sun, Moon,
   Flame, Check, Accessibility, KeyRound, Download, Trash2, AlertTriangle,
+  Wifi, RefreshCw,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SyncErrorNotice } from '@/components/sync-error-notice';
+import { setDailyGoalXp, xpSummary, subscribe } from '@/lib/client/local-state';
+import { broadcast } from '@/lib/client/broadcast';
 
-export function SettingsForm({ user }: { user: { name: string; email: string; role: string; memberSince?: string | Date } }) {
+interface SettingsUser {
+  name: string;
+  email: string;
+  role: string;
+  memberSince?: string | Date;
+}
+
+export function SettingsForm({ user }: { user?: SettingsUser }) {
   const { theme: storedTheme, setTheme } = useTheme();
   const [themeMounted, setThemeMounted] = React.useState(false);
   React.useEffect(() => setThemeMounted(true), []);
   const theme = themeMounted ? storedTheme : undefined;
   const router = useRouter();
 
+  const [activeUser, setActiveUser] = React.useState<SettingsUser | null>(user ?? null);
   // Name state
-  const [name, setName] = React.useState(user.name);
+  const [name, setName] = React.useState(user?.name ?? '');
   const [busy, setBusy] = React.useState(false);
+  const [swState, setSwState] = React.useState<{ ready: boolean; cachedCount: number | null; refreshing: boolean }>({
+    ready: false,
+    cachedCount: null,
+    refreshing: false,
+  });
 
   // Password state
   const [currentPassword, setCurrentPassword] = React.useState('');
@@ -36,9 +52,93 @@ export function SettingsForm({ user }: { user: { name: string; email: string; ro
   const [gamed, setGamed] = React.useState<{ xp: number; level: number; streakCount: number; longestStreak: number; dailyGoalXp: number; todayXp: number } | null>(null);
   const [goalBusy, setGoalBusy] = React.useState(false);
 
-  React.useEffect(() => {
-    fetch('/api/gamification').then(r => (r.ok ? r.json() : null)).then(setGamed).catch(() => {});
+  const inspectOfflineCache = React.useCallback(async () => {
+    try {
+      if (!('caches' in window)) return;
+      const names = await caches.keys();
+      const target = names.find((n) => n.startsWith('qf')) ?? names[0];
+      let cachedCount = 0;
+      if (target) {
+        const cache = await caches.open(target);
+        cachedCount = (await cache.keys()).length;
+      }
+      const swReady = 'serviceWorker' in navigator && Boolean((await navigator.serviceWorker.getRegistration())?.active);
+      setSwState((s) => ({ ...s, ready: swReady || cachedCount > 0, cachedCount }));
+    } catch {
+      /* ignore */
+    }
   }, []);
+
+  React.useEffect(() => {
+    if (!user) {
+      try {
+        const raw = window.localStorage.getItem('qf-chrome-user');
+        if (raw) {
+          const parsed = JSON.parse(raw) as SettingsUser;
+          if (parsed?.email) {
+            setActiveUser(parsed);
+            setName((prev) => prev || parsed.name || '');
+          }
+        }
+      } catch { /* ignore */ }
+      if (typeof navigator === 'undefined' || navigator.onLine) {
+        fetch('/api/auth/me')
+          .then((r) => (r.ok ? r.json() : null))
+          .then((d) => {
+            if (d?.user) {
+              setActiveUser(d.user);
+              setName(d.user.name ?? '');
+              try { window.localStorage.setItem('qf-chrome-user', JSON.stringify(d.user)); } catch {}
+            }
+          })
+          .catch(() => {});
+      }
+    }
+
+    const syncLocalXp = () => {
+      const s = xpSummary();
+      setGamed((prev) => ({
+        xp: Math.max(prev?.xp ?? 0, s.xp),
+        level: Math.max(prev?.level ?? 1, s.level),
+        streakCount: Math.max(prev?.streakCount ?? 0, s.streakCount),
+        longestStreak: Math.max(prev?.longestStreak ?? 0, s.longestStreak),
+        dailyGoalXp: s.dailyGoalXp,
+        todayXp: Math.max(prev?.todayXp ?? 0, s.todayXp),
+      }));
+    };
+    syncLocalXp();
+    const unsub = subscribe(syncLocalXp);
+
+    if (typeof navigator === 'undefined' || navigator.onLine) {
+      fetch('/api/gamification')
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => {
+          if (d) setGamed(d);
+        })
+        .catch(() => {});
+    }
+    inspectOfflineCache();
+    return () => unsub();
+  }, [user, inspectOfflineCache]);
+
+  async function refreshOfflineCache() {
+    if (!('serviceWorker' in navigator)) {
+      toast.info('Service worker offline caching is not available in this browser.');
+      return;
+    }
+    setSwState((s) => ({ ...s, refreshing: true }));
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      reg.active?.postMessage({ type: 'QF3_DOWNLOAD_ALL' });
+      toast.success('Refreshing offline lessons, problems, and study packs in the background.');
+      setTimeout(() => {
+        inspectOfflineCache();
+        setSwState((s) => ({ ...s, refreshing: false }));
+      }, 2500);
+    } catch {
+      setSwState((s) => ({ ...s, refreshing: false }));
+    }
+  }
 
   async function saveName() {
     setBusy(true);
@@ -53,8 +153,17 @@ export function SettingsForm({ user }: { user: { name: string; email: string; ro
         toast.error(d.error || 'Save failed.');
         return;
       }
+      if (activeUser) {
+        const nextUser = { ...activeUser, name };
+        setActiveUser(nextUser);
+        try { window.localStorage.setItem('qf-chrome-user', JSON.stringify(nextUser)); } catch {}
+        window.dispatchEvent(new CustomEvent('qf:auth-refresh'));
+        broadcast('auth-changed', nextUser);
+      }
       toast.success('Profile saved.');
       router.refresh();
+    } catch {
+      toast.error('Connect to the internet to update your account name.');
     } finally {
       setBusy(false);
     }
@@ -109,9 +218,11 @@ export function SettingsForm({ user }: { user: { name: string; email: string; ro
         toast.error('Could not delete account. Please try again.');
         return;
       }
+      try { window.localStorage.removeItem('qf-chrome-user'); } catch {}
+      window.dispatchEvent(new CustomEvent('qf:auth-refresh'));
+      broadcast('auth-changed', null);
       toast.success('Your account and all associated data have been deleted.');
       router.push('/register');
-      router.refresh();
     } finally {
       setDeleteBusy(false);
     }
@@ -123,24 +234,33 @@ export function SettingsForm({ user }: { user: { name: string; email: string; ro
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ confirmCurrent: true }),
     }).catch(() => {});
+    try { window.localStorage.removeItem('qf-chrome-user'); } catch {}
+    window.dispatchEvent(new CustomEvent('qf:auth-refresh'));
+    broadcast('auth-changed', null);
     router.push('/login');
-    router.refresh();
   }
 
   async function setGoal(xp: number) {
     setGoalBusy(true);
+    setDailyGoalXp(xp);
+    setGamed(g => (g ? { ...g, dailyGoalXp: xp } : g));
     try {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        toast.success(`Daily goal set to ${xp} XP (saved locally — will sync online).`);
+        return;
+      }
       const res = await fetch('/api/gamification', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ dailyGoalXp: xp }),
       });
       if (!res.ok) {
-        toast.error('Could not save goal.');
+        toast.success(`Daily goal set to ${xp} XP (saved locally).`);
         return;
       }
-      setGamed(g => (g ? { ...g, dailyGoalXp: xp } : g));
       toast.success(`Daily goal set to ${xp} XP.`);
+    } catch {
+      toast.success(`Daily goal set to ${xp} XP (saved locally).`);
     } finally {
       setGoalBusy(false);
     }
@@ -226,26 +346,26 @@ export function SettingsForm({ user }: { user: { name: string; email: string; ro
             />
             <button
               onClick={saveName}
-              disabled={busy || name === user.name}
+              disabled={busy || name === (activeUser?.name ?? '')}
               className="btn3d btn3d-sm shrink-0"
             >
-              {busy ? 'Saving…' : name === user.name ? (<><Check className="h-3.5 w-3.5" /> Saved</>) : 'Save'}
+              {busy ? 'Saving…' : name === (activeUser?.name ?? '') ? (<><Check className="h-3.5 w-3.5" /> Saved</>) : 'Save'}
             </button>
           </div>
         </label>
         <dl className="mt-4 space-y-2 text-[15px] font-semibold flex-1">
           <div className="flex items-center justify-between gap-3 rounded-xl bg-surface-2/60 px-3 py-2">
             <dt className="text-muted">Email</dt>
-            <dd className="truncate">{user.email}</dd>
+            <dd className="truncate">{activeUser?.email ?? '—'}</dd>
           </div>
           <div className="flex items-center justify-between gap-3 rounded-xl bg-surface-2/60 px-3 py-2">
             <dt className="text-muted">Role</dt>
-            <dd><span className="chip chip-info">{user.role}</span></dd>
+            <dd><span className="chip chip-info">{activeUser?.role ?? 'learner'}</span></dd>
           </div>
-          {user.memberSince && (
+          {activeUser?.memberSince && (
             <div className="flex items-center justify-between gap-3 rounded-xl bg-surface-2/60 px-3 py-2">
               <dt className="text-muted">Member since</dt>
-              <dd className="tnum">{new Date(user.memberSince).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}</dd>
+              <dd className="tnum">{new Date(activeUser.memberSince).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}</dd>
             </div>
           )}
         </dl>
@@ -364,13 +484,36 @@ export function SettingsForm({ user }: { user: { name: string; email: string; ro
         </div>
       </section>
 
+      {/* Offline storage */}
+      <section className="qf-card p-5 lg:col-span-2 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <span className="icon-tile icon-tile-accent h-11 w-11"><Wifi className="h-6 w-6" /></span>
+          <div>
+            <h2 className="font-black">Offline availability</h2>
+            <p className="text-[13px] font-semibold text-muted">
+              {swState.ready
+                ? `Lessons, coding problems, assessments, and progress are cached for seamless offline study${swState.cachedCount !== null ? ` (${swState.cachedCount} items cached)` : ''}.`
+                : 'Background sync prepares your lessons, problems, and drills automatically on first load.'}
+            </p>
+          </div>
+        </div>
+        <button
+          onClick={refreshOfflineCache}
+          disabled={swState.refreshing}
+          className="btn3d btn3d-sm btn3d-ghost shrink-0"
+        >
+          <RefreshCw className={cn('h-4 w-4', swState.refreshing && 'animate-spin')} />
+          {swState.refreshing ? 'Syncing…' : 'Refresh offline cache'}
+        </button>
+      </section>
+
       {/* Session */}
       <section className="qf-card p-5 flex flex-col">
         <div className="flex items-center gap-3">
           <span className="icon-tile icon-tile-neutral h-11 w-11"><LogOut className="h-6 w-6" /></span>
           <div>
             <h2 className="font-black">Active session</h2>
-            <p className="text-[13px] font-semibold text-muted">Signed in as {user.email}</p>
+            <p className="text-[13px] font-semibold text-muted">Signed in as {activeUser?.email ?? 'local session'}</p>
           </div>
         </div>
         <div className="mt-4 flex-1">

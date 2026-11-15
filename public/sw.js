@@ -1,347 +1,507 @@
-/* QuantFoundry v3 service worker: full offline app.
- *
- * Strategies:
- *  - /packs/v3/**  : cache-first (immutable, versioned content packs)
- *  - static assets : cache-first (_next/static, icons, fonts, manifest)
- *  - navigations   : network-first, cache fallback, offline page last
- *  - /api/**       : network only, never cached
- *
- * Messages from the page:
- *  - SKIP_WAITING                : activate the new worker now
- *  - QF3_DOWNLOAD_ALL            : fetch every pack file + shell routes into
- *                                  the pack cache; posts QF3_DL_PROGRESS back
- *  - QF3_DOWNLOAD_STATUS         : reply QF3_DL_STATUS with counts
- *  - QF3_CLEAR_PACKS             : drop pack + page caches
- */
+/* QuantFoundry Service Worker — seamless offline packs, dynamic shell fallback, background sync */
 
-const VERSION = 'qf3-v2';
-const STATIC_CACHE = `${VERSION}-static`;
-const PACK_CACHE = `${VERSION}-packs`;
-const PAGE_CACHE = `${VERSION}-pages`;
-
-// Routes that make the app usable offline when pre-fetched during download-all.
-const SHELL_ROUTES = ['/', '/dashboard', '/curriculum', '/learn', '/practice', '/revision', '/drills', '/projects', '/assessments', '/planner', '/lab', '/analytics', '/settings'];
-
-const PRECACHE = [
-  '/manifest.json',
-  '/icons/icon.svg',
-  '/icons/icon-192.png',
-  '/icons/icon-512.png',
-  '/icons/maskable-512.png',
-];
+const VERSION = 'qf4-v4';
+const CACHE_PACKS = `${VERSION}-packs`;
+const CACHE_SHELL = `${VERSION}-shell`;
+const CACHE_STATIC = `${VERSION}-static`;
+const META_KEY = 'qf4-manifest-stamp-v4';
 
 const DEV_MODE = new URL(self.location.href).searchParams.get('mode') === 'dev';
 
+const SHELL_ROUTES = [
+  '/',
+  '/dashboard',
+  '/curriculum',
+  '/learn',
+  '/practice',
+  '/assessments',
+  '/projects',
+  '/revision',
+  '/drills',
+  '/lab',
+  '/analytics',
+  '/planner',
+  '/career',
+  '/diagnostic',
+  '/pricing',
+  '/about',
+  '/methodology',
+  '/privacy',
+  '/terms',
+  '/contact',
+  '/settings',
+  '/login',
+  '/register',
+];
+
+const DYNAMIC_SHELLS = [
+  { prefix: '/learn/', seed: '/learn/ap-python-values-units', htmlKey: '/__shell__/learn.html', rscKey: '/__shell__/learn.rsc' },
+  { prefix: '/practice/', seed: '/practice/min-stack', htmlKey: '/__shell__/practice.html', rscKey: '/__shell__/practice.rsc' },
+  { prefix: '/assessments/', seed: '/assessments/diag-core', htmlKey: '/__shell__/assessments.html', rscKey: '/__shell__/assessments.rsc' },
+  { prefix: '/projects/', seed: '/projects/limit-order-book', htmlKey: '/__shell__/projects.html', rscKey: '/__shell__/projects.rsc' },
+  { prefix: '/career/', seed: '/career/jane-street', htmlKey: '/__shell__/career.html', rscKey: '/__shell__/career.rsc' },
+];
+
+function matchDynamicShell(pathname) {
+  for (const entry of DYNAMIC_SHELLS) {
+    if (pathname.startsWith(entry.prefix) && pathname.length > entry.prefix.length) {
+      return entry;
+    }
+  }
+  return null;
+}
+
+function isStaticAsset(pathname) {
+  return (
+    pathname.startsWith('/_next/static/') ||
+    pathname.startsWith('/icons/') ||
+    pathname === '/manifest.json' ||
+    pathname === '/manifest.webmanifest' ||
+    pathname === '/favicon.ico' ||
+    /\.(?:png|svg|jpg|jpeg|webp|woff2?|css|js)$/i.test(pathname)
+  );
+}
+
+function isRscRequest(request, url) {
+  if (url.searchParams.has('_rsc')) return true;
+  const accept = request.headers.get('accept') || '';
+  return accept.includes('text/x-component');
+}
+
+function rscCacheKey(url) {
+  const clean = new URL(url.href);
+  clean.searchParams.delete('_rsc');
+  return clean.pathname + (clean.search ? clean.search : '') + '::rsc';
+}
+
+function isCacheablePage(res) {
+  if (!res || !res.ok) return false;
+  if (res.redirected && res.url && res.url.includes('/login')) return false;
+  return true;
+}
+
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(STATIC_CACHE)
-      .then((cache) => Promise.all(PRECACHE.map((u) => cache.add(u).catch(() => undefined))))
-      .then(() => (DEV_MODE ? undefined : self.skipWaiting()))
+    caches.open(CACHE_SHELL)
+      .then((cache) => cache.addAll(['/']).catch(() => {}))
+      .then(() => self.skipWaiting()),
   );
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys()
-      .then((keys) => Promise.all(
-        keys.filter((k) => !k.startsWith(VERSION)).map((k) => caches.delete(k))
-      ))
-      .then(() => self.clients.claim())
+    (async () => {
+      const names = await caches.keys();
+      await Promise.all(
+        names
+          .filter((n) => !n.startsWith(VERSION))
+          .map((n) => caches.delete(n)),
+      );
+      await self.clients.claim();
+    })(),
   );
 });
 
-const LESSON_SHELL_HTML = '/__qf3/lesson-shell-html';
-const LESSON_SHELL_RSC = '/__qf3/lesson-shell-rsc';
-const LESSON_SHELL_ID = '/__qf3/lesson-shell-id';
-
-/** Serve the cached lesson shell rewritten for the requested lesson id, so
- *  the router state matches the URL and hydration completes offline. */
-async function lessonShell(request, url, rsc) {
-  const cache = await caches.open(PAGE_CACHE);
-  const idResp = await cache.match(LESSON_SHELL_ID);
-  if (!idResp) return null;
-  const anchorId = (await idResp.text()).trim();
-  const targetId = decodeURIComponent(url.pathname.slice('/learn/'.length));
-  if (!anchorId || !targetId || anchorId === targetId) {
-    return cache.match(rsc ? LESSON_SHELL_RSC : LESSON_SHELL_HTML);
+function extractStaticUrls(text) {
+  const urls = new Set();
+  if (!text) return [];
+  const fullRe = /(\/_next\/static\/[A-Za-z0-9_.\-%\[\]\/~@+]+)/g;
+  let m;
+  while ((m = fullRe.exec(text)) !== null) {
+    urls.add(m[1]);
   }
-  const shell = await cache.match(rsc ? LESSON_SHELL_RSC : LESSON_SHELL_HTML);
-  if (!shell) return null;
-  const text = await shell.text();
-  // the id appears both raw (RSC stream) and backslash-escaped (inline
-  // flight data inside <script> tags), replace both forms
-  let rewritten = text.split('"' + anchorId + '"').join('"' + targetId + '"');
-  rewritten = rewritten.split('\\\"' + anchorId + '\\\"').join('\\\"' + targetId + '\\\"');
-  return new Response(rewritten, {
-    status: 200,
-    headers: {
-      'Content-Type': rsc ? 'text/x-component; charset=utf-8' : 'text/html; charset=utf-8',
-      'X-QF3-Shell': '1',
-    },
-  });
+  const relRe = /["'](static\/(?:chunks|css|media)\/[A-Za-z0-9_.\-%\[\]\/~@+]+)["']/g;
+  while ((m = relRe.exec(text)) !== null) {
+    urls.add('/_next/' + m[1]);
+  }
+  const mediaRelRe = /\.\.\/(media\/[A-Za-z0-9_.\-%\/~@+]+)/g;
+  while ((m = mediaRelRe.exec(text)) !== null) {
+    urls.add('/_next/static/' + m[1]);
+  }
+  return Array.from(urls);
 }
 
-function isLessonPath(pathname) {
-  return /^\/learn\/[^/]+$/.test(pathname);
+async function cacheAssetFromHtml(htmlText, staticCache, seenUrls = new Set()) {
+  const urls = extractStaticUrls(htmlText);
+  const fetchQueue = urls.filter((u) => !seenUrls.has(u));
+  for (const u of fetchQueue) seenUrls.add(u);
+
+  const nestedTexts = [];
+  for (let i = 0; i < fetchQueue.length; i += 8) {
+    await Promise.all(
+      fetchQueue.slice(i, i + 8).map(async (u) => {
+        try {
+          const hit = await staticCache.match(u, { ignoreSearch: true });
+          if (hit) {
+            if (/\.(?:js|css)$/i.test(u)) {
+              nestedTexts.push(await hit.clone().text().catch(() => ''));
+            }
+            return;
+          }
+          const r = await fetch(u);
+          if (r.ok) {
+            const clone = r.clone();
+            await staticCache.put(u, r);
+            if (/\.(?:js|css)$/i.test(u)) {
+              nestedTexts.push(await clone.text().catch(() => ''));
+            }
+          }
+        } catch { /* ignore individual asset failure */ }
+      }),
+    );
+  }
+
+  // Depth-1 pass: discover dynamic/lazy JS chunks & CSS fonts referenced by downloaded bundles
+  if (nestedTexts.length > 0) {
+    const nestedUrls = new Set();
+    for (const body of nestedTexts) {
+      for (const nu of extractStaticUrls(body)) {
+        if (!seenUrls.has(nu)) {
+          seenUrls.add(nu);
+          nestedUrls.add(nu);
+        }
+      }
+    }
+    const extra = Array.from(nestedUrls);
+    const depth2Texts = [];
+    for (let i = 0; i < extra.length; i += 8) {
+      await Promise.all(
+        extra.slice(i, i + 8).map(async (u) => {
+          try {
+            const hit = await staticCache.match(u, { ignoreSearch: true });
+            if (hit) {
+              if (/\.(?:js|css)$/i.test(u)) {
+                depth2Texts.push(await hit.clone().text().catch(() => ''));
+              }
+              return;
+            }
+            const r = await fetch(u);
+            if (r.ok) {
+              const clone = r.clone();
+              await staticCache.put(u, r);
+              if (/\.(?:js|css)$/i.test(u)) {
+                depth2Texts.push(await clone.text().catch(() => ''));
+              }
+            }
+          } catch { /* ignore */ }
+        }),
+      );
+    }
+    if (depth2Texts.length > 0) {
+      const depth2Urls = new Set();
+      for (const body of depth2Texts) {
+        for (const nu of extractStaticUrls(body)) {
+          if (!seenUrls.has(nu)) {
+            seenUrls.add(nu);
+            depth2Urls.add(nu);
+          }
+        }
+      }
+      const d2 = Array.from(depth2Urls);
+      for (let i = 0; i < d2.length; i += 8) {
+        await Promise.all(
+          d2.slice(i, i + 8).map(async (u) => {
+            try {
+              if (await staticCache.match(u, { ignoreSearch: true })) return;
+              const r = await fetch(u);
+              if (r.ok) await staticCache.put(u, r);
+            } catch { /* ignore */ }
+          }),
+        );
+      }
+    }
+  }
 }
 
-function rscKey(pathname) {
-  return `/__qf3/rsc${pathname}`;
+let downloadingPromise = null;
+
+async function broadcastMsg(payload) {
+  const clients = await self.clients.matchAll({ includeUncontrolled: true });
+  for (const client of clients) {
+    client.postMessage(payload);
+  }
 }
 
-function isStatic(url) {
-  return (
-    url.pathname.startsWith('/icons/') ||
-    url.pathname.startsWith('/_next/static/') ||
-    url.pathname === '/manifest.json' ||
-    /\.(?:css|js|woff2?|png|svg|jpg|jpeg|webp|avif)$/.test(url.pathname)
-  );
+async function runDownloadAll(force = false) {
+  if (downloadingPromise) return downloadingPromise;
+  downloadingPromise = (async () => {
+    try {
+      const packCache = await caches.open(CACHE_PACKS);
+      const shellCache = await caches.open(CACHE_SHELL);
+      const staticCache = await caches.open(CACHE_STATIC);
+
+      const mRes = await fetch('/packs/v3/manifest.json', { cache: 'no-store' });
+      if (!mRes.ok) return;
+      const manifest = await mRes.clone().json();
+      await packCache.put('/packs/v3/manifest.json', mRes);
+
+      const stamp = `${manifest.version || '0'}@${manifest.builtAt || '0'}`;
+      if (!force) {
+        const metaRes = await packCache.match(META_KEY);
+        const prevStamp = metaRes ? await metaRes.text() : null;
+        if (prevStamp === stamp) {
+          // Verify key shell is still present before skipping
+          const dashHit = await shellCache.match('/dashboard');
+          if (dashHit) {
+            await broadcastMsg({ type: 'QF3_DL_DONE', total: (manifest.files || []).length, skipped: true });
+            return;
+          }
+        }
+      }
+
+      const files = Array.isArray(manifest.files) ? manifest.files : [];
+      const total = files.length + SHELL_ROUTES.length + DYNAMIC_SHELLS.length;
+      let done = 0;
+
+      // 1. Download all static content packs in polite low-concurrency batches
+      const BATCH = 12;
+      for (let i = 0; i < files.length; i += BATCH) {
+        const slice = files.slice(i, i + BATCH);
+        await Promise.all(
+          slice.map(async (url) => {
+            try {
+              const hit = !force ? await packCache.match(url) : null;
+              if (!hit) {
+                const r = await fetch(url);
+                if (r.ok) await packCache.put(url, r);
+              }
+            } catch { /* retry next load */ }
+            done++;
+          }),
+        );
+        await broadcastMsg({ type: 'QF3_DL_PROGRESS', done, total });
+      }
+
+      // 2. Cache navigation HTML shells + static JS/CSS chunks referenced by them
+      const seenAssets = new Set();
+      for (let i = 0; i < SHELL_ROUTES.length; i += 4) {
+        const slice = SHELL_ROUTES.slice(i, i + 4);
+        await Promise.all(
+          slice.map(async (route) => {
+            try {
+              const res = await fetch(route, { credentials: 'same-origin' });
+              if (isCacheablePage(res)) {
+                const clone = res.clone();
+                await shellCache.put(route, res);
+                const text = await clone.text();
+                await cacheAssetFromHtml(text, staticCache, seenAssets);
+              }
+            } catch { /* ignore individual route failure */ }
+            done++;
+          }),
+        );
+        await broadcastMsg({ type: 'QF3_DL_PROGRESS', done, total });
+      }
+
+      // 2b. Cache essential app icons & webmanifest so zero 503s occur offline
+      await Promise.all(
+        ['/icons/icon.svg', '/icons/icon-192.png', '/icons/icon-512.png', '/favicon-32.png', '/favicon-64.png', '/manifest.json', '/manifest.webmanifest'].map(
+          async (assetUrl) => {
+            try {
+              if (await staticCache.match(assetUrl)) return;
+              const r = await fetch(assetUrl);
+              if (r.ok) await staticCache.put(assetUrl, r);
+            } catch { /* ignore */ }
+          },
+        ),
+      );
+
+      // 3. Seed canonical dynamic shells (HTML + RSC) so any /learn/*, /practice/*, /assessments/*, /projects/*, /career/* works offline
+      await Promise.all(
+        DYNAMIC_SHELLS.map(async (entry) => {
+          try {
+            const htmlRes = await fetch(entry.seed, { credentials: 'same-origin' });
+            if (isCacheablePage(htmlRes)) {
+              const clone = htmlRes.clone();
+              await shellCache.put(entry.htmlKey, htmlRes);
+              await shellCache.put(entry.seed, clone.clone());
+              const text = await clone.text();
+              await cacheAssetFromHtml(text, staticCache, seenAssets);
+            }
+          } catch { /* ignore */ }
+          try {
+            const rscRes = await fetch(entry.seed, {
+              credentials: 'same-origin',
+              headers: { RSC: '1', Accept: 'text/x-component' },
+            });
+            if (rscRes.ok) {
+              const rscClone = rscRes.clone();
+              await shellCache.put(entry.rscKey, rscRes);
+              const rscText = await rscClone.text();
+              await cacheAssetFromHtml(rscText, staticCache, seenAssets);
+            }
+          } catch { /* ignore */ }
+          done++;
+        }),
+      );
+
+      await packCache.put(META_KEY, new Response(stamp));
+      await broadcastMsg({ type: 'QF3_DL_PROGRESS', done: total, total });
+      await broadcastMsg({ type: 'QF3_DL_DONE', total, skipped: false });
+    } catch {
+      // silent retry on next load
+    } finally {
+      downloadingPromise = null;
+    }
+  })();
+  return downloadingPromise;
 }
+
+self.addEventListener('message', (event) => {
+  const data = event.data;
+  if (!data || typeof data !== 'object') return;
+  if (data.type === 'QF3_DOWNLOAD_ALL') {
+    event.waitUntil(runDownloadAll(!!data.force));
+  } else if (data.type === 'QF3_CLEAR_PACKS') {
+    event.waitUntil(
+      (async () => {
+        await caches.delete(CACHE_PACKS);
+        await caches.delete(CACHE_SHELL);
+        await broadcastMsg({ type: 'QF3_CLEARED' });
+      })(),
+    );
+  }
+});
 
 self.addEventListener('fetch', (event) => {
-  const { request } = event;
+  const request = event.request;
   if (request.method !== 'GET') return;
 
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
   if (url.pathname.startsWith('/api/')) return;
-  if (url.pathname.startsWith('/_next/webpack-hmr')) return;
 
-  // Content packs: cache-first, they are immutable per version
-  if (url.pathname.startsWith('/packs/')) {
-    if (DEV_MODE) return;
+  // 1. Manifest: network-first so version bumps are detected promptly, cache fallback offline
+  if (url.pathname === '/packs/v3/manifest.json') {
     event.respondWith(
-      caches.open(PACK_CACHE).then(async (cache) => {
+      (async () => {
+        const cache = await caches.open(CACHE_PACKS);
+        try {
+          const res = await fetch(request);
+          if (res.ok) await cache.put(request, res.clone());
+          return res;
+        } catch {
+          const cached = await cache.match(request);
+          return cached || new Response('{}', { status: 503, headers: { 'Content-Type': 'application/json' } });
+        }
+      })(),
+    );
+    return;
+  }
+
+  // 2. Content packs (/packs/**): cache-first with network fallback in both dev & prod
+  if (url.pathname.startsWith('/packs/')) {
+    event.respondWith(
+      (async () => {
+        const cache = await caches.open(CACHE_PACKS);
         const cached = await cache.match(request);
         if (cached) return cached;
-        const res = await fetch(request);
-        if (res.ok) cache.put(request, res.clone());
-        return res;
-      })
-    );
-    return;
-  }
-
-  // Static assets: stale-while-revalidate (skipped in dev)
-  if (!DEV_MODE && isStatic(url)) {
-    event.respondWith(
-      caches.open(STATIC_CACHE).then(async (cache) => {
-        const cached = await cache.match(request);
-        const fresh = fetch(request)
-          .then((res) => {
-            if (res.ok) cache.put(request, res.clone());
-            return res;
-          })
-          .catch(() => null);
-        const res = cached || (await fresh);
-        // offline and never cached: fail loudly instead of hanging forever
-        return res || new Response('offline', { status: 504, statusText: 'offline' });
-      })
-    );
-    return;
-  }
-
-  // RSC payload requests (client-side navigation): network-first with cache
-  // fallback so moving between pages works offline after download-all.
-  if (request.headers.get('RSC') === '1') {
-    if (DEV_MODE) return;
-    event.respondWith(
-      fetch(request)
-        .then((res) => {
-          if (res.ok) {
-            const copy = res.clone();
-            caches.open(PAGE_CACHE).then((cache) => cache.put(rscKey(url.pathname), copy)).catch(() => {});
-          }
-          return res;
-        })
-        .catch(async () => {
-          // /learn/<any>/ falls back to the rewritten lesson shell
-          if (isLessonPath(url.pathname)) {
-            const shell = await lessonShell(request, url, true);
-            if (shell) return shell;
-          }
-          const cached = await (await caches.open(PAGE_CACHE)).match(rscKey(url.pathname));
-          return cached || Response.error();
-        })
-    );
-    return;
-  }
-
-  // Navigations: network-first, cache fallback, offline notice last
-  if (request.mode === 'navigate') {
-    event.respondWith(
-      fetch(request)
-        .then((res) => {
-          if (!DEV_MODE && res.ok) {
-            const copy = res.clone();
-            caches.open(PAGE_CACHE).then((cache) => cache.put(request, copy)).catch(() => {});
-          }
-          return res;
-        })
-        .catch(async () => {
-          const cached = DEV_MODE ? null : await caches.match(request);
-          if (cached) return cached;
-          // every lesson renders the same shell; rewriting the id makes the
-          // cached anchor lesson serve any lesson offline
-          if (!DEV_MODE && isLessonPath(url.pathname)) {
-            const shell = await lessonShell(request, url, false);
-            if (shell) return shell;
-          }
-          return new Response(
-            `<!doctype html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Offline</title>
-<style>
-  :root { color-scheme: dark; }
-  body { margin:0; min-height:100vh; display:grid; place-items:center;
-    background:#0b0e14; color:#e6e9ef; font-family:system-ui, sans-serif; }
-  .card { max-width:26rem; padding:2rem; text-align:center; }
-  h1 { font-size:1.4rem; margin:0 0 .75rem; }
-  p { color:#9aa3b2; line-height:1.5; margin:0 0 1.25rem; }
-  a { display:inline-block; background:#58cc02; color:#fff; font-weight:800;
-    text-decoration:none; padding:.8rem 1.6rem; border-radius:1rem; }
-</style></head><body><div class="card">
-<h1>You're offline</h1>
-<p>This page hasn't been saved for offline use yet. Reconnect once, or use "Download everything" in Settings to make the whole app work offline.</p>
-<a href="/dashboard">Try again</a>
-</div></body></html>`,
-            { headers: { 'Content-Type': 'text/html; charset=utf-8' } }
-          );
-        })
-    );
-  }
-});
-
-// ---------- download-all ----------
-
-let dlState = { running: false, done: 0, cached: 0, failed: 0, failedFiles: [], total: 0, phase: '', error: null, finishedAt: null };
-function markFailed(name) { dlState.failed++; if (dlState.failedFiles.length < 20) dlState.failedFiles.push(name); }
-
-async function broadcast(msg) {
-  const clients = await self.clients.matchAll({ includeUncontrolled: true });
-  for (const c of clients) c.postMessage(msg);
-}
-
-async function downloadAll() {
-  if (dlState.running) return;
-  dlState = { running: true, done: 0, cached: 0, failed: 0, failedFiles: [], total: 0, phase: 'manifest', error: null, finishedAt: null };
-  broadcast({ type: 'QF3_DL_PROGRESS', ...dlState });
-  try {
-    const cache = await caches.open(PACK_CACHE);
-    const res = await fetch('/packs/v3/manifest.json', { cache: 'reload' });
-    if (!res.ok) throw new Error(`manifest ${res.status}`);
-    await cache.put('/packs/v3/manifest.json', res.clone());
-    const manifest = await res.json();
-
-    const files = manifest.files || [];
-    dlState.total = files.length + SHELL_ROUTES.length;
-    dlState.phase = 'packs';
-    broadcast({ type: 'QF3_DL_PROGRESS', ...dlState });
-
-    // packs in small batches so progress feels live and nothing times out
-    const BATCH = 12;
-    for (let i = 0; i < files.length; i += BATCH) {
-      const slice = files.slice(i, i + BATCH);
-      await Promise.all(slice.map(async (f) => {
         try {
-          const r = await fetch(f, { cache: 'reload' });
-          if (r.ok) { await cache.put(f, r.clone()); dlState.cached++; } else markFailed(f);
+          const res = await fetch(request);
+          if (res.ok) await cache.put(request, res.clone());
+          return res;
         } catch {
-          markFailed(f); /* keep going, but report it: a missing file means offline is incomplete */
+          return new Response(JSON.stringify({ error: 'Offline pack unavailable' }), {
+            status: 503,
+            headers: { 'Content-Type': 'application/json' },
+          });
         }
-        dlState.done++;
-      }));
-      broadcast({ type: 'QF3_DL_PROGRESS', ...dlState });
-    }
+      })(),
+    );
+    return;
+  }
 
-    // shell routes: HTML for hard loads + RSC payloads for client-side nav
-    dlState.phase = 'pages';
-    broadcast({ type: 'QF3_DL_PROGRESS', ...dlState });
-    const pageCache = await caches.open(PAGE_CACHE);
-    const staticCache = await caches.open(STATIC_CACHE);
-    const chunkSeen = new Set();
-    async function cacheRouteChunks(html) {
-      const refs = [...html.matchAll(/["']((?:\/_next\/static|\/icons)\/[^"']+)["']/g)].map((m) => m[1]);
-      await Promise.all(refs.map(async (ref) => {
-        if (chunkSeen.has(ref)) return;
-        chunkSeen.add(ref);
+  // 3. Static JS/CSS/fonts/images: network-first in dev (preserves HMR), cache-first in prod
+  if (isStaticAsset(url.pathname)) {
+    event.respondWith(
+      (async () => {
+        const cache = await caches.open(CACHE_STATIC);
+        const matchStatic = async () => {
+          let hit = await cache.match(request, { ignoreSearch: true });
+          if (hit) return hit;
+          try {
+            const decoded = decodeURIComponent(url.pathname);
+            if (decoded !== url.pathname) {
+              hit = await cache.match(decoded, { ignoreSearch: true });
+              if (hit) return hit;
+            }
+          } catch { /* ignore malformed uri */ }
+          return null;
+        };
+        if (!DEV_MODE && url.pathname.startsWith('/_next/static/')) {
+          const hit = await matchStatic();
+          if (hit) return hit;
+        }
         try {
-          const cr = await fetch(ref, { cache: 'reload' });
-          if (cr.ok) await staticCache.put(ref, cr.clone());
-        } catch { /* skip */ }
-      }));
-    }
-    for (const route of SHELL_ROUTES) {
-      try {
-        const r = await fetch(route, { cache: 'reload' });
-        if (r.ok) {
-          const body = await r.text();
-          await cacheRouteChunks(body);
-          await pageCache.put(route, new Response(body, { headers: r.headers }));
-          dlState.cached++;
-        } else markFailed(route);
-      } catch {
-        markFailed(route); /* offline or blocked: counted, not hidden */
-      }
-      try {
-        const rr = await fetch(route, { cache: 'reload', headers: { RSC: '1' } });
-        if (rr.ok) await pageCache.put(rscKey(route), rr.clone());
-      } catch {
-        /* ignore */
-      }
-      dlState.done++;
-      broadcast({ type: 'QF3_DL_PROGRESS', ...dlState });
-    }
-
-    // route-agnostic lesson shell: one lesson page serves every lesson offline
-    const firstLessonFile = files.find((x) => x.startsWith('/packs/v3/lessons/'));
-    if (firstLessonFile) {
-      const lessonId = firstLessonFile.slice('/packs/v3/lessons/'.length, -'.json'.length);
-      const lessonRoute = `/learn/${lessonId}`;
-      await pageCache.put(LESSON_SHELL_ID, new Response(lessonId, { headers: { 'Content-Type': 'text/plain' } }));
-      try {
-        const r = await fetch(lessonRoute, { cache: 'reload' });
-        if (r.ok) {
-          const body = await r.text();
-          await cacheRouteChunks(body);
-          await pageCache.put(LESSON_SHELL_HTML, new Response(body, { headers: r.headers }));
+          const res = await fetch(request);
+          if (res.ok) await cache.put(request, res.clone());
+          return res;
+        } catch {
+          const hit = await matchStatic();
+          if (hit) return hit;
+          return new Response('', { status: 503 });
         }
-        const rr = await fetch(lessonRoute, { cache: 'reload', headers: { RSC: '1' } });
-        if (rr.ok) await pageCache.put(LESSON_SHELL_RSC, rr.clone());
-      } catch {
-        /* ignore */
-      }
-    }
-
-    if (dlState.failed > 0) {
-      dlState.phase = 'partial';
-      dlState.error = `${dlState.failed} of ${dlState.total} files could not be saved, so offline use is incomplete. Retry the download.`;
-    } else {
-      dlState.phase = 'done';
-    }
-    dlState.finishedAt = Date.now();
-  } catch (e) {
-    dlState.error = String(e && e.message || e);
-    dlState.phase = 'error';
+      })(),
+    );
+    return;
   }
-  dlState.running = false;
-  broadcast({ type: 'QF3_DL_PROGRESS', ...dlState });
-}
 
-self.addEventListener('message', (event) => {
-  const data = event.data;
-  if (!data) return;
-  if (data === 'SKIP_WAITING' || data.type === 'SKIP_WAITING') self.skipWaiting();
-  if (data.type === 'QF3_DOWNLOAD_ALL') event.waitUntil(downloadAll());
-  if (data.type === 'QF3_DOWNLOAD_STATUS') {
-    event.source?.postMessage({ type: 'QF3_DL_PROGRESS', ...dlState });
+  // 4. Next.js RSC Flight requests: network-first, fallback to exact cached RSC or wildcard dynamic shell RSC
+  if (isRscRequest(request, url)) {
+    event.respondWith(
+      (async () => {
+        const cache = await caches.open(CACHE_SHELL);
+        const key = rscCacheKey(url);
+        try {
+          const res = await fetch(request);
+          if (isCacheablePage(res)) {
+            await cache.put(key, res.clone());
+          }
+          return res;
+        } catch {
+          const exact = await cache.match(key);
+          if (exact) return exact;
+          const dyn = matchDynamicShell(url.pathname);
+          if (dyn) {
+            const dynRes = await cache.match(dyn.rscKey);
+            if (dynRes) return dynRes;
+          }
+          return new Response('', { status: 503 });
+        }
+      })(),
+    );
+    return;
   }
-  if (data.type === 'QF3_CLEAR_PACKS') {
-    event.waitUntil((async () => {
-      await caches.delete(PACK_CACHE);
-      await caches.delete(PAGE_CACHE);
-      dlState = { running: false, done: 0, cached: 0, failed: 0, failedFiles: [], total: 0, phase: '', error: null, finishedAt: null };
-      broadcast({ type: 'QF3_DL_PROGRESS', ...dlState });
-    })());
+
+  // 5. Navigation / HTML documents: network-first, fallback to cached page -> dynamic shell -> '/'
+  if (request.mode === 'navigate' || (request.headers.get('accept') || '').includes('text/html')) {
+    event.respondWith(
+      (async () => {
+        const cache = await caches.open(CACHE_SHELL);
+        try {
+          const res = await fetch(request);
+          if (isCacheablePage(res)) {
+            await cache.put(url.pathname, res.clone());
+            const dyn = matchDynamicShell(url.pathname);
+            if (dyn) await cache.put(dyn.htmlKey, res.clone());
+          }
+          return res;
+        } catch {
+          const exact = await cache.match(url.pathname);
+          if (exact) return exact;
+          const dyn = matchDynamicShell(url.pathname);
+          if (dyn) {
+            const dynHit = await cache.match(dyn.htmlKey);
+            if (dynHit) return dynHit;
+          }
+          const rootHit = await cache.match('/');
+          if (rootHit) return rootHit;
+          return new Response(
+            '<!doctype html><html><body style="font-family:sans-serif;padding:2rem"><h2>Offline</h2><p>This page has not been cached yet. Return to <a href="/dashboard">Dashboard</a> or <a href="/curriculum">Curriculum</a>.</p></body></html>',
+            { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' } },
+          );
+        }
+      })(),
+    );
   }
 });

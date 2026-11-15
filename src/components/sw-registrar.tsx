@@ -1,36 +1,65 @@
 'use client';
 
 import { useEffect } from 'react';
+import { broadcast } from '@/lib/client/broadcast';
 
 /**
- * Registers the service worker. In production the SW provides full offline
- * support (static assets + visited pages). In development it runs in a
- * dev-safe mode: network-first navigation with the offline notice only, * no asset caching, so Fast Refresh and recompiles behave normally.
+ * Registers the QuantFoundry service worker in both dev and production so
+ * offline caching works seamlessly, then kicks off a quiet background
+ * download of all content packs and route shells on first idle.
  */
 export function ServiceWorkerRegistrar() {
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    if (!('serviceWorker' in navigator)) return;
-    const isDev = process.env.NODE_ENV !== 'production';
-    const onLoad = () => {
-      // Unregister any stale legacy scoped service workers
-      navigator.serviceWorker.getRegistrations().then(regs => {
-        for (const reg of regs) {
-          if (reg.scope !== window.location.origin + '/' && reg.scope !== window.location.origin) {
-            reg.unregister();
-          }
-        }
-      }).catch(() => {});
+    if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return;
 
-      navigator.serviceWorker
-        .register(`/sw.js${isDev ? '?mode=dev' : ''}`, { scope: '/' })
-        .catch(() => {
-          /* registration failure is non-fatal, the app works without offline support */
-        });
+    const isDev = process.env.NODE_ENV !== 'production';
+    const swUrl = isDev ? '/sw.js?mode=dev' : '/sw.js';
+
+    let triggered = false;
+    const triggerBackgroundDownload = (reg: ServiceWorkerRegistration) => {
+      if (triggered || !navigator.onLine) return;
+      const target = reg.active || navigator.serviceWorker.controller;
+      if (!target) return;
+      triggered = true;
+      const run = () => target.postMessage({ type: 'QF3_DOWNLOAD_ALL' });
+      const ric = (window as unknown as { requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number }).requestIdleCallback;
+      if (ric) setTimeout(() => ric(run, { timeout: 3000 }), 1200);
+      else setTimeout(run, 2000);
     };
-    if (document.readyState === 'complete') onLoad();
-    else window.addEventListener('load', onLoad);
-    return () => window.removeEventListener('load', onLoad);
+
+    const onMessage = (ev: MessageEvent) => {
+      if (ev.data?.type === 'QF3_DL_DONE') {
+        broadcast('offline-ready', ev.data);
+      }
+    };
+    navigator.serviceWorker.addEventListener('message', onMessage);
+
+    navigator.serviceWorker
+      .register(swUrl, { scope: '/' })
+      .then((reg) => {
+        if (reg.active) {
+          triggerBackgroundDownload(reg);
+        }
+        reg.addEventListener('updatefound', () => {
+          const nw = reg.installing;
+          if (!nw) return;
+          nw.addEventListener('statechange', () => {
+            if (nw.state === 'activated') triggerBackgroundDownload(reg);
+          });
+        });
+        return navigator.serviceWorker.ready;
+      })
+      .then((readyReg) => {
+        if (readyReg) triggerBackgroundDownload(readyReg);
+      })
+      .catch(() => {
+        /* SW registration blocked (e.g. private window): app remains online-only */
+      });
+
+    return () => {
+      navigator.serviceWorker.removeEventListener('message', onMessage);
+    };
   }, []);
+
   return null;
 }

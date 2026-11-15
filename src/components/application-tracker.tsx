@@ -1,8 +1,12 @@
 'use client';
 
 import * as React from 'react';
-import { Plus, Trash2, Building2 } from 'lucide-react';
+import Link from 'next/link';
+import { Plus, Trash2, Building2, ClipboardList, Compass, ArrowRight } from 'lucide-react';
 import { toast } from 'sonner';
+import {
+  getState, subscribe, upsertApplicationLocal, patchApplicationLocal,
+} from '@/lib/client/local-state';
 
 interface AppRow { id: string; company: string; role: string; status: string; note: string }
 
@@ -30,37 +34,88 @@ function tileFor(name: string) {
   return TILE_COLORS[h % TILE_COLORS.length];
 }
 
-export function ApplicationTracker({ initial }: { initial: AppRow[] }) {
+export function ApplicationTracker({ initial = [] }: { initial?: AppRow[] }) {
   const [rows, setRows] = React.useState<AppRow[]>(initial);
   const [company, setCompany] = React.useState('');
   const [role, setRole] = React.useState('');
 
+  React.useEffect(() => {
+    const syncLocal = () => {
+      const localApps = getState().applications;
+      if (localApps.length > 0) setRows(localApps);
+    };
+    syncLocal();
+    const unsub = subscribe(syncLocal);
+    if (navigator.onLine) {
+      fetch('/api/applications', { credentials: 'same-origin' })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d: { applications?: AppRow[] } | null) => {
+          if (d?.applications) {
+            const localOnly = getState().applications.filter((a) => a.id.startsWith('local-'));
+            setRows([...localOnly, ...d.applications]);
+          }
+        })
+        .catch(() => {});
+    }
+    return unsub;
+  }, []);
+
   async function add(e: React.FormEvent) {
     e.preventDefault();
     if (!company.trim() || !role.trim()) return;
-    const res = await fetch('/api/applications', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ company, role, status: 'planned' }),
-    });
-    const data = await res.json();
-    if (!res.ok) { toast.error(data.error ?? 'Failed.'); return; }
-    setRows(r => [...r, data.application]);
-    setCompany(''); setRole('');
-    toast.success(`${company} added to your tracker.`);
+    if (!navigator.onLine) {
+      const created = upsertApplicationLocal({ company, role, status: 'planned' });
+      setRows((r) => [created, ...r]);
+      setCompany(''); setRole('');
+      toast.success(`${company} saved locally (syncs on reconnect).`);
+      return;
+    }
+    try {
+      const res = await fetch('/api/applications', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ company, role, status: 'planned' }),
+      });
+      const data = await res.json();
+      if (!res.ok) { toast.error(data.error ?? 'Failed.'); return; }
+      setRows((r) => [...r, data.application]);
+      setCompany(''); setRole('');
+      toast.success(`${company} added to your tracker.`);
+    } catch {
+      const created = upsertApplicationLocal({ company, role, status: 'planned' });
+      setRows((r) => [created, ...r]);
+      setCompany(''); setRole('');
+      toast.success(`${company} saved locally (syncs on reconnect).`);
+    }
   }
 
   async function update(id: string, patch: Partial<AppRow>) {
-    setRows(rs => rs.map(r => (r.id === id ? { ...r, ...patch } : r)));
-    const res = await fetch('/api/applications', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, ...patch }),
-    });
-    if (!res.ok) toast.error('Update failed.');
+    setRows((rs) => rs.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+    if (!navigator.onLine || id.startsWith('local-')) {
+      patchApplicationLocal({ id, status: patch.status, note: patch.note });
+      return;
+    }
+    try {
+      const res = await fetch('/api/applications', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, ...patch }),
+      });
+      if (!res.ok) toast.error('Update failed.');
+    } catch {
+      patchApplicationLocal({ id, status: patch.status, note: patch.note });
+    }
   }
 
   async function remove(id: string) {
-    setRows(rs => rs.filter(r => r.id !== id));
-    await fetch('/api/applications', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, delete: true }) });
+    setRows((rs) => rs.filter((r) => r.id !== id));
+    if (!navigator.onLine || id.startsWith('local-')) {
+      patchApplicationLocal({ id, delete: true });
+      return;
+    }
+    try {
+      await fetch('/api/applications', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, delete: true }) });
+    } catch {
+      patchApplicationLocal({ id, delete: true });
+    }
   }
 
   return (
@@ -118,5 +173,46 @@ export function ApplicationTracker({ initial }: { initial: AppRow[] }) {
         </div>
       )}
     </div>
+  );
+}
+
+export function CareerApplicationSection() {
+  const [signedIn, setSignedIn] = React.useState(false);
+  const [count, setCount] = React.useState(0);
+
+  React.useEffect(() => {
+    try {
+      setSignedIn(Boolean(window.localStorage.getItem('qf-chrome-user')));
+    } catch { /* ignore */ }
+    setCount(getState().applications.length);
+    return subscribe(() => setCount(getState().applications.length));
+  }, []);
+
+  if (!signedIn) {
+    return (
+      <section className="mt-10 rounded-2xl border-2 border-accent bg-accent-soft p-5 sm:p-6 anim-slide-up">
+        <div className="flex flex-wrap items-center gap-4 justify-between">
+          <div className="flex items-center gap-4 min-w-0">
+            <span className="icon-tile bg-surface text-accent-deep dark:text-accent"><Compass /></span>
+            <div>
+              <h2 className="font-extrabold text-lg tracking-tight">Not sure where you stand?</h2>
+              <p className="text-[15px] text-muted">Take the 28-question diagnostic and start at the phase that matches you, no wasted weeks.</p>
+            </div>
+          </div>
+          <Link href="/diagnostic" className="btn3d">Take the diagnostic <ArrowRight className="h-4 w-4" /></Link>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="mt-10">
+      <div className="section-head">
+        <span className="icon-tile icon-tile-sm icon-tile-accent"><ClipboardList /></span>
+        <h2>Application tracker</h2>
+        <span className="chip ml-auto tnum">{count} logged</span>
+      </div>
+      <ApplicationTracker />
+    </section>
   );
 }

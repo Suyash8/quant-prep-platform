@@ -16,6 +16,16 @@ const patchSchema = z.object({
   delete: z.boolean().optional(),
 });
 
+export async function GET() {
+  const user = await getCurrentUser();
+  if (!user) return NextResponse.json({ applications: [] }, { status: 401 });
+  const applications = await db.application.findMany({
+    where: { userId: user.id },
+    orderBy: { updatedAt: 'desc' },
+  });
+  return NextResponse.json({ applications });
+}
+
 export async function POST(req: NextRequest) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: 'Sign in first.' }, { status: 401 });

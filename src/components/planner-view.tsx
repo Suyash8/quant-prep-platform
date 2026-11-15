@@ -7,6 +7,9 @@ import {
   SlidersHorizontal, Sparkles, Sun, BookOpen, Zap,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { getMapPack } from '@/lib/client/packs';
+import { buildStudyPlan, topoOrderLessons } from '@/lib/planner-core';
+import { getState, saveLocalPlan, subscribe } from '@/lib/client/local-state';
 
 export interface PlanTask { week: number; day: number; kind: string; title: string; ref?: string; minutes: number }
 export interface Plan { tasks: PlanTask[]; weeks: number; totalHours: number; note: string; feasibility: string }
@@ -32,7 +35,7 @@ function groupByDay(tasks: PlanTask[]): [number, PlanTask[]][] {
   return [...m.entries()].sort((a, b) => a[0] - b[0]);
 }
 
-export function Planner({ initialPlan }: { initialPlan: Plan | null }) {
+export function Planner({ initialPlan = null }: { initialPlan?: Plan | null }) {
   const [hoursPerWeek, setHours] = React.useState(10);
   const [daysPerWeek, setDays] = React.useState(5);
   const [track, setTrack] = React.useState('any');
@@ -41,21 +44,87 @@ export function Planner({ initialPlan }: { initialPlan: Plan | null }) {
   const [plan, setPlan] = React.useState<Plan | null>(initialPlan);
   const [busy, setBusy] = React.useState(false);
 
+  React.useEffect(() => {
+    const syncLocal = () => {
+      const saved = getState().planner;
+      if (saved?.plan && !initialPlan) {
+        setPlan(saved.plan);
+        setHours(saved.config.hoursPerWeek);
+        setDays(saved.config.daysPerWeek);
+        setTrack(saved.config.track);
+        setMode(saved.config.mode);
+        setTargetDate(saved.config.targetDate ?? '');
+      }
+    };
+    syncLocal();
+    if (typeof navigator === 'undefined' || navigator.onLine) {
+      fetch('/api/planner')
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => {
+          if (d?.plan) {
+            setPlan(d.plan);
+            const cfg = d.config ?? { hoursPerWeek: 10, daysPerWeek: 5, track: 'any', mode: 'balanced', targetDate: null };
+            saveLocalPlan(cfg, d.plan, true);
+          }
+        })
+        .catch(() => {});
+    }
+    return subscribe(() => {
+      const saved = getState().planner;
+      if (saved?.plan) setPlan(saved.plan);
+    });
+  }, [initialPlan]);
+
   async function generate() {
     setBusy(true);
+    const config = {
+      hoursPerWeek,
+      daysPerWeek,
+      track,
+      mode,
+      targetDate: targetDate || null,
+    };
     try {
-      const res = await fetch('/api/planner', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          hoursPerWeek, daysPerWeek, track, mode,
-          targetDate: targetDate || undefined,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) { toast.error(data.error ?? 'Failed.'); return; }
-      setPlan(data.plan);
-      toast.success('Schedule generated from the prerequisite graph.');
-    } catch { toast.error('Network error.'); } finally { setBusy(false); }
+      if (typeof navigator === 'undefined' || navigator.onLine) {
+        const res = await fetch('/api/planner', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            hoursPerWeek,
+            daysPerWeek,
+            track,
+            mode,
+            targetDate: targetDate || undefined,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data?.plan) {
+          setPlan(data.plan);
+          saveLocalPlan(config, data.plan, true);
+          toast.success('Schedule generated from the prerequisite graph.');
+          return;
+        }
+      }
+    } catch {
+      // fall through to offline client generation from cached content pack
+    }
+
+    try {
+      const { registry } = await getMapPack();
+      const ordered = topoOrderLessons(registry.lessons);
+      const localPlan = buildStudyPlan(ordered, config);
+      setPlan(localPlan);
+      saveLocalPlan(config, localPlan, false);
+      toast.success(
+        typeof navigator !== 'undefined' && !navigator.onLine
+          ? 'Offline schedule generated — will sync to your account once online.'
+          : 'Schedule generated from the prerequisite graph.',
+      );
+    } catch {
+      toast.error('Could not generate schedule.');
+    } finally {
+      setBusy(false);
+    }
   }
 
   const byWeek = React.useMemo(() => {

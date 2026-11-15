@@ -1,6 +1,4 @@
 import Link from 'next/link';
-import { getCurrentUser } from '@/lib/auth';
-import { AppShell, PublicHeader, PublicFooter } from '@/components/app-shell';
 import { ShieldCheck } from 'lucide-react';
 
 export const metadata = {
@@ -31,10 +29,8 @@ const SECTIONS = [
   },
 ];
 
-export default async function PrivacyPage() {
-  const user = await getCurrentUser();
-
-  const body = (
+export default function PrivacyPage() {
+  return (
     <div className="max-w-3xl mx-auto px-4 lg:px-6 py-10 sm:py-12">
       <header className="page-hero">
         <span className="icon-tile icon-tile-info"><ShieldCheck className="h-7 w-7" /></span>
@@ -61,21 +57,5 @@ export default async function PrivacyPage() {
         Questions about your data? Reach us via the <Link href="/contact" className="text-info-ink underline">Contact &amp; Support</Link> page.
       </p>
     </div>
-  );
-
-  if (!user) {
-    return (
-      <div className="min-h-screen flex flex-col">
-        <PublicHeader user={null} />
-        <main className="flex-1">{body}</main>
-        <PublicFooter />
-      </div>
-    );
-  }
-
-  return (
-    <AppShell user={{ name: user.name, email: user.email, role: user.role }} isAdmin={user.role === 'admin'}>
-      {body}
-    </AppShell>
   );
 }

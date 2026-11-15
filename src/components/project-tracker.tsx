@@ -1,63 +1,88 @@
 'use client';
 
 import * as React from 'react';
-import { Check, CheckCircle2, Flag, Info, Plus, Undo2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { Check, CheckCircle2, Info, Plus, Undo2 } from 'lucide-react';
+import { getState, saveProjectProgress, subscribe } from '@/lib/client/local-state';
 
-export function ProjectTracker({ slug, milestones, initialDone, initialStatus, initialNotes }: {
-  slug: string; milestones: { title: string; estHours: number }[]; initialDone: number; initialStatus: string; initialNotes: string;
+const STATUSES = ['not_started', 'in_progress', 'completed'] as const;
+const STATUS_LABEL: Record<string, string> = {
+  not_started: 'Not started',
+  in_progress: 'In progress',
+  completed: 'Completed',
+};
+
+export function ProjectTracker({
+  slug,
+  milestones,
+  initialDone,
+  initialStatus,
+  initialNotes,
+}: {
+  slug: string;
+  milestones: { title: string; estHours: number }[];
+  initialDone: number;
+  initialStatus: string;
+  initialNotes: string;
 }) {
   const milestoneCount = milestones.length;
-  const [done, setDone] = React.useState(Math.min(initialDone, milestoneCount));
+  const [done, setDone] = React.useState(initialDone);
   const [status, setStatus] = React.useState(initialStatus);
   const [notes, setNotes] = React.useState(initialNotes);
   const [busy, setBusy] = React.useState(false);
 
-  async function save(patch: { milestonesDone?: number; status?: string; notes?: string }) {
+  React.useEffect(() => {
+    const syncLocal = () => {
+      const p = getState().projects[slug];
+      if (!p) return;
+      setStatus(p.status);
+      setDone(Math.min(p.milestonesDone, milestoneCount));
+      setNotes(p.notes);
+    };
+    syncLocal();
+    return subscribe(syncLocal);
+  }, [slug, milestoneCount]);
+
+  function save(patch: { milestonesDone?: number; status?: 'not_started' | 'in_progress' | 'completed'; notes?: string }) {
     setBusy(true);
-    try {
-      const res = await fetch('/api/projects/progress', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectSlug: slug, ...patch }),
-      });
-      const data = await res.json();
-      if (!res.ok) { toast.error(data.error ?? 'Failed to save.'); return; }
-      toast.success('Project progress saved.');
-    } catch { toast.error('Network error.'); } finally { setBusy(false); }
+    saveProjectProgress(slug, patch);
+    setBusy(false);
+    if (patch.status === 'completed') toast.success('Project marked completed.');
+    else if (patch.milestonesDone !== undefined) toast.success('Milestone saved.');
+    else if (patch.notes !== undefined) toast.success('Notes saved.');
   }
 
-  const pct = Math.min(Math.round((done / milestoneCount) * 100), 100);
-  const fillWidth = Math.max(pct, 2) + '%';
-  const pctBadge = pct >= 100 ? 'chip chip-success anim-pop-in' : 'tnum font-bold text-faint text-[15px]';
+  const pct = milestoneCount ? Math.round((Math.min(done, milestoneCount) / milestoneCount) * 100) : 0;
+  const fillWidth = `${pct}%`;
+  const pctBadge = `chip tnum ${pct === 100 ? 'chip-success' : 'chip-info'}`;
 
   return (
-    <div className="mt-4 qf-card p-5 anim-slide-up">
-      <div className="flex items-center gap-3 flex-wrap">
-        <div className="section-head mb-0 flex-1 min-w-[14rem]">
-          <span className="icon-tile icon-tile-sm icon-tile-accent"><Flag /></span>
-          <h2 className="whitespace-nowrap">Tracker</h2>
-          <span className="chip chip-accent tnum">{done} of {milestoneCount} milestones</span>
+    <div className="qf-card p-5 mt-6 anim-slide-up">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="font-extrabold text-lg">Your project progress</h2>
+          <p className="text-[13px] font-semibold text-muted">
+            {milestoneCount} milestones · saves locally &amp; syncs automatically
+          </p>
         </div>
-        <div className="w-full sm:w-auto">
-          <div className="flex rounded-2xl border-2 border-border-strong bg-surface p-1 gap-1" role="radiogroup" aria-label="Project status">
-            {[
-              { v: 'not_started', label: 'Not started' },
-              { v: 'in_progress', label: 'In progress' },
-              { v: 'completed', label: 'Completed' },
-            ].map(opt => (
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="inline-flex rounded-xl border-2 border-border bg-surface-2 p-0.5 gap-0.5">
+            {STATUSES.map((s) => (
               <button
-                key={opt.v}
-                role="radio"
-                aria-checked={status === opt.v}
-                disabled={busy}
-                onClick={() => { setStatus(opt.v); save({ status: opt.v }); }}
-                className={`press rounded-xl px-3.5 py-1.5 text-[13px] font-black transition-all ${
-                  status === opt.v
-                    ? 'bg-accent text-on-accent shadow-[0_3px_0_0_var(--accent-deep)]'
-                    : 'text-muted hover:bg-surface-2'
+                key={s}
+                type="button"
+                onClick={() => {
+                  setStatus(s);
+                  const nextDone = s === 'completed' ? milestoneCount : done;
+                  if (s === 'completed') setDone(milestoneCount);
+                  save({ status: s, ...(s === 'completed' ? { milestonesDone: milestoneCount } : {}) });
+                  void nextDone;
+                }}
+                className={`px-2.5 py-1 rounded-lg text-[13px] font-extrabold transition-colors ${
+                  status === s ? 'bg-accent text-on-accent' : 'text-muted hover:text-foreground'
                 }`}
               >
-                {opt.label}
+                {STATUS_LABEL[s]}
               </button>
             ))}
           </div>
@@ -71,7 +96,6 @@ export function ProjectTracker({ slug, milestones, initialDone, initialStatus, i
         <span className={pctBadge}>{pct}%</span>
       </div>
 
-      {/* vertical milestone stepper */}
       <ol className="relative mt-5">
         <div aria-hidden className="absolute left-4 top-5 bottom-5 w-0.5 bg-border" />
         {milestones.map((m, i) => {
@@ -105,15 +129,31 @@ export function ProjectTracker({ slug, milestones, initialDone, initialStatus, i
 
       <div className="mt-5 flex flex-wrap items-center gap-2">
         <button
-          onClick={() => { const n = Math.min(done + 1, milestoneCount); setDone(n); save({ milestonesDone: n }); }}
+          onClick={() => {
+            const n = Math.min(done + 1, milestoneCount);
+            const nextStatus = n >= milestoneCount ? 'completed' : 'in_progress';
+            setDone(n);
+            setStatus(nextStatus);
+            save({ milestonesDone: n, status: nextStatus });
+          }}
           disabled={busy || done >= milestoneCount}
           className="btn3d btn3d-sm"
-        ><Plus className="h-3.5 w-3.5" /> Milestone done</button>
+        >
+          <Plus className="h-3.5 w-3.5" /> Milestone done
+        </button>
         <button
-          onClick={() => { const n = Math.max(0, done - 1); setDone(n); save({ milestonesDone: n }); }}
+          onClick={() => {
+            const n = Math.max(0, done - 1);
+            const nextStatus = n === 0 ? 'not_started' : 'in_progress';
+            setDone(n);
+            setStatus(nextStatus);
+            save({ milestonesDone: n, status: nextStatus });
+          }}
           disabled={busy || done === 0}
           className="btn3d btn3d-sm btn3d-ghost"
-        ><Undo2 className="h-3.5 w-3.5" /> Undo</button>
+        >
+          <Undo2 className="h-3.5 w-3.5" /> Undo
+        </button>
         <span className="text-[13px] text-faint inline-flex items-center gap-1.5">
           <Info className="h-3.5 w-3.5 shrink-0" /> Self-logged against the criteria below, be honest with yourself.
         </span>
@@ -121,7 +161,7 @@ export function ProjectTracker({ slug, milestones, initialDone, initialStatus, i
 
       <textarea
         value={notes}
-        onChange={e => setNotes(e.target.value)}
+        onChange={(e) => setNotes(e.target.value)}
         onBlur={() => save({ notes })}
         rows={3}
         placeholder="Design decisions, benchmarks achieved, open questions… (saved on blur)"

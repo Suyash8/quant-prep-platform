@@ -1,6 +1,4 @@
-import { getCurrentUser } from '@/lib/auth';
 import { getRegistry, listAssessments, listProblems, listProjects } from '@/lib/content';
-import { AppShell, PublicHeader, PublicFooter } from '@/components/app-shell';
 import { PricingClient } from '@/components/pricing-client';
 
 export const metadata = {
@@ -8,9 +6,7 @@ export const metadata = {
   description: 'Simple plans for individuals and quantitative engineering cohorts. Start free with diagnostic placement and Phase 0–1 foundations.',
 };
 
-export default async function PricingPage({ searchParams }: { searchParams: Promise<{ checkout?: string }> }) {
-  const { checkout } = await searchParams;
-  const user = await getCurrentUser();
+export default function PricingPage() {
   const reg = getRegistry();
   const problems = listProblems();
   const projects = listProjects();
@@ -21,31 +17,14 @@ export default async function PricingPage({ searchParams }: { searchParams: Prom
     (process.env.STRIPE_PRICE_ID_MONTHLY || process.env.STRIPE_PRICE_ID_ANNUAL),
   );
 
-  const body = (
+  return (
     <PricingClient
-      user={user ? { name: user.name, email: user.email, plan: user.plan } : null}
+      user={null}
       lessonCount={reg.lessons.length}
       problemCount={problems.length}
       projectCount={projects.length}
       assessmentCount={assessments.length}
       stripeEnabled={stripeEnabled}
-      initialStatus={checkout ?? null}
     />
-  );
-
-  if (!user) {
-    return (
-      <div className="min-h-screen flex flex-col">
-        <PublicHeader user={null} />
-        <main className="flex-1">{body}</main>
-        <PublicFooter />
-      </div>
-    );
-  }
-
-  return (
-    <AppShell user={{ name: user.name, email: user.email, role: user.role }} isAdmin={user.role === 'admin'}>
-      {body}
-    </AppShell>
   );
 }

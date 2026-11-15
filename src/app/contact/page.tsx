@@ -1,5 +1,3 @@
-import { getCurrentUser } from '@/lib/auth';
-import { AppShell, PublicHeader, PublicFooter } from '@/components/app-shell';
 import { ContactForm } from '@/components/contact-form';
 import { Mail, MessageSquare, Users } from 'lucide-react';
 
@@ -10,9 +8,8 @@ export const metadata = {
 
 export default async function ContactPage({ searchParams }: { searchParams: Promise<{ subject?: string }> }) {
   const { subject } = await searchParams;
-  const user = await getCurrentUser();
 
-  const body = (
+  return (
     <div className="max-w-5xl mx-auto px-4 lg:px-6 py-10 sm:py-12">
       <header className="page-hero">
         <span className="icon-tile icon-tile-info"><Mail className="h-7 w-7" /></span>
@@ -43,27 +40,9 @@ export default async function ContactPage({ searchParams }: { searchParams: Prom
         </div>
 
         <ContactForm
-          defaultName={user?.name ?? ''}
-          defaultEmail={user?.email ?? ''}
           defaultSubject={subject || 'General inquiry'}
         />
       </div>
     </div>
-  );
-
-  if (!user) {
-    return (
-      <div className="min-h-screen flex flex-col">
-        <PublicHeader user={null} />
-        <main className="flex-1">{body}</main>
-        <PublicFooter />
-      </div>
-    );
-  }
-
-  return (
-    <AppShell user={{ name: user.name, email: user.email, role: user.role }} isAdmin={user.role === 'admin'}>
-      {body}
-    </AppShell>
   );
 }

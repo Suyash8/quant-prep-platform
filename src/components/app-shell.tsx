@@ -36,6 +36,7 @@ const NAV = [
 /* ---------------- gamification HUD state (local-first, v3) ---------------- */
 
 import { getState, subscribe, xpSummary, hydrate, getQueueLength, scheduleFlush } from '@/lib/client/local-state';
+import { broadcast } from '@/lib/client/broadcast';
 
 interface HudData {
   xp: number;
@@ -101,11 +102,11 @@ export function OfflinePill() {
   if (online && pending === 0) return null;
   return (
     <span
-      className={cn('hud-pill', online ? 'text-warning' : 'text-danger')}
-      title={online ? `${pending} change${pending === 1 ? '' : 's'} waiting to sync` : 'Offline. Everything still works, changes sync later.'}
+      className={cn('hud-pill text-muted')}
+      title={online ? `${pending} change${pending === 1 ? '' : 's'} syncing` : 'Working locally on this device. Changes will sync automatically when reconnected.'}
     >
-      {online ? <Zap className="h-4 w-4" /> : <CloudOff className="h-4 w-4" />}
-      <span className="tnum hidden sm:inline">{online ? pending : 'offline'}</span>
+      {online ? <Zap className="h-4 w-4 text-accent" /> : <CloudOff className="h-4 w-4 text-muted" />}
+      {online && <span className="tnum hidden sm:inline">{pending}</span>}
     </span>
   );
 }
@@ -124,6 +125,11 @@ function UserMenu({ name, isAdmin }: { name: string; isAdmin?: boolean }) {
     return () => document.removeEventListener('mousedown', close);
   }, []);
   const signOut = async () => {
+    try {
+      window.localStorage.removeItem('qf-chrome-user');
+    } catch { /* ignore */ }
+    broadcast('auth-changed', null);
+    window.dispatchEvent(new CustomEvent('qf:auth-refresh', { detail: null }));
     try {
       await fetch('/api/auth/logout', { method: 'POST' });
     } catch {}

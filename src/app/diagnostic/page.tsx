@@ -1,8 +1,5 @@
 import Link from 'next/link';
-import { redirect } from 'next/navigation';
-import { getCurrentUser } from '@/lib/auth';
 import { getAssessment } from '@/lib/content';
-import { AppShell } from '@/components/app-shell';
 import { AssessmentPlayer, type PlayerAssessment } from '@/components/assessment-player';
 import { sanitizedForClient } from '@/lib/grading';
 import { SectionHead } from '@/components/page-kit';
@@ -37,22 +34,17 @@ const STEPS = [
 
 const META_CHIP = 'chip !px-3 !py-1.5 !text-[15px]';
 
-export default async function DiagnosticPage() {
-  const user = await getCurrentUser();
-  if (!user) redirect('/login?next=/diagnostic');
-
+export default function DiagnosticPage() {
   const assessment = getAssessment('diag-core');
   if (!assessment) {
     return (
-      <AppShell user={{ name: user.name, email: user.email, role: user.role }}>
-        <div className="max-w-3xl mx-auto px-4 py-12">
-          <div className="qf-empty">
-            <span className="empty-emoji" aria-hidden>🧭</span>
-            <h2 className="font-extrabold text-lg">Diagnostic not installed</h2>
-            <p className="mt-1 text-[15px] text-muted">Run the content seed and reload this page, your path is waiting.</p>
-          </div>
+      <div className="max-w-3xl mx-auto px-4 py-12">
+        <div className="qf-empty">
+          <span className="empty-emoji" aria-hidden>🧭</span>
+          <h2 className="font-extrabold text-lg">Diagnostic not installed</h2>
+          <p className="mt-1 text-[15px] text-muted">Run the content seed and reload this page, your path is waiting.</p>
         </div>
-      </AppShell>
+      </div>
     );
   }
 
@@ -69,8 +61,7 @@ export default async function DiagnosticPage() {
   };
 
   return (
-    <AppShell user={{ name: user.name, email: user.email, role: user.role }} isAdmin={user.role === 'admin'}>
-      <div className="max-w-5xl mx-auto px-4 lg:px-6 py-8 space-y-8">
+    <div className="max-w-5xl mx-auto px-4 lg:px-6 py-8 space-y-8">
         <header className="page-hero anim-slide-up">
           <span className="icon-tile icon-tile-accent"><Activity /></span>
           <div>
@@ -136,6 +127,5 @@ export default async function DiagnosticPage() {
           <AssessmentPlayer assessment={player} compactIntro subduedIntro />
         </div>
       </div>
-    </AppShell>
   );
 }

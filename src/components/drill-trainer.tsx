@@ -149,7 +149,7 @@ export function DrillTrainer({ history }: { history: { mode: string; level: numb
     if (total > 0) {
       // v3: recorded locally, instantly, offline-capable. Syncs in the background.
       const elapsed = startedAt.current ? Date.now() - startedAt.current : times.reduce((a, b) => a + b, 0);
-      const xp = recordDrillSession(correct, total, elapsed);
+      const xp = recordDrillSession(correct, total, elapsed, mode, { level, avgMs: avg });
       toast.success(`Session saved: ${correct}/${total} (${total ? Math.round((correct / total) * 100) : 0}%), ${Math.round(avg)}ms average.`);
       if (xp > 0) toast.success(`+${xp} XP`);
     }

@@ -17,6 +17,8 @@
 import { computeStatus, sm2 } from '@/lib/mastery';
 import { XP_TABLE, DAILY_GOAL_XP, levelForXp, nextStreak, dayKey } from '@/lib/gamification-core';
 import { getLessonPack } from '@/lib/client/packs';
+import { kvGet, kvSet } from '@/lib/client/idb';
+import { broadcast, onBroadcast } from '@/lib/client/broadcast';
 
 /* ---------------- types ---------------- */
 
@@ -46,6 +48,59 @@ export interface TodayCounters {
   practice: number;
 }
 
+export interface DrillSessionLocal {
+  at: string;
+  kind: string;
+  level?: number;
+  correct: number;
+  answered: number;
+  avgMs?: number;
+  elapsedMs?: number;
+}
+
+export interface ProjectProgressLocal {
+  status: string;
+  milestonesDone: number;
+  notes: string;
+  updatedAt: string;
+}
+
+export interface PlanTaskLocal {
+  week: number;
+  day: number;
+  kind: string;
+  title: string;
+  ref?: string;
+  minutes: number;
+}
+
+export interface PlannerLocal {
+  config: {
+    hoursPerWeek: number;
+    daysPerWeek: number;
+    track: string;
+    mode: string;
+    targetDate: string | null;
+  };
+  plan: {
+    tasks: PlanTaskLocal[];
+    weeks: number;
+    totalHours: number;
+    note: string;
+    feasibility: string;
+  };
+  updatedAt: string;
+}
+
+export interface ApplicationLocal {
+  id: string;
+  company: string;
+  role: string;
+  status: string;
+  note: string;
+  updatedAt: string;
+}
+
 export interface LocalState {
   v: 3;
   xp: number;
@@ -60,6 +115,12 @@ export interface LocalState {
   problems: Record<string, { status: string }>;
   assessments: Record<string, { bestPct: number }>;
   drills: { sessions: number; totalCorrect: number; totalAnswered: number };
+  drillSessions: DrillSessionLocal[];
+  projects: Record<string, ProjectProgressLocal>;
+  planner: PlannerLocal | null;
+  notes: Record<string, string>;
+  bookmarks: Record<string, true>;
+  applications: ApplicationLocal[];
   today: TodayCounters;
   /** rough study minutes per day, keyed YYYY-MM-DD */
   minutesByDay: Record<string, number>;
@@ -91,7 +152,14 @@ interface ServerSnapshot {
 
 const STATE_KEY = 'qf3-state';
 const QUEUE_KEY = 'qf3-queue';
+const API_QUEUE_KEY = 'qf3-api-queue';
 const QUEUE_CAP = 400;
+
+interface ApiMutation {
+  id: string;
+  url: string;
+  body: Record<string, unknown>;
+}
 
 function emptyState(): LocalState {
   return {
@@ -107,6 +175,12 @@ function emptyState(): LocalState {
     problems: {},
     assessments: {},
     drills: { sessions: 0, totalCorrect: 0, totalAnswered: 0 },
+    drillSessions: [],
+    projects: {},
+    planner: null,
+    notes: {},
+    bookmarks: {},
+    applications: [],
     today: { date: dayKey(), xp: 0, lessonsPassed: 0, practice: 0 },
     minutesByDay: {},
   };
@@ -114,8 +188,49 @@ function emptyState(): LocalState {
 
 let state: LocalState | null = null;
 let queue: SyncEvent[] = [];
+let apiQueue: ApiMutation[] = [];
+let listenersBound = false;
+
+function readApiQueue(): ApiMutation[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = window.localStorage.getItem(API_QUEUE_KEY);
+    const q = raw ? (JSON.parse(raw) as ApiMutation[]) : [];
+    return Array.isArray(q) ? q : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistApiQueue() {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(API_QUEUE_KEY, JSON.stringify(apiQueue));
+  } catch { /* ignore */ }
+}
+
+function bindGlobalListeners() {
+  if (listenersBound || typeof window === 'undefined') return;
+  listenersBound = true;
+  window.addEventListener('online', () => {
+    void flush();
+  });
+  onBroadcast((pkt) => {
+    if (
+      pkt.topic === 'state-changed' ||
+      pkt.topic === 'goal-changed' ||
+      pkt.topic === 'planner-changed' ||
+      pkt.topic === 'projects-changed'
+    ) {
+      state = null;
+      S();
+      notify();
+    }
+  });
+}
 
 function S(): LocalState {
+  bindGlobalListeners();
   if (!state) {
     state = emptyState();
     if (typeof window !== 'undefined') {
@@ -123,11 +238,31 @@ function S(): LocalState {
         const raw = window.localStorage.getItem(STATE_KEY);
         if (raw) {
           const saved = JSON.parse(raw) as Partial<LocalState>;
-          state = { ...emptyState(), ...saved, drills: { ...emptyState().drills, ...(saved.drills ?? {}) } };
+          state = {
+            ...emptyState(),
+            ...saved,
+            drills: { ...emptyState().drills, ...(saved.drills ?? {}) },
+            drillSessions: Array.isArray(saved.drillSessions) ? saved.drillSessions : [],
+            projects: saved.projects ?? {},
+            planner: saved.planner ?? null,
+            notes: saved.notes ?? {},
+            bookmarks: saved.bookmarks ?? {},
+            applications: Array.isArray(saved.applications) ? saved.applications : [],
+          };
+        } else {
+          // Asynchronous IDB fallback recovery if localStorage was cleared
+          void kvGet<LocalState>('qf-state-backup').then((backup) => {
+            if (backup && !window.localStorage.getItem(STATE_KEY)) {
+              state = { ...emptyState(), ...backup };
+              persistState(false);
+              notify();
+            }
+          });
         }
       } catch { /* corrupt storage: start fresh */ }
     }
     queue = readQueue();
+    apiQueue = readApiQueue();
     rollToday(state);
   }
   return state;
@@ -149,13 +284,14 @@ function rollToday(s: LocalState) {
   if (s.today?.date !== today) s.today = { date: today, xp: 0, lessonsPassed: 0, practice: 0 };
 }
 
-function persistState() {
+function persistState(mirrorIdb = true) {
   if (typeof window === 'undefined') return;
   try {
     // keep minute history bounded: 30 days is plenty for the 7-day chart
     const cutoff = dayKey(new Date(Date.now() - 30 * 86400_000));
     for (const k of Object.keys(state?.minutesByDay ?? {})) if (k < cutoff) delete state!.minutesByDay[k];
     window.localStorage.setItem(STATE_KEY, JSON.stringify(state));
+    if (mirrorIdb && state) void kvSet('qf-state-backup', state);
   } catch { /* storage full or blocked: state stays in memory */ }
 }
 
@@ -181,10 +317,11 @@ function notify() {
   }
 }
 
-/** mutate + persist + notify (every record* helper ends with this) */
+/** mutate + persist + notify + broadcast (every record* helper ends with this) */
 function done() {
   persistState();
   notify();
+  broadcast('state-changed');
 }
 
 /* ---------------- helpers ---------------- */
@@ -311,7 +448,43 @@ let lastHydrate = 0;
 
 export function getQueueLength(): number {
   S();
-  return queue.length;
+  return queue.length + apiQueue.length;
+}
+
+function pushApi(url: string, body: Record<string, unknown>) {
+  apiQueue.push({ id: eid(), url, body });
+  if (apiQueue.length > QUEUE_CAP) apiQueue = apiQueue.slice(apiQueue.length - QUEUE_CAP);
+  persistApiQueue();
+}
+
+async function flushApiQueue(): Promise<void> {
+  if (apiQueue.length === 0 || syncDisabled || !navigator.onLine) return;
+  const remaining: ApiMutation[] = [];
+  for (let i = 0; i < apiQueue.length; i++) {
+    const item = apiQueue[i];
+    try {
+      const res = await fetch(item.url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify(item.body),
+      });
+      if (res.status === 401) {
+        syncDisabled = true;
+        remaining.push(...apiQueue.slice(i));
+        break;
+      }
+      if (!res.ok && res.status >= 500) {
+        remaining.push(item);
+      }
+      // 4xx validation errors are dropped to prevent blocking later valid writes
+    } catch {
+      remaining.push(...apiQueue.slice(i));
+      break;
+    }
+  }
+  apiQueue = remaining;
+  persistApiQueue();
 }
 
 export function scheduleFlush(delayMs = 1500) {
@@ -324,6 +497,7 @@ const syncAttempts = new Map<string, number>();
 
 async function flush(): Promise<void> {
   if (typeof window === 'undefined' || syncDisabled || !navigator.onLine) return;
+  await flushApiQueue();
   const batch = queue.slice(0, 200);
   if (batch.length === 0) return;
   try {
@@ -395,6 +569,7 @@ export function hydrate(): Promise<void> {
       }
     } catch { /* offline: local state is the truth */ }
     if (queue.length > 0 && navigator.onLine && !syncDisabled) scheduleFlush(300);
+    else if (apiQueue.length > 0 && navigator.onLine && !syncDisabled) scheduleFlush(300);
   })();
 }
 
@@ -613,11 +788,21 @@ export function deleteCard(cardKey: string): void {
   done();
 }
 
-export function recordDrillSession(correct: number, answered: number, elapsedMs?: number): number {
+export function recordDrillSession(
+  correct: number,
+  answered: number,
+  elapsedMs?: number,
+  kind = 'mental-math',
+  meta?: { level?: number; avgMs?: number },
+): number {
   const s = S();
   s.drills.sessions += 1;
   s.drills.totalCorrect += correct;
   s.drills.totalAnswered += answered;
+  s.drillSessions = [
+    { at: nowIso(), kind, level: meta?.level ?? 1, correct, answered, avgMs: meta?.avgMs, elapsedMs },
+    ...s.drillSessions,
+  ].slice(0, 100);
   rollToday(s);
   s.today.practice += 1;
 
@@ -629,6 +814,126 @@ export function recordDrillSession(correct: number, answered: number, elapsedMs?
   done();
   scheduleFlush();
   return xp;
+}
+
+export function snoozeCard(cardKey: string, days = 1): void {
+  const s = S();
+  const c = s.cards[cardKey];
+  if (!c) return;
+  const due = new Date(Date.now() + days * 86400_000).toISOString();
+  s.cards[cardKey] = { ...c, dueAt: due, updatedAt: nowIso() };
+  done();
+}
+
+export function restoreCardSnapshot(cardKey: string, snapshot: CardLocal): void {
+  const s = S();
+  s.cards[cardKey] = { ...snapshot, updatedAt: nowIso() };
+  delete s.retiredCards[cardKey];
+  done();
+}
+
+export function setDailyGoalXp(dailyGoalXp: number): void {
+  const s = S();
+  s.dailyGoalXp = Math.max(10, Math.min(400, Math.round(dailyGoalXp)));
+  done();
+  broadcast('goal-changed', { dailyGoalXp: s.dailyGoalXp });
+  pushApi('/api/gamification', { dailyGoalXp: s.dailyGoalXp });
+  scheduleFlush(400);
+}
+
+export function saveProjectProgress(
+  slug: string,
+  patch: { milestonesDone?: number; status?: 'not_started' | 'in_progress' | 'completed'; notes?: string },
+): void {
+  const s = S();
+  const cur = s.projects[slug] ?? { status: 'not_started', milestonesDone: 0, notes: '', updatedAt: nowIso() };
+  const nextStatus = patch.status ?? cur.status;
+  s.projects[slug] = {
+    status: nextStatus,
+    milestonesDone: nextStatus === 'completed' ? 999 : (patch.milestonesDone ?? cur.milestonesDone),
+    notes: patch.notes ?? cur.notes,
+    updatedAt: nowIso(),
+  };
+  done();
+  broadcast('projects-changed', { slug });
+  pushApi('/api/projects/progress', { projectSlug: slug, ...patch });
+  scheduleFlush(500);
+}
+
+export function saveLocalPlan(
+  config: PlannerLocal['config'],
+  plan: PlannerLocal['plan'],
+  alreadySynced = false,
+): void {
+  const s = S();
+  s.planner = { config, plan, updatedAt: nowIso() };
+  done();
+  broadcast('planner-changed');
+  if (!alreadySynced) {
+    pushApi('/api/planner', {
+      hoursPerWeek: config.hoursPerWeek,
+      daysPerWeek: config.daysPerWeek,
+      track: config.track,
+      mode: config.mode,
+      ...(config.targetDate ? { targetDate: config.targetDate } : {}),
+    });
+    scheduleFlush(500);
+  }
+}
+
+export function saveNote(lessonId: string, body: string): void {
+  const s = S();
+  if (body.trim() === '') delete s.notes[lessonId];
+  else s.notes[lessonId] = body;
+  done();
+  pushApi('/api/notes', { type: 'note', lessonId, body });
+  scheduleFlush(800);
+}
+
+export function toggleBookmark(lessonId: string): boolean {
+  const s = S();
+  const next = !s.bookmarks[lessonId];
+  if (next) s.bookmarks[lessonId] = true;
+  else delete s.bookmarks[lessonId];
+  done();
+  pushApi('/api/notes', { type: 'bookmark', lessonId });
+  scheduleFlush(400);
+  return next;
+}
+
+export function upsertApplicationLocal(app: { company: string; role: string; status: string; note?: string }): ApplicationLocal {
+  const s = S();
+  const item: ApplicationLocal = {
+    id: `local-${eid()}`,
+    company: app.company,
+    role: app.role,
+    status: app.status,
+    note: app.note ?? '',
+    updatedAt: nowIso(),
+  };
+  s.applications = [item, ...s.applications];
+  done();
+  pushApi('/api/applications', app);
+  scheduleFlush(400);
+  return item;
+}
+
+export function patchApplicationLocal(patch: { id: string; status?: string; note?: string; delete?: boolean }): void {
+  const s = S();
+  if (patch.delete) {
+    s.applications = s.applications.filter((a) => a.id !== patch.id);
+  } else {
+    s.applications = s.applications.map((a) =>
+      a.id === patch.id
+        ? { ...a, status: patch.status ?? a.status, note: patch.note ?? a.note, updatedAt: nowIso() }
+        : a,
+    );
+  }
+  done();
+  if (!patch.id.startsWith('local-')) {
+    pushApi('/api/applications', patch);
+    scheduleFlush(400);
+  }
 }
 
 export function recordProblemAttempt(slug: string, status: 'passed' | 'attempted'): void {
