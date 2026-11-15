@@ -1,0 +1,220 @@
+{
+  "id": "ap-cpp-testing-sanitizers",
+  "moduleId": "ap-cpp",
+  "title": "Testing, sanitizers and undefined behaviour",
+  "estMinutes": 22,
+  "difficulty": "advanced",
+  "prereqs": [
+    "ap-cpp-templates-layout"
+  ],
+  "objectives": [
+    "Design boundary/reference/property tests whose checks survive release NDEBUG, keep unsafe operations out of rejection tests and distinguish observed pass from all-input proof.",
+    "Reproduce a scoped instrumented build and interpret compiler/test/sanitizer diagnostics without treating a clean run as absence of every memory, business or concurrency error.",
+    "Apply testing, sanitizers and undefined behaviour invariants safely and identify scope boundaries."
+  ],
+  "motivation": "A test is an executable claim about a declared contract, source revision, toolchain and input. Use examples for understandable behavior, boundary cases for branch/range transitions, an independently derived reference for answers and metamorphic properties for related inputs.",
+  "blocks": [
+    {
+      "type": "p",
+      "md": "A test is an executable claim about a declared contract, source revision, toolchain and input. Use examples for understandable behavior, boundary cases for branch/range transitions, an independently derived reference for answers and metamorphic properties for related inputs. None alone proves every possible input is correct. A property can pass for the wrong implementation: returning 0 for all additions is commutative, so add independent value/identity checks. Mutation, error status and output formatting are observable parts of the contract, not optional afterthoughts."
+    },
+    {
+      "type": "p",
+      "md": "C assert and C++ assert macros can be disabled when NDEBUG is defined at inclusion. Do not put necessary validation, state changes or the only acceptance-test failure check inside assert. static_assert checks compile-time predicates; it cannot inspect arbitrary runtime input. Here tests use explicit conditionals/nonzero returns so the checks stay active with -DNDEBUG. Invalid input tests must verify rejection WITHOUT first performing the very overflowing/dangling/out-of-range operation being rejected."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <iostream>\n#include <limits>\n#include <optional>\n\nstd::optional<long long> checked_nonnegative_add(long long a, long long b) {\n    if (a < 0 || b < 0 || b > std::numeric_limits<long long>::max() - a) {\n        return std::nullopt;\n    }\n    return a + b;\n}\n\nint main() {\n    const auto maximum = std::numeric_limits<long long>::max();\n    const auto zero = checked_nonnegative_add(0, 0);\n    const auto edge = checked_nonnegative_add(maximum, 0);\n    if (!zero || *zero != 0 || !edge || *edge != maximum) return 1;\n    if (checked_nonnegative_add(maximum, 1)) return 2;\n    if (checked_nonnegative_add(-1, 0)) return 3;\n    if (checked_nonnegative_add(0, -1)) return 4;\n    std::cout << \"boundary checks passed\\n\";\n}",
+      "caption": "Expected output: boundary checks passed, exit 0. maximum+1 is never evaluated: the helper compares 1 with maximum-maximum first. Negative inputs short-circuit before the guarded subtraction where relevant. Run normal and -DNDEBUG builds to confirm these explicit checks are still present; that does not establish every possible arithmetic input or an actual app runtime."
+    },
+    {
+      "type": "p",
+      "md": "The next small grid checks symmetry and the inverse relation (add(a,b)-a==b) where the accepted sums and subtraction are bounded/safe. It is derived testing evidence, not a second independent addition algorithm. Compare wider cases to a genuinely independent arbitrary-precision reference, and separately verify rejection/zero semantics at the type boundaries. A test harness can have its own bug; inspect it and test that it actually fails on a controlled wrong RESULT implementation without injecting undefined behavior."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <iostream>\n#include <limits>\n#include <optional>\n\nstd::optional<long long> checked_nonnegative_add(long long a, long long b) {\n    if (a < 0 || b < 0 || b > std::numeric_limits<long long>::max() - a) {\n        return std::nullopt;\n    }\n    return a + b;\n}\n\n\nint main() {\n    int checks = 0;\n    for (long long a = 0; a <= 100; ++a) {\n        for (long long b = 0; b <= 100; ++b) {\n            const auto forward = checked_nonnegative_add(a, b);\n            const auto reverse = checked_nonnegative_add(b, a);\n            if (!forward || !reverse || *forward != *reverse) return 1;\n            if (*forward - a != b) return 2;\n            ++checks;\n        }\n    }\n    std::cout << checks << \" property cases passed\\n\";\n}",
+      "caption": "Expected output: 10201 property cases passed, exit 0. The grid is 0..100 in both arguments and every correct sum is at most 200. A fake implementation returning 0 would fail the inverse relation as soon as b > 0. Passing this finite grid is not a proof for all long long values; the pre-operation range argument and separate max boundary tests address a different part of the reasoning."
+    },
+    {
+      "type": "p",
+      "md": "For a compatible GCC installation, an instrumented local build can use `g++ -std=c++20 -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all lesson.cpp -o checked`, then `./checked`. Compile AND link with the driver flags so sanitizer runtimes are linked. Keep the normal strict-warning build too. Exact option support, diagnostic text and runtime availability depend on compiler/target/environment; a failed runtime setup is not a passed sanitizer check or automatically a learner-code bug. Record the actual flags, source hash, exit status, stdout/stderr and test input."
+    },
+    {
+      "type": "p",
+      "md": "AddressSanitizer instruments classes of invalid memory access such as out-of-bounds and use-after-free; UndefinedBehaviorSanitizer instruments selected undefined operations such as some signed overflow, null/alignment and shift errors. Enabled groups differ by compiler/version; do not copy a Clang-only flag into GCC and claim equivalent coverage. A clean instrumented run covers executed instrumented paths, not unexecuted branches, all allocators/libraries, all concurrency errors, semantic units, source authenticity or profitability. Ordinary unsigned modular arithmetic can be defined yet wrong for the business contract."
+    },
+    {
+      "type": "p",
+      "md": "When a real report appears, preserve compiler/version/mode, input, source/stack location and full first relevant diagnostic; distinguish runtime setup failures from a source violation. Reduce to the smallest reproducer without deleting the failing contract, trace ownership/range, fix the cause, then rerun the reproducer and regression/reference tests. Do not suppress sanitizer output, disable the failing check, rely on a later plausible output or claim a randomized memory-layout rerun disproved the original issue. This lesson does not execute an intentionally undefined program as a teaching demonstration."
+    },
+    {
+      "type": "p",
+      "md": "Independent transfer: add safe subtraction/multiplication test boundaries without evaluating an overflowing expected result. Compare with Python unbounded integer arithmetic under a declared source interface. Run explicit tests with/without NDEBUG and, if available, compatible instrumented flags. Introduce a controlled defined wrong result such as always returning 0 and show the test harness exits nonzero, then restore correct source. Keep actual execution evidence separate from app-runner qualification."
+    },
+    {
+      "type": "p",
+      "md": "Sources: [GCC instrumentation](https://gcc.gnu.org/onlinedocs/gcc/Instrumentation-Options.html), [assert/NDEBUG](https://en.cppreference.com/w/cpp/error/assert.html), [Clang ASan scope](https://clang.llvm.org/docs/AddressSanitizer.html), and [Clang UBSan groups](https://clang.llvm.org/docs/UndefinedBehaviorSanitizer.html). Clang documentation supplies conceptual comparison, not a claim that Clang or its flags were executed locally."
+    },
+    {
+      "type": "ref",
+      "items": [
+        {
+          "label": "GCC instrumentation",
+          "url": "https://gcc.gnu.org/onlinedocs/gcc/Instrumentation-Options.html"
+        },
+        {
+          "label": "assert/NDEBUG",
+          "url": "https://en.cppreference.com/w/cpp/error/assert.html"
+        },
+        {
+          "label": "Clang ASan scope",
+          "url": "https://clang.llvm.org/docs/AddressSanitizer.html"
+        },
+        {
+          "label": "Clang UBSan groups",
+          "url": "https://clang.llvm.org/docs/UndefinedBehaviorSanitizer.html"
+        }
+      ]
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Why do strict warnings, reference tests, range proofs and sanitizers all remain useful after one clean run?",
+    "hints": [
+      "Distinguishes evidence scopes.",
+      "Names unexecuted/semantic limitations.",
+      "Keeps actual runner/toolchain evidence explicit."
+    ],
+    "solution": "They cover different failure classes and scopes: static diagnostics, expected business/value behavior, mathematical preconditions and selected dynamic operations. A finite clean run misses unexecuted cases and semantic/provenance/concurrency conditions. Record exact evidence without treating tools as universal certification."
+  },
+  "independentExercise": {
+    "prompt": "Write a small test case that deliberately breaks the contract boundary in \"Testing, sanitizers and undefined behaviour\" and verify how your implementation rejects or handles it.",
+    "hints": [
+      "Test zero, negative, empty, duplicate, and boundary values.",
+      "Confirm both time/memory complexity and numerical precision remain within spec."
+    ],
+    "solution": "#include <iostream>\n#include <limits>\n#include <optional>\n\nstd::optional<long long> checked_nonnegative_add(long long a, long long b) {\n    if (a < 0 || b < 0 || b > std::numeric_limits<long long>::max() - a) {\n        return std::nullopt;\n    }\n    return a + b;\n}\n\n\nint main() {\n    int checks = 0;\n    for (long long a = 0; a <= 100; ++a) {\n        for (long long b = 0; b <= 100; ++b) {\n            const auto forward = checked_nonnegative_add(a, b);\n            const auto reverse = checked_nonnegative_add(b, a);\n            if (!forward || !reverse || *forward != *reverse) return 1;\n            if (*forward - a != b) return 2;\n            ++checks;\n        }\n    }\n    std::cout << checks << \" property cases passed\\n\";\n}"
+  },
+  "commonMistakes": [
+    "A release macro must not remove required validation/effects or the only test failure signal. (Necessary runtime validation must not depend on an optional macro.)",
+    "A rejection test must not trigger the forbidden operation before reaching the code under test. (Validate rejection without executing an undefined expected computation.)",
+    "There are 101 choices for each argument, so 101*101=10201 cases."
+  ],
+  "realWorldApplication": "Used directly across production quantitative research, execution systems, and validation pipelines.",
+  "quantFinanceApplication": "Applies rigorous engineering contracts to quantitative modeling and live trading infrastructure.",
+  "summary": [
+    "Tests need independent answers and active failure checks, not only a green output or an assert compiled away.",
+    "Sanitizers diagnose selected executed operations; preserve real diagnostics and toolchain scope, fix causes, and never promote a clean local run into universal or app-runtime safety.",
+    "Design boundary/reference/property tests whose checks survive release NDEBUG, keep unsafe operations out of rejection tests and distinguish observed pass from all-input proof."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "Why use explicit failure returns in these acceptance tests instead of only assert?",
+      "objective": 0,
+      "options": [
+        "Every assert runs even when NDEBUG is defined",
+        "Explicit returns make a later external transaction atomic",
+        "The checks remain active with -DNDEBUG",
+        "static_assert can inspect every runtime request"
+      ],
+      "answerIndex": 2,
+      "explanation": "A release macro must not remove required validation/effects or the only test failure signal. (Necessary runtime validation must not depend on an optional macro.)"
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "Why not compute maximum+1 to build the expected rejection value for signed long long?",
+      "objective": 1,
+      "options": [
+        "The expected expression itself would overflow",
+        "The expected value should use unsigned wraparound and be treated as the signed sum",
+        "A later cast repairs all earlier undefined operations",
+        "Only production arithmetic can have undefined behavior"
+      ],
+      "answerIndex": 0,
+      "explanation": "A rejection test must not trigger the forbidden operation before reaching the code under test. (Validate rejection without executing an undefined expected computation.)"
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "How many ordered input pairs lie in 0..100 for both a and b?",
+      "objective": 2,
+      "answer": 10201,
+      "tolerance": 0.000001,
+      "explanation": "There are 101 choices for each argument, so 101*101=10201 cases."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "A clean instrumented run establishes what?",
+      "objective": 0,
+      "options": [
+        "All conceivable paths and dependencies are certified",
+        "Financial units and authentication are proven",
+        "No concurrency error can exist anywhere",
+        "No enabled diagnostic fired on the recorded executed paths"
+      ],
+      "answerIndex": 3,
+      "explanation": "Clean local instrumentation is useful bounded evidence, not a universal proof. (Record compiler/source/flags/input and remaining limits.)"
+    },
+    {
+      "id": "q5",
+      "type": "mcq",
+      "prompt": "An instrumented binary cannot initialize its runtime in the current environment. What should the report say?",
+      "objective": 1,
+      "options": [
+        "The learner implementation passed memory safety",
+        "The sanitizer check is unavailable/failed setup, not passed",
+        "All ordinary tests must be deleted",
+        "Suppress stderr and count the exit as success"
+      ],
+      "answerIndex": 1,
+      "explanation": "Distinguish unavailable instrumentation from a source violation and from a successful run. (Investigate environment and retain ordinary test evidence separately.)"
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "What core invariant governs Testing, sanitizers and undefined behaviour?",
+      "back": "A release macro must not remove required validation/effects or the only test failure signal. (Necessary runtime validation must not depend on an optional macro.)"
+    },
+    {
+      "type": "definition",
+      "front": "In Testing, sanitizers and undefined behaviour, how do you verify: Reproduce a scoped instrumented build and interpret compiler/test/sanitizer diagnostics without treating a clean run as absence of every memory, business or concurrency error.?",
+      "back": "A rejection test must not trigger the forbidden operation before reaching the code under test. (Validate rejection without executing an undefined expected computation.)"
+    },
+    {
+      "type": "error-identification",
+      "front": "What failure mode happens if the contract in Testing, sanitizers and undefined behaviour is violated?",
+      "back": "There are 101 choices for each argument, so 101*101=10201 cases."
+    }
+  ],
+  "references": [
+    {
+      "label": "GCC instrumentation",
+      "url": "https://gcc.gnu.org/onlinedocs/gcc/Instrumentation-Options.html"
+    },
+    {
+      "label": "assert/NDEBUG",
+      "url": "https://en.cppreference.com/w/cpp/error/assert.html"
+    },
+    {
+      "label": "Clang ASan scope",
+      "url": "https://clang.llvm.org/docs/AddressSanitizer.html"
+    },
+    {
+      "label": "Clang UBSan groups",
+      "url": "https://clang.llvm.org/docs/UndefinedBehaviorSanitizer.html"
+    }
+  ],
+  "skills": [
+    "cpp",
+    "cpp-memory",
+    "cpp-stl",
+    "cpp-engineering"
+  ]
+}

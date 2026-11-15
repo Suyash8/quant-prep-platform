@@ -1,0 +1,237 @@
+{
+  "id": "ap-numerics-eigen-pca",
+  "moduleId": "ap-numerics",
+  "title": "Eigenvectors, SVD and PCA",
+  "estMinutes": 22,
+  "difficulty": "advanced",
+  "prereqs": [
+    "ap-numerics-cholesky"
+  ],
+  "objectives": [
+    "Verify real symmetric eigenpairs and relate centered-data singular values to covariance eigenvalues without relying on eigenvector sign or arbitrary repeated-eigenspace bases.",
+    "Compute and interpret a training-centered PCA projection with explicit sample normalization, feature scaling and held-out transformation boundaries.",
+    "Apply eigenvectors, svd and pca invariants safely and identify scope boundaries."
+  ],
+  "motivation": "An eigenpair of a square matrix A is a scalar λ and NONZERO vector v with Av=λv. A real symmetric matrix has an orthonormal eigenbasis and real eigenvalues.",
+  "blocks": [
+    {
+      "type": "p",
+      "md": "An eigenpair of a square matrix A is a scalar λ and NONZERO vector v with Av=λv. A real symmetric matrix has an orthonormal eigenbasis and real eigenvalues. PSD matrices have nonnegative eigenvalues; PD matrices have strictly positive ones. Eigenvectors can be rescaled, so a direction is not automatically a unit vector. For variance/projection calculations using an orthonormal basis, normalize and check the basis rather than inserting an arbitrary multiple."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "matrix = [[3,1],[1,3]]\nfor value, vector in [(4,[1,1]), (2,[1,-1])]:\n    product = [sum(a*x for a,x in zip(row,vector)) for row in matrix]\n    print(product == [value*x for x in vector])\nprint(sum(x*x for x in [1,1]))\n# A normalized eigenvector has norm1; [1,1] is an eigenvector but not unit length.",
+      "caption": "Expected output: True, True, then 2. For [[3,1],[1,3]], directions (1,1) and (1,-1) have eigenvalues 4 and 2. Each listed direction has squared length 2, so divide by sqrt(2) for unit-vector projection/variance formulas. v=0 is excluded from an eigenpair because it would satisfy the equation for every λ."
+    },
+    {
+      "type": "p",
+      "md": "If v is a unit eigenvector, -v describes the same axis. Its scores flip sign, but vvᵀ and reconstructed projections do not. With a repeated eigenvalue, any orthonormal basis within that eigenspace is valid; near-repeated eigenvalues can make individual directions sensitive. Compare eigenpair residuals, orthonormality and relevant subspace/projector behavior, not a hardcoded sign or exact component list. This lesson is about real symmetric covariance, not a claim that every real nonsymmetric matrix has real orthogonal eigenvectors."
+    },
+    {
+      "type": "p",
+      "md": "Let training X have n≥2 observations as rows and d features as columns. Fit training column mean μ and set Z=X-μ. Choose sample covariance C=ZᵀZ/(n-1). For unit direction v, variance of centered scores Zv is vᵀCv. Choosing the largest-eigenvalue direction maximizes that variance; choosing the top k orthonormal directions gives PCA's Euclidean least-squares reconstruction subspace. This criterion preserves training variance, not necessarily predictive, causal or economically useful information. To see the maximum, write unit v in an orthonormal eigenbasis as v=sum_i alpha_i*q_i, with sum_i alpha_i²=1. Then vᵀCv=sum_i lambda_i*alpha_i²≤lambda_max. Equality holds in a largest-eigenvalue eigenspace. For retained orthonormal columns V_k, scores T=Z V_k and reconstructed rows are T V_kᵀ+μ. Each row uses its nearest point in this fitted affine subspace; squared training reconstruction error equals the sum of discarded s_i². Keeping the largest s_i minimizes that discarded sum among rank-k orthogonal subspaces."
+    },
+    {
+      "type": "p",
+      "md": "A thin singular-value decomposition writes Z=U S Vᵀ with nonnegative singular values s_i on diagonal S, sorted from largest to smallest. U and V have orthonormal columns in their thin factors. Then ZᵀZ=V S²Vᵀ, so nonzero covariance eigenvalues are λ_i=s_i²/(n-1), NOT s_i/(n-1). Directions are columns of V; a library returning Vᵀ stores them in rows. With d>n the thin factors do not list a complete zero-eigenvalue nullspace, though they can represent the nonzero principal directions."
+    },
+    {
+      "type": "steps",
+      "title": "Track the denominator and the coordinate orientation",
+      "items": [
+        "Four training rows are (12,20),(8,20),(10,21),(10,19). Training mean=(10,20), centered rows=(2,0),(-2,0),(0,1),(0,-1).",
+        "ZᵀZ=diag(8,2). Under n-1=3 sample normalization, covariance eigenvalues are 8/3 and 2/3. Their sum 10/3 is total sample variance.",
+        "The singular values are sqrt(8),sqrt(2). Squaring and dividing by 3 gives the same covariance eigenvalues. Dividing by n=4 instead would give 2 and 1/2, changing variances but not these axes or explained-variance ratios.",
+        "The first component explains (8/3)/(10/3)=0.8 of the training variance. Its unit direction is the first coordinate axis up to sign; a later row (14,20) projects/reconstructs exactly using the TRAINING mean and axis."
+      ]
+    },
+    {
+      "type": "p",
+      "md": "The next illustration requires NumPy in a separately prepared environment. It remains a readable worked example when the app has no verified NumPy capability; answering the lesson does not require installing anything. App execution is disabled for this block until the actual dependency/runtime is qualified. Record the Python and NumPy versions used for local reproduction."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import numpy as np\n# Rows are training observations; columns are two compatible-scale features.\ntrain = np.array([[12.,20.],[8.,20.],[10.,21.],[10.,19.]])\nmean = train.mean(axis=0)\ncentered = train - mean\ncovariance = centered.T @ centered / (len(train)-1)\nvalues, vectors = np.linalg.eigh(covariance)  # ascending; vectors are columns\norder = np.argsort(values)[::-1]\nvalues, basis = values[order], vectors[:,order]\nu, singular, vh = np.linalg.svd(centered, full_matrices=False)\nscores = centered @ basis\nprint(mean.tolist())\nprint(np.round(values,6).tolist())\nprint(np.round(singular**2/(len(train)-1),6).tolist())\nprint(np.round(np.var(scores,axis=0,ddof=1),6).tolist())\nprint(np.round(values/values.sum(),6).tolist())\nprint(np.allclose(covariance @ basis, basis*values, rtol=1e-12, atol=1e-12))\n# Compare rank-one projectors, not arbitrary eigenvector signs.\nprint(np.allclose(basis[:,:1] @ basis[:,:1].T, vh[:1].T @ vh[:1], rtol=1e-12, atol=1e-12))\n# Later data use the TRAINING mean and basis, without refitting.\nlater = np.array([[14.,20.]])\nreconstructed = ((later-mean) @ basis[:,:1]) @ basis[:,:1].T + mean\nprint(np.round(reconstructed,6).tolist())",
+      "caption": "Expected output: [10.0, 20.0]; [2.666667, 0.666667] on each of the next three lines; [0.8, 0.2]; True; True; then [[14.0, 20.0]]. The checks are small-fixture floating tolerances 1e-12, not universal. eigh returns ascending eigenvalues/column eigenvectors while SVD returns descending singular values/rows of Vh. The example sorts both PCA eigenvalues and their associated columns together and compares sign-invariant rank-one projectors."
+    },
+    {
+      "type": "p",
+      "md": "PCA centers but does not automatically standardize features. Measuring one feature in cents instead of dollars can change covariance PCA axes and variance ratios; choose common scales or a stated training-only standardization. Standardization itself changes the geometry and needs a zero-variance-column policy. If total training variance is 0, explained-variance ratios are undefined and should not be reported as a meaningful set of percentages. A zero/near-zero eigenvalue also matters before whitening or dividing by a component standard deviation; whitening is not implemented here."
+    },
+    {
+      "type": "p",
+      "md": "Constructing ZᵀZ explicitly squares the 2-norm condition number when Z has full column rank. Direct SVD can avoid forming that Gram matrix and is often preferable for difficult data. This is not a claim that every implementation/problem is stable or that numerical tiny negative eigenvalues should be clipped without a scale-aware policy. The covariance and SVD paths are compared here only on a small well-separated fixture. Repeated-eigenvalue directions must be evaluated as subspaces."
+    },
+    {
+      "type": "p",
+      "md": "Fit μ, any scaling and the component basis on training rows only. Transform later rows with those frozen quantities; refitting on the full dataset leaks the evaluation distribution. Choice of component count and other preprocessing belongs in development/validation, not repeated inspection of a final test set. High explained training variance does not establish out-of-sample predictive usefulness or a causal factor model; low-variance directions can still carry a target-specific signal."
+    },
+    {
+      "type": "p",
+      "md": "Independent transfer: verify Av=λv for the two exact directions and normalize them. Derive λ=s²/(n-1) from the thin SVD rather than memorizing a library attribute. Change the covariance denominator from n-1 to n and identify which values change. Then add an offset to all training rows and show centered covariance stays fixed. Propose tests for constant columns, all-constant data, a repeated eigenvalue and held-out centering without requiring one arbitrary eigenvector sign."
+    },
+    {
+      "type": "p",
+      "md": "References: [NumPy symmetric eigenpairs](https://numpy.org/doc/stable/reference/generated/numpy.linalg.eigh.html), [SVD factors/orientation](https://numpy.org/doc/stable/reference/generated/numpy.linalg.svd.html), [Princeton PCA/SVD derivation](https://www.cs.princeton.edu/courses/archive/spring19/cos324/files/pca.pdf), and [PCA centering/sample-variance convention](https://scikit-learn.org/stable/modules/generated/sklearn.decomposition.PCA.html). Own text derives the SQUARED singular-value scaling explicitly and uses n-1 consistently. No scikit-learn execution or professional factor-model qualification is claimed."
+    },
+    {
+      "type": "ref",
+      "items": [
+        {
+          "label": "NumPy symmetric eigenpairs",
+          "url": "https://numpy.org/doc/stable/reference/generated/numpy.linalg.eigh.html"
+        },
+        {
+          "label": "SVD factors/orientation",
+          "url": "https://numpy.org/doc/stable/reference/generated/numpy.linalg.svd.html"
+        },
+        {
+          "label": "Princeton PCA/SVD derivation",
+          "url": "https://www.cs.princeton.edu/courses/archive/spring19/cos324/files/pca.pdf"
+        },
+        {
+          "label": "PCA centering/sample-variance convention",
+          "url": "https://scikit-learn.org/stable/modules/generated/sklearn.decomposition.PCA.html"
+        }
+      ]
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "A first component explains 80% of training variance. What would stop you from calling it a useful predictive trading factor?",
+    "hints": [
+      "Separates explained variance from prediction/causation.",
+      "Checks training boundary and geometry.",
+      "Does not infer a trade instruction from an eigenvector."
+    ],
+    "solution": "Explained variance is an unsupervised reconstruction criterion. Check units/scaling, training-only fit, stability/near-degenerate subspaces, out-of-sample target performance and costs, regime/tail/model assumptions, and actual action authority."
+  },
+  "independentExercise": {
+    "prompt": "Write a small test case that deliberately breaks the contract boundary in \"Eigenvectors, SVD and PCA\" and verify how your implementation rejects or handles it.",
+    "hints": [
+      "Test zero, negative, empty, duplicate, and boundary values.",
+      "Confirm both time/memory complexity and numerical precision remain within spec."
+    ],
+    "solution": "import numpy as np\n# Rows are training observations; columns are two compatible-scale features.\ntrain = np.array([[12.,20.],[8.,20.],[10.,21.],[10.,19.]])\nmean = train.mean(axis=0)\ncentered = train - mean\ncovariance = centered.T @ centered / (len(train)-1)\nvalues, vectors = np.linalg.eigh(covariance)  # ascending; vectors are columns\norder = np.argsort(values)[::-1]\nvalues, basis = values[order], vectors[:,order]\nu, singular, vh = np.linalg.svd(centered, full_matrices=False)\nscores = centered @ basis\nprint(mean.tolist())\nprint(np.round(values,6).tolist())\nprint(np.round(singular**2/(len(train)-1),6).tolist())\nprint(np.round(np.var(scores,axis=0,ddof=1),6).tolist())\nprint(np.round(values/values.sum(),6).tolist())\nprint(np.allclose(covariance @ basis, basis*values, rtol=1e-12, atol=1e-12))\n# Compare rank-one projectors, not arbitrary eigenvector signs.\nprint(np.allclose(basis[:,:1] @ basis[:,:1].T, vh[:1].T @ vh[:1], rtol=1e-12, atol=1e-12))\n# Later data use the TRAINING mean and basis, without refitting.\nlater = np.array([[14.,20.]])\nreconstructed = ((later-mean) @ basis[:,:1]) @ basis[:,:1].T + mean\nprint(np.round(reconstructed,6).tolist())"
+  },
+  "commonMistakes": [
+    "An eigenvector is a nonzero direction whose image under A is a scalar multiple of itself. (The zero vector would make the equation uninformative for every λ.)",
+    "Projector/subspace comparisons respect the mathematical ambiguity that componentwise sign assertions ignore. (Their scores flip but reconstructed projection is unchanged.)",
+    "The square and the sample denominator both matter; axis directions alone do not identify the reported variance. (This follows directly from ZᵀZ=V S²Vᵀ.)"
+  ],
+  "realWorldApplication": "Used directly across production quantitative research, execution systems, and validation pipelines.",
+  "quantFinanceApplication": "Applies rigorous engineering contracts to quantitative modeling and live trading infrastructure.",
+  "summary": [
+    "PCA needs training centering, a declared covariance denominator/feature geometry and sign/subspace-aware eigen checks.",
+    "Covariance eigenvalues are squared singular values divided by the chosen denominator; explained variance is not a prediction guarantee.",
+    "Verify real symmetric eigenpairs and relate centered-data singular values to covariance eigenvalues without relying on eigenvector sign or arbitrary repeated-eigenspace bases."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "Which condition defines an eigenpair?",
+      "objective": 0,
+      "options": [
+        "Av=λv with nonzero v",
+        "v=0 with any λ",
+        "Every coordinate of v must be positive",
+        "Every real matrix must have a real orthonormal eigenbasis"
+      ],
+      "answerIndex": 0,
+      "explanation": "An eigenvector is a nonzero direction whose image under A is a scalar multiple of itself. (The zero vector would make the equation uninformative for every λ.)"
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "Why compare a PCA axis projector instead of a hardcoded eigenvector sign?",
+      "objective": 1,
+      "options": [
+        "The sign proves whether a factor is profitable",
+        "Eigenvectors must always contain exactly the same bits",
+        "v and -v define the same axis/projector",
+        "Repeated eigenvalues identify a unique coordinate axis"
+      ],
+      "answerIndex": 2,
+      "explanation": "Projector/subspace comparisons respect the mathematical ambiguity that componentwise sign assertions ignore. (Their scores flip but reconstructed projection is unchanged.)"
+    },
+    {
+      "id": "q3",
+      "type": "mcq",
+      "prompt": "For centered training Z and sample covariance C=ZᵀZ/(n-1), how does a singular value s relate to its nonzero covariance eigenvalue?",
+      "objective": 2,
+      "options": [
+        "λ=s/(n-1)",
+        "λ=s²/(n-1)",
+        "λ=(n-1)/s² for all components",
+        "λ is independent of the normalization convention"
+      ],
+      "answerIndex": 1,
+      "explanation": "The square and the sample denominator both matter; axis directions alone do not identify the reported variance. (This follows directly from ZᵀZ=V S²Vᵀ.)"
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "How should later evaluation rows be centered?",
+      "objective": 0,
+      "options": [
+        "By a mean recomputed from the full train+test dataset",
+        "By each row itself, making every row 0",
+        "By whichever mean gives the best final test score",
+        "By the frozen training mean with the trained scaling/basis"
+      ],
+      "answerIndex": 3,
+      "explanation": "PCA is a fitted preprocessing step, so its mean/scales/basis belong to the training boundary. (The same learned transform is applied without refitting.)"
+    },
+    {
+      "id": "q5",
+      "type": "numeric",
+      "prompt": "For A=[[3,1],[1,3]], v=(1,1), what is λ in Av=λv?",
+      "objective": 1,
+      "answer": 4,
+      "tolerance": 0.000001,
+      "explanation": "Av=(4,4)=4v. The direction still needs division by sqrt(2)to become unit length."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "What core invariant governs Eigenvectors, SVD and PCA?",
+      "back": "An eigenvector is a nonzero direction whose image under A is a scalar multiple of itself. (The zero vector would make the equation uninformative for every λ.)"
+    },
+    {
+      "type": "definition",
+      "front": "In Eigenvectors, SVD and PCA, how do you verify: Compute and interpret a training-centered PCA projection with explicit sample normalization, feature scaling and held-out transformation boundaries.?",
+      "back": "Projector/subspace comparisons respect the mathematical ambiguity that componentwise sign assertions ignore. (Their scores flip but reconstructed projection is unchanged.)"
+    },
+    {
+      "type": "error-identification",
+      "front": "What failure mode happens if the contract in Eigenvectors, SVD and PCA is violated?",
+      "back": "The square and the sample denominator both matter; axis directions alone do not identify the reported variance. (This follows directly from ZᵀZ=V S²Vᵀ.)"
+    }
+  ],
+  "references": [
+    {
+      "label": "NumPy symmetric eigenpairs",
+      "url": "https://numpy.org/doc/stable/reference/generated/numpy.linalg.eigh.html"
+    },
+    {
+      "label": "SVD factors/orientation",
+      "url": "https://numpy.org/doc/stable/reference/generated/numpy.linalg.svd.html"
+    },
+    {
+      "label": "Princeton PCA/SVD derivation",
+      "url": "https://www.cs.princeton.edu/courses/archive/spring19/cos324/files/pca.pdf"
+    },
+    {
+      "label": "PCA centering/sample-variance convention",
+      "url": "https://scikit-learn.org/stable/modules/generated/sklearn.decomposition.PCA.html"
+    }
+  ],
+  "skills": [
+    "linear-algebra",
+    "numerical-analysis",
+    "optimization"
+  ]
+}

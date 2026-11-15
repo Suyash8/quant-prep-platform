@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { getCurrentUser } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { listCompanies, getCompany, getMatrix, getMap } from '@/lib/content';
-import { AppShell, PublicHeader } from '@/components/app-shell';
+import { AppShell, PublicHeader, PublicFooter } from '@/components/app-shell';
 import { ApplicationTracker } from '@/components/application-tracker';
 import {
   ArrowRight, BarChart3, Briefcase, Building2, ChevronRight, ClipboardList, Compass, FileText, Layers,
@@ -382,7 +382,8 @@ export default async function CareerPage() {
     return (
       <div className="min-h-screen flex flex-col">
         <PublicHeader user={null} />
-        {body}
+        <main className="flex-1">{body}</main>
+        <PublicFooter />
       </div>
     );
   }

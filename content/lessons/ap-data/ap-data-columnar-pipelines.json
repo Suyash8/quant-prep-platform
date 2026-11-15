@@ -1,0 +1,200 @@
+{
+  "id": "ap-data-columnar-pipelines",
+  "moduleId": "ap-data",
+  "title": "Columnar pipelines and schema contracts",
+  "estMinutes": 22,
+  "difficulty": "core",
+  "prereqs": [
+    "ap-data-sql-joins"
+  ],
+  "objectives": [
+    "Filter and derive columns using one shared row selection while preserving identity and units.",
+    "Reject inconsistent column lengths, types and keys before a transform silently truncates or misaligns records.",
+    "Apply columnar pipelines and schema contracts invariants safely and identify scope boundaries."
+  ],
+  "motivation": "A row-oriented logical record keeps fields together: {trade_id, price_cents, qty}. A column-oriented logical batch groups values by field, with one shared row position across columns.",
+  "blocks": [
+    {
+      "type": "p",
+      "md": "A row-oriented logical record keeps fields together: {trade_id, price_cents, qty}. A column-oriented logical batch groups values by field, with one shared row position across columns. Scanning a few columns can avoid unrelated fields in a true columnar engine, but a Python dictionary of lists is only a teaching representation here. It is not Apache Arrow memory layout and is not a measured performance improvement. Arrow specifies typed buffers and validity metadata; its optimised execution requires an appropriate implementation, not just this container name."
+    },
+    {
+      "type": "p",
+      "md": "Our input schema has exactly trade_id, price_cents and qty columns, each a list of the same length. IDs are nonempty unique strings. Both numeric columns contain exact nonnegative Python integers excluding bool; they use cents and shares. An empty batch is allowed. This is a strict synthetic contract, not a claim that every real feed uses unique trade rows or disallows corrections. Validate before deriving output, and leave input lists unchanged."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "def validate_columns(columns):\n    expected = {\"trade_id\", \"price_cents\", \"qty\"}\n    if type(columns) is not dict or set(columns) != expected:\n        raise ValueError(\"column names\")\n    if any(type(values) is not list for values in columns.values()):\n        raise ValueError(\"expected lists\")\n    n = len(columns[\"trade_id\"])\n    if any(len(values) != n for values in columns.values()):\n        raise ValueError(\"length mismatch\")\n    ids = columns[\"trade_id\"]\n    if any(type(x) is not str or not x for x in ids):\n        raise ValueError(\"invalid ID\")\n    if len(set(ids)) != n:\n        raise ValueError(\"duplicate ID\")\n    for name in [\"price_cents\", \"qty\"]:\n        if any(type(x) is not int or x < 0 for x in columns[name]):\n            raise ValueError(\"invalid numeric column\")\n    return n\n\ncolumns = {\"trade_id\": [\"T1\", \"T2\", \"T3\"],\n           \"price_cents\": [100, 200, 300], \"qty\": [2, 0, 3]}\nprint(validate_columns(columns))\nselected = [i for i, qty in enumerate(columns[\"qty\"]) if qty > 0]\nresult = {name: [values[i] for i in selected]\n          for name, values in columns.items()}\nresult[\"notional_cents\"] = [price * qty for price, qty\n                            in zip(result[\"price_cents\"], result[\"qty\"])]\nprint(result[\"trade_id\"])\nprint(result[\"notional_cents\"])\nprint(sum(result[\"notional_cents\"]))",
+      "caption": "Expected output: 3, then ['T1', 'T3'], then [200, 900], then 1100. Every selected column uses the same positions. A new notional column is derived only after input validation. The result is a new mapping and lists; scalar field values are immutable."
+    },
+    {
+      "type": "p",
+      "md": "The selection is a list of row positions passing qty > 0. Applying that same selection to every field preserves correspondence. Filtering is a deliberate modeling choice that removes valid zero-quantity rows from this output, not a statement that those source rows were invalid. Record rows read, rows selected and the filter predicate separately from validation rejects. The source count 3 and selected count 2 reconcile to one deliberately filtered row, not one invalid row."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "price_cents = [100, 200]\nqty = [3, 1]\nprint(sum(p * q for p, q in zip(price_cents, qty)))\n# This changes only quantity order, breaking the shared row identity.\nwrong_qty = sorted(qty)\nprint(sum(p * q for p, q in zip(price_cents, wrong_qty)))",
+      "caption": "Expected output: 500, then 700. Sorting only qty loses which quantity belongs to which price, despite equal lengths and valid numeric types. Sort complete records or apply one common row permutation to all columns. Do not call the changed total a market gain."
+    },
+    {
+      "type": "p",
+      "md": "zip stops when its shortest input ends. Without an equal-length precondition, a price column of length 3 and a quantity column of length 2 can silently produce two derived values. A schema check must run first. Column names, types, null policy, units, identity, ordering and version are separate parts of the contract. A type-valid dataset can still be semantically wrong if units or identities drift."
+    },
+    {
+      "type": "p",
+      "md": "Adding a column or changing a unit is an interface change. Say which schema versions a consumer accepts, how optional/missing fields are handled and whether an old payload can be migrated without information loss. Do not silently reinterpret a field called price as cents today and dollars tomorrow. Preserve a source identity/revision and transformation description with output so a later discrepancy can be traced."
+    },
+    {
+      "type": "p",
+      "md": "Independent transfer: copy this synthetic batch, add a new record and predict the selected notional result. Test empty columns, one mismatched length, a duplicate ID, bool in qty and an unexpected extra column. Verify each invalid case raises before returning an output. Snapshot the input before execution and compare afterward to check it was not changed. Then deliberately sort only one column and explain why a schema type check alone cannot catch that semantic bug."
+    },
+    {
+      "type": "p",
+      "md": "Technical references: [Arrow columnar format](https://arrow.apache.org/docs/format/Columnar.html) for real typed arrays, buffers and validity metadata; [Python zip](https://docs.python.org/3.12/library/functions.html#zip) for shortest-input truncation and the explicit strict mode. This lesson's dictionary-of-lists code demonstrates its own logical alignment and schema contracts only; it does not implement or benchmark Arrow. Filter policy, row identity and arithmetic examples are declared teaching contracts and arguments here, not rules supplied by the Arrow format."
+    },
+    {
+      "type": "ref",
+      "items": [
+        {
+          "label": "Arrow columnar format",
+          "url": "https://arrow.apache.org/docs/format/Columnar.html"
+        },
+        {
+          "label": "Python zip",
+          "url": "https://docs.python.org/3.12/library/functions.html#zip"
+        }
+      ]
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "What could change in a dataset while all its numeric types and lengths remain valid?",
+    "hints": [
+      "Names units or identity.",
+      "Names timing/version/provenance.",
+      "Distinguishes physical schema from business correctness."
+    ],
+    "solution": "Units, instrument identities/order, timestamps, schema interpretation or source revisions can change. Validate semantic contracts and provenance as well as physical types."
+  },
+  "independentExercise": {
+    "prompt": "Write a small test case that deliberately breaks the contract boundary in \"Columnar pipelines and schema contracts\" and verify how your implementation rejects or handles it.",
+    "hints": [
+      "Test zero, negative, empty, duplicate, and boundary values.",
+      "Confirm both time/memory complexity and numerical precision remain within spec."
+    ],
+    "solution": "price_cents = [100, 200]\nqty = [3, 1]\nprint(sum(p * q for p, q in zip(price_cents, qty)))\n# This changes only quantity order, breaking the shared row identity.\nwrong_qty = sorted(qty)\nprint(sum(p * q for p, q in zip(price_cents, wrong_qty)))"
+  },
+  "commonMistakes": [
+    "One common selection or permutation preserves field correspondence. Equal lengths alone do not establish correct pairing. (The retained positions continue to describe the same records.)",
+    "The shortest-input behavior is useful in some programs but unsafe for a transform that promises one result per aligned row. (Validation prevents that partial computation from looking complete.)",
+    "Validation and selection answer different questions. Preserve enough counts and policy metadata to distinguish them. (This schema permits zero; the transform selects a narrower output.)"
+  ],
+  "realWorldApplication": "Used directly across production quantitative research, execution systems, and validation pipelines.",
+  "quantFinanceApplication": "Applies rigorous engineering contracts to quantitative modeling and live trading infrastructure.",
+  "summary": [
+    "Columns need one shared row identity.",
+    "Validate lengths/types/keys before deriving values, apply one common selection/permutation, and keep filter counts separate from invalid-input counts.",
+    "Logical column containers are not automatically an optimised columnar engine."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "A column batch has one shared row identity. Which operation preserves it when filtering?",
+      "objective": 0,
+      "options": [
+        "Filter each column independently by its own values",
+        "Use one shared row selection for every column",
+        "Sort only quantities while leaving prices fixed",
+        "Drop all identity columns before checking alignment"
+      ],
+      "answerIndex": 1,
+      "explanation": "One common selection or permutation preserves field correspondence. Equal lengths alone do not establish correct pairing. (The retained positions continue to describe the same records.)"
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "Why check equal column lengths before using zip to derive notional?",
+      "objective": 1,
+      "options": [
+        "zip automatically rejects every length mismatch",
+        "Every trade dataset must contain exactly two rows",
+        "zip can silently omit an unmatched tail",
+        "Length checks establish currency identity and source timing"
+      ],
+      "answerIndex": 2,
+      "explanation": "The shortest-input behavior is useful in some programs but unsafe for a transform that promises one result per aligned row. (Validation prevents that partial computation from looking complete.)"
+    },
+    {
+      "id": "q3",
+      "type": "mcq",
+      "prompt": "A valid zero-quantity row is removed by a declared qty>0 output filter. How should it be counted?",
+      "objective": 2,
+      "options": [
+        "As deliberately filtered, not an invalid input",
+        "As a rejected numeric schema violation",
+        "As an accepted trade silently duplicated elsewhere",
+        "It should disappear from every count and report"
+      ],
+      "answerIndex": 0,
+      "explanation": "Validation and selection answer different questions. Preserve enough counts and policy metadata to distinguish them. (This schema permits zero; the transform selects a narrower output.)"
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "Does replacing row records with a Python dictionary of lists prove an Arrow-level speed improvement?",
+      "objective": 0,
+      "options": [
+        "Yes, because the word column guarantees any benchmark",
+        "Yes, because Python lists have exactly Arrow's typed-buffer layout",
+        "No, because columnar engines never help analytical scans",
+        "No; implementation and measured workload still matter"
+      ],
+      "answerIndex": 3,
+      "explanation": "Separate a schema/alignment lesson from a benchmark claim. Arrow's format and execution properties are not automatically inherited by arbitrary Python containers. (Logical representation alone is not a performance result.)"
+    },
+    {
+      "id": "q5",
+      "type": "numeric",
+      "prompt": "The worked filtered output has notionals 200 and 900 cents. What is its total in cents?",
+      "objective": 1,
+      "answer": 1100,
+      "tolerance": 0.000001,
+      "explanation": "Both selected records retain their original price-quantity pairing: 100*2 + 300*3 = 1100 cents."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "What core invariant governs Columnar pipelines and schema contracts?",
+      "back": "One common selection or permutation preserves field correspondence. Equal lengths alone do not establish correct pairing. (The retained positions continue to describe the same records.)"
+    },
+    {
+      "type": "definition",
+      "front": "In Columnar pipelines and schema contracts, how do you verify: Reject inconsistent column lengths, types and keys before a transform silently truncates or misaligns records.?",
+      "back": "The shortest-input behavior is useful in some programs but unsafe for a transform that promises one result per aligned row. (Validation prevents that partial computation from looking complete.)"
+    },
+    {
+      "type": "error-identification",
+      "front": "What failure mode happens if the contract in Columnar pipelines and schema contracts is violated?",
+      "back": "Validation and selection answer different questions. Preserve enough counts and policy metadata to distinguish them. (This schema permits zero; the transform selects a narrower output.)"
+    }
+  ],
+  "references": [
+    {
+      "label": "Arrow columnar format",
+      "url": "https://arrow.apache.org/docs/format/Columnar.html"
+    },
+    {
+      "label": "Python zip",
+      "url": "https://docs.python.org/3.12/library/functions.html#zip"
+    }
+  ],
+  "skills": [
+    "python",
+    "scientific-python",
+    "databases",
+    "data-infrastructure"
+  ]
+}

@@ -1,0 +1,191 @@
+{
+  "id": "ap-python-tests-properties",
+  "moduleId": "ap-python",
+  "title": "Examples, boundary tests and properties",
+  "estMinutes": 18,
+  "difficulty": "core",
+  "prereqs": [
+    "ap-python-errors-validation"
+  ],
+  "objectives": [
+    "Write tests for normal inputs, boundary values and declared errors.",
+    "State and check an invariant while recognising that tested cases are not a universal proof.",
+    "Apply examples, boundary tests and properties invariants safely and identify scope boundaries."
+  ],
+  "motivation": "A passing test establishes a result for the case it actually executed. It is not a proof for every possible input or proof that the specification is right.",
+  "blocks": [
+    {
+      "type": "p",
+      "md": "A passing test establishes a result for the case it actually executed. It is not a proof for every possible input or proof that the specification is right. Start with an explicit contract: this fee function accepts exact nonnegative integers and returns their product in cents, raising ValueError otherwise. Test both accepted values and rejected inputs."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import unittest\n\ndef fee_cents(quantity, per_share):\n    if type(quantity) is not int or type(per_share) is not int:\n        raise ValueError(\"expected exact integers\")\n    if quantity < 0 or per_share < 0:\n        raise ValueError(\"expected nonnegative values\")\n    return quantity * per_share\n\nclass FeeTests(unittest.TestCase):\n    def test_examples(self):\n        self.assertEqual(fee_cents(3, 2), 6)\n        self.assertEqual(fee_cents(0, 2), 0)\n    def test_invalid(self):\n        for value in [True, -1, \"3\", 3.0]:\n            with self.subTest(value=value):\n                with self.assertRaises(ValueError):\n                    fee_cents(value, 2)\n\nsuite = unittest.defaultTestLoader.loadTestsFromTestCase(FeeTests)\nresult = unittest.TestResult()\nsuite.run(result)\nprint(result.testsRun)\nprint(result.wasSuccessful())",
+      "caption": "Expected output: 2, then True. The subcases include boundary/type errors; testsRun counts the two test methods, not every assertion."
+    },
+    {
+      "type": "p",
+      "md": "A test needs an independent reason to expect its result. Copying the implementation expression into a test can repeat the same mistake. For a small example, compute the result by hand. For another check, compare with an independently structured implementation or a mathematical identity. Agree the rounding/domain rules before choosing the oracle."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "def fee_cents(quantity, per_share):\n    return quantity * per_share  # prevalidated nonnegative integers\n\nchecked = 0\nfor a in range(6):\n    for b in range(6):\n        for rate in range(4):\n            if fee_cents(a+b, rate) != fee_cents(a, rate) + fee_cents(b, rate):\n                raise AssertionError(\"additivity failed\")\n            checked += 1\nprint(checked)",
+      "caption": "Expected output: 144. This exhaustively checks a small finite domain, not all nonnegative integers."
+    },
+    {
+      "type": "p",
+      "md": "The property fee(a+b,r)=fee(a,r)+fee(b,r) follows from exact multiplication with the stated domain. A tiered fee or per-trade rounding policy might not satisfy it. A property that contradicts the real contract is a bad test. Include a deliberately broken implementation, such as (qty+1)*rate, to check that your examples can actually fail. A test suite that never fails even for an obvious bug is not providing useful evidence."
+    },
+    {
+      "type": "callout",
+      "variant": "warn",
+      "title": "Boundary condition",
+      "md": "Do not rely on bare assert for production input validation: Python can disable those assertions in optimised execution. The worked property check uses an explicit conditional and raises AssertionError. unittest assertions are methods and are not the same as a bare assert statement."
+    },
+    {
+      "type": "p",
+      "md": "Independent transfer: test a total_quantities function that rejects an entire list if any element is not an exact nonnegative integer. Include empty input, one valid value, zero, a negative, bool and text. Then intentionally change the implementation to accept bool and confirm that the relevant test fails. Restore the implementation after observing the failure. All work can run locally with the supplied synthetic cases.\n\nTechnical references: [Python unittest reference](https://docs.python.org/3/library/unittest.html) for test methods, expected errors and assertion methods. The financial schemas, policies and synthetic cases in this lesson are declared teaching contracts, not claims about a particular venue or employer."
+    },
+    {
+      "type": "interactive",
+      "component": "FunctionPlotter",
+      "params": {},
+      "caption": "Experiment: inspect edge boundaries and numeric monotonicity."
+    },
+    {
+      "type": "ref",
+      "items": [
+        {
+          "label": "Python unittest reference",
+          "url": "https://docs.python.org/3/library/unittest.html"
+        }
+      ]
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "A function passes 20 tests. What would you inspect before relying on it?",
+    "hints": [
+      "Separates test count from coverage.",
+      "Checks oracles and error cases.",
+      "States remaining unverified assumptions."
+    ],
+    "solution": "Inspect the input contract, independent oracle, boundary and failure cases, environment/version, missing cases and whether test failures would actually be noticed."
+  },
+  "independentExercise": {
+    "prompt": "Write a small test case that deliberately breaks the contract boundary in \"Examples, boundary tests and properties\" and verify how your implementation rejects or handles it.",
+    "hints": [
+      "Test zero, negative, empty, duplicate, and boundary values.",
+      "Confirm both time/memory complexity and numerical precision remain within spec."
+    ],
+    "solution": "def fee_cents(quantity, per_share):\n    return quantity * per_share  # prevalidated nonnegative integers\n\nchecked = 0\nfor a in range(6):\n    for b in range(6):\n        for rate in range(4):\n            if fee_cents(a+b, rate) != fee_cents(a, rate) + fee_cents(b, rate):\n                raise AssertionError(\"additivity failed\")\n            checked += 1\nprint(checked)"
+  },
+  "commonMistakes": [
+    "An explicit expected-error check tests the boolean exclusion. A passing normal input cannot establish error handling. (This targets the specific excluded type.)",
+    "The enumeration supplies evidence for its checked values and implementation. A universal proof or broader fee policy requires separate reasoning. (Finite cases do not prove the universal mathematical statement.)",
+    "The Cartesian product has 6*6*4=144 combinations. This count describes the finite checked domain, not all integer inputs."
+  ],
+  "realWorldApplication": "Used directly across production quantitative research, execution systems, and validation pipelines.",
+  "quantFinanceApplication": "Applies rigorous engineering contracts to quantitative modeling and live trading infrastructure.",
+  "summary": [
+    "Tests need a contract, independent expectations and meaningful failure cases.",
+    "Check properties only under their assumptions; finite passing cases are evidence, not universal proof.",
+    "Write tests for normal inputs, boundary values and declared errors."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "Which test directly checks the declared rejection of booleans as quantities?",
+      "objective": 0,
+      "options": [
+        "Assert that fee_cents(True,2) raises ValueError",
+        "Assert that fee_cents(3,2) equals 6",
+        "Run the function once and ignore its result",
+        "Only inspect the printed number of test methods"
+      ],
+      "answerIndex": 0,
+      "explanation": "An explicit expected-error check tests the boolean exclusion. A passing normal input cannot establish error handling. (This targets the specific excluded type.)"
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "The additivity identity passes on a small enumerated domain. What has been established?",
+      "objective": 1,
+      "options": [
+        "It is a proof for all possible real-world fee models",
+        "The checked cases satisfy it under this implementation",
+        "Every future implementation must satisfy the same tests",
+        "No additional example or invalid-input tests are useful"
+      ],
+      "answerIndex": 1,
+      "explanation": "The enumeration supplies evidence for its checked values and implementation. A universal proof or broader fee policy requires separate reasoning. (Finite cases do not prove the universal mathematical statement.)"
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "The worked property check loops over 6 values of a, 6 values of b and 4 rates. How many combinations are checked?",
+      "objective": 2,
+      "answer": 144,
+      "tolerance": 0.000001,
+      "explanation": "The Cartesian product has 6*6*4=144 combinations. This count describes the finite checked domain, not all integer inputs."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "Why run an intentionally broken implementation against the suite?",
+      "objective": 0,
+      "options": [
+        "To permanently replace the correct implementation",
+        "To make the final test report show every case passed",
+        "To check whether the tests detect a known wrong behaviour",
+        "To avoid writing expected outcomes for the test cases"
+      ],
+      "answerIndex": 2,
+      "explanation": "An injected known bug tests whether the checks are capable of detecting that defect. It does not establish completeness against every other bug. (A suite that misses an obvious bug may lack meaningful assertions.)"
+    },
+    {
+      "id": "q5",
+      "type": "mcq",
+      "prompt": "When can fee(a+b,r)=fee(a,r)+fee(b,r) be a wrong test requirement?",
+      "objective": 1,
+      "options": [
+        "Whenever the code is written in Python instead of C++",
+        "Whenever the result is stored as integer cents",
+        "Whenever a test contains more than one assertion",
+        "When the fee policy has tiers or per-trade rounding"
+      ],
+      "answerIndex": 3,
+      "explanation": "A test must reflect the model. Tier thresholds or rounding on each trade can break simple additivity, so the contract must decide. (Those policies can make split and combined fees differ.)"
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "What core invariant governs Examples, boundary tests and properties?",
+      "back": "An explicit expected-error check tests the boolean exclusion. A passing normal input cannot establish error handling. (This targets the specific excluded type.)"
+    },
+    {
+      "type": "definition",
+      "front": "In Examples, boundary tests and properties, how do you verify: State and check an invariant while recognising that tested cases are not a universal proof.?",
+      "back": "The enumeration supplies evidence for its checked values and implementation. A universal proof or broader fee policy requires separate reasoning. (Finite cases do not prove the universal mathematical statement.)"
+    },
+    {
+      "type": "error-identification",
+      "front": "What failure mode happens if the contract in Examples, boundary tests and properties is violated?",
+      "back": "The Cartesian product has 6*6*4=144 combinations. This count describes the finite checked domain, not all integer inputs."
+    }
+  ],
+  "references": [
+    {
+      "label": "Python unittest reference",
+      "url": "https://docs.python.org/3/library/unittest.html"
+    }
+  ],
+  "skills": [
+    "python",
+    "programming-fundamentals",
+    "software-engineering"
+  ]
+}

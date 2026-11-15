@@ -1,0 +1,258 @@
+{
+  "id": "ap-numerics-vectors-projections",
+  "moduleId": "ap-numerics",
+  "title": "Vectors, norms and projections",
+  "estMinutes": 38,
+  "difficulty": "advanced",
+  "prereqs": [
+    "ap-statistics-risk-estimation",
+    "ap-algorithms-dp-greedy"
+  ],
+  "objectives": [
+    "Compute real-vector dot products and declared norms with compatible dimensions/units and distinguish their different meanings.",
+    "Derive and compute projection onto a nonzero line, checking orthogonal residuals and the Euclidean minimum-distance property.",
+    "Derive modular matrix multiplication and binary exponentiation with identity, noncommutative order and bounded accumulators."
+  ],
+  "motivation": "A vector is an ordered list of coordinates in a declared basis. Equal length is necessary for coordinatewise operations, but labels/order/units must also agree: a shape-compatible pair with reversed instruments is still wrong.",
+  "blocks": [
+    {
+      "type": "p",
+      "md": "A vector is an ordered list of coordinates in a declared basis. Equal length is necessary for coordinatewise operations, but labels/order/units must also agree: a shape-compatible pair with reversed instruments is still wrong. This lesson uses finite-dimensional REAL vectors and the ordinary Euclidean dot product, not complex conjugate inner products or arbitrary weighted geometries. Synthetic numeric coordinates are dimensionless unless explicitly given a common unit."
+    },
+    {
+      "type": "p",
+      "md": "For equal-dimensional real vectors, $u\\cdot v=\\sum_i u_i v_i$. It is symmetric and linear in either argument. The Euclidean squared length is v·v, and ||v||₂=√(v·v). Other common norms are ||v||₁=Σ|v_i| and ||v||∞=max|v_i|. A norm is nonnegative, is zero only at the zero vector, scales by |c| under scalar multiplication, and satisfies the triangle inequality. Different norms answer different magnitude questions; they are not interchangeable numeric values."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "from math import sqrt\nv, w = [-3,4], [4,3]\none_norm = sum(abs(x) for x in v)\ntwo_norm_squared = sum(x*x for x in v)\ninfinity_norm = max(abs(x) for x in v)\nprint(one_norm)\nprint(two_norm_squared)\nprint(sqrt(two_norm_squared))\nprint(infinity_norm)\nprint(sum(x*y for x,y in zip(v,w)))",
+      "caption": "Expected output: 7, then 25, then 5.0, then 4, then 0. For v=(-3,4), L1=7, Euclidean length=5 and infinity norm=4. Its dot product with w=(4,3) is 0, so these nonzero real vectors are orthogonal under the declared dot product. The squared norm 25 is not the length 5."
+    },
+    {
+      "type": "p",
+      "md": "L1 adds coordinate magnitudes; L2 measures Euclidean distance; infinity norm records the largest absolute coordinate. If coordinates all have a common unit U, these lengths have unit U while squared length and a dot product of two U-valued vectors have U² units. Combining price cents, elapsed seconds and share counts in one unscaled Euclidean norm is an arbitrary choice of geometry, not a meaningful universal error metric. Scaling or weighting changes the question and must be declared."
+    },
+    {
+      "type": "p",
+      "md": "A line through the origin in direction u≠0 contains all vectors c u. Seek a closest point p=c u to v in Euclidean distance. Orthogonality u·(v-c u)=0 gives c=(u·v)/(u·u). With p so defined and residual r=v-p, r·u=0. For ANY scalar d, v-d u=r+(c-d)u, so ||v-d u||₂²=||r||₂²+(c-d)²||u||₂². The cross-term vanishes by orthogonality; the added square is nonnegative and is 0 only at d=c. This proves the unique minimum, not merely a formula to memorize."
+    },
+    {
+      "type": "steps",
+      "title": "Project onto a diagonal line",
+      "items": [
+        "Let v=(3,1) and u=(1,1). Then u·v=4 and u·u=2, so c=2.",
+        "Projection p=(2,2), residual r=(1,-1), and r·u=1-1=0.",
+        "The original squared length is 10. Projection squared length 8 plus residual squared length 2 gives 10, a Euclidean Pythagorean check.",
+        "Replacing direction u with 3u changes coefficient c to c/3 but leaves the same projected point on the same line. The direction coefficient is not itself the projected vector."
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "from fractions import Fraction\n\ndef rational_vector(values):\n    if type(values) is not list or not 1 <= len(values) <= 1000:\n        raise ValueError(\"expected a list of 1..1000 rational coordinates\")\n    result = []\n    for value in values:\n        if type(value) not in (int,Fraction):\n            raise ValueError(\"expected int/Fraction coordinates, excluding bool\")\n        value = Fraction(value)\n        if abs(value.numerator) > 1000000000 or value.denominator > 1000000:\n            raise ValueError(\"coordinate outside exact teaching bounds\")\n        result.append(value)\n    return result\n\ndef project_line(vector, direction):\n    v, u = rational_vector(vector), rational_vector(direction)\n    if len(v) != len(u):\n        raise ValueError(\"dimension mismatch\")\n    denominator = sum(x*x for x in u)\n    if denominator == 0:\n        raise ValueError(\"zero direction does not define a line\")\n    coefficient = sum(x*y for x,y in zip(v,u)) / denominator\n    projected = [coefficient*x for x in u]\n    residual = [x-y for x,y in zip(v,projected)]\n    return projected, residual\n\nprojected, residual = project_line([3,1], [1,1])\nprint([str(x) for x in projected])\nprint([str(x) for x in residual])\nprint(sum(x*y for x,y in zip(residual,[1,1])))\nprint(sum(Fraction(x)**2 for x in [3,1]) ==\n      sum(x*x for x in projected) + sum(x*x for x in residual))\ntry:\n    project_line([3,1], [0,0])\nexcept ValueError:\n    print(\"zero direction rejected\")",
+      "caption": "Expected output: ['2', '2'], then ['1', '-1'], then 0, then True, then zero direction rejected. Inputs are exact bounded int/Fraction lists; this helper rejects bool, floats, mismatched dimensions and a zero direction. No fitted plane, multi-column QR routine or general numerical geometry package is supplied."
+    },
+    {
+      "type": "p",
+      "md": "The zero vector does not define a line direction because u·u=0. Projection onto the zero SUBSPACE {0} can be defined separately as 0, but that is not this line helper's contract. A line not through the origin needs an anchor a: project v-a onto direction u, then add a back. Applying the origin-line formula directly to an affine line silently changes the geometry. Multi-dimensional subspaces need their own basis/rank and numerical method."
+    },
+    {
+      "type": "p",
+      "md": "Exact Fraction arithmetic makes the small worked identities exact, not the underlying measurements. For floating data, squared intermediates can overflow/underflow or lose scale; a numerical library and explicit tolerances are separate choices. Do not silently replace exact comparisons with an arbitrary epsilon independent of units/scale. Here no NumPy runtime is required; the NumPy norm reference is used only to distinguish vector and matrix norm conventions."
+    },
+    {
+      "type": "p",
+      "md": "Independent transfer: project (4,0) onto u=(1,1); verify the residual is orthogonal to u and compare squared distance with candidates d u for d=0,1,2,3. Then scale u by a negative nonzero constant and check that the projected vector stays fixed. Explain why translating to an anchored line needs subtract/project/add rather than merely changing the norm. Test dimension mismatch and zero direction before dividing."
+    },
+    {
+      "type": "p",
+      "md": "References: [MIT dot product](https://ocw.mit.edu/ans7870/18/18.013a/textbook/HTML/chapter03/section03.html), [MIT projection derivation](https://ocw.mit.edu/courses/18-06sc-linear-algebra-fall-2011/00e9c8f0eafedeab21a3d079a17ed3d8_MIT18_06SCF11_Ses2.2sum.pdf), and [NumPy norm conventions](https://numpy.org/doc/stable/reference/generated/numpy.linalg.norm.html). The source's multi-column normal-equation/inverse formulas are not adopted as a general stable numerical implementation here. This lesson proves and implements only the stated real-line projection."
+    },
+    {
+      "type": "p",
+      "md": "Matrix multiplication is not elementwise power\n\nFor n*n matrices X, Y, the product entry C[i][j] is sum over h of X[i][h]*Y[h][j]. It combines row i of X with column j of Y. Reduce each product-add modulo M: integer congruence preserves sums/products, so this gives the exact product over residues. Matrix multiplication is associative but generally not commutative. The power A^k means repeated matrix products; raising each cell to k separately is wrong."
+    },
+    {
+      "type": "p",
+      "md": "Exponentiation invariant and identity\n\nInitialize result=I, base=A, remaining=k. Maintain result*base^remaining=A^original_k mod M. If remaining is odd, multiply result=result*base. Then divide remaining by 2 and square base when more work remains. Associativity justifies grouping powers of the same base; no interchange of arbitrary matrices is assumed. At remaining 0, result is the requested power. In particular A^0=I, including a zero/singular matrix. Do not reduce k modulo M-1: scalar Fermat rules are not a general matrix-power rule."
+    },
+    {
+      "type": "p",
+      "md": "Overflow discipline, bounds and trace\n\nFor [[1, 1], [1, 0]], power 0 is identity, power 3 is [[3, 2], [2, 1]]. n<=20, k<=10^18, M prime 2..1000000007. Each reduced factor is < M, so a product plus one reduced accumulator is < 10^18+14000000049, within signed 64-bit range, but summing a whole unmodded dot product can exceed that. Python ints are exact; the explicit per-add reduction mirrors the safe bounded pattern without implying C++ qualification. O(n^3 log(k+1)) arithmetic operations and O(n^2) matrix state, plus formatted output. Product matrices are fresh, avoiding aliasing corruption. Primality is supplied but not needed for nonnegative exponentiation itself."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "from collections import OrderedDict, deque\nfrom bisect import bisect_left\nimport heapq\n\ndef matrix_power(k, mod, a):\n    n = len(a)\n\n    def multiply(x, y):\n        product = [[0] * n for _ in range(n)]\n        for i in range(n):\n            for middle in range(n):\n                factor = x[i][middle]\n                for j in range(n):\n                    product[i][j] = (product[i][j] + factor * y[middle][j]) % mod\n        return product\n    result = [[int(i == j) for j in range(n)] for i in range(n)]\n    base = [row[:] for row in a]\n    while k:\n        if k & 1:\n            result = multiply(result, base)\n        k //= 2\n        if k:\n            base = multiply(base, base)\n    return [' '.join(map(str, row)) for row in result]\n\nprint(*matrix_power(3, 1000000007, [[1, 1], [1, 0]]), sep='\\n')\nprint(*matrix_power(0, 7, [[0, 0], [0, 0]]), sep='\\n')",
+      "caption": "Expected stdout:\n3 2\n2 1\n1 0\n0 1\n\nPrevalidated inputs follow the captured public contract. This completes the named Python function using its original supplied main/parser. It does not claim independent parser, C++, app-runner or judge qualification."
+    },
+    {
+      "type": "p",
+      "md": "Mechanism reference: [binary exponentiation, associativity and matrix applications](https://cp-algorithms.com/algebra/binary-exp.html). The matrix product and invariant are derived above. Python uses exact integers; the fixed-width per-add accumulator bound, prime input range and list-of-lines interface are declared task details, not a C++ runtime guarantee. Public task hash e8add334cba94710ae6f0e3de6f6a6717fd8d68611ed3482da821416220b48eb. This is teaching/source fit, not app or judge qualification."
+    },
+    {
+      "type": "interactive",
+      "component": "VectorVisual",
+      "params": {},
+      "caption": "Experiment: visualize projections, norms and orthogonality."
+    },
+    {
+      "type": "ref",
+      "items": [
+        {
+          "label": "MIT dot product",
+          "url": "https://ocw.mit.edu/ans7870/18/18.013a/textbook/HTML/chapter03/section03.html"
+        },
+        {
+          "label": "MIT projection derivation",
+          "url": "https://ocw.mit.edu/courses/18-06sc-linear-algebra-fall-2011/00e9c8f0eafedeab21a3d079a17ed3d8_MIT18_06SCF11_Ses2.2sum.pdf"
+        },
+        {
+          "label": "NumPy norm conventions",
+          "url": "https://numpy.org/doc/stable/reference/generated/numpy.linalg.norm.html"
+        },
+        {
+          "label": "binary exponentiation, associativity and matrix applications",
+          "url": "https://cp-algorithms.com/algebra/binary-exp.html"
+        }
+      ]
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "What would you state before using a projection as a hedge or factor-exposure argument?",
+    "hints": [
+      "Declares geometry and coordinate semantics.",
+      "Checks nonzero/rank and units.",
+      "Does not infer financial efficacy or authority from orthogonality."
+    ],
+    "solution": "State coordinate identities/order/units, inner product or weighting, whether the subspace is through the origin, nonzero/rank conditions, estimation and measurement uncertainty, and the gap between geometric fit and a real financial model/authorized trade."
+  },
+  "independentExercise": {
+    "prompt": "Apply the concepts from this lesson by solving the linked practice problem: matrix-mult-mod.",
+    "hints": [
+      "Test zero, negative, empty, duplicate, and boundary values.",
+      "Confirm both time/memory complexity and numerical precision remain within spec."
+    ],
+    "solution": "from fractions import Fraction\n\ndef rational_vector(values):\n    if type(values) is not list or not 1 <= len(values) <= 1000:\n        raise ValueError(\"expected a list of 1..1000 rational coordinates\")\n    result = []\n    for value in values:\n        if type(value) not in (int,Fraction):\n            raise ValueError(\"expected int/Fraction coordinates, excluding bool\")\n        value = Fraction(value)\n        if abs(value.numerator) > 1000000000 or value.denominator > 1000000:\n            raise ValueError(\"coordinate outside exact teaching bounds\")\n        result.append(value)\n    return result\n\ndef project_line(vector, direction):\n    v, u = rational_vector(vector), rational_vector(direction)\n    if len(v) != len(u):\n        raise ValueError(\"dimension mismatch\")\n    denominator = sum(x*x for x in u)\n    if denominator == 0:\n        raise ValueError(\"zero direction does not define a line\")\n    coefficient = sum(x*y for x,y in zip(v,u)) / denominator\n    projected = [coefficient*x for x in u]\n    residual = [x-y for x,y in zip(v,projected)]\n    return projected, residual\n\nprojected, residual = project_line([3,1], [1,1])\nprint([str(x) for x in projected])\nprint([str(x) for x in residual])\nprint(sum(x*y for x,y in zip(residual,[1,1])))\nprint(sum(Fraction(x)**2 for x in [3,1]) ==\n      sum(x*x for x in projected) + sum(x*x for x in residual))\ntry:\n    project_line([3,1], [0,0])\nexcept ValueError:\n    print(\"zero direction rejected\")"
+  },
+  "commonMistakes": [
+    "The three norms use distinct definitions. State which one measures the reported error or size. (Sum magnitudes 7, square-root of 25 is 5, maximum magnitude 4.)",
+    "The mathematical vector representation is only useful if coordinate semantics are aligned. (Correct arithmetic on misaligned meanings can still be wrong.)",
+    "The projected point lies on the line and the remaining error is orthogonal to its direction. (This eliminates the cross-term and gives the minimum-distance proof.)"
+  ],
+  "realWorldApplication": "Used directly across production quantitative research, execution systems, and validation pipelines.",
+  "quantFinanceApplication": "Directly prepares you for judged problem: matrix-mult-mod.",
+  "summary": [
+    "A norm needs a declared geometry and compatible units.",
+    "Euclidean line projection divides by a nonzero direction squared length and leaves an orthogonal residual, which proves the closest-point property.",
+    "Practice transfer: modular matrix squaring."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "For v=(-3,4), which values are L1, L2 and infinity norm respectively?",
+      "objective": 0,
+      "options": [
+        "5,7,4",
+        "7,5,4",
+        "25,5,7",
+        "0,0,0"
+      ],
+      "answerIndex": 1,
+      "explanation": "The three norms use distinct definitions. State which one measures the reported error or size. (Sum magnitudes 7, square-root of 25 is 5, maximum magnitude 4.)"
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "Why is equal vector length insufficient before taking a financial dot product?",
+      "objective": 1,
+      "options": [
+        "Lengths never matter for dot products",
+        "A dot product automatically sorts instruments",
+        "Coordinate identity, order and units must match too",
+        "Every coordinate must be positive"
+      ],
+      "answerIndex": 2,
+      "explanation": "The mathematical vector representation is only useful if coordinate semantics are aligned. (Correct arithmetic on misaligned meanings can still be wrong.)"
+    },
+    {
+      "id": "q3",
+      "type": "mcq",
+      "prompt": "What condition characterizes the Euclidean residual from projection onto a nonzero direction u?",
+      "objective": 2,
+      "options": [
+        "Residual dot u equals 0",
+        "Every residual coordinate must be positive",
+        "The projection coefficient is always 1",
+        "The residual must equal u"
+      ],
+      "answerIndex": 0,
+      "explanation": "The projected point lies on the line and the remaining error is orthogonal to its direction. (This eliminates the cross-term and gives the minimum-distance proof.)"
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "Why does the line-projection helper reject direction 0?",
+      "objective": 0,
+      "options": [
+        "Zero vectors cannot occur in any mathematical model",
+        "Every projection needs a positive-coordinate vector",
+        "The projection coefficient must have a negative denominator",
+        "The denominator u dot u is 0 and no line direction is defined"
+      ],
+      "answerIndex": 3,
+      "explanation": "The nonzero-direction condition is part of both the proof and the function contract. (A separate zero-subspace projection is a different interface.)"
+    },
+    {
+      "id": "q5",
+      "type": "numeric",
+      "prompt": "What is the squared Euclidean norm of (-3,4)?",
+      "objective": 1,
+      "answer": 25,
+      "tolerance": 0.000001,
+      "explanation": "(-3)²+4²=9+16=25. Its Euclidean length is 5, a different quantity with different squared units."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "What core invariant governs Vectors, norms and projections?",
+      "back": "The three norms use distinct definitions. State which one measures the reported error or size. (Sum magnitudes 7, square-root of 25 is 5, maximum magnitude 4.)"
+    },
+    {
+      "type": "definition",
+      "front": "In Vectors, norms and projections, how do you verify: Derive and compute projection onto a nonzero line, checking orthogonal residuals and the Euclidean minimum-distance property.?",
+      "back": "The mathematical vector representation is only useful if coordinate semantics are aligned. (Correct arithmetic on misaligned meanings can still be wrong.)"
+    },
+    {
+      "type": "error-identification",
+      "front": "What failure mode happens if the contract in Vectors, norms and projections is violated?",
+      "back": "The projected point lies on the line and the remaining error is orthogonal to its direction. (This eliminates the cross-term and gives the minimum-distance proof.)"
+    }
+  ],
+  "references": [
+    {
+      "label": "MIT dot product",
+      "url": "https://ocw.mit.edu/ans7870/18/18.013a/textbook/HTML/chapter03/section03.html"
+    },
+    {
+      "label": "MIT projection derivation",
+      "url": "https://ocw.mit.edu/courses/18-06sc-linear-algebra-fall-2011/00e9c8f0eafedeab21a3d079a17ed3d8_MIT18_06SCF11_Ses2.2sum.pdf"
+    },
+    {
+      "label": "NumPy norm conventions",
+      "url": "https://numpy.org/doc/stable/reference/generated/numpy.linalg.norm.html"
+    },
+    {
+      "label": "binary exponentiation, associativity and matrix applications",
+      "url": "https://cp-algorithms.com/algebra/binary-exp.html"
+    }
+  ],
+  "skills": [
+    "linear-algebra",
+    "numerical-analysis",
+    "optimization"
+  ]
+}

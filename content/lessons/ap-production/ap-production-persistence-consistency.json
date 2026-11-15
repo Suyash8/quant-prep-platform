@@ -1,0 +1,222 @@
+{
+  "id": "ap-production-persistence-consistency",
+  "moduleId": "ap-production",
+  "title": "Transactions, consistency and idempotency",
+  "estMinutes": 22,
+  "difficulty": "specialist",
+  "prereqs": [
+    "ap-production-service-interfaces"
+  ],
+  "objectives": [
+    "Atomically couple a guarded synthetic inventory update and idempotency response record in an actual SQLite MEMORY SQL transaction with explicit rollback/commit checks.",
+    "Resolve duplicate same-command, conflicting-key and lost-acknowledgment retries without equating single-connection transaction tests to durable multi-system exactly-once effects.",
+    "Apply transactions, consistency and idempotency invariants safely and identify scope boundaries."
+  ],
+  "motivation": "A business mutation and its deduplication/response record must agree. If inventory is reduced but no record survives, a retry may reduce it twice.",
+  "blocks": [
+    {
+      "type": "p",
+      "md": "A business mutation and its deduplication/response record must agree. If inventory is reduced but no record survives, a retry may reduce it twice. If a success record exists without the inventory effect, the service reports a false commit. This example uses actual SQL BEGIN/COMMIT/ROLLBACK in SQLite :memory:, one sequential trusted connection, synthetic units only. It has no real purchasing, orders, network, tenant authentication or file persistence."
+    },
+    {
+      "type": "p",
+      "md": "Within this one toy scope, request_id names one operation for the database lifetime. Same key with same normalized sku/quantity returns the stored response without another decrement. Same key with different business fields is a conflict, not a new operation. Trace metadata may differ. Real keys must be scoped to authenticated principal/operation and have documented retention/expiry; reusing a key after deleting its record can repeat an effect. This demo has no expiry/tenant model."
+    },
+    {
+      "type": "steps",
+      "title": "Rollback versus committed-but-unacknowledged",
+      "items": [
+        "A stock 10, request r1 reserves 3. Inject after stock UPDATE before response INSERT: rollback restores 10 and no request record, so retry may safely perform the operation under this store protocol.",
+        "Successful r1 commits stock 7 and its stored response together. Replay r1/A/3 returns that response with stock still 7; replay r1/A/2 raises conflict and leaves stock unchanged.",
+        "r2 reserves 2 then COMMITs, but the acknowledgment is lost. Stock is now 5 and r2 response exists. Retrying r2 must return stored quantity 2, not decrement again. Exception/timeout is not evidence that the write did not happen."
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "def decode_reservation(payload):\n    # OWN v1synthetic inventory units,not money or a live account.\n    required={\"schema\",\"request_id\",\"sku\",\"quantity\"}\n    if type(payload) is not dict or not required<=set(payload) or not set(payload)<=required|{\"trace_id\"}:\n        raise ValueError(\"unsupported request fields\")\n    if type(payload[\"schema\"]) is not int or payload[\"schema\"]!=1:raise ValueError(\"unsupported request schema\")\n    def identifier(value):\n        return type(value) is str and 1<=len(value)<=32 and all(c in \"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-\" for c in value)\n    if not identifier(payload[\"request_id\"]):raise ValueError(\"invalid request id\")\n    if \"trace_id\" in payload and not identifier(payload[\"trace_id\"]):raise ValueError(\"invalid trace id\")\n    if type(payload[\"sku\"]) is not str or payload[\"sku\"] not in (\"A\",\"B\"):raise ValueError(\"unsupported sku\")\n    if type(payload[\"quantity\"]) is not int or not 1<=payload[\"quantity\"]<=10:raise ValueError(\"invalid reservation quantity\")\n    return (1,payload[\"request_id\"],payload[\"sku\"],payload[\"quantity\"])\n\nimport json,sqlite3\n\ndef new_store():\n    db=sqlite3.connect(\":memory:\",autocommit=sqlite3.LEGACY_TRANSACTION_CONTROL,isolation_level=None)\n    db.execute(\"CREATE TABLE inventory(sku TEXT PRIMARY KEY,units INTEGER NOT NULL CHECK(units>=0))\")\n    db.execute(\"CREATE TABLE requests(id TEXT PRIMARY KEY,sku TEXT NOT NULL,quantity INTEGER NOT NULL,response TEXT NOT NULL)\")\n    db.executemany(\"INSERT INTO inventory VALUES(?,?)\",[(\"A\",10),(\"B\",5)])\n    return db\n\ndef reserve(db,payload,failpoint=None):\n    _,request_id,sku,quantity=decode_reservation(payload)\n    if failpoint not in (None,\"after-stock\",\"after-response\",\"after-commit\"):raise ValueError(\"invalid failpoint\")\n    db.execute(\"BEGIN\")\n    try:\n        cached=db.execute(\"SELECT sku,quantity,response FROM requests WHERE id=?\",(request_id,)).fetchone()\n        if cached is not None:\n            if cached[:2]!=(sku,quantity):raise ValueError(\"idempotency key conflict\")\n            response=json.loads(cached[2]);db.execute(\"COMMIT\");return response\n        changed=db.execute(\"UPDATE inventory SET units=units-? WHERE sku=? AND units>=?\",(quantity,sku,quantity)).rowcount\n        if changed!=1:raise ValueError(\"insufficient synthetic inventory\")\n        if failpoint==\"after-stock\":raise RuntimeError(\"injected after stock\")\n        response={\"schema\":1,\"request_id\":request_id,\"status\":\"reserved\",\"sku\":sku,\"quantity\":quantity}\n        raw=json.dumps(response,sort_keys=True,separators=(\",\",\":\"))\n        db.execute(\"INSERT INTO requests VALUES(?,?,?,?)\",(request_id,sku,quantity,raw))\n        if failpoint==\"after-response\":raise RuntimeError(\"injected after response\")\n        db.execute(\"COMMIT\")\n        if failpoint==\"after-commit\":raise RuntimeError(\"injected lost acknowledgment\")\n        return response\n    except Exception:\n        if db.in_transaction:db.execute(\"ROLLBACK\")\n        raise\n\ndef state(db):\n    return tuple(db.execute(\"SELECT sku,units FROM inventory ORDER BY sku\")),tuple(db.execute(\"SELECT id,sku,quantity FROM requests ORDER BY id\"))\n\nrequest={\"schema\":1,\"request_id\":\"r1\",\"sku\":\"A\",\"quantity\":3}\ndb=new_store()\ntry:\n    before=state(db)\n    try:reserve(db,request,\"after-stock\")\n    except RuntimeError as error:print(error)\n    print(\"rollback\",state(db)==before)\n    first=reserve(db,request)\n    print(first[\"status\"],state(db)[0])\n    print(\"replay\",reserve(db,{**request,\"trace_id\":\"retry\"})==first,state(db)[0])\n    try:reserve(db,{**request,\"quantity\":2})\n    except ValueError as error:print(error)\n    r2={**request,\"request_id\":\"r2\",\"quantity\":2}\n    try:reserve(db,r2,\"after-commit\")\n    except RuntimeError as error:print(error)\n    print(\"recover\",reserve(db,r2)[\"quantity\"],state(db))\nfinally:db.close()",
+      "caption": "Expected injected after stock; rollback True; reserved A7B5; replay True A7B5; idempotency key conflict; injected lost acknowledgment; recover 2 with stock A5B5 and request records r1/A/3,r2/A/2. Complete source explicitly pins Python 3.12 legacy transaction-control mode with isolation_level None and uses SQL transaction statements. sqlite3 MEMORY app support unverified, runnable=false. No disk/power-loss/multi-writer/network exactly-once claim."
+    },
+    {
+      "type": "p",
+      "md": "SQL UPDATE inventory SET units=units-quantity WHERE sku=? AND units>=quantity enforces nonnegative stock at the authoritative write. Check rowcount; zero means insufficient stock in this fixed known-SKU schema. CHECK(units>=0) adds a second database constraint. Parameter placeholders separate data from SQL syntax; never build mutation SQL by concatenating caller strings. Response INSERT and UPDATE are in the same transaction, so injected failures before commit roll back both."
+    },
+    {
+      "type": "p",
+      "md": "SQLite allows one writer at a time and documents journal/isolation behavior, with details depending on mode/shared-cache/read-uncommitted settings. This exercise tests a single in-memory connection sequentially, not interleaving workers, SQLITE_BUSY backoff, deadlocks, migrations or a remote database's isolation level. A Python lock or successful serial test does not prove distributed concurrency behavior. File durability/power-loss needs a real persisted database/configuration and crash testing, not this disposable memory store."
+    },
+    {
+      "type": "p",
+      "md": "MDN describes HTTP idempotence as same intended server effect for repeated identical requests; responses need not be identical. Our application contract additionally returns the stored success response on a matching retry. POST is not inherently guaranteed idempotent by HTTP; an application must implement its own semantics. This snippet implements no HTTP endpoint. Do not infer all retries everywhere are safe, or that a local transaction can atomically commit a remote broker/email/payment effect."
+    },
+    {
+      "type": "p",
+      "md": "After uncertain acknowledgment, query/retry using the SAME authorized operation identity and verify current state before considering a new key. Retry only transient/unknown outcomes according to the service's contract; malformed, unauthorized, conflict and insufficient-resource errors need different handling. This toy does not cache failed insufficient-stock attempts, so that same key could later succeed if inventory is replenished by a future extension; document that choice rather than claiming every failed attempt is permanently deduplicated."
+    },
+    {
+      "type": "p",
+      "md": "Independent transfer: inject after stock and after response, and require identical prior inventory/records; inject after commit and verify one committed effect on replay. Generate many same-key repeats and conflicts, compare against an independent dictionary model and sum successful unique quantities against remaining stock. Test exhaustion and ensure rejected attempts leave no fake success record. Explain what must change for multiple tenants, writers, expiry, persisted power-loss recovery or external side effects."
+    },
+    {
+      "type": "p",
+      "md": "Sources: [Python 3.12 sqlite3 transaction-control modes](https://docs.python.org/3.12/library/sqlite3.html), [SQLite explicit transaction semantics](https://sqlite.org/lang_transaction.html), [SQLite isolation/mode caveats](https://sqlite.org/isolation.html), [MDN idempotent effect/response distinction](https://developer.mozilla.org/en-US/docs/Glossary/Idempotent). Our request-key/response retention design is application-specific, not a claim that any protocol gives global exactly-once delivery."
+    },
+    {
+      "type": "ref",
+      "items": [
+        {
+          "label": "Python 3.12 sqlite3 transaction-control modes",
+          "url": "https://docs.python.org/3.12/library/sqlite3.html"
+        },
+        {
+          "label": "SQLite explicit transaction semantics",
+          "url": "https://sqlite.org/lang_transaction.html"
+        },
+        {
+          "label": "SQLite isolation/mode caveats",
+          "url": "https://sqlite.org/isolation.html"
+        },
+        {
+          "label": "MDN idempotent effect/response distinction",
+          "url": "https://developer.mozilla.org/en-US/docs/Glossary/Idempotent"
+        }
+      ]
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Why does a request key plus a SQL transaction not prove globally exactly-once effects?",
+    "hints": [
+      "Names key semantic/scope/expiry conditions.",
+      "Separates local memory transaction from durability/concurrency.",
+      "Keeps external side effects/authority outside proof."
+    ],
+    "solution": "Need semantic payload/scope/retention and current state under uncertain outcomes; single connection/MEMORY not concurrency/crash durability. External systems do not share this transaction, so side effects can duplicate or diverge without a supported coordination/outbox/reconciliation protocol. Authority and business limits remain separate."
+  },
+  "independentExercise": {
+    "prompt": "Write a small test case that deliberately breaks the contract boundary in \"Transactions, consistency and idempotency\" and verify how your implementation rejects or handles it.",
+    "hints": [
+      "Test zero, negative, empty, duplicate, and boundary values.",
+      "Confirm both time/memory complexity and numerical precision remain within spec."
+    ],
+    "solution": "def decode_reservation(payload):\n    # OWN v1synthetic inventory units,not money or a live account.\n    required={\"schema\",\"request_id\",\"sku\",\"quantity\"}\n    if type(payload) is not dict or not required<=set(payload) or not set(payload)<=required|{\"trace_id\"}:\n        raise ValueError(\"unsupported request fields\")\n    if type(payload[\"schema\"]) is not int or payload[\"schema\"]!=1:raise ValueError(\"unsupported request schema\")\n    def identifier(value):\n        return type(value) is str and 1<=len(value)<=32 and all(c in \"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-\" for c in value)\n    if not identifier(payload[\"request_id\"]):raise ValueError(\"invalid request id\")\n    if \"trace_id\" in payload and not identifier(payload[\"trace_id\"]):raise ValueError(\"invalid trace id\")\n    if type(payload[\"sku\"]) is not str or payload[\"sku\"] not in (\"A\",\"B\"):raise ValueError(\"unsupported sku\")\n    if type(payload[\"quantity\"]) is not int or not 1<=payload[\"quantity\"]<=10:raise ValueError(\"invalid reservation quantity\")\n    return (1,payload[\"request_id\"],payload[\"sku\"],payload[\"quantity\"])\n\nimport json,sqlite3\n\ndef new_store():\n    db=sqlite3.connect(\":memory:\",autocommit=sqlite3.LEGACY_TRANSACTION_CONTROL,isolation_level=None)\n    db.execute(\"CREATE TABLE inventory(sku TEXT PRIMARY KEY,units INTEGER NOT NULL CHECK(units>=0))\")\n    db.execute(\"CREATE TABLE requests(id TEXT PRIMARY KEY,sku TEXT NOT NULL,quantity INTEGER NOT NULL,response TEXT NOT NULL)\")\n    db.executemany(\"INSERT INTO inventory VALUES(?,?)\",[(\"A\",10),(\"B\",5)])\n    return db\n\ndef reserve(db,payload,failpoint=None):\n    _,request_id,sku,quantity=decode_reservation(payload)\n    if failpoint not in (None,\"after-stock\",\"after-response\",\"after-commit\"):raise ValueError(\"invalid failpoint\")\n    db.execute(\"BEGIN\")\n    try:\n        cached=db.execute(\"SELECT sku,quantity,response FROM requests WHERE id=?\",(request_id,)).fetchone()\n        if cached is not None:\n            if cached[:2]!=(sku,quantity):raise ValueError(\"idempotency key conflict\")\n            response=json.loads(cached[2]);db.execute(\"COMMIT\");return response\n        changed=db.execute(\"UPDATE inventory SET units=units-? WHERE sku=? AND units>=?\",(quantity,sku,quantity)).rowcount\n        if changed!=1:raise ValueError(\"insufficient synthetic inventory\")\n        if failpoint==\"after-stock\":raise RuntimeError(\"injected after stock\")\n        response={\"schema\":1,\"request_id\":request_id,\"status\":\"reserved\",\"sku\":sku,\"quantity\":quantity}\n        raw=json.dumps(response,sort_keys=True,separators=(\",\",\":\"))\n        db.execute(\"INSERT INTO requests VALUES(?,?,?,?)\",(request_id,sku,quantity,raw))\n        if failpoint==\"after-response\":raise RuntimeError(\"injected after response\")\n        db.execute(\"COMMIT\")\n        if failpoint==\"after-commit\":raise RuntimeError(\"injected lost acknowledgment\")\n        return response\n    except Exception:\n        if db.in_transaction:db.execute(\"ROLLBACK\")\n        raise\n\ndef state(db):\n    return tuple(db.execute(\"SELECT sku,units FROM inventory ORDER BY sku\")),tuple(db.execute(\"SELECT id,sku,quantity FROM requests ORDER BY id\"))\n\nrequest={\"schema\":1,\"request_id\":\"r1\",\"sku\":\"A\",\"quantity\":3}\ndb=new_store()\ntry:\n    before=state(db)\n    try:reserve(db,request,\"after-stock\")\n    except RuntimeError as error:print(error)\n    print(\"rollback\",state(db)==before)\n    first=reserve(db,request)\n    print(first[\"status\"],state(db)[0])\n    print(\"replay\",reserve(db,{**request,\"trace_id\":\"retry\"})==first,state(db)[0])\n    try:reserve(db,{**request,\"quantity\":2})\n    except ValueError as error:print(error)\n    r2={**request,\"request_id\":\"r2\",\"quantity\":2}\n    try:reserve(db,r2,\"after-commit\")\n    except RuntimeError as error:print(error)\n    print(\"recover\",reserve(db,r2)[\"quantity\"],state(db))\nfinally:db.close()"
+  },
+  "commonMistakes": [
+    "The stored response must match the actual effect. (They describe one business outcome.)",
+    "Compare semantic payload, not key existence alone. (The original business command is bound to the key.)",
+    "Replay reuses the stored response and does not decrement again."
+  ],
+  "realWorldApplication": "Used directly across production quantitative research, execution systems, and validation pipelines.",
+  "quantFinanceApplication": "Applies rigorous engineering contracts to quantitative modeling and live trading infrastructure.",
+  "summary": [
+    "Commit guarded inventory and idempotency response together.",
+    "Matching retries reuse, conflicting reuse fails, and lost acknowledgment requires current commit-state recovery.",
+    "These actual memory-SQL transaction tests are not file durability, multi-writer readiness or exactly-once external effects."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "What must commit atomically in this example?",
+      "objective": 0,
+      "options": [
+        "Only the success label",
+        "Inventory plus retry response",
+        "Only a log message",
+        "Every remote service globally"
+      ],
+      "answerIndex": 1,
+      "explanation": "The stored response must match the actual effect. (They describe one business outcome.)"
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "Same r1 key is reused with a different quantity. What happens?",
+      "objective": 1,
+      "options": [
+        "New decrement under old identity",
+        "Silently return success for changed request",
+        "Conflict, no new effect",
+        "Return the original response without comparing the changed business fields"
+      ],
+      "answerIndex": 2,
+      "explanation": "Compare semantic payload, not key existence alone. (The original business command is bound to the key.)"
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "A stock 10, reserve 3 once, then same-command replay. Remaining A units?",
+      "objective": 2,
+      "answer": 7,
+      "tolerance": 0.000001,
+      "explanation": "Replay reuses the stored response and does not decrement again."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "A timeout occurs after commit. What is justified?",
+      "objective": 0,
+      "options": [
+        "Inspect/retry same identity under contract",
+        "Use a new key immediately",
+        "Assume rollback occurred",
+        "Resubmit every external action blindly"
+      ],
+      "answerIndex": 0,
+      "explanation": "Unknown acknowledgment and failed commit differ. (The effect may already exist.)"
+    },
+    {
+      "id": "q5",
+      "type": "mcq",
+      "prompt": "What does the MEMORY single-connection exercise not establish?",
+      "objective": 1,
+      "options": [
+        "Rollback of injected precommit exceptions",
+        "Matching duplicate no second decrement",
+        "Guarded nonnegative inventory",
+        "Power-loss and multi-writer readiness"
+      ],
+      "answerIndex": 3,
+      "explanation": "Keep evidence scope attached to transaction claims. (Those environments/protocols are not exercised.)"
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "What core invariant governs Transactions, consistency and idempotency?",
+      "back": "The stored response must match the actual effect. (They describe one business outcome.)"
+    },
+    {
+      "type": "definition",
+      "front": "In Transactions, consistency and idempotency, how do you verify: Resolve duplicate same-command, conflicting-key and lost-acknowledgment retries without equating single-connection transaction tests to durable multi-system exactly-once effects.?",
+      "back": "Compare semantic payload, not key existence alone. (The original business command is bound to the key.)"
+    },
+    {
+      "type": "error-identification",
+      "front": "What failure mode happens if the contract in Transactions, consistency and idempotency is violated?",
+      "back": "Replay reuses the stored response and does not decrement again."
+    }
+  ],
+  "references": [
+    {
+      "label": "Python 3.12 sqlite3 transaction-control modes",
+      "url": "https://docs.python.org/3.12/library/sqlite3.html"
+    },
+    {
+      "label": "SQLite explicit transaction semantics",
+      "url": "https://sqlite.org/lang_transaction.html"
+    },
+    {
+      "label": "SQLite isolation/mode caveats",
+      "url": "https://sqlite.org/isolation.html"
+    },
+    {
+      "label": "MDN idempotent effect/response distinction",
+      "url": "https://developer.mozilla.org/en-US/docs/Glossary/Idempotent"
+    }
+  ],
+  "skills": [
+    "production-engineering",
+    "distributed-systems",
+    "software-engineering"
+  ]
+}

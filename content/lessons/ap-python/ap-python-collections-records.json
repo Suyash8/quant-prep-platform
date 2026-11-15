@@ -1,0 +1,192 @@
+{
+  "id": "ap-python-collections-records",
+  "moduleId": "ap-python",
+  "title": "Collections and trade records",
+  "estMinutes": 18,
+  "difficulty": "core",
+  "prereqs": [
+    "ap-python-functions-contracts"
+  ],
+  "objectives": [
+    "Read named trade fields and distinguish absent data from a valid zero.",
+    "Choose a sequence or keyed map while preserving duplicates and declaring mutation.",
+    "Apply collections and trade records invariants safely and identify scope boundaries."
+  ],
+  "motivation": "A trade record needs named fields, not an unexplained row of numbers. This lesson uses dictionaries with keys trade_id, price_cents and quantity_shares.",
+  "blocks": [
+    {
+      "type": "p",
+      "md": "A trade record needs named fields, not an unexplained row of numbers. This lesson uses dictionaries with keys trade_id, price_cents and quantity_shares. Field names do not enforce types or financial validity; they make the interface readable so later validation can check it."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "trade = {\"trade_id\": \"T1\", \"price_cents\": 1235, \"quantity_shares\": 4}\nprint(trade[\"price_cents\"] * trade[\"quantity_shares\"])\nprint(\"fee_cents\" in trade)\nprint(trade.get(\"fee_cents\"))",
+      "caption": "Expected output: 4940, False, None. Missing fee data is not the same as a known fee of zero."
+    },
+    {
+      "type": "p",
+      "md": "Direct indexing trade[\"fee_cents\"] raises KeyError when the key is absent. get returns a default, which is None when omitted. If None itself is a permitted stored value, get alone cannot distinguish missing from explicitly None; use membership or a sentinel. Do not write get(\"fee_cents\",0) unless missing fees are explicitly allowed to mean zero."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "trades = [{\"trade_id\": \"T1\", \"quantity_shares\": 3},\n          {\"trade_id\": \"T1\", \"quantity_shares\": 5}]\nby_id = {trade[\"trade_id\"]: trade for trade in trades}\nprint(len(trades))\nprint(len(by_id))\nprint(by_id[\"T1\"][\"quantity_shares\"])",
+      "caption": "Expected output: 2, 1, 5. A dictionary keeps one value per key, so this construction silently overwrites the earlier T1."
+    },
+    {
+      "type": "p",
+      "md": "Use a list when order and repeated records matter. A dictionary is useful for keyed lookup only after defining duplicate handling. A set removes duplicate values and does not retain multiplicities. Choosing a container is a correctness decision, not only a speed preference. A replay log and a current-state lookup can need different representations of the same events."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "original = {\"trade_id\": \"T1\", \"tags\": [\"raw\"]}\ncopy = original.copy()\ncopy[\"trade_id\"] = \"T2\"\ncopy[\"tags\"].append(\"checked\")\nprint(original[\"trade_id\"])\nprint(original[\"tags\"])",
+      "caption": "Expected output: T1, then ['raw', 'checked']. copy() makes a shallow dictionary copy; the nested list is still shared."
+    },
+    {
+      "type": "callout",
+      "variant": "warn",
+      "title": "Boundary condition",
+      "md": "Copying an outer container is not automatically an independent deep copy. Decide whether a function returns a new record or mutates the supplied one, and test nested fields if they exist. Immutable field policies or explicit deep copying can be appropriate, but neither should be assumed from the word copy."
+    },
+    {
+      "type": "p",
+      "md": "Independent transfer: given a list of records, build a dictionary by trade_id but raise ValueError on a duplicate ID instead of overwriting. Inputs are already valid dictionaries with string IDs for this task. Check [] -> {}, one record retained, and two records with ID T1 rejected. Preserve the input list and record objects unchanged.\n\nTechnical references: [Python data structures tutorial](https://docs.python.org/3/tutorial/datastructures.html) for lists, dictionaries, keys and sets. The financial schemas, policies and synthetic cases in this lesson are declared teaching contracts, not claims about a particular venue or employer."
+    },
+    {
+      "type": "ref",
+      "items": [
+        {
+          "label": "Python data structures tutorial",
+          "url": "https://docs.python.org/3/tutorial/datastructures.html"
+        }
+      ]
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Why might an append-only replay log and a current-state lookup use different containers?",
+    "hints": [
+      "Names event order/multiplicity.",
+      "Names one-value-per-key state.",
+      "States a duplicate/replacement policy."
+    ],
+    "solution": "The replay log preserves ordered events and multiplicity, while a keyed current-state map represents one current value per identity. Explicitly define replay order, duplicates and replacement."
+  },
+  "independentExercise": {
+    "prompt": "Write a small test case that deliberately breaks the contract boundary in \"Collections and trade records\" and verify how your implementation rejects or handles it.",
+    "hints": [
+      "Test zero, negative, empty, duplicate, and boundary values.",
+      "Confirm both time/memory complexity and numerical precision remain within spec."
+    ],
+    "solution": "trades = [{\"trade_id\": \"T1\", \"quantity_shares\": 3},\n          {\"trade_id\": \"T1\", \"quantity_shares\": 5}]\nby_id = {trade[\"trade_id\"]: trade for trade in trades}\nprint(len(trades))\nprint(len(by_id))\nprint(by_id[\"T1\"][\"quantity_shares\"])"
+  },
+  "commonMistakes": [
+    "The missing-key default is None. It signals that no fee value was retrieved; it does not establish a financial zero. (get uses None as its omitted default.)",
+    "A key maps to one value. A duplicate-detection or grouping policy must be implemented explicitly before the earlier record is lost. (Later assignment replaces the earlier value.)",
+    "The unique keys are T1 and T2, so the dictionary has 2 entries. This count does not mean all 3 events were preserved."
+  ],
+  "realWorldApplication": "Used directly across production quantitative research, execution systems, and validation pipelines.",
+  "quantFinanceApplication": "Applies rigorous engineering contracts to quantitative modeling and live trading infrastructure.",
+  "summary": [
+    "Named fields clarify a record contract.",
+    "Missing is not automatically zero.",
+    "Lists preserve event multiplicity; keyed maps need a duplicate policy.",
+    "Shallow copies can share nested state."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "A trade dictionary has no fee_cents key. What does trade.get(\"fee_cents\") return?",
+      "objective": 0,
+      "options": [
+        "The known financial fee value zero",
+        "None, unless a different default was supplied",
+        "KeyError, exactly like direct indexing",
+        "The string fee_cents, as a field placeholder"
+      ],
+      "answerIndex": 1,
+      "explanation": "The missing-key default is None. It signals that no fee value was retrieved; it does not establish a financial zero. (get uses None as its omitted default.)"
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "Two records share ID T1. What does a dictionary comprehension keyed only by trade_id do?",
+      "objective": 1,
+      "options": [
+        "It preserves both values under the same scalar key",
+        "It rejects duplicates without an explicit check",
+        "It converts the records into a nested list automatically",
+        "It keeps the later assigned value for that key"
+      ],
+      "answerIndex": 3,
+      "explanation": "A key maps to one value. A duplicate-detection or grouping policy must be implemented explicitly before the earlier record is lost. (Later assignment replaces the earlier value.)"
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "A list contains 3 records with IDs T1, T2, T1. How many distinct keys are in a dictionary built only by those IDs?",
+      "objective": 2,
+      "answer": 2,
+      "tolerance": 0.000001,
+      "explanation": "The unique keys are T1 and T2, so the dictionary has 2 entries. This count does not mean all 3 events were preserved."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "After shallow=original.copy(), both dictionaries reference the same nested tags list. What does appending through shallow do?",
+      "objective": 0,
+      "options": [
+        "It can only change a new fully independent nested list",
+        "It always raises because copied dictionaries are immutable",
+        "It changes the shared list visible through both records",
+        "It replaces every key in the original dictionary"
+      ],
+      "answerIndex": 2,
+      "explanation": "An outer copy duplicates the mapping but preserves references to nested objects. Test mutation at the level where shared state exists. (Both outer dictionaries hold a reference to the same list.)"
+    },
+    {
+      "id": "q5",
+      "type": "mcq",
+      "prompt": "Which check distinguishes an absent key from a key explicitly storing None?",
+      "objective": 1,
+      "options": [
+        "Use \"fee_cents\" in trade to test membership",
+        "Use trade.get(\"fee_cents\") is None alone",
+        "Replace every None with the integer zero",
+        "Convert the whole dictionary to an unordered set"
+      ],
+      "answerIndex": 0,
+      "explanation": "Membership checks whether a key exists. Retrieving None alone cannot distinguish absent from present-with-None when both are allowed. (Membership checks key presence independently of its value.)"
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "What core invariant governs Collections and trade records?",
+      "back": "The missing-key default is None. It signals that no fee value was retrieved; it does not establish a financial zero. (get uses None as its omitted default.)"
+    },
+    {
+      "type": "definition",
+      "front": "In Collections and trade records, how do you verify: Choose a sequence or keyed map while preserving duplicates and declaring mutation.?",
+      "back": "A key maps to one value. A duplicate-detection or grouping policy must be implemented explicitly before the earlier record is lost. (Later assignment replaces the earlier value.)"
+    },
+    {
+      "type": "error-identification",
+      "front": "What failure mode happens if the contract in Collections and trade records is violated?",
+      "back": "The unique keys are T1 and T2, so the dictionary has 2 entries. This count does not mean all 3 events were preserved."
+    }
+  ],
+  "references": [
+    {
+      "label": "Python data structures tutorial",
+      "url": "https://docs.python.org/3/tutorial/datastructures.html"
+    }
+  ],
+  "skills": [
+    "python",
+    "programming-fundamentals",
+    "software-engineering"
+  ]
+}

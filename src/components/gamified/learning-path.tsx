@@ -504,8 +504,38 @@ function ModuleTrail({
   );
 }
 
-const TRACK_WIDTH = 380;
-const PITCH = 130;
+const TRACK_WIDTH = 400;
+const PITCH = 192;
+
+/** Compute Catmull-Rom cubic Bézier segment from points[i] to points[i+1]. */
+function segmentCurve(points: { cx: number; cy: number }[], i: number): string {
+  const p0 = points[i - 1] ?? {
+    cx: points[0].cx - (points[1].cx - points[0].cx),
+    cy: points[0].cy - (points[1].cy - points[0].cy),
+  };
+  const p1 = points[i];
+  const p2 = points[i + 1];
+  const p3 = points[i + 2] ?? {
+    cx: p2.cx + (p2.cx - p1.cx),
+    cy: p2.cy + (p2.cy - p1.cy),
+  };
+  const c1x = p1.cx + (p2.cx - p0.cx) / 6;
+  const c1y = p1.cy + (p2.cy - p0.cy) / 6;
+  const c2x = p2.cx - (p3.cx - p1.cx) / 6;
+  const c2y = p2.cy - (p3.cy - p1.cy) / 6;
+  return `C ${c1x.toFixed(1)} ${c1y.toFixed(1)}, ${c2x.toFixed(1)} ${c2y.toFixed(1)}, ${p2.cx.toFixed(1)} ${p2.cy.toFixed(1)}`;
+}
+
+/** Build a smooth C^1 continuous Catmull-Rom cubic Bezier SVG path through points. */
+function buildContinuousSpline(points: { cx: number; cy: number }[], endIdx = points.length - 1): string {
+  if (points.length === 0 || endIdx <= 0) return '';
+  const limit = Math.min(endIdx, points.length - 1);
+  let d = `M ${points[0].cx.toFixed(1)} ${points[0].cy.toFixed(1)}`;
+  for (let i = 0; i < limit; i++) {
+    d += ` ${segmentCurve(points, i)}`;
+  }
+  return d;
+}
 
 function Trail({
   mod, graph, progress, passed, phaseColor, currentLessonId,
@@ -527,15 +557,31 @@ function Trail({
     return () => window.removeEventListener('keydown', handleKey);
   }, []);
 
-  const totalHeight = mod.lessons.length * PITCH + 60;
+  const totalHeight = Math.max(200, (mod.lessons.length - 1) * PITCH + 195);
   const coords = mod.lessons.map((_, i) => ({
-    cx: TRACK_WIDTH / 2 + 95 * Math.sin(i * 0.9),
-    cy: 65 + i * PITCH,
+    cx: TRACK_WIDTH / 2 + 56 * Math.sin(i * 0.85),
+    cy: 72 + i * PITCH,
   }));
+
+  const fullPathD = buildContinuousSpline(coords);
+
+  let lastPassedIdx = -1;
+  for (let i = 0; i < mod.lessons.length; i++) {
+    if (passed.has(mod.lessons[i].id)) lastPassedIdx = i;
+  }
+  const passedPathD = lastPassedIdx > 0 ? buildContinuousSpline(coords, lastPassedIdx) : '';
+  const frontierIdx = lastPassedIdx + 1;
+  const hasActiveFrontier =
+    frontierIdx > 0 &&
+    frontierIdx < mod.lessons.length &&
+    isUnlockedInGraph(graph, mod.lessons[frontierIdx].id, passed);
+  const frontierSegmentD = hasActiveFrontier
+    ? `M ${coords[lastPassedIdx].cx.toFixed(1)} ${coords[lastPassedIdx].cy.toFixed(1)} ${segmentCurve(coords, lastPassedIdx)}`
+    : '';
 
   return (
     <div
-      className="relative w-full max-w-[380px] mx-auto select-none overflow-visible"
+      className="relative w-full max-w-[400px] mx-auto select-none overflow-visible"
       style={{ height: totalHeight }}
       onClick={(e) => {
         if (!(e.target as HTMLElement).closest('.path-node-wrapper')) {
@@ -543,7 +589,7 @@ function Trail({
         }
       }}
     >
-      {/* Background SVG connecting spline trail */}
+      {/* Background SVG continuous spline trail */}
       <svg
         className="absolute inset-0 w-full h-full pointer-events-none overflow-visible"
         viewBox={`0 0 ${TRACK_WIDTH} ${totalHeight}`}
@@ -554,59 +600,53 @@ function Trail({
           </filter>
         </defs>
 
-        {/* Path segments */}
-        {mod.lessons.map((lesson, i) => {
-          if (i === mod.lessons.length - 1) return null;
-          const p1 = coords[i];
-          const p2 = coords[i + 1];
-          const dy = p2.cy - p1.cy;
-          const d = `M ${p1.cx} ${p1.cy} C ${p1.cx} ${p1.cy + dy * 0.5}, ${p2.cx} ${p2.cy - dy * 0.5}, ${p2.cx} ${p2.cy}`;
-          const isPassed = passed.has(lesson.id);
-          const nextUnlocked = isUnlockedInGraph(graph, mod.lessons[i + 1].id, passed);
-
-          return (
-            <g key={`track-${lesson.id}`}>
-              {/* Outer track groove */}
+        {coords.length > 1 && (
+          <g>
+            {/* Outer soft track groove */}
+            <path
+              d={fullPathD}
+              stroke="var(--border)"
+              strokeWidth="14"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              fill="none"
+              opacity="0.45"
+            />
+            {/* Continuous inner channel */}
+            <path
+              d={fullPathD}
+              stroke="var(--surface-3)"
+              strokeWidth="8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              fill="none"
+            />
+            {/* Continuous completed trail */}
+            {passedPathD && (
               <path
-                d={d}
-                stroke="var(--border)"
-                strokeWidth="16"
+                d={passedPathD}
+                stroke={phaseColor}
+                strokeWidth="8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                fill="none"
+                filter={`url(#glow-${mod.id})`}
+              />
+            )}
+            {/* Subtle dashed lead to the next unlocked frontier lesson */}
+            {frontierSegmentD && (
+              <path
+                d={frontierSegmentD}
+                stroke={phaseColor}
+                strokeWidth="5"
+                strokeDasharray="6 8"
                 strokeLinecap="round"
                 fill="none"
-                opacity="0.5"
+                opacity="0.75"
               />
-              {/* Inner track channel */}
-              <path
-                d={d}
-                stroke="var(--surface-3)"
-                strokeWidth="10"
-                strokeLinecap="round"
-                fill="none"
-              />
-              {/* Active / completed progress fill */}
-              {isPassed ? (
-                <path
-                  d={d}
-                  stroke={phaseColor}
-                  strokeWidth="10"
-                  strokeLinecap="round"
-                  fill="none"
-                  filter={`url(#glow-${mod.id})`}
-                />
-              ) : nextUnlocked ? (
-                <path
-                  d={d}
-                  stroke={phaseColor}
-                  strokeWidth="6"
-                  strokeDasharray="8 8"
-                  strokeLinecap="round"
-                  fill="none"
-                  opacity="0.8"
-                />
-              ) : null}
-            </g>
-          );
-        })}
+            )}
+          </g>
+        )}
       </svg>
 
       {/* Nodes layer */}
@@ -720,11 +760,11 @@ function PathNode({
         {inner}
       </button>
 
-      {/* Node Label underneath */}
-      <div className="absolute top-[44px] left-1/2 -translate-x-1/2 w-[160px] text-center pointer-events-none z-10 mt-1">
+      {/* Node Label clearly below node + shadow so circle and spline never collide */}
+      <div className="absolute top-[calc(100%+11px)] left-1/2 -translate-x-1/2 w-[176px] text-center pointer-events-none z-20 rounded-xl bg-surface/90 dark:bg-[#0f1622]/90 backdrop-blur-sm px-2.5 py-1 border border-border/50 shadow-sm">
         <p
           className={cn(
-            'text-[13px] font-extrabold leading-snug line-clamp-2',
+            'text-[12.5px] font-extrabold leading-snug line-clamp-2',
             unlocked ? 'text-foreground' : 'text-faint'
           )}
         >

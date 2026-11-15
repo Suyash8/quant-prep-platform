@@ -8,12 +8,29 @@ import { ThemeProvider } from '@/components/theme-provider';
 import { Toaster } from '@/components/ui/sonner';
 import { ServiceWorkerRegistrar } from '@/components/sw-registrar';
 
+const siteUrl = (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000').replace(/\/$/, '');
+
 export const metadata: Metadata = {
+  metadataBase: new URL(siteUrl),
   title: 'QuantFoundry. Zero to Quantitative Developer',
   description:
     'A rigorous, interactive learning platform that takes you from absolute zero to professional-level quantitative software engineering: mathematics, C++, Python, systems and finance.',
   applicationName: 'QuantFoundry',
   manifest: '/manifest.json',
+  openGraph: {
+    type: 'website',
+    siteName: 'QuantFoundry',
+    title: 'QuantFoundry — Zero to Quantitative Developer',
+    description:
+      'Prerequisite-sequenced lessons, interactive labs, judged C++ & Python problems, spaced repetition, and firm career tracks.',
+    url: siteUrl,
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'QuantFoundry — Zero to Quantitative Developer',
+    description:
+      '394 authored lessons, 78 judged problems, spaced retrieval, and timed firm assessments from first principles to quant engineering.',
+  },
   icons: {
     icon: [
       { url: '/icons/icon.svg', type: 'image/svg+xml' },

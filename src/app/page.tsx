@@ -1,6 +1,5 @@
-import { APP_VERSION } from '@/lib/version';
 import Link from 'next/link';
-import { PublicHeader } from '@/components/app-shell';
+import { PublicHeader, PublicFooter } from '@/components/app-shell';
 import { getCurrentUser } from '@/lib/auth';
 import { countLabs, getMap, getRegistry, listProblems, listProjects } from '@/lib/content';
 import { mathText } from '@/lib/math-text';
@@ -11,10 +10,10 @@ import {
   Accordion, AccordionContent, AccordionItem, AccordionTrigger,
 } from '@/components/ui/accordion';
 import {
-  ArrowRight, BookOpenCheck, BrainCircuit, CheckCircle2, ChevronDown, CloudOff, Code2,
-  Compass, Download, FileCode2, FlaskConical, GraduationCap, Landmark, Layers, LineChart,
-  Lock, ListChecks, Plane, ShieldCheck, Sigma, Swords, Timer, Trophy, Undo2, Zap, Flame,
-  WifiOff, Play, SquarePen, Gauge,
+  ArrowRight, BookOpenCheck, BrainCircuit, CheckCircle2, ChevronDown, Code2,
+  Compass, FileCode2, FlaskConical, GraduationCap, Landmark, Layers, LineChart,
+  Lock, ListChecks, ShieldCheck, Sigma, Swords, Timer, Trophy, Undo2, Zap, Flame,
+  Play, SquarePen, Gauge,
 } from 'lucide-react';
 
 const FAQ = [
@@ -23,8 +22,8 @@ const FAQ = [
     a: 'No. Phase 3 starts from "what is a variable", and Phase 1 repairs the school math most people half-remember. If you already code, the diagnostic skips you ahead instead of making you redo it.',
   },
   {
-    q: 'Does it work offline?', icon: Plane,
-    a: 'Yes. Lessons, labs and your progress state download to your device. You can study on a plane and everything syncs when you land.',
+    q: 'How is progress stored across devices?', icon: Layers,
+    a: 'Your lesson progress, knowledge checks, SM-2 spaced-repetition cards, and code submissions persist directly in your account database so you can pick up seamlessly from any browser.',
   },
   {
     q: 'Is my code really compiled and run?', icon: Play,
@@ -32,7 +31,7 @@ const FAQ = [
   },
   {
     q: 'How is progress scored?', icon: Gauge,
-    a: 'Quizzes grade locally and sync with server verification. A lesson needs 80 percent plus a completed exercise. "Mastered" only sticks if the spaced-repetition reviews keep passing.',
+    a: 'Quizzes grade with server verification. A lesson needs 80 percent plus a completed exercise. "Mastered" only sticks if your spaced-repetition reviews keep passing.',
   },
   {
     q: 'Can I skip ahead?', icon: Sigma,
@@ -40,7 +39,7 @@ const FAQ = [
   },
   {
     q: 'What does it cost?', icon: Landmark,
-    a: 'The site owner sets plan pricing, so we refuse to invent a number here. The lessons, labs, problems and the diagnostic you can start today are included while pricing is decided.',
+    a: 'Start free with Phase 0–1, the full diagnostic, sample coding problems, and spaced repetition. Upgrade to Pro ($29/mo or $259/yr) when you want unlimited judged C++/Python runs, all 11 phases, timed firm assessments, and capstone projects.',
   },
 ];
 
@@ -90,7 +89,7 @@ export default async function LandingPage() {
     { icon: Timer, tone: 'warning', title: 'Mental math drills', desc: 'Timed arithmetic practice with speed and accuracy tracking, so the easy stuff stops slowing you down later.', chip: '8 modes', chipIcon: Zap },
     { icon: Undo2, tone: 'info', title: 'Flashcards that come back', desc: 'Every lesson generates cards, scheduled by SM-2, the same algorithm Anki uses. Miss a quiz question and it joins the queue too.', chip: 'SM-2', chipIcon: Undo2 },
     { icon: FlaskConical, tone: 'violet', title: 'Interactive labs', desc: `${labCount} labs you drive with sliders and checkboxes: geometric Brownian motion, queues, cache behaviour, Black-Scholes.`, chip: 'In the browser', chipIcon: FlaskConical },
-    { icon: WifiOff, tone: 'danger', title: 'Works fully offline', desc: 'Download the packs once. Lessons, labs and quizzes all keep working with the network off, and sync when you reconnect.', chip: 'PWA', chipIcon: Plane },
+    { icon: FileCode2, tone: 'danger', title: 'Judged C++, Python & SQL IDE', desc: `Solve ${problems.length} interview-grade problems in a Monaco editor compiled against hidden test suites with strict CPU and memory limits.`, chip: `${problems.length} problems`, chipIcon: Code2 },
     { icon: LineChart, tone: 'gold', title: 'Honest analytics', desc: 'Every metric on your dashboard is computed from what you actually did. Unfinished topics say so. We would rather be boring than fake.', chip: 'No inflated numbers', chipIcon: ShieldCheck },
   ];
 
@@ -345,33 +344,31 @@ export default async function LandingPage() {
           </div>
         </section>
 
-        {/* 8. Offline / PWA band */}
+        {/* 8. Interactive IDE & Curriculum Scale band */}
         <section className="max-w-6xl mx-auto px-4 lg:px-6 py-16">
           <div className="qf-card p-6 lg:p-8 grid lg:grid-cols-[1fr_0.9fr] gap-8 items-center bg-dots">
             <div className="min-w-0">
-              <span className="icon-tile icon-tile-info"><Plane aria-hidden /></span>
-              <h2 className="mt-4 text-2xl font-black tracking-tight">Download once, study on a plane.</h2>
+              <span className="icon-tile icon-tile-info"><Code2 aria-hidden /></span>
+              <h2 className="mt-4 text-2xl font-black tracking-tight">One cohesive library, tested in the browser.</h2>
               <p className="mt-2 text-muted font-semibold max-w-md">
-                Lessons, labs and quizzes ship as content packs to your device. Your progress state lives locally and syncs when you are back online, with idempotent events so nothing double-counts.
+                {publishedLessons} prerequisite-ordered lessons, {labCount} interactive labs, {problems.length} judged coding problems, and {projects.length} capstone engineering builds inside one continuous track.
               </p>
-              <div className="mt-4 flex flex-wrap gap-1.5">
-                <span className="chip chip-info"><WifiOff className="h-3.5 w-3.5" aria-hidden /> Offline quizzes</span>
-                <span className="chip"><Download className="h-3.5 w-3.5" aria-hidden /> One tap download</span>
-                <span className="chip"><Sigma className="h-3.5 w-3.5" aria-hidden /> PWA installable</span>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Link href="/curriculum" className="btn3d btn3d-sm">Explore path <ArrowRight className="h-4 w-4" /></Link>
+                <Link href="/pricing" className="btn3d btn3d-ghost btn3d-sm">View plans &amp; pricing</Link>
               </div>
             </div>
-            <div className="qf-card-flat p-4 bg-surface" aria-hidden>
+            <div className="qf-card-flat p-5 bg-surface">
               <div className="flex items-center gap-3">
-                <span className="icon-tile-sm icon-tile-accent"><Download /></span>
-                <p className="text-[15px] font-black flex-1">Downloading content packs</p>
-                <span className="chip chip-warning">Illustration</span>
+                <span className="icon-tile-sm icon-tile-accent"><Play /></span>
+                <p className="text-[15px] font-black flex-1">Platform scope at a glance</p>
+                <span className="chip chip-accent">{phases.length} phases</span>
               </div>
-              <div className="mt-3 prog-track h-3"><span className="prog-fill" style={{ width: '100%' }} /></div>
-              <div className="mt-3 grid grid-cols-2 gap-2 text-[13px] font-bold text-muted">
-                <span className="flex items-center gap-1.5"><CheckCircle2 className="h-3.5 w-3.5 text-accent-deep dark:text-accent" /> {publishedLessons} lessons</span>
-                <span className="flex items-center gap-1.5"><CheckCircle2 className="h-3.5 w-3.5 text-accent-deep dark:text-accent" /> {labCount} labs</span>
-                <span className="flex items-center gap-1.5"><Layers className="h-3.5 w-3.5" /> packs v3</span>
-                <span className="flex items-center gap-1.5">Sizes shown in Settings</span>
+              <div className="mt-4 grid grid-cols-2 gap-2.5 text-[14px] font-bold text-muted">
+                <span className="flex items-center gap-2 rounded-xl bg-surface-2 px-3 py-2.5"><CheckCircle2 className="h-4 w-4 text-accent-deep dark:text-accent shrink-0" /> {publishedLessons} authored lessons</span>
+                <span className="flex items-center gap-2 rounded-xl bg-surface-2 px-3 py-2.5"><CheckCircle2 className="h-4 w-4 text-accent-deep dark:text-accent shrink-0" /> {labCount} interactive labs</span>
+                <span className="flex items-center gap-2 rounded-xl bg-surface-2 px-3 py-2.5"><CheckCircle2 className="h-4 w-4 text-accent-deep dark:text-accent shrink-0" /> {problems.length} judged problems</span>
+                <span className="flex items-center gap-2 rounded-xl bg-surface-2 px-3 py-2.5"><CheckCircle2 className="h-4 w-4 text-accent-deep dark:text-accent shrink-0" /> {projects.length} capstone builds</span>
               </div>
             </div>
           </div>
@@ -437,48 +434,8 @@ export default async function LandingPage() {
         </section>
       </main>
 
-      {/* 12. Rich footer */}
-      <footer className="border-t-2 border-border bg-surface mt-auto">
-        <div className="max-w-6xl mx-auto px-4 lg:px-6 py-10 grid gap-8 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr_1fr]">
-          <div className="space-y-2 min-w-0">
-            <div className="flex items-center gap-2.5 font-black tracking-tight">
-              <span className="h-8 w-8 rounded-2xl bg-accent shadow-[0_3px_0_0_var(--accent-deep)] flex items-center justify-center">
-                <Sigma className="h-4 w-4 text-on-accent" aria-hidden />
-              </span>
-              QuantFoundry
-            </div>
-            <p className="text-[15px] font-semibold text-muted max-w-xs">An honest preparation pathway for quantitative engineering. Learn by doing, track real mastery.</p>
-            <span className="chip chip-info"><GraduationCap className="h-3.5 w-3.5" aria-hidden /> Built for Quant &amp; SWE</span>
-          </div>
-          <nav aria-label="Learn links" className="space-y-2.5">
-            <p className="text-[13px] font-black uppercase tracking-wider text-faint">Learn</p>
-            <Link href="/curriculum" className="block text-[15px] font-bold text-muted hover:text-foreground">Curriculum</Link>
-            <Link href="/learn" className="block text-[15px] font-bold text-muted hover:text-foreground">All lessons</Link>
-            <Link href="/revision" className="block text-[15px] font-bold text-muted hover:text-foreground">Spaced repetition</Link>
-            <Link href="/drills" className="block text-[15px] font-bold text-muted hover:text-foreground">Mental math drills</Link>
-          </nav>
-          <nav aria-label="Practice links" className="space-y-2.5">
-            <p className="text-[13px] font-black uppercase tracking-wider text-faint">Practice</p>
-            <Link href="/practice" className="block text-[15px] font-bold text-muted hover:text-foreground">Code problems</Link>
-            <Link href="/assessments" className="block text-[15px] font-bold text-muted hover:text-foreground">Assessments</Link>
-            <Link href="/projects" className="block text-[15px] font-bold text-muted hover:text-foreground">Projects</Link>
-            <Link href="/lab" className="block text-[15px] font-bold text-muted hover:text-foreground">Interactive labs</Link>
-          </nav>
-          <nav aria-label="Product links" className="space-y-2.5">
-            <p className="text-[13px] font-black uppercase tracking-wider text-faint">Product</p>
-            <Link href="/methodology" className="block text-[15px] font-bold text-muted hover:text-foreground">Methodology</Link>
-            <Link href="/career" className="block text-[15px] font-bold text-muted hover:text-foreground">Career tracks</Link>
-            <Link href="/about" className="block text-[15px] font-bold text-muted hover:text-foreground">About</Link>
-            <Link href="/login" className="block text-[15px] font-bold text-muted hover:text-foreground">Sign in</Link>
-          </nav>
-        </div>
-        <div className="border-t-2 border-border">
-          <div className="max-w-6xl mx-auto px-4 lg:px-6 py-3 flex flex-wrap items-center justify-between gap-2 text-[13px] font-semibold text-muted">
-            <span>QuantFoundry · {APP_VERSION} · conventions follow cppreference, OpenStax, Python and NumPy docs</span>
-            <span>No fake numbers, no fake testimonials.</span>
-          </div>
-        </div>
-      </footer>
+      {/* 12. Shared commercial & legal footer */}
+      <PublicFooter />
     </div>
   );
 }

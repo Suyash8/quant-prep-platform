@@ -1,0 +1,214 @@
+{
+  "id": "ap-production-security",
+  "moduleId": "ap-production",
+  "title": "Secrets, permissions and dependency security",
+  "estMinutes": 22,
+  "difficulty": "specialist",
+  "prereqs": [
+    "ap-production-observability"
+  ],
+  "objectives": [
+    "Evaluate a bounded synthetic deny-by-default principal/action/resource policy using server-verified identity and fail-closed missing/invalid policy semantics.",
+    "Produce a fixed-enum minimal audit record without accepting/logging secrets, and explain authentication, authorization, secret lifecycle and dependency-review boundaries.",
+    "Apply secrets, permissions and dependency security invariants safely and identify scope boundaries."
+  ],
+  "motivation": "Authentication establishes a principal through a trusted mechanism; authorization decides which action that principal may perform on a resource now. A caller-provided principal, trace ID, role header or schema-valid request does not authenticate itself.",
+  "blocks": [
+    {
+      "type": "p",
+      "md": "Authentication establishes a principal through a trusted mechanism; authorization decides which action that principal may perform on a resource now. A caller-provided principal, trace ID, role header or schema-valid request does not authenticate itself. OWASP recommends least privilege, deny by default and permission checks on every request. Our toy takes an ALREADY verified fictional principal and separately administered policy as trusted inputs. It does not implement login, tokens, tenant binding, real permissions or any account mutation."
+    },
+    {
+      "type": "p",
+      "md": "Policy is a frozenset of exact (principal,action,resource) triples over fictional p1/p2, read/reserve, A/B. A known matching triple allows; missing/invalid policy, unknown principal/action/resource or no matching grant denies. The whole bounded policy is checked before use. No implicit administrator/wildcard permission exists. Read access to A does not imply reserve A or read B. Actual policy updates must come from authorized administration, not request text or a page claiming an exemption."
+    },
+    {
+      "type": "steps",
+      "title": "A read grant is not a write grant",
+      "items": [
+        "Policy grants p1 read A, p1 reserve A, p2 read A. p1 reserve A allows. p2 reserve A denies despite p2 being a known authenticated principal. p1 read B also denies.",
+        "If policy is unavailable (None), p1 reserve A denies instead of falling back to allow. A malformed rule makes the whole toy policy unavailable and denies.",
+        "Audit output uses fixed keys/enums, outcome and policy state. Unknown caller values become unknown; no arbitrary caller text, principal, token or full payload is emitted. This is avoidance under a tiny allowlist, not a generic redactor that can safely process any secret."
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import json\nPRINCIPALS=('p1','p2');ACTIONS=('read','reserve');RESOURCES=('A','B')\n\ndef access_decision(policy,verified_principal,action,resource):\n    # Own synthetic server-side policy input. Does NOTauthenticate a caller.\n    # No external secret input accepted or transformed. No generic redaction promise.\n    available=type(policy) is frozenset and len(policy)<=16\n    if available:\n        available=all(type(rule) is tuple and len(rule)==3 and\n                      type(rule[0]) is str and rule[0] in PRINCIPALS and\n                      type(rule[1]) is str and rule[1] in ACTIONS and\n                      type(rule[2]) is str and rule[2] in RESOURCES for rule in policy)\n    known=type(verified_principal) is str and verified_principal in PRINCIPALS and type(action) is str and action in ACTIONS and type(resource) is str and resource in RESOURCES\n    permitted=bool(available and known and (verified_principal,action,resource) in policy)\n    safe={'schema':1,'event':'authorization-decision','outcome':'allow' if permitted else 'deny',\n          'action':action if type(action) is str and action in ACTIONS else 'unknown',\n          'resource_class':resource if type(resource) is str and resource in RESOURCES else 'unknown',\n          'policy_state':'available' if available else 'unavailable'}\n    return permitted,json.dumps(safe,sort_keys=True,separators=(',',':'))\n\npolicy=frozenset({('p1','read','A'),('p1','reserve','A'),('p2','read','A')})\nfor principal,action,resource in [('p1','reserve','A'),('p2','reserve','A'),('p1','read','B')]:\n    allowed,line=access_decision(policy,principal,action,resource)\n    print(allowed,json.loads(line)['outcome'])\nallowed,line=access_decision(None,'p1','reserve','A')\nprint(allowed,json.loads(line)['policy_state'])\nallowed,line=access_decision(policy,'unrecognized','free text','other')\nprint(allowed,json.loads(line)['action'],json.loads(line)['resource_class'])",
+      "caption": "Expected True allow; False deny; False deny; False unavailable; False unknown unknown. Full pure source,no real credentials/secret inputs/account policies or external logs. verified_principal must be bound by real authentication upstream; passing a body field here would defeat that boundary. Fixed enums do not establish log access/integrity/retention controls or production security."
+    },
+    {
+      "type": "p",
+      "md": "Keep persistent credentials out of source, fixtures, chat, manifests, URLs and ordinary logs. Use an approved secrets manager/runtime injection with least-privilege per-service access, audited use, rotation/revocation and tested recovery. Avoid shared broad credentials. Rotation needs supported rollout/testing/rollback so users are not locked out;do not invent or expose actual credentials to teach it. Removing a leaked string from a log does not revoke the credential or erase all historical copies. This lesson handles NO real secrets and performs no rotation."
+    },
+    {
+      "type": "p",
+      "md": "OWASP identifies passwords, access tokens, keys, connection strings, payment/private data and unnecessary personal information as data to avoid recording directly. Prefer minimal predefined fields, structured encoding and bounded inputs; protect log readers, storage, transport, retention and tamper evidence. Do not hash an arbitrary secret and call it universally safe: low-entropy values can be guessed, and identifiers can remain linkable. Our enum-only record omits individual principal so it is not a full forensic attribution log; real approved attribution may need protected pseudonymous IDs."
+    },
+    {
+      "type": "p",
+      "md": "Inventory direct/transitive dependencies and actual versions, maintain lockfiles/integrity/source provenance, scan/review advisories and assess reachability/exposure. Patch with regression/security tests and an operational rollout plan. A lockfile or zero scanner findings does not prove absence of vulnerabilities; advisories may be incomplete and configuration/application flaws remain. OWASP authorization guidance warns third-party components can bypass controls, so one library is not the entire defense. No package installation, dependency upgrade or real scan is performed here."
+    },
+    {
+      "type": "p",
+      "md": "Exhaustively test the small permission matrix, unknown values, missing/malformed policy and safe audit output. Actual systems also need cross-tenant object/field checks, revocation/session expiry, TOCTOU race review, rate/resource limits, error/side-channel handling, dependency/service permissions and penetration review. A pure function accepting trusted identity/policy cannot prove those upstream controls. Denying access should not quietly disable all security logging; logging failures need a declared safe operational policy."
+    },
+    {
+      "type": "p",
+      "md": "Independent transfer: enumerate every grant subset over the 8 possible triples and compare against set membership; remove one grant and verify only that permission disappears. Inject arbitrary nonsecret text as an UNKNOWN identifier and verify it never appears in the minimal audit. Design authentication-to-principal binding and policy administration interfaces without real credentials, then list remaining tenant/revocation/concurrency/log-access tests. Do not claim those interfaces already exist."
+    },
+    {
+      "type": "p",
+      "md": "Sources: [OWASP authorization](https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html), [logging/excluded data](https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html), [secrets lifecycle/least privilege](https://cheatsheetseries.owasp.org/cheatsheets/Secrets_Management_Cheat_Sheet.html). Own matrix/audit example is not a real policy engine, secret manager or security certification."
+    },
+    {
+      "type": "ref",
+      "items": [
+        {
+          "label": "OWASP authorization",
+          "url": "https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html"
+        },
+        {
+          "label": "logging/excluded data",
+          "url": "https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html"
+        },
+        {
+          "label": "secrets lifecycle/least privilege",
+          "url": "https://cheatsheetseries.owasp.org/cheatsheets/Secrets_Management_Cheat_Sheet.html"
+        }
+      ]
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Why is an exhaustive permission-matrix unit test insufficient for production security approval?",
+    "hints": [
+      "Names assumed trust inputs.",
+      "Separates unit policy and operational controls.",
+      "Keeps secrets/dependency/log limits explicit."
+    ],
+    "solution": "Trusted identity/policy inputs are assumed; real authentication, tenant/object binding, administration/revocation/TOCTOU and dependency/service configuration may fail. Audit avoidance is not protected log access/integrity/retention or a secret manager. Need actual environment/security review and authorized changes, no credential exposure or competence guarantee."
+  },
+  "independentExercise": {
+    "prompt": "Write a small test case that deliberately breaks the contract boundary in \"Secrets, permissions and dependency security\" and verify how your implementation rejects or handles it.",
+    "hints": [
+      "Test zero, negative, empty, duplicate, and boundary values.",
+      "Confirm both time/memory complexity and numerical precision remain within spec."
+    ],
+    "solution": "import json\nPRINCIPALS=('p1','p2');ACTIONS=('read','reserve');RESOURCES=('A','B')\n\ndef access_decision(policy,verified_principal,action,resource):\n    # Own synthetic server-side policy input. Does NOTauthenticate a caller.\n    # No external secret input accepted or transformed. No generic redaction promise.\n    available=type(policy) is frozenset and len(policy)<=16\n    if available:\n        available=all(type(rule) is tuple and len(rule)==3 and\n                      type(rule[0]) is str and rule[0] in PRINCIPALS and\n                      type(rule[1]) is str and rule[1] in ACTIONS and\n                      type(rule[2]) is str and rule[2] in RESOURCES for rule in policy)\n    known=type(verified_principal) is str and verified_principal in PRINCIPALS and type(action) is str and action in ACTIONS and type(resource) is str and resource in RESOURCES\n    permitted=bool(available and known and (verified_principal,action,resource) in policy)\n    safe={'schema':1,'event':'authorization-decision','outcome':'allow' if permitted else 'deny',\n          'action':action if type(action) is str and action in ACTIONS else 'unknown',\n          'resource_class':resource if type(resource) is str and resource in RESOURCES else 'unknown',\n          'policy_state':'available' if available else 'unavailable'}\n    return permitted,json.dumps(safe,sort_keys=True,separators=(',',':'))\n\npolicy=frozenset({('p1','read','A'),('p1','reserve','A'),('p2','read','A')})\nfor principal,action,resource in [('p1','reserve','A'),('p2','reserve','A'),('p1','read','B')]:\n    allowed,line=access_decision(policy,principal,action,resource)\n    print(allowed,json.loads(line)['outcome'])\nallowed,line=access_decision(None,'p1','reserve','A')\nprint(allowed,json.loads(line)['policy_state'])\nallowed,line=access_decision(policy,'unrecognized','free text','other')\nprint(allowed,json.loads(line)['action'],json.loads(line)['resource_class'])"
+  },
+  "commonMistakes": [
+    "Check the requested operation and resource. (The action/resource grant is absent.)",
+    "Do not collect sensitive free text merely to redact it later. (Only allowlisted fixed fields are emitted.)",
+    "2*2*2=8."
+  ],
+  "realWorldApplication": "Used directly across production quantitative research, execution systems, and validation pipelines.",
+  "quantFinanceApplication": "Applies rigorous engineering contracts to quantitative modeling and live trading infrastructure.",
+  "summary": [
+    "Use trusted authenticated identity and separately authorized policy, deny by default and check each action/resource.",
+    "Minimal allowlisted logs avoid collecting secrets but do not implement authentication/forensics/security operations.",
+    "Secret lifecycle/dependencies and real runtime controls need separate verified work."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "Known p2 can read A, but no reserve A grant exists. What happens?",
+      "objective": 0,
+      "options": [
+        "Reserve allowed because p2 is known",
+        "Reserve denied",
+        "Read grant becomes administrator",
+        "Caller role text overrides policy"
+      ],
+      "answerIndex": 1,
+      "explanation": "Check the requested operation and resource. (The action/resource grant is absent.)"
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "What does this minimal audit deliberately avoid?",
+      "objective": 1,
+      "options": [
+        "Any fixed outcome code",
+        "Known bounded action enum",
+        "Caller free text/secrets",
+        "Policy availability state"
+      ],
+      "answerIndex": 2,
+      "explanation": "Do not collect sensitive free text merely to redact it later. (Only allowlisted fixed fields are emitted.)"
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "Two principals, two actions, two resources give how many possible triples?",
+      "objective": 2,
+      "answer": 8,
+      "tolerance": 0.000001,
+      "explanation": "2*2*2=8."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "Policy is unavailable. What is this toy decision?",
+      "objective": 0,
+      "options": [
+        "Deny",
+        "Allow every known principal",
+        "Trust request body role",
+        "Reuse a previously allowed decision despite unavailable current policy"
+      ],
+      "answerIndex": 0,
+      "explanation": "Fail closed under missing/invalid policy. (Missing configuration is not an allow grant.)"
+    },
+    {
+      "id": "q5",
+      "type": "mcq",
+      "prompt": "Does a pinned lockfile and clean scanner prove dependency safety?",
+      "objective": 1,
+      "options": [
+        "Yes, every flaw is already known",
+        "Yes, so updates never needed",
+        "Only if filenames look official",
+        "No, review/testing/monitoring still matter"
+      ],
+      "answerIndex": 3,
+      "explanation": "Security evidence has coverage limits. (Pinning and scans are evidence, not complete proof.)"
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "What core invariant governs Secrets, permissions and dependency security?",
+      "back": "Check the requested operation and resource. (The action/resource grant is absent.)"
+    },
+    {
+      "type": "definition",
+      "front": "In Secrets, permissions and dependency security, how do you verify: Produce a fixed-enum minimal audit record without accepting/logging secrets, and explain authentication, authorization, secret lifecycle and dependency-review boundaries.?",
+      "back": "Do not collect sensitive free text merely to redact it later. (Only allowlisted fixed fields are emitted.)"
+    },
+    {
+      "type": "error-identification",
+      "front": "What failure mode happens if the contract in Secrets, permissions and dependency security is violated?",
+      "back": "2*2*2=8."
+    }
+  ],
+  "references": [
+    {
+      "label": "OWASP authorization",
+      "url": "https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html"
+    },
+    {
+      "label": "logging/excluded data",
+      "url": "https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html"
+    },
+    {
+      "label": "secrets lifecycle/least privilege",
+      "url": "https://cheatsheetseries.owasp.org/cheatsheets/Secrets_Management_Cheat_Sheet.html"
+    }
+  ],
+  "skills": [
+    "production-engineering",
+    "distributed-systems",
+    "software-engineering"
+  ]
+}

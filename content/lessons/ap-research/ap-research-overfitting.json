@@ -1,0 +1,215 @@
+{
+  "id": "ap-research-overfitting",
+  "moduleId": "ap-research",
+  "title": "Search bias, baselines and robustness",
+  "estMinutes": 22,
+  "difficulty": "specialist",
+  "prereqs": [
+    "ap-research-experiments"
+  ],
+  "objectives": [
+    "Explain why optimizing a noisy validation score selects noise, and evaluate a frozen choice against later held-out/baseline evidence under matched assumptions.",
+    "Compute a bounded exact one-sided fair-sign null p-value and fixed-family Bonferroni adjustment, stating marginal null validity, trial-family and dependence/market limits.",
+    "Apply search bias, baselines and robustness invariants safely and identify scope boundaries."
+  ],
+  "motivation": "Searching thresholds, features, seeds, universes, dates, execution/cost assumptions and stopping times can fit noise even when the final model has few parameters. Reporting only the best score hides the search.",
+  "blocks": [
+    {
+      "type": "p",
+      "md": "Searching thresholds, features, seeds, universes, dates, execution/cost assumptions and stopping times can fit noise even when the final model has few parameters. Reporting only the best score hides the search. Cawley/Talbot document that overfitting the selection criterion can materially bias evaluation. A validation score used to choose a candidate is a selection score, not independent performance evidence for the winner."
+    },
+    {
+      "type": "p",
+      "md": "Own synthetic validation means: A 5, B 6, cash 0 bps. Choose B using validation only, with deterministic lexical tie rule. Later holdout means: A -2, B -4, cash 0. Report B validation 6 and later -4 alongside cash 0, not a silent switch to the holdout winner cash. This one example illustrates a possible selection failure; it does not estimate how often failures happen or prove every selected model loses. A valid strategy can also underperform over a short holdout."
+    },
+    {
+      "type": "steps",
+      "title": "One impressive trial versus a declared family",
+      "items": [
+        "Under an explicitly iid fair-sign null, eight independent +1 signs have one-sided tail probability 1/256. The statistic counts positive signs; it ignores economic magnitudes and costs.",
+        "If this is one of a fixed family of 20 valid marginal tests, Bonferroni adjusted p=min(1,20/256)=5/64≈0.078125. At predeclared alpha 0.05, the raw test rejects but the adjusted family test does not.",
+        "Union bound: if each true-null test has P(p_i<=alpha/m)<=alpha/m, then probability of any false rejection<=sum(alpha/m)<=alpha. Tests need not be independent from each other, but their marginal p-values and the declared finite family must be valid. This does not repair invalid time-series sign assumptions or hidden/adaptive trials."
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "from fractions import Fraction\nfrom math import comb\n\ndef fair_sign_family_p(signs,family_size):\n    # OWN one-sided test of many + signs under iid fair +/-1null,predefined family.\n    if type(signs) is not tuple or not 1<=len(signs)<=12 or any(type(x) is not int or x not in (-1,1) for x in signs):\n        raise ValueError(\"invalid fair-sign sample\")\n    if type(family_size) is not int or not 1<=family_size<=100000:\n        raise ValueError(\"invalid fixed family size\")\n    n=len(signs);positive=sum(x==1 for x in signs)\n    raw=Fraction(sum(comb(n,k) for k in range(positive,n+1)),2**n)\n    adjusted=min(Fraction(1),family_size*raw)\n    return raw,adjusted\n\nraw,adjusted=fair_sign_family_p((1,)*8,20)\nprint(raw,adjusted,raw<=Fraction(1,20),adjusted<=Fraction(1,20))\n# OWN frozen validation selection,then later holdout evaluation,not a fitted model.\nvalidation={\"A\":(5,5),\"B\":(10,2),\"cash\":(0,0)}\nholdout={\"A\":(-2,-2),\"B\":(-8,0),\"cash\":(0,0)}\nmean=lambda xs:Fraction(sum(xs),len(xs))\nwinner=min(validation,key=lambda name:(-mean(validation[name]),name))\nprint(winner,mean(validation[winner]),mean(holdout[winner]))\ntry:fair_sign_family_p((0,1),20)\nexcept ValueError as error:print(error)",
+      "caption": "Expected 1/256 5/64 True False; B 6 -4; invalid fair-sign sample. Complete exact Fraction/binomial tail source, not estimated Monte Carlo p. Family size supplied by caller must match actual predefined comparisons;code cannot discover omitted trials, validate iid market signs or correct arbitrary adaptive experimentation. No t-test/Sharpe significance or real trading returns inferred."
+    },
+    {
+      "type": "p",
+      "md": "A p-value is a null-tail probability for a specified statistic/protocol, not the probability the strategy is false or a guarantee a rejection will profit. The fair-sign model assumes independent signs, each equally likely positive/negative under the null, with no zeros here. Market returns may be dependent/asymmetric, net of costs and continuous magnitudes;converting them blindly to this toy p-value is unjustified. Failure to reject does not establish no effect, and significance does not establish economic relevance."
+    },
+    {
+      "type": "p",
+      "md": "Compare against an appropriate no-trade/cash, passive or simple strategy baseline with matched universe, timing, exposure/currency, data, cost/financing and evaluation interval. A high gross return from leverage or omitted costs is not automatically excess skill. Predeclare economic metrics, drawdown/turnover/liquidity exposure and acceptable failure modes, then show tradeoff/sensitivity rather than only a winning Sharpe. Cash baseline return is 0 ONLY in this declared zero-interest synthetic example."
+    },
+    {
+      "type": "p",
+      "md": "Perturb defensible assumptions within an a-priori grid: costs/delays, capacity, periods, universes and nearby parameter values. Report the whole surface and failure regions, including valid runs with poor outcomes. Repeated robustness exploration becomes more search; do not relabel only favorable perturbations as confirmation. Costs can alter path and lower fills can avoid losses, so empirical responses need interpretation rather than a universal monotonic slogan."
+    },
+    {
+      "type": "p",
+      "md": "Nested evaluation fits/chooses the full procedure within each inner training/validation loop, and evaluates it on outer held-out data. sklearn's Iris example explains the selection principle but uses shuffled classification folds;do NOT copy that splitting into historical market forecasting. Use time/label-aware inner AND outer boundaries and train-only preprocessing from the prior lesson. Nested evaluation estimates the tested procedure under its data assumptions, not tomorrow's regime or a cure for every hidden human research choice."
+    },
+    {
+      "type": "p",
+      "md": "Independent transfer: enumerate all 2^n sign sequences for small n and check the exact tail count/p-value superuniform property under the stated fair null. Compare raw and fixed-family adjustment at predeclared alpha, then explain why unrecorded/adaptive trials break the given accounting. Freeze a candidate before reading a separate holdout, compare a same-rules baseline, and publish failures as well as scores. No positive result is a professional/trading competence certificate."
+    },
+    {
+      "type": "p",
+      "md": "Sources: [Cawley/Talbot 2010 original model-selection-bias paper page](http://www.jmlr.org/papers/v11/cawley10a.html), [sklearn nested selection principle, Iris not market folds](https://scikit-learn.org/stable/auto_examples/model_selection/plot_nested_cross_validation_iris.html), [NIST Bonferroni general inequality](https://www.itl.nist.gov/div898/handbook/prc/section4/prc473.htm). Fair-sign exact tail and fixed-family p-adjustment are derived here from binomial counting/union bound, not a new market inference method."
+    },
+    {
+      "type": "ref",
+      "items": [
+        {
+          "label": "Cawley/Talbot 2010 original model-selection-bias paper page",
+          "url": "http://www.jmlr.org/papers/v11/cawley10a.html"
+        },
+        {
+          "label": "sklearn nested selection principle, Iris not market folds",
+          "url": "https://scikit-learn.org/stable/auto_examples/model_selection/plot_nested_cross_validation_iris.html"
+        },
+        {
+          "label": "NIST Bonferroni general inequality",
+          "url": "https://www.itl.nist.gov/div898/handbook/prc/section4/prc473.htm"
+        }
+      ]
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Why is a tiny adjusted p-value plus a favorable cost sensitivity grid insufficient to approve live trading?",
+    "hints": [
+      "Checks inference and search protocol limits.",
+      "Separates economic/execution risk from p-value.",
+      "Requires independent scoped evidence and operational review."
+    ],
+    "solution": "Null/marginal assumptions and complete fixed trial family may fail; adaptive choices/hidden trials/temporal leakage can remain. Significance is not economic relevance or risk/liquidity capacity. Need independently held-out procedure/baseline/outcomes, realistic data/cost/execution and risk/operational/authority review. No future profit or competence guarantee."
+  },
+  "independentExercise": {
+    "prompt": "Write a small test case that deliberately breaks the contract boundary in \"Search bias, baselines and robustness\" and verify how your implementation rejects or handles it.",
+    "hints": [
+      "Test zero, negative, empty, duplicate, and boundary values.",
+      "Confirm both time/memory complexity and numerical precision remain within spec."
+    ],
+    "solution": "from fractions import Fraction\nfrom math import comb\n\ndef fair_sign_family_p(signs,family_size):\n    # OWN one-sided test of many + signs under iid fair +/-1null,predefined family.\n    if type(signs) is not tuple or not 1<=len(signs)<=12 or any(type(x) is not int or x not in (-1,1) for x in signs):\n        raise ValueError(\"invalid fair-sign sample\")\n    if type(family_size) is not int or not 1<=family_size<=100000:\n        raise ValueError(\"invalid fixed family size\")\n    n=len(signs);positive=sum(x==1 for x in signs)\n    raw=Fraction(sum(comb(n,k) for k in range(positive,n+1)),2**n)\n    adjusted=min(Fraction(1),family_size*raw)\n    return raw,adjusted\n\nraw,adjusted=fair_sign_family_p((1,)*8,20)\nprint(raw,adjusted,raw<=Fraction(1,20),adjusted<=Fraction(1,20))\n# OWN frozen validation selection,then later holdout evaluation,not a fitted model.\nvalidation={\"A\":(5,5),\"B\":(10,2),\"cash\":(0,0)}\nholdout={\"A\":(-2,-2),\"B\":(-8,0),\"cash\":(0,0)}\nmean=lambda xs:Fraction(sum(xs),len(xs))\nwinner=min(validation,key=lambda name:(-mean(validation[name]),name))\nprint(winner,mean(validation[winner]),mean(holdout[winner]))\ntry:fair_sign_family_p((0,1),20)\nexcept ValueError as error:print(error)"
+  },
+  "commonMistakes": [
+    "Selection is part of fitting the research procedure. (Evaluate the frozen procedure on later held-out data.)",
+    "Do not confuse within-test null assumptions with cross-test dependence. (Union bound holds without cross-test independence.)",
+    "(10+2)/2=6 bps; that score was used for selection."
+  ],
+  "realWorldApplication": "Used directly across production quantitative research, execution systems, and validation pipelines.",
+  "quantFinanceApplication": "Applies rigorous engineering contracts to quantitative modeling and live trading infrastructure.",
+  "summary": [
+    "Selection searches can overfit validation noise; freeze choices and report later matched-baseline evidence honestly.",
+    "Exact toy fair-sign/Bonferroni arithmetic needs valid null marginals and a declared family, not hidden adaptive trials.",
+    "Robustness/nested time-aware evaluation remain scoped, not future-profit guarantees."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "After selecting B because it wins validation, what is its validation score?",
+      "objective": 0,
+      "options": [
+        "Independent final performance evidence",
+        "A selection-used score",
+        "A probability of future profit",
+        "An unbiased estimate of the selected winner because each candidate score was unbiased before selection"
+      ],
+      "answerIndex": 1,
+      "explanation": "Selection is part of fitting the research procedure. (Evaluate the frozen procedure on later held-out data.)"
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "What does Bonferroni NOT require across tests when marginal p-values/family are valid?",
+      "objective": 1,
+      "options": [
+        "A finite declared family",
+        "Valid marginal null probabilities",
+        "Independence between different tests",
+        "Accounting for all declared comparisons"
+      ],
+      "answerIndex": 2,
+      "explanation": "Do not confuse within-test null assumptions with cross-test dependence. (Union bound holds without cross-test independence.)"
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "B validation returns 10 and 2 bps have what mean?",
+      "objective": 2,
+      "answer": 6,
+      "tolerance": 0.000001,
+      "explanation": "(10+2)/2=6 bps; that score was used for selection."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "The later holdout favors cash over the validation-selected B. What is honest?",
+      "objective": 0,
+      "options": [
+        "Report B held-out result and baseline comparison",
+        "Replace B with cash and call the same holdout unseen",
+        "Delete the holdout as a bad period",
+        "Claim all strategies are proven useless"
+      ],
+      "answerIndex": 0,
+      "explanation": "Keep the tested selection protocol visible. (Switching choices uses the holdout for selection.)"
+    },
+    {
+      "id": "q5",
+      "type": "mcq",
+      "prompt": "Can the shuffled Iris nested-CV example be copied unchanged for market forecasting?",
+      "objective": 1,
+      "options": [
+        "Yes, because nested removes every leakage path",
+        "Yes, if scores look stable",
+        "Only if the test winner is profitable",
+        "No, use time-aware inner and outer splits"
+      ],
+      "answerIndex": 3,
+      "explanation": "Carry temporal availability contracts into the full evaluation procedure. (The principle transfers, not arbitrary shuffled folds.)"
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "What core invariant governs Search bias, baselines and robustness?",
+      "back": "Selection is part of fitting the research procedure. (Evaluate the frozen procedure on later held-out data.)"
+    },
+    {
+      "type": "definition",
+      "front": "In Search bias, baselines and robustness, how do you verify: Compute a bounded exact one-sided fair-sign null p-value and fixed-family Bonferroni adjustment, stating marginal null validity, trial-family and dependence/market limits.?",
+      "back": "Do not confuse within-test null assumptions with cross-test dependence. (Union bound holds without cross-test independence.)"
+    },
+    {
+      "type": "error-identification",
+      "front": "What failure mode happens if the contract in Search bias, baselines and robustness is violated?",
+      "back": "(10+2)/2=6 bps; that score was used for selection."
+    }
+  ],
+  "references": [
+    {
+      "label": "Cawley/Talbot 2010 original model-selection-bias paper page",
+      "url": "http://www.jmlr.org/papers/v11/cawley10a.html"
+    },
+    {
+      "label": "sklearn nested selection principle, Iris not market folds",
+      "url": "https://scikit-learn.org/stable/auto_examples/model_selection/plot_nested_cross_validation_iris.html"
+    },
+    {
+      "label": "NIST Bonferroni general inequality",
+      "url": "https://www.itl.nist.gov/div898/handbook/prc/section4/prc473.htm"
+    }
+  ],
+  "skills": [
+    "backtesting",
+    "quant-modelling",
+    "data-infrastructure",
+    "statistics"
+  ]
+}

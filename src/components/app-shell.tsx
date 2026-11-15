@@ -283,6 +283,7 @@ export function AppShell({ user, children, isAdmin }: { user: { name: string; em
           </nav>
           <nav aria-label="Product links" className="space-y-2.5">
             <p className="text-[13px] font-black uppercase tracking-wider text-faint">Product</p>
+            <Link href="/pricing" className="block text-[15px] font-bold text-muted hover:text-foreground">Pricing</Link>
             <Link href="/methodology" className="block text-[15px] font-bold text-muted hover:text-foreground">Methodology</Link>
             <Link href="/analytics" className="block text-[15px] font-bold text-muted hover:text-foreground">Your analytics</Link>
             <Link href="/planner" className="block text-[15px] font-bold text-muted hover:text-foreground">Study planner</Link>
@@ -292,9 +293,12 @@ export function AppShell({ user, children, isAdmin }: { user: { name: string; em
         <div className="border-t-2 border-border">
           <div className="max-w-6xl mx-auto px-4 lg:px-6 py-3 flex flex-wrap items-center justify-between gap-2 text-[13px] font-semibold text-faint">
             <span>QuantFoundry · {APP_VERSION} · Quantitative Engineering &amp; Interview Preparation</span>
-            <span className="flex items-center gap-3">
+            <span className="flex flex-wrap items-center gap-4">
               <Link href="/about" className="hover:text-muted">About</Link>
-              <Link href="/methodology" className="hover:text-muted">Methodology</Link>
+              <Link href="/pricing" className="hover:text-muted">Pricing</Link>
+              <Link href="/privacy" className="hover:text-muted">Privacy</Link>
+              <Link href="/terms" className="hover:text-muted">Terms</Link>
+              <Link href="/contact" className="hover:text-muted">Contact</Link>
               <Link href="/settings" className="hover:text-muted">Settings</Link>
             </span>
           </div>
@@ -342,6 +346,7 @@ export function PublicHeader({ user }: { user?: { name: string } | null }) {
           <Link href="/curriculum" className="press px-3.5 py-2 rounded-xl text-muted hover:bg-surface-2 hover:text-foreground">Curriculum</Link>
           <Link href="/methodology" className="press px-3.5 py-2 rounded-xl text-muted hover:bg-surface-2 hover:text-foreground">Methodology</Link>
           <Link href="/career" className="press px-3.5 py-2 rounded-xl text-muted hover:bg-surface-2 hover:text-foreground">Career Tracks</Link>
+          <Link href="/pricing" className="press px-3.5 py-2 rounded-xl text-muted hover:bg-surface-2 hover:text-foreground">Pricing</Link>
         </nav>
         <div className="ml-auto flex items-center gap-2.5">
           {user ? (
@@ -355,5 +360,56 @@ export function PublicHeader({ user }: { user?: { name: string } | null }) {
         </div>
       </div>
     </header>
+  );
+}
+
+/** Shared footer for public pages */
+export function PublicFooter() {
+  return (
+    <footer className="border-t-2 border-border bg-surface mt-auto">
+      <div className="max-w-6xl mx-auto px-4 lg:px-6 py-10 grid sm:grid-cols-2 lg:grid-cols-[minmax(0,1.4fr)_repeat(3,minmax(0,1fr))] gap-8">
+        <div className="space-y-2.5">
+          <Link href="/" className="inline-flex items-center gap-2.5 font-black tracking-tight text-lg">
+            <span className="h-8 w-8 rounded-2xl bg-accent shadow-[0_3px_0_0_var(--accent-deep)] flex items-center justify-center">
+              <Sigma className="h-4 w-4 text-on-accent" aria-hidden />
+            </span>
+            QuantFoundry
+          </Link>
+          <p className="text-[14px] font-semibold text-muted max-w-xs leading-relaxed">
+            Interactive curriculum, spaced retrieval, and timed engineering assessments from foundations to quantitative finance.
+          </p>
+        </div>
+        <nav aria-label="Curriculum links" className="space-y-2.5">
+          <p className="text-[12px] font-black uppercase tracking-wider text-faint">Curriculum</p>
+          <Link href="/curriculum" className="block text-[14px] font-bold text-muted hover:text-foreground">Learning path</Link>
+          <Link href="/diagnostic" className="block text-[14px] font-bold text-muted hover:text-foreground">Skill diagnostic</Link>
+          <Link href="/career" className="block text-[14px] font-bold text-muted hover:text-foreground">Career tracks</Link>
+          <Link href="/methodology" className="block text-[14px] font-bold text-muted hover:text-foreground">Methodology</Link>
+        </nav>
+        <nav aria-label="Product links" className="space-y-2.5">
+          <p className="text-[12px] font-black uppercase tracking-wider text-faint">Product</p>
+          <Link href="/pricing" className="block text-[14px] font-bold text-muted hover:text-foreground">Pricing</Link>
+          <Link href="/about" className="block text-[14px] font-bold text-muted hover:text-foreground">About</Link>
+          <Link href="/register" className="block text-[14px] font-bold text-muted hover:text-foreground">Create free account</Link>
+          <Link href="/login" className="block text-[14px] font-bold text-muted hover:text-foreground">Sign in</Link>
+        </nav>
+        <nav aria-label="Legal and support" className="space-y-2.5">
+          <p className="text-[12px] font-black uppercase tracking-wider text-faint">Legal &amp; Support</p>
+          <Link href="/privacy" className="block text-[14px] font-bold text-muted hover:text-foreground">Privacy Policy</Link>
+          <Link href="/terms" className="block text-[14px] font-bold text-muted hover:text-foreground">Terms of Service</Link>
+          <Link href="/contact" className="block text-[14px] font-bold text-muted hover:text-foreground">Contact &amp; Support</Link>
+        </nav>
+      </div>
+      <div className="border-t-2 border-border">
+        <div className="max-w-6xl mx-auto px-4 lg:px-6 py-4 flex flex-wrap items-center justify-between gap-2 text-[13px] font-semibold text-faint">
+          <span>QuantFoundry · {APP_VERSION} · Quantitative Engineering &amp; Interview Preparation</span>
+          <span className="flex flex-wrap items-center gap-4">
+            <Link href="/privacy" className="hover:text-muted">Privacy</Link>
+            <Link href="/terms" className="hover:text-muted">Terms</Link>
+            <Link href="/contact" className="hover:text-muted">Contact</Link>
+          </span>
+        </div>
+      </div>
+    </footer>
   );
 }

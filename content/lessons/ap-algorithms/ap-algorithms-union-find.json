@@ -1,0 +1,279 @@
+{
+  "id": "ap-algorithms-union-find",
+  "moduleId": "ap-algorithms",
+  "title": "Union-find and connectivity",
+  "estMinutes": 72,
+  "difficulty": "core",
+  "prereqs": [
+    "ap-algorithms-trees-graphs"
+  ],
+  "objectives": [
+    "Maintain a partition with representative equality, root sizes and successful-merge component counts.",
+    "Explain how path compression changes representation without changing connectivity, and distinguish amortized bounds from per-call latency.",
+    "Parse signed hundredths exactly and filter every edge with strict comparison.",
+    "Return all components including isolates with canonical member/group ordering.",
+    "Prove safe acceptance by a light-cut-edge exchange.",
+    "Handle self/parallel edges, disconnected/singleton output and wide total cost."
+  ],
+  "motivation": "A disjoint-set structure maintains a partition of known elements into non-overlapping sets. Initially IDs 0 through n-1 each form a singleton.",
+  "blocks": [
+    {
+      "type": "p",
+      "md": "A disjoint-set structure maintains a partition of known elements into non-overlapping sets. Initially IDs 0 through n-1 each form a singleton. find(x) returns a representative of the set containing x; union(a,b) merges the two sets if different. The representative is an implementation choice and can change after a merge. It is not automatically the smallest ID, first arrival, legal owner or business label. Compare representatives for equality, not a particular numeric value unless that is a separate maintained contract."
+    },
+    {
+      "type": "p",
+      "md": "Represent each set by a rooted parent tree with parent[root]=root. Following parents reaches its representative. Only root size entries are authoritative; a size stored at a former root may be stale after attachment. Before merging, find both roots. If equal, return False and do not decrement the component count. Otherwise attach the smaller tree below the larger root, add sizes at the surviving root and decrement the number of components once."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "class DisjointSets:\n    def __init__(self, n):\n        if type(n) is not int or n < 0:\n            raise ValueError(\"invalid element count\")\n        self.parent = list(range(n))\n        self.size = [1] * n\n        self.components = n\n\n    def find(self, vertex):\n        if type(vertex) is not int or not 0 <= vertex < len(self.parent):\n            raise ValueError(\"invalid element\")\n        root = vertex\n        while self.parent[root] != root:\n            root = self.parent[root]\n        while self.parent[vertex] != vertex:\n            following = self.parent[vertex]\n            self.parent[vertex] = root\n            vertex = following\n        return root\n\n    def union(self, a, b):\n        # Validate both endpoints before find can compress either path.\n        for vertex in (a, b):\n            if type(vertex) is not int or not 0 <= vertex < len(self.parent):\n                raise ValueError(\"invalid element\")\n        a, b = self.find(a), self.find(b)\n        if a == b:\n            return False\n        if self.size[a] < self.size[b]:\n            a, b = b, a\n        self.parent[b] = a\n        self.size[a] += self.size[b]\n        self.components -= 1\n        return True\n\n    def component_size(self, vertex):\n        return self.size[self.find(vertex)]\n\nsets = DisjointSets(5)\nprint(sets.union(0, 1))\nprint(sets.union(1, 2))\nprint(sets.union(2, 0))\nprint(sets.find(0) == sets.find(2))\nprint(sets.component_size(1))\nprint(sets.components)",
+      "caption": "Expected output: True, True, False, True, 3, 3 on separate lines. Two successful merges reduce five components to three; the repeated connection changes no partition. All endpoint checks reject bool, negative and out-of-range IDs. find may mutate parent pointers by compression even though it returns the same connectivity information."
+    },
+    {
+      "type": "p",
+      "md": "The first pass in find reaches the root. The second pass rewires every visited non-root vertex directly to that root while remembering the old next pointer. It changes the internal parent forest, not which elements are in the same set. A parent chain is not a path of original graph edges: union can connect representatives that were not the exact input edge endpoints. Do not use DSU parents to reconstruct a shortest graph route."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "# A valid parent forest before a find on element3.\nparent = [0, 0, 1, 2]\nroot = 3\nwhile parent[root] != root:\n    root = parent[root]\nvertex = 3\nwhile parent[vertex] != vertex:\n    following = parent[vertex]\n    parent[vertex] = root\n    vertex = following\nprint(root)\nprint(parent)",
+      "caption": "Expected output: 0, then [0, 0, 0, 0]. Elements 3, 2 and 1 still belong to the same set as before; the paths are simply shorter. This isolated valid-forest trace illustrates compression; it is not a claim that the shown chain was produced by the union-by-size policy."
+    },
+    {
+      "type": "p",
+      "md": "Without compression, attaching the smaller tree below the larger means a vertex whose depth increases joins a component at least twice as large as before. Its depth can therefore increase at most floor(log2(n)) times before the component contains all n elements. Compression only shortens these paths. Combining union by size/rank and compression gives a very slowly growing inverse-Ackermann amortized bound across a sequence of operations. That advanced bound is cited, not proved here; it is not a promise that every operation takes identical constant time or meets a production latency target."
+    },
+    {
+      "type": "p",
+      "md": "For an undirected network with additions only, each new edge can union its endpoints. A successful merge joins two previously disconnected components; an edge whose endpoints already share a representative is redundant for connectivity. With parallel edges or self-loops it may still be a distinct business event. DSU does not preserve the full edge log. If deletions can split components, ordinary DSU cannot undo them correctly just by changing one parent pointer."
+    },
+    {
+      "type": "p",
+      "md": "This implementation is not a rollback or persistent DSU, a directed strong-connectivity algorithm, a path-distance index or an authenticated identity registry. Concurrent mutations need their own synchronization contract. A snapshot of parent arrays is also representation-specific; stable external component labels require a declared mapping. Keep the original event history separately when replay or audits require it."
+    },
+    {
+      "type": "p",
+      "md": "Independent transfer: compare DSU connectivity and component sizes to a plain set-partition oracle after each small merge. Include repeated unions, self-unions, isolated elements and invalid endpoints. Check that root sizes sum to n and that the component counter equals the number of distinct representatives. Snapshot before a find and confirm that compression can change parents while preserving every pairwise connectivity answer. Explain why deleting an input edge is not supported by this interface."
+    },
+    {
+      "type": "p",
+      "md": "Reference: [Disjoint Set Union](https://cp-algorithms.com/data_structures/disjoint_set_union.html) for parent forests, union by size and compression. The logarithmic depth argument is explained here; the inverse-Ackermann sequence bound is an externally established theorem, not a learner proof completed by running this example. All network semantics are synthetic."
+    },
+    {
+      "type": "p",
+      "md": "Exact link predicate\n\nThere are 1 to 100000 assets, labeled 0..n-1, and 0 to 200000 edge observations. The supplied parser passes theta and rho as two-decimal strings, not floats. rho is in [-1.00,1.00]. Form magnitude=100*whole+fractional, then apply the sign to the entire magnitude. Thus -0.20 is -20 and -0.00 is 0. Compare rho>theta: equality does not create a link. This parses guaranteed two-decimal text, not arbitrary numeric notation."
+    },
+    {
+      "type": "p",
+      "md": "DSU invariant after filtering\n\nAfter each edge prefix, DSU sets are precisely the components of accepted links from that prefix. A rejected line changes nothing; an accepted line unions its endpoints. Duplicate pairs are evaluated per line: a rejected observation does not cancel a later accepted one. Already-connected or reverse links are idempotent. Connectivity is transitive even if the endpoint pair itself has a low observed correlation. The complete block includes iterative path compression and union by size from the core invariant."
+    },
+    {
+      "type": "p",
+      "md": "Roots are not output order\n\nUnion by size chooses structural representatives, not minimum member IDs. Visit every vertex in ascending order, including isolates, find its final root and append it to that bucket. Members are then increasing. Sort buckets by their first member, not root ID. Return the count line, then space-joined members.\n\nWith theta=0.50, accept 0-1 at 0.80 and 1-2 at 0.55; reject 3-4 at 0.50 and 0-2 at -0.20. Output the triple 0,1,2, then singleton 3, then singleton 4."
+    },
+    {
+      "type": "p",
+      "md": "Work and independent transfer\n\nDSU uses O(n) storage and amortized inverse-Ackermann work per operation by the cited theorem, not constant worst-case latency. Group sorting adds O(k log k); input/output storage is O(n+m), with formatting proportional to emitted digits. Independently construct the accepted graph with exact rational predicates and flood its components. Include equality, signed zero, negative thresholds, duplicates, isolates and maximum dimensions. These are connectivity clusters, not pairwise-all-correlated groups or certified risk models."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "MOD = 1000000007\n\nclass CoverageDSU:\n\n    def __init__(self, n):\n        self.parent = list(range(n))\n        self.size = [1] * n\n\n    def find(self, x):\n        root = x\n        while root != self.parent[root]:\n            root = self.parent[root]\n        while x != root:\n            old_parent = self.parent[x]\n            self.parent[x] = root\n            x = old_parent\n        return root\n\n    def union(self, a, b):\n        (a, b) = (self.find(a), self.find(b))\n        if a == b:\n            return False\n        if self.size[a] < self.size[b]:\n            (a, b) = (b, a)\n        self.parent[b] = a\n        self.size[a] += self.size[b]\n        return True\n\ndef hundredths(text):\n    negative = text.startswith('-')\n    magnitude = text[1:] if negative else text\n    (whole, fractional) = magnitude.split('.')\n    units = 100 * int(whole) + int(fractional)\n    return -units if negative else units\n\ndef clusters(n, theta, edges):\n    threshold = hundredths(theta)\n    dsu = CoverageDSU(n)\n    for (a, b, rho) in edges:\n        if hundredths(rho) > threshold:\n            dsu.union(a, b)\n    groups = {}\n    for value in range(n):\n        root = dsu.find(value)\n        groups.setdefault(root, []).append(value)\n    ordered = sorted(groups.values(), key=lambda members: members[0])\n    return [str(len(ordered))] + [' '.join(map(str, group)) for group in ordered]\n\nprint(clusters(5, '0.50', [(0, 1, '0.80'), (1, 2, '0.55'), (3, 4, '0.50'), (0, 2, '-0.20')]))\nprint(clusters(2, '-0.20', [(0, 1, '-0.20'), (0, 1, '-0.19')]))",
+      "caption": "Expected ['3', '0 1 2', '3', '4'], then ['1', '0 1']. Complete exact filter, DSU and canonical output."
+    },
+    {
+      "type": "p",
+      "md": "Mechanism reference: [DSU representation, merge and compression](https://cp-algorithms.com/data_structures/disjoint_set_union.html). Exact signed-hundredths parsing, the strict per-line filter and canonical all-vertex output are declared and derived task choices. The DSU source does not establish a correlation model or this numeric parser. Exact public task contract hash eb6926392b832f11d59bf10bb8ca152e550acb29a28a1176d49b2108111d52b1. This is teaching/source fit, not current app or judge sign-off."
+    },
+    {
+      "type": "p",
+      "md": "Spanning backbone contract\n\nThere are 1 to 200000 vertices, labeled from 0, and 0 to 200000 undirected edges with weights 1..1e9. Parallel and self-edges are allowed. mst_weight(n,edges) returns a list containing one string: the minimum spanning total, or -1 if disconnected. The supplied main prints that string as one line. A singleton needs no links and has total 0 even with self-links. Minimize the selected link sum, not shortest-path distances."
+    },
+    {
+      "type": "p",
+      "md": "Forest invariant\n\nSort a copy of the edges by ascending weight. DSU components equal the components of the selected forest. Same-root endpoints form a cycle or self-link, so skip them. Otherwise union the roots, add the weight and increment selected. Each acceptance reduces the component count by 1. n-1 accepted edges form a spanning tree. Ties may change chosen edges, not minimum total. Parallel edges compete normally; they are not summed together."
+    },
+    {
+      "type": "p",
+      "md": "Cut exchange proof\n\nFor connected input, maintain a chosen forest A contained in some MST. The next accepted edge e crosses a cut S defined by one current component; no edge of A crosses it. Edge e is lightest across that cut: an earlier crossing edge would already have joined components.\n\nIf an MST T containing A omits e, adding e creates one cycle with another crossing edge f not in A. Since w(e)<=w(f), replace f by e. The result is still a spanning tree, costs no more, and preserves A. Thus some MST contains A+e. Ties are allowed; not every MST must contain every light edge."
+    },
+    {
+      "type": "p",
+      "md": "Disconnected input, work and bounds\n\nAfter all edges, selected<n-1 means no available edge crosses the remaining components, so return -1, not the forest cost. Sorting costs O(m log(m+1)); the DSU sequence costs O((n+m) alpha(n)) by the cited amortized theorem. Storage is O(n+m) including the copy. Connected cost<=(n-1)*1e9<=199999000000000 needs 64-bit C++ accumulation or exact Python integers. Iterative find avoids recursion. The output does not request selected edges."
+    },
+    {
+      "type": "p",
+      "md": "Trace and independent transfer\n\nFor 0-1 cost 1, 1-2 cost 2, 0-2 cost 2, 2-3 cost 5, and 1-3 cost 4: accept weight 1, accept one weight 2, skip the resulting cycle, then accept weight 4. The total is 7. Enumerate n-1-edge subsets on tiny graphs, check connectivity, and minimize the sum independently of DSU. Include a singleton, m=0, disconnected graphs, self-links, unequal parallel links, equal-weight cycles, a maximum chain and wide weights. This does not establish remote judge/runtime qualification."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "MOD = 1000000007\n\nclass CoverageDSU:\n\n    def __init__(self, n):\n        self.parent = list(range(n))\n        self.size = [1] * n\n\n    def find(self, x):\n        root = x\n        while root != self.parent[root]:\n            root = self.parent[root]\n        while x != root:\n            old_parent = self.parent[x]\n            self.parent[x] = root\n            x = old_parent\n        return root\n\n    def union(self, a, b):\n        (a, b) = (self.find(a), self.find(b))\n        if a == b:\n            return False\n        if self.size[a] < self.size[b]:\n            (a, b) = (b, a)\n        self.parent[b] = a\n        self.size[a] += self.size[b]\n        return True\n\ndef mst_weight(n, edges):\n    dsu = CoverageDSU(n)\n    total = selected = 0\n    for (u, v, weight) in sorted(edges, key=lambda edge: edge[2]):\n        if dsu.union(u, v):\n            total += weight\n            selected += 1\n    return [str(total if selected == n - 1 else -1)]\n\nprint(mst_weight(4, [(0, 1, 1), (1, 2, 2), (0, 2, 2), (2, 3, 5), (1, 3, 4)]))\nprint(mst_weight(3, [(0, 1, 1)]))\nprint(mst_weight(1, [(0, 0, 7)]))",
+      "caption": "Expected ['7'], ['-1'], ['0']. Safe forest with iterative DSU and disconnected check."
+    },
+    {
+      "type": "p",
+      "md": "Algorithm references: [Berkeley cut lemma and Kruskal exchange proof](https://people.eecs.berkeley.edu/%7Edaw/teaching/cs170-s03/Notes/lecture8.pdf) and [DSU representation and amortized bound](https://cp-algorithms.com/data_structures/disjoint_set_union.html). The positive input bounds, self/parallel-edge handling and disconnected -1/list-line adapter are specified here. The references do not certify runtime or output framing. Exact public task contract hash 164aad4554bb04a37055f5b34725a494e44fbb74e33d5663ddee2a5f77c20fcc. This is main teaching, not current app or judge sign-off."
+    },
+    {
+      "type": "ref",
+      "items": [
+        {
+          "label": "Disjoint Set Union",
+          "url": "https://cp-algorithms.com/data_structures/disjoint_set_union.html"
+        },
+        {
+          "label": "Berkeley cut lemma and Kruskal exchange proof",
+          "url": "https://people.eecs.berkeley.edu/%7Edaw/teaching/cs170-s03/Notes/lecture8.pdf"
+        }
+      ]
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "What would you ask before using ordinary DSU for a live relationship network?",
+    "hints": [
+      "Checks update/deletion model.",
+      "Separates representative from external identity/path.",
+      "Names concurrency/history or timing limits."
+    ],
+    "solution": "Check whether updates only add links, whether deletions/rollback are needed, identity scope, representative-label requirements, concurrency and original-history/path needs. State amortized versus per-operation expectations."
+  },
+  "independentExercise": {
+    "prompt": "Prove exact filtering and deterministic grouping.",
+    "hints": [
+      "Predicate and duplicates.",
+      "DSU induction.",
+      "Canonical groups/isolates."
+    ],
+    "solution": "Parse signed hundredths; rho>theta per line. Union accepted links maintains components. Duplicates do not undo merges. Enumerate all vertices ascending, group by root, sort groups by first member."
+  },
+  "commonMistakes": [
+    "Count successful merges of distinct sets, not the number of union calls or edge observations. (Repeated connectivity does not reduce the number of sets.)",
+    "Compression is an internal representation update that preserves the partition. (They can be rewired directly to the same root.)",
+    "A size-doubling argument bounds depth; it does not establish stable representative identity or deletion capabilities. (There are only logarithmically many such doublings before reaching n elements.)"
+  ],
+  "realWorldApplication": "Used directly across production quantitative research, execution systems, and validation pipelines.",
+  "quantFinanceApplication": "Directly prepares you for judged problems: union-find-correlated, mst-kruskal.",
+  "summary": [
+    "Maintain partition invariants, root-only sizes and successful-merge counts.",
+    "Compression changes representation, not connectivity.",
+    "Ordinary DSU handles merges, not arbitrary deletions, path reconstruction or directed strong components.",
+    "Extension: exact threshold clusters.",
+    "Extension: kruskal safe forest."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "union(a,b) finds that both endpoints already have the same representative. What happens to the component count?",
+      "objective": 0,
+      "options": [
+        "It decreases again because an edge arrived",
+        "It stays unchanged because the partition did not merge",
+        "It decreases once for each endpoint even though both roots match",
+        "It becomes the numeric representative ID"
+      ],
+      "answerIndex": 1,
+      "explanation": "Count successful merges of distinct sets, not the number of union calls or edge observations. (Repeated connectivity does not reduce the number of sets.)"
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "What may a successful find with path compression change?",
+      "objective": 1,
+      "options": [
+        "The original source graph edge list",
+        "Which existing elements are connected",
+        "Parent pointers on the visited path",
+        "Every component into one universal set"
+      ],
+      "answerIndex": 2,
+      "explanation": "Compression is an internal representation update that preserves the partition. (They can be rewired directly to the same root.)"
+    },
+    {
+      "id": "q3",
+      "type": "mcq",
+      "prompt": "Why does union by size limit depth growth?",
+      "objective": 2,
+      "options": [
+        "Each depth increase at least doubles its set size",
+        "It guarantees every representative equals zero",
+        "It prevents every future find from writing parents",
+        "It makes arbitrary edge deletion safe"
+      ],
+      "answerIndex": 0,
+      "explanation": "A size-doubling argument bounds depth; it does not establish stable representative identity or deletion capabilities. (There are only logarithmically many such doublings before reaching n elements.)"
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "Can DSU parent pointers be used as the original shortest graph path?",
+      "objective": 3,
+      "options": [
+        "Yes, because each parent is necessarily the last input edge",
+        "Yes, because representatives encode hop distances",
+        "No, because path compression rewrites the original input edge list",
+        "No; the forest represents connectivity, not original routes"
+      ],
+      "answerIndex": 3,
+      "explanation": "A connectivity representation and a path witness are different data products. Do not infer original edges from DSU attachment links. (Keep original adjacency and a path algorithm when routes matter.)"
+    },
+    {
+      "id": "q5",
+      "type": "numeric",
+      "prompt": "Starting with five singleton sets, two unions merge different components and a third union repeats existing connectivity. How many components remain?",
+      "objective": 4,
+      "answer": 3,
+      "tolerance": 0.000001,
+      "explanation": "Only the two successful merges reduce the count: 5-2=3. The repeated union leaves it unchanged."
+    },
+    {
+      "id": "q6",
+      "type": "mcq",
+      "prompt": "Where apply the negative sign after parsing magnitude?",
+      "objective": 5,
+      "options": [
+        "Whole magnitude",
+        "Fraction digits",
+        "Only whole part",
+        "Discard it"
+      ],
+      "answerIndex": 0,
+      "explanation": "Sign applies to the complete magnitude. (Parse the unsigned hundredths magnitude first, then negate the entire integer so both parts receive the sign.)"
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "What core invariant governs Union-find and connectivity?",
+      "back": "Count successful merges of distinct sets, not the number of union calls or edge observations. (Repeated connectivity does not reduce the number of sets.)"
+    },
+    {
+      "type": "definition",
+      "front": "In Union-find and connectivity, how do you verify: Explain how path compression changes representation without changing connectivity, and distinguish amortized bounds from per-call latency.?",
+      "back": "Compression is an internal representation update that preserves the partition. (They can be rewired directly to the same root.)"
+    },
+    {
+      "type": "error-identification",
+      "front": "What failure mode happens if the contract in Union-find and connectivity is violated?",
+      "back": "A size-doubling argument bounds depth; it does not establish stable representative identity or deletion capabilities. (There are only logarithmically many such doublings before reaching n elements.)"
+    }
+  ],
+  "references": [
+    {
+      "label": "Disjoint Set Union",
+      "url": "https://cp-algorithms.com/data_structures/disjoint_set_union.html"
+    },
+    {
+      "label": "Berkeley cut lemma and Kruskal exchange proof",
+      "url": "https://people.eecs.berkeley.edu/%7Edaw/teaching/cs170-s03/Notes/lecture8.pdf"
+    }
+  ],
+  "skills": [
+    "dsa",
+    "algorithms",
+    "complexity"
+  ]
+}

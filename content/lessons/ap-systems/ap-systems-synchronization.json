@@ -1,0 +1,229 @@
+{
+  "id": "ap-systems-synchronization",
+  "moduleId": "ap-systems",
+  "title": "Mutexes, atomics and happens-before",
+  "estMinutes": 22,
+  "difficulty": "advanced",
+  "prereqs": [
+    "ap-systems-threads-races"
+  ],
+  "objectives": [
+    "Protect a complete shared invariant with one documented mutex and named scoped ownership, distinguishing mutual exclusion from fairness/deadline guarantees.",
+    "Trace same-mutex unlock/lock and thread join ordering; use an atomic read-modify-write without mistaking atomic fields or sequential consistency for a compound business transaction.",
+    "Apply mutexes, atomics and happens-before invariants safely and identify scope boundaries."
+  ],
+  "motivation": "Choose the shared invariant before the synchronization primitive. Here synthetic inventory starts with 100 units; every accepted reservation decrements remaining and increments accepted by the same positive quantity.",
+  "blocks": [
+    {
+      "type": "p",
+      "md": "Choose the shared invariant before the synchronization primitive. Here synthetic inventory starts with 100 units; every accepted reservation decrements remaining and increments accepted by the same positive quantity. Required invariant: remaining>=0, accepted>=0, remaining+accepted=100. Checking availability and changing both fields must be one critical section, not separate separately protected calls. A snapshot must take the SAME mutex to read a consistent pair. The mutex does not inspect field accesses or protect code that ignores its protocol."
+    },
+    {
+      "type": "p",
+      "md": "A mutex grants one owning thread exclusive access until unlock. An unlock synchronizes with a subsequent successful lock acquiring the SAME mutex; combine this edge with within-thread sequencing to reason about visibility. This is a specified happens-before path, not a rule based on wall-clock order or the CPU cache eventually catching up. Taking a different mutex around the same data does not create the intended exclusion. Read-only operations on mutable shared state still need the required ordering; const method syntax alone is not synchronization."
+    },
+    {
+      "type": "p",
+      "md": "A named lock_guard owns the mutex for its scope and releases it on ordinary scope exit, including handled stack unwinding after successful acquisition. A temporary std::lock_guard{m}; ends immediately at its semicolon, not at the end of the block. Keep validation independent of shared state outside the lock where safe, but keep shared checks and updates together. Avoid slow I/O, callbacks and joining a worker that needs the mutex while holding it. Nonrecursive mutex self-lock is invalid; do not solve it by random sleeps. For multiple mutexes use a documented consistent acquisition plan or suitable named scoped_lock with distinct mutexes; that does not prevent all possible program deadlocks."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <atomic>\n#include <iostream>\n#include <mutex>\n#include <thread>\n#include <utility>\n\nclass Inventory {\n    std::mutex mutex_;\n    int remaining_=100;\n    int accepted_=0;\npublic:\n    bool reserve(int quantity) {\n        if(quantity<=0 || quantity>100)return false;\n        std::lock_guard<std::mutex> guard(mutex_);\n        if(quantity>remaining_)return false;\n        remaining_-=quantity;\n        accepted_+=quantity;\n        return true;\n    }\n    std::pair<int,int> snapshot() {\n        std::lock_guard<std::mutex> guard(mutex_);\n        return {remaining_,accepted_};\n    }\n};\n\nint main() {\n    Inventory inventory;\n    std::atomic<int> attempts{0};\n    auto work=[&inventory,&attempts] {\n        for(int i=0;i<75;++i) {\n            (void)inventory.reserve(1);\n            attempts.fetch_add(1,std::memory_order_seq_cst);\n        }\n    };\n    {\n        std::jthread first(work);\n        std::jthread second(work);\n    }\n    const auto [remaining,accepted]=inventory.snapshot();\n    std::cout<<remaining<<' '<<accepted<<'\\n';\n    std::cout<<attempts.load(std::memory_order_seq_cst)<<'\\n';\n}",
+      "caption": "C++20 with -pthread. Expected output: 0 100, then 150. Both workers try 75 one-unit reservations; only 100 units can be accepted. Which worker accepts which unit is unspecified and deliberately not printed. The independent seq-cst atomic attempts counter counts 150 attempts, not accepted units or committed trades. Exact small counts do not overflow int. Local runtime only; app C++ support unverified."
+    },
+    {
+      "type": "p",
+      "md": "An atomic fetch_add is one indivisible read-modify-write for that atomic object and returns its preceding value. load followed later by store or fetch_sub is more than one operation, even if each operation is seq-cst. The example explicitly uses seq-cst ordering for its independent attempts count; atomics are not universally lock-free or faster than mutexes. The final load is after both workers join. This counter does not publish an unrelated mutable payload, protect the inventory fields or combine its increment with reserve into a single transaction."
+    },
+    {
+      "type": "steps",
+      "title": "Data-race-free can still oversell a logical resource",
+      "items": [
+        "Hypothetical algorithm uses atomic available=1. A loads 1 and decides it may reserve. B also loads 1 and decides it may reserve. Each load is individually atomic.",
+        "A performs atomic decrement 1->0, then B performs atomic decrement 0->-1 based on its stale decision. Both decrements are indivisible; the compound check-then-act policy is still wrong.",
+        "The entire trace is consistent with a sequential ordering of atomic events. Making every event seq-cst does not turn several events into one transaction. Protect the complete invariant as in Inventory, or design and prove an appropriate compare/exchange protocol rather than swapping keywords."
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "def split_atomic_reservation(schedule):\n    # One-thread model of individually atomic load/decrement events, not a whole transaction.\n    if type(schedule) is not str or len(schedule)!=4 or schedule.count(\"A\")!=2 or schedule.count(\"B\")!=2:\n        raise ValueError(\"expected two steps each for A and B\")\n    available=1\n    accepted=0\n    steps={\"A\":0,\"B\":0}\n    allowed={}\n    for worker in schedule:\n        if steps[worker]==0:\n            allowed[worker]=available>0\n        elif allowed[worker]:\n            available-=1\n            accepted+=1\n        steps[worker]+=1\n    return available,accepted\n\nprint(split_atomic_reservation(\"AABB\"))\nprint(split_atomic_reservation(\"ABAB\"))",
+      "caption": "Expected output: (0, 1), then (-1, 2). This single-thread sequential event model illustrates individually atomic steps failing a compound resource invariant. It does not run a native race, perform reservations or model all memory-order interactions."
+    },
+    {
+      "type": "p",
+      "md": "A release store and an acquire load that reads the appropriate value from that store/release sequence can establish publication ordering for earlier writes. The connection depends on the SAME atomic and observed value; merely naming one operation release and an unrelated operation acquire is not a universal barrier. Relaxed atomic operations preserve atomicity/modification ordering of their object but do not by themselves publish other data. This lesson deliberately uses mutexes and seq-cst operations instead of asking you to invent a lock-free reclamation or relaxed-memory protocol. volatile is not standard C++ inter-thread synchronization."
+    },
+    {
+      "type": "p",
+      "md": "For Inventory, initialization precedes worker construction; each accepted transition checks remaining under the same mutex, preserves the invariant and publishes on unlock; each snapshot acquires that mutex; final output also follows joins. Source reasoning explains why the invariant is preserved for any allowed interleaving under the stated operation contract. Repeated local runs are evidence about those runs, not the proof itself. Mutex fairness, bounded lock waiting, OS synchronization failure recovery, cancellation, durability, distributed/account reservation and production throughput are not guaranteed here."
+    },
+    {
+      "type": "p",
+      "md": "Independent transfer: add a quantity argument with explicit bounds and test insufficient quantity, zero/negative quantity and a snapshot after each accepted/rejected call. Define whether rejected requests consume IDs before extending the model. Verify that the same mutex covers both reads and writes and no callback escapes with a reference to protected fields. Explain why an atomic attempts metric can be correct while the accepted/remaining business invariant is broken in a different implementation."
+    },
+    {
+      "type": "p",
+      "md": "Sources: [mutex ordering requirements](https://eel.is/c++draft/thread.mutex.requirements.mutex), [lock_guard](https://en.cppreference.com/w/cpp/thread/lock_guard.html), [multi-lock scoped ownership](https://en.cppreference.com/w/cpp/thread/scoped_lock.html), [atomic fetch_add](https://en.cppreference.com/w/cpp/atomic/atomic/fetch_add.html), [memory ordering](https://en.cppreference.com/w/cpp/atomic/memory_order.html). Only the safe authored complete sources are executed, not the deliberately racy demonstration on a reference page. Formal consume/post-C++20 changes and lock-free algorithms remain outside this example."
+    },
+    {
+      "type": "ref",
+      "items": [
+        {
+          "label": "mutex ordering requirements",
+          "url": "https://eel.is/c++draft/thread.mutex.requirements.mutex"
+        },
+        {
+          "label": "lock_guard",
+          "url": "https://en.cppreference.com/w/cpp/thread/lock_guard.html"
+        },
+        {
+          "label": "multi-lock scoped ownership",
+          "url": "https://en.cppreference.com/w/cpp/thread/scoped_lock.html"
+        },
+        {
+          "label": "atomic fetch_add",
+          "url": "https://en.cppreference.com/w/cpp/atomic/atomic/fetch_add.html"
+        }
+      ]
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Why is a correct atomic attempts count insufficient evidence of a correct reservation service?",
+    "hints": [
+      "Separates metric correctness from reservation invariant.",
+      "Names shared transition and synchronized reads.",
+      "Keeps durability/progress/performance claims outside toy evidence."
+    ],
+    "solution": "It covers one metric only. Need complete shared availability/accepted invariant and synchronized snapshots, validation/identity/rejection policy, lifetime/error/cancellation handling and durable/replay/account semantics if required. Atomicity does not prove business correctness, progress or throughput."
+  },
+  "independentExercise": {
+    "prompt": "Write a small test case that deliberately breaks the contract boundary in \"Mutexes, atomics and happens-before\" and verify how your implementation rejects or handles it.",
+    "hints": [
+      "Test zero, negative, empty, duplicate, and boundary values.",
+      "Confirm both time/memory complexity and numerical precision remain within spec."
+    ],
+    "solution": "def split_atomic_reservation(schedule):\n    # One-thread model of individually atomic load/decrement events, not a whole transaction.\n    if type(schedule) is not str or len(schedule)!=4 or schedule.count(\"A\")!=2 or schedule.count(\"B\")!=2:\n        raise ValueError(\"expected two steps each for A and B\")\n    available=1\n    accepted=0\n    steps={\"A\":0,\"B\":0}\n    allowed={}\n    for worker in schedule:\n        if steps[worker]==0:\n            allowed[worker]=available>0\n        elif allowed[worker]:\n            available-=1\n            accepted+=1\n        steps[worker]+=1\n    return available,accepted\n\nprint(split_atomic_reservation(\"AABB\"))\nprint(split_atomic_reservation(\"ABAB\"))"
+  },
+  "commonMistakes": [
+    "The entire shared invariant transition needs one agreed synchronization protocol. (The compound transition and snapshots use one shared protocol.)",
+    "Use the specified same-object synchronization edge, not a scheduling coincidence. (Within-thread sequencing combines with the synchronization edge.)",
+    "100-37=63 units, assuming only these defined accepted transitions."
+  ],
+  "realWorldApplication": "Used directly across production quantitative research, execution systems, and validation pipelines.",
+  "quantFinanceApplication": "Applies rigorous engineering contracts to quantitative modeling and live trading infrastructure.",
+  "summary": [
+    "Synchronize an invariant, not isolated lines.",
+    "Same-mutex unlock/lock plus joins give specific ordering edges; scoped ownership releases locks on ordinary exit.",
+    "Atomic RMW is one operation, not a transaction spanning several atomic fields or a deadline/fairness guarantee."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "Which critical section preserves the inventory invariant?",
+      "objective": 0,
+      "options": [
+        "Lock only when printing the final result",
+        "Give every worker a different mutex around the same fields",
+        "Lock the same mutex across availability check and both field updates",
+        "Replace the fields with volatile int and remove locks"
+      ],
+      "answerIndex": 2,
+      "explanation": "The entire shared invariant transition needs one agreed synchronization protocol. (The compound transition and snapshots use one shared protocol.)"
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "Which relationship supplies the intended cross-thread visibility edge here?",
+      "objective": 1,
+      "options": [
+        "One thread waited for a second on a clock",
+        "Unlock and a subsequent successful lock of the same mutex",
+        "Two threads used different local mutexes",
+        "A cache line happens to contain both fields"
+      ],
+      "answerIndex": 1,
+      "explanation": "Use the specified same-object synchronization edge, not a scheduling coincidence. (Within-thread sequencing combines with the synchronization edge.)"
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "Inventory starts with 100 units. Successful reservations total 37 units. Under remaining+accepted=100, what remains?",
+      "objective": 2,
+      "answer": 63,
+      "tolerance": 0.000001,
+      "explanation": "100-37=63 units, assuming only these defined accepted transitions."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "Why can individually seq-cst atomic load and later decrement oversell one available unit?",
+      "objective": 0,
+      "options": [
+        "An atomic operation is always a data race",
+        "Sequential consistency forces every algorithm to be correct",
+        "The compiler must ignore every load",
+        "Check and act remain separate operations"
+      ],
+      "answerIndex": 3,
+      "explanation": "Logical resource invariants can fail even without a data race. (Check and act are not automatically one atomic transaction.)"
+    },
+    {
+      "id": "q5",
+      "type": "mcq",
+      "prompt": "Does an acquire operation on an unrelated atomic automatically publish all prior writes from any thread?",
+      "objective": 1,
+      "options": [
+        "No; the atomic and observed value matter",
+        "Yes, regardless of object or observed value",
+        "Yes, as long as the acquire load reads any value from its own atomic",
+        "Yes, and it proves object lifetimes never end"
+      ],
+      "answerIndex": 0,
+      "explanation": "Publication must trace a real synchronization path and valid object lifetimes. (Release/acquire keywords alone are not a global publication proof.)"
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "What core invariant governs Mutexes, atomics and happens-before?",
+      "back": "The entire shared invariant transition needs one agreed synchronization protocol. (The compound transition and snapshots use one shared protocol.)"
+    },
+    {
+      "type": "definition",
+      "front": "In Mutexes, atomics and happens-before, how do you verify: Trace same-mutex unlock/lock and thread join ordering; use an atomic read-modify-write without mistaking atomic fields or sequential consistency for a compound business transaction.?",
+      "back": "Use the specified same-object synchronization edge, not a scheduling coincidence. (Within-thread sequencing combines with the synchronization edge.)"
+    },
+    {
+      "type": "error-identification",
+      "front": "What failure mode happens if the contract in Mutexes, atomics and happens-before is violated?",
+      "back": "100-37=63 units, assuming only these defined accepted transitions."
+    }
+  ],
+  "references": [
+    {
+      "label": "mutex ordering requirements",
+      "url": "https://eel.is/c++draft/thread.mutex.requirements.mutex"
+    },
+    {
+      "label": "lock_guard",
+      "url": "https://en.cppreference.com/w/cpp/thread/lock_guard.html"
+    },
+    {
+      "label": "multi-lock scoped ownership",
+      "url": "https://en.cppreference.com/w/cpp/thread/scoped_lock.html"
+    },
+    {
+      "label": "atomic fetch_add",
+      "url": "https://en.cppreference.com/w/cpp/atomic/atomic/fetch_add.html"
+    }
+  ],
+  "skills": [
+    "operating-systems",
+    "networking",
+    "concurrency",
+    "cpp-performance"
+  ]
+}

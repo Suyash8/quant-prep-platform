@@ -1,0 +1,229 @@
+{
+  "id": "ap-cpp-value-reference",
+  "moduleId": "ap-cpp",
+  "title": "Values, references, moves and invalidation",
+  "estMinutes": 22,
+  "difficulty": "advanced",
+  "prereqs": [
+    "ap-cpp-containers-algorithms"
+  ],
+  "objectives": [
+    "Classify ordinary named expressions, prvalues and std::move xvalues, tracing value/reference parameter mutation and const-aware overload selection.",
+    "Use move and non-owning view/reference contracts without assuming moved-from values, extending lifetimes through arbitrary references or using invalidated storage.",
+    "Apply values, references, moves and invalidation invariants safely and identify scope boundaries."
+  ],
+  "motivation": "In these C++20 examples, value category describes an EXPRESSION, not an allocation location or whether a variable name contains the word move. A named ordinary variable expression is an lvalue identifying an object; a literal such as 9 is a prvalue; std::move(x) is an xvalue expression referring to x with potential resource-reuse semantics.",
+  "blocks": [
+    {
+      "type": "p",
+      "md": "In these C++20 examples, value category describes an EXPRESSION, not an allocation location or whether a variable name contains the word move. A named ordinary variable expression is an lvalue identifying an object; a literal such as 9 is a prvalue; std::move(x) is an xvalue expression referring to x with potential resource-reuse semantics. Both prvalue and xvalue are rvalues; lvalue and xvalue are glvalues. An lvalue can be const and therefore not assignable, so \"left side of equals\" is not a complete definition. Later language modes have additional return/move rules; this lesson fixes ordinary calls to C++20."
+    },
+    {
+      "type": "p",
+      "md": "For int, a by-value parameter initializes a separate local integer; modifying it does not modify the caller variable. T& binds to a suitable caller object and permits changes according to constness. const T& permits read-only access through that reference but neither copies the object nor promises it cannot be changed through another alias. Passing by reference saves copying only when useful and requires lifetime/aliasing contracts; a small int is normally a simple value parameter unless mutation is intended."
+    },
+    {
+      "type": "steps",
+      "title": "Separate parameter binding from value category",
+      "items": [
+        "shares=7 passed to bump_copy gives a local value 7; incrementing prints 8 but caller shares remains 7. bump_reference then changes caller shares to 8.",
+        "category(shares) selects int&. category(9) selects int&&. Although named has type int&&, the expression named is an lvalue, so category(named) selects int&.",
+        "std::move(named) is an xvalue and selects int&&. std::move(fixed) preserves const, so it cannot bind to int&&; the available const int& overload is selected. A cast is not a guarantee of a move constructor call."
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <iostream>\n#include <utility>\n\nvoid bump_copy(int value) { ++value; std::cout << value << '\\n'; }\nvoid bump_reference(int& value) { ++value; }\nvoid category(int&) { std::cout << \"lvalue\\n\"; }\nvoid category(const int&) { std::cout << \"const-reference\\n\"; }\nvoid category(int&&) { std::cout << \"rvalue\\n\"; }\n\nint main() {\n    int shares = 7;\n    bump_copy(shares);\n    std::cout << shares << '\\n';\n    bump_reference(shares);\n    std::cout << shares << '\\n';\n    category(shares);\n    category(9);\n    int&& named = 10;\n    category(named);\n    category(std::move(named));\n    const int fixed = 11;\n    category(std::move(fixed));\n}",
+      "caption": "Expected lines: 8, 7, 8, lvalue, rvalue, lvalue, rvalue, const-reference. These are ordinary C++20 function-call overloads, not the special return-statement implicit-move rules. Calling an overload named rvalue prints a category choice; it does not itself move an int into a resource-owning destination."
+    },
+    {
+      "type": "p",
+      "md": "std::move is a cast producing an xvalue, not a runtime transfer algorithm. What happens next depends on overloads, constness and the type contract. A moved-from standard-library object is generally valid but in an unspecified state unless a stronger rule applies, such as unique_ptr becoming empty after its shown move. You can destroy or reassign a moved-from string; do not read back() or assume size 0 without checking its precondition/current state. User-defined moved-from contracts must be examined rather than inheriting every library guarantee."
+    },
+    {
+      "type": "p",
+      "md": "std::string owns its character sequence; std::string_view observes a sequence without owning/copying or extending its lifetime. The owner must remain alive and its storage valid for every use. Appending, reallocating, destruction or owner operations can invalidate an existing view under the relevant contract. A view made from a temporary string usually dangles after the full expression ends. Passing/returning that view by value does not rescue the characters. If a result needs independent lifetime, return an owning string/value or declare and satisfy a longer-lived source contract."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <iostream>\n#include <string>\n#include <string_view>\n#include <utility>\n\nstd::string owned_label() { return \"owned\"; }\n\nint main() {\n    std::string text = \"risk\";\n    std::string_view view = text;\n    std::cout << view.substr(0, 2) << '\\n';\n    const std::string copied = text;\n    view = {}; // Discard this observer before owner mutation/transfer.\n    std::string moved = std::move(text);\n    std::cout << moved << '\\n';\n    std::cout << copied << '\\n';\n    text = \"new\"; // Reassign the valid but otherwise unspecified moved-from string.\n    std::cout << text << '\\n';\n    const std::string& extended = std::string{\"local\"};\n    std::cout << extended << '\\n';\n    std::cout << owned_label() << '\\n';\n}",
+      "caption": "Expected lines: ri, risk, risk, new, local, owned. The observer is cleared before moving text, and is not used afterward. copied remains independent; moved receives the original string value. No particular moved-from text value is printed; it is reassigned first. The direct local const-reference initialization extends that particular temporary string to the reference lifetime. Returning an owning string from owned_label avoids returning a view/reference to a dead local."
+    },
+    {
+      "type": "p",
+      "md": "Lifetime extension has specific syntax/context rules; do not turn the direct local const-reference example into \"references keep everything alive\". A temporary bound to a reference parameter normally lives only through the full expression containing the call. Returning that parameter reference does not extend it to the caller variable lifetime, and returning a reference to an ordinary local does not save it. An rvalue reference parameter is also an observer binding unless the function performs a documented ownership-taking operation. Avoid returning borrowed references/views when no independent lifetime proof is available."
+    },
+    {
+      "type": "p",
+      "md": "After move or container mutation, inspect the exact type/operation guarantee for objects and observers separately. Moving a unique_ptr can preserve its pointee while moving a string does not offer a blanket promise for old views across every representation/operation. A valid-but-unspecified source object can coexist with invalid observers into earlier storage. Reassigning the source is safe under its contract but can invalidate other observers too. None of these mechanisms gives synchronization, persistent state or protection against a caller retaining an expired alias."
+    },
+    {
+      "type": "p",
+      "md": "Independent transfer: add overload checks for a const lvalue, an int prvalue and a named int&& without changing their source values. For a string result, compare returning an owned string with returning string_view into a local; explain the latter lifetime failure without dereferencing it. Test moved destination values and safe source reassignment, not a platform-specific assumption that every source becomes empty."
+    },
+    {
+      "type": "p",
+      "md": "Sources: [expression categories](https://en.cppreference.com/w/cpp/language/value_category.html), [move and moved-from states](https://en.cppreference.com/w/cpp/utility/move.html), [string_view ownership/lifetime](https://en.cppreference.com/w/cpp/string/basic_string_view.html), [reference-initialization lifetime rules](https://en.cppreference.com/w/cpp/language/reference_initialization.html), and [Core Guidelines ownership interfaces](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines.html). New examples stay C++20, single-threaded and app-disabled until the real runner is verified."
+    },
+    {
+      "type": "ref",
+      "items": [
+        {
+          "label": "expression categories",
+          "url": "https://en.cppreference.com/w/cpp/language/value_category.html"
+        },
+        {
+          "label": "move and moved-from states",
+          "url": "https://en.cppreference.com/w/cpp/utility/move.html"
+        },
+        {
+          "label": "string_view ownership/lifetime",
+          "url": "https://en.cppreference.com/w/cpp/string/basic_string_view.html"
+        },
+        {
+          "label": "reference-initialization lifetime rules",
+          "url": "https://en.cppreference.com/w/cpp/language/reference_initialization.html"
+        }
+      ]
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Why should a test avoid assuming a moved-from string is empty and every old view remains valid?",
+    "hints": [
+      "Names valid-but-unspecified source state.",
+      "Checks observer lifetime independently.",
+      "Tests guaranteed behavior rather than incidental layout."
+    ],
+    "solution": "The general source is valid but unspecified, and view validity is a separate owner/storage contract that can fail on move/mutation/destruction. Check destination values and safe source operations; discard or reacquire observers using verified live storage. Neither a successful run nor the word move proves observer lifetime."
+  },
+  "independentExercise": {
+    "prompt": "Write a small test case that deliberately breaks the contract boundary in \"Values, references, moves and invalidation\" and verify how your implementation rejects or handles it.",
+    "hints": [
+      "Test zero, negative, empty, duplicate, and boundary values.",
+      "Confirm both time/memory complexity and numerical precision remain within spec."
+    ],
+    "solution": "#include <iostream>\n#include <string>\n#include <string_view>\n#include <utility>\n\nstd::string owned_label() { return \"owned\"; }\n\nint main() {\n    std::string text = \"risk\";\n    std::string_view view = text;\n    std::cout << view.substr(0, 2) << '\\n';\n    const std::string copied = text;\n    view = {}; // Discard this observer before owner mutation/transfer.\n    std::string moved = std::move(text);\n    std::cout << moved << '\\n';\n    std::cout << copied << '\\n';\n    text = \"new\"; // Reassign the valid but otherwise unspecified moved-from string.\n    std::cout << text << '\\n';\n    const std::string& extended = std::string{\"local\"};\n    std::cout << extended << '\\n';\n    std::cout << owned_label() << '\\n';\n}"
+  },
+  "commonMistakes": [
+    "Expression category and declared reference type are different; this ordinary C++20 call treats named as an lvalue. (Use std::move(named) to form the shown xvalue call.)",
+    "The next operation chooses a matching overload; std::move is not a guarantee that a resource move occurs. (The available const int& can bind it, while int&& cannot.)",
+    "The by-value increment leaves caller 7 unchanged; the reference increment changes it to 8."
+  ],
+  "realWorldApplication": "Used directly across production quantitative research, execution systems, and validation pipelines.",
+  "quantFinanceApplication": "Applies rigorous engineering contracts to quantitative modeling and live trading infrastructure.",
+  "summary": [
+    "Value category belongs to an expression; named rvalue-reference expressions are ordinary lvalues in these calls.",
+    "std::move enables type-specific operations without removing constness or preserving arbitrary observers.",
+    "Borrowed views/references still need valid storage and an explicit lifetime proof."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "In the shown ordinary call, int&& named=10; category(named); selects which overload?",
+      "objective": 0,
+      "options": [
+        "int&& because the declaration contains &&",
+        "int& because named is an lvalue expression",
+        "No overload can bind any named variable",
+        "const int& is required because literals are immutable"
+      ],
+      "answerIndex": 1,
+      "explanation": "Expression category and declared reference type are different; this ordinary C++20 call treats named as an lvalue. (Use std::move(named) to form the shown xvalue call.)"
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "What does std::move(fixed) do to a const int fixed?",
+      "objective": 1,
+      "options": [
+        "Removes const so every mutating operation is allowed",
+        "Runs a destructor immediately",
+        "Copies its bytes into a new permanent allocation",
+        "Forms a const-qualified xvalue for overload resolution"
+      ],
+      "answerIndex": 3,
+      "explanation": "The next operation chooses a matching overload; std::move is not a guarantee that a resource move occurs. (The available const int& can bind it, while int&& cannot.)"
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "After shares = 7, bump_copy(shares), then bump_reference(shares), what is caller shares?",
+      "objective": 2,
+      "answer": 8,
+      "tolerance": 0.000001,
+      "explanation": "The by-value increment leaves caller 7 unchanged; the reference increment changes it to 8."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "After moving from a standard string, which test follows the general shown contract?",
+      "objective": 0,
+      "options": [
+        "Check destination value, then safely reassign the source",
+        "Require source.size()==0 for every implementation",
+        "Call source.back() without checking emptiness",
+        "Use every old character view without a lifetime check"
+      ],
+      "answerIndex": 0,
+      "explanation": "Test the type contract, not an incidental source representation observed on one compiler. (Do not require a particular source value unless guaranteed.)"
+    },
+    {
+      "id": "q5",
+      "type": "mcq",
+      "prompt": "Why is returning string_view into an ordinary local string unsafe?",
+      "objective": 1,
+      "options": [
+        "The view automatically deep-copies all characters",
+        "Copying the view into the return value also copies the local character storage",
+        "The owner dies, leaving a borrowed view without live storage",
+        "Every reference binding permanently extends every target"
+      ],
+      "answerIndex": 2,
+      "explanation": "A view copied/returned by value is still a nonowning observer. (Return an owning result or prove an adequate source lifetime.)"
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "What core invariant governs Values, references, moves and invalidation?",
+      "back": "Expression category and declared reference type are different; this ordinary C++20 call treats named as an lvalue. (Use std::move(named) to form the shown xvalue call.)"
+    },
+    {
+      "type": "definition",
+      "front": "In Values, references, moves and invalidation, how do you verify: Use move and non-owning view/reference contracts without assuming moved-from values, extending lifetimes through arbitrary references or using invalidated storage.?",
+      "back": "The next operation chooses a matching overload; std::move is not a guarantee that a resource move occurs. (The available const int& can bind it, while int&& cannot.)"
+    },
+    {
+      "type": "error-identification",
+      "front": "What failure mode happens if the contract in Values, references, moves and invalidation is violated?",
+      "back": "The by-value increment leaves caller 7 unchanged; the reference increment changes it to 8."
+    }
+  ],
+  "references": [
+    {
+      "label": "expression categories",
+      "url": "https://en.cppreference.com/w/cpp/language/value_category.html"
+    },
+    {
+      "label": "move and moved-from states",
+      "url": "https://en.cppreference.com/w/cpp/utility/move.html"
+    },
+    {
+      "label": "string_view ownership/lifetime",
+      "url": "https://en.cppreference.com/w/cpp/string/basic_string_view.html"
+    },
+    {
+      "label": "reference-initialization lifetime rules",
+      "url": "https://en.cppreference.com/w/cpp/language/reference_initialization.html"
+    }
+  ],
+  "skills": [
+    "cpp",
+    "cpp-memory",
+    "cpp-stl",
+    "cpp-engineering"
+  ]
+}

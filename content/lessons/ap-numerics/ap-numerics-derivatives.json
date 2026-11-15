@@ -1,0 +1,221 @@
+{
+  "id": "ap-numerics-derivatives",
+  "moduleId": "ap-numerics",
+  "title": "Derivatives, units and finite differences",
+  "estMinutes": 22,
+  "difficulty": "advanced",
+  "prereqs": [
+    "ap-numerics-eigen-pca"
+  ],
+  "objectives": [
+    "Derive a derivative from its difference-quotient limit, track output/input units and distinguish local linear sensitivity from a finite scenario or a derivative at a kink.",
+    "Derive first/second-order finite-difference truncation errors and evaluate step-size tradeoffs with domain, representability and function-evaluation error checks.",
+    "Apply derivatives, units and finite differences invariants safely and identify scope boundaries."
+  ],
+  "motivation": "For a real function f on an open neighborhood of x, f'(x)=lim_{h→0}(f(x+h)-f(x))/h when the two-sided finite limit exists. The numerator has output units and h has input units, so the derivative has output/input units.",
+  "blocks": [
+    {
+      "type": "p",
+      "md": "For a real function f on an open neighborhood of x, f'(x)=lim_{h→0}(f(x+h)-f(x))/h when the two-sided finite limit exists. The numerator has output units and h has input units, so the derivative has output/input units. A price sensitivity per dollar is not the same numeric value as a sensitivity per cent. A derivative is a local limit, not a claim that one finite change equals derivative times change exactly."
+    },
+    {
+      "type": "steps",
+      "title": "Derive and use a local sensitivity",
+      "items": [
+        "For f(x)=x², expand (x+h)²-x²=2xh+h². For nonzero h, the quotient is 2x+h; as h→0 it tends to 2x.",
+        "If x is time in seconds and f(x)=3x² metres with coefficient 3 in metres/second², then f'(2)=6*2=12 metres/second. The coefficient carries units; writing just x² without its physical coefficient would hide them.",
+        "For a finite time increment h, the exact position change is 6xh+3h². The derivative-only estimate 6xh omits 3h². With x=2 and h=0.5 seconds, actual change 6.75 metres differs from linear estimate 6 metres.",
+        "If new coordinate u=100x expresses the same input in smaller units, g(u)=f(u/100). Difference quotients give g'(u)=f'(u/100)/100. Per-small-unit sensitivity changes; the represented physical change does not."
+      ]
+    },
+    {
+      "type": "p",
+      "md": "For several real coordinates, partial derivative ∂f/∂x_j varies coordinate j while holding the others fixed. Differentiability means f(x+δ)=f(x)+∇f(x)ᵀδ+o(||δ||). Then the derivative along direction d is ∇f(x)ᵀd. For f(x,y)=x²+3y², ∇f=(2x,6y); at (1,2), a small δ=(0.01,-0.02) has linear change 2*0.01+12*(-0.02)=-0.22. Each partial has its own output/coordinate units. Comparing gradient coordinates or taking a norm needs a chosen geometry/scaling. Existence of partials alone does not establish full differentiability."
+    },
+    {
+      "type": "p",
+      "md": "At differentiability points, linear combinations differentiate termwise; the product rule is (fg)'=f'g+fg', and the chain rule for g(f(x)) is g'(f(x))*f'(x). These follow by adding/subtracting the appropriate cross term in difference quotients and taking limits. For example d[(x²+1)²]/dx=2(x²+1)*2x. This lesson uses small polynomial derivatives with independently expanded identities, not an automatic-differentiation engine or a full calculus course. More explicitly, (f(x+h)g(x+h)-f(x)g(x))/h = [(f(x+h)-f(x))/h]*g(x+h) + f(x)*[(g(x+h)-g(x))/h]. Differentiability implies continuity, giving the product rule in the limit. For the chain rule, put Δ=f(x+h)-f(x)=f'(x)h+o(h); the outer differentiability expansion gives g(f(x)+Δ)-g(f(x))=g'(f(x))*Δ+o(|Δ|). Since Δ=O(h), division by h gives the product of derivatives, including when the inner derivative is zero."
+    },
+    {
+      "type": "p",
+      "md": "Forward difference D_f=(f(x+h)-f(x))/h uses x and x+h. If f is twice continuously differentiable nearby with |f''|≤M2, Taylor's remainder gives |D_f-f'(x)|≤M2*h/2 for h>0. For central D_c=(f(x+h)-f(x-h))/(2h), the equal even terms cancel; if f has a continuous third derivative with |f'''|≤M3, the two third-order remainders give|D_c-f'(x)|≤M3*h²/6. The O(h) and O(h²) claims require smoothness and all evaluation points in the domain."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "from fractions import Fraction\n\ndef cubic_differences(x,h):\n    if any(type(v) not in (int,Fraction) or abs(v)>1000 for v in (x,h)) or h<=0:\n        raise ValueError(\"expected bounded int/Fraction x and positive h\")\n    x,h = Fraction(x),Fraction(h)\n    forward = ((x+h)**3-x**3)/h\n    central = ((x+h)**3-(x-h)**3)/(2*h)\n    return forward,central,3*x*x\n\nfor h in (Fraction(1,2),Fraction(1,4),Fraction(1,8)):\n    forward,central,truth = cubic_differences(1,h)\n    print(str(h),str(forward-truth),str(central-truth))\nprint(cubic_differences(0,Fraction(1,8))[1] == Fraction(1,64))",
+      "caption": "Expected lines: 1/2 7/4 1/4; 1/4 13/16 1/16; 1/8 25/64 1/64; then True. For x³ the forward derivative error is 3xh+h² and central error is h² exactly. At x=1, halving h makes central truncation error one quarter; forward error approaches a one-half ratio. Exact Fraction arithmetic deliberately isolates truncation from floating evaluation error."
+    },
+    {
+      "type": "p",
+      "md": "Let each function evaluation have absolute error at most η. Subtracting two evaluations can add errors: forward derivative perturbation is at most 2η/h; central perturbation is at most η/h. Combining with truncation gives bounds M2*h/2+2η/h and M3*h²/6+η/h. Smaller h reduces truncation but magnifies evaluation error. Balancing orders suggests h proportional to sqrt(η) for first-order and η^(1/3) for second-order methods, with scale/derivative constants included. These are model-dependent scales, not universal h values; η may include solver error, measurement noise and roundoff."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "# A deliberately unrepresentable increment on this binary float model.\nx,h = 1.0,2.0**-60\nprint(x+h == x)\napproximation = ((x+h)**2-x*x)/h\nprint(approximation)\nprint(2*x)\n# A centered quotient at a kink can also look reassuring but be misleading.\nfor step in (0.5,0.125):\n    centered = (abs(step)-abs(-step))/(2*step)\n    right = (abs(step)-abs(0.0))/step\n    left = (abs(-step)-abs(0.0))/(-step)\n    print(centered,right,left)",
+      "caption": "Expected output: True, 0.0, 2.0, then 0.0 1.0 -1.0 on each of two lines. On the recorded binary-float runtime, x+h equals x, so the nominal forward quotient is 0 despite derivative 2. At |x| with x=0, central differences return 0 at all steps, while right and left slopes disagree. Neither a tiny step nor a stable-looking central estimate proves derivative existence/accuracy."
+    },
+    {
+      "type": "p",
+      "md": "Before a numerical derivative, state the function/domain and units, choose smooth interior or a justified one-sided boundary formula, compare several scale-appropriate representable steps, and compare with analytic/polynomial references where available. Check x+h≠x and x-h≠x, finite outputs, and an evaluation-error budget. A step sweep can reveal a plateau or inconsistency but is not an error certificate. Noisy/discontinuous stochastic programs may require a different estimand or estimator, not a smaller finite-difference step. Common random numbers change the error model and need their own treatment."
+    },
+    {
+      "type": "p",
+      "md": "Independent transfer: expand both finite-difference formulas for f(x)=x² and explain why central difference is exact in exact arithmetic while forward error is h. Derive the slope-unit change between dollars and cents. Construct an asymmetric domain where a central step is invalid. Explain why |x| at 0 defeats a central-difference convergence check. Finally name the assumptions missing before claiming a derivative tolerance from a solver status."
+    },
+    {
+      "type": "p",
+      "md": "References: [OpenStax derivative definition](https://openstax.org/books/calculus-volume-1/pages/3-1-defining-the-derivative), [FNC truncation/roundoff](https://fncbook.com/fd-converge/), and [evaluation-error analysis](https://aalexan3.math.ncsu.edu/articles/num_diff.pdf). Own examples separate exact polynomial truncation from a recorded floating collision. No generic differentiability or app-runtime certification follows from them."
+    },
+    {
+      "type": "ref",
+      "items": [
+        {
+          "label": "OpenStax derivative definition",
+          "url": "https://openstax.org/books/calculus-volume-1/pages/3-1-defining-the-derivative"
+        },
+        {
+          "label": "FNC truncation/roundoff",
+          "url": "https://fncbook.com/fd-converge/"
+        },
+        {
+          "label": "evaluation-error analysis",
+          "url": "https://aalexan3.math.ncsu.edu/articles/num_diff.pdf"
+        }
+      ]
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "A derivative check agrees at h=1e-10 and 1e-12. What would you still verify?",
+    "hints": [
+      "Does not equate agreement with correctness.",
+      "Checks domain and representability.",
+      "Includes evaluation uncertainty and scale."
+    ],
+    "solution": "Check smoothness/domain, one-sided behavior, actual representable increments, finite results, units/scaling, analytic reference and evaluation/noise error. Agreement can be an incorrect plateau or hidden kink, not certification."
+  },
+  "independentExercise": {
+    "prompt": "Write a small test case that deliberately breaks the contract boundary in \"Derivatives, units and finite differences\" and verify how your implementation rejects or handles it.",
+    "hints": [
+      "Test zero, negative, empty, duplicate, and boundary values.",
+      "Confirm both time/memory complexity and numerical precision remain within spec."
+    ],
+    "solution": "# A deliberately unrepresentable increment on this binary float model.\nx,h = 1.0,2.0**-60\nprint(x+h == x)\napproximation = ((x+h)**2-x*x)/h\nprint(approximation)\nprint(2*x)\n# A centered quotient at a kink can also look reassuring but be misleading.\nfor step in (0.5,0.125):\n    centered = (abs(step)-abs(-step))/(2*step)\n    right = (abs(step)-abs(0.0))/step\n    left = (abs(-step)-abs(0.0))/(-step)\n    print(centered,right,left)"
+  },
+  "commonMistakes": [
+    "The derivative retains output/input units even though it is defined through a limiting quotient. (The quotient divides output change by input change.)",
+    "An averaging formula can hide the failure of the derivative definition. (A stable central quotient alone is not the two-sided derivative limit.)",
+    "The central numerator cancels its constant/quadratic terms; third-order remainder divided by h is second order. (Subtracting the two expansions leaves the linear term and a cubic remainder before division by 2h.)"
+  ],
+  "realWorldApplication": "Used directly across production quantitative research, execution systems, and validation pipelines.",
+  "quantFinanceApplication": "Applies rigorous engineering contracts to quantitative modeling and live trading infrastructure.",
+  "summary": [
+    "Derivatives are local, unit-bearing limits.",
+    "Finite-difference order needs smoothness and domain validity; decreasing a step can worsen evaluation error or erase the increment, and a centered quotient can hide a kink.",
+    "Derive a derivative from its difference-quotient limit, track output/input units and distinguish local linear sensitivity from a finite scenario or a derivative at a kink."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "If f is measured in dollars and x in days, what are units of f'(x)?",
+      "objective": 0,
+      "options": [
+        "Dollars per day",
+        "Days per dollar",
+        "Dollars times days",
+        "No units, because h tends to zero"
+      ],
+      "answerIndex": 0,
+      "explanation": "The derivative retains output/input units even though it is defined through a limiting quotient. (The quotient divides output change by input change.)"
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "Central differences of |x| at 0 return 0 for every h>0. What follows?",
+      "objective": 1,
+      "options": [
+        "The derivative exists and is 0",
+        "Every symmetric finite difference proves differentiability",
+        "Nothing about derivative existence without checking one-sided limits",
+        "Absolute value is differentiable at every real number"
+      ],
+      "answerIndex": 2,
+      "explanation": "An averaging formula can hide the failure of the derivative definition. (A stable central quotient alone is not the two-sided derivative limit.)"
+    },
+    {
+      "id": "q3",
+      "type": "mcq",
+      "prompt": "For a smooth central first-derivative formula, what cancels to give O(h²) truncation?",
+      "objective": 2,
+      "options": [
+        "Every odd Taylor term, including the derivative",
+        "The equal even Taylor terms across x+h and x-h",
+        "All function-evaluation noise for every program",
+        "The need to stay in the function domain"
+      ],
+      "answerIndex": 1,
+      "explanation": "The central numerator cancels its constant/quadratic terms; third-order remainder divided by h is second order. (Subtracting the two expansions leaves the linear term and a cubic remainder before division by 2h.)"
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "Why can decreasing h worsen a numerical derivative?",
+      "objective": 0,
+      "options": [
+        "Truncation always increases as h decreases",
+        "A smaller h guarantees exact arithmetic",
+        "All finite differences are inconsistent formulas",
+        "Evaluation error is divided by h, and x+h may equal x"
+      ],
+      "answerIndex": 3,
+      "explanation": "The complete error budget includes evaluation uncertainty and floating representability, not only truncation. (Both amplification and representability need checks.)"
+    },
+    {
+      "id": "q5",
+      "type": "numeric",
+      "prompt": "For f(x)=x², what is f'(3)?",
+      "objective": 1,
+      "answer": 6,
+      "tolerance": 0.000001,
+      "explanation": "Expanding the quotient gives 2x+h; at x=3 the limit is 6."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "What core invariant governs Derivatives, units and finite differences?",
+      "back": "The derivative retains output/input units even though it is defined through a limiting quotient. (The quotient divides output change by input change.)"
+    },
+    {
+      "type": "definition",
+      "front": "In Derivatives, units and finite differences, how do you verify: Derive first/second-order finite-difference truncation errors and evaluate step-size tradeoffs with domain, representability and function-evaluation error checks.?",
+      "back": "An averaging formula can hide the failure of the derivative definition. (A stable central quotient alone is not the two-sided derivative limit.)"
+    },
+    {
+      "type": "error-identification",
+      "front": "What failure mode happens if the contract in Derivatives, units and finite differences is violated?",
+      "back": "The central numerator cancels its constant/quadratic terms; third-order remainder divided by h is second order. (Subtracting the two expansions leaves the linear term and a cubic remainder before division by 2h.)"
+    }
+  ],
+  "references": [
+    {
+      "label": "OpenStax derivative definition",
+      "url": "https://openstax.org/books/calculus-volume-1/pages/3-1-defining-the-derivative"
+    },
+    {
+      "label": "FNC truncation/roundoff",
+      "url": "https://fncbook.com/fd-converge/"
+    },
+    {
+      "label": "evaluation-error analysis",
+      "url": "https://aalexan3.math.ncsu.edu/articles/num_diff.pdf"
+    }
+  ],
+  "skills": [
+    "linear-algebra",
+    "numerical-analysis",
+    "optimization"
+  ]
+}

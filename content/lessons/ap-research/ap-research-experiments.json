@@ -1,0 +1,215 @@
+{
+  "id": "ap-research-experiments",
+  "moduleId": "ap-research",
+  "title": "Deterministic experiments and configuration",
+  "estMinutes": 22,
+  "difficulty": "specialist",
+  "prereqs": [
+    "ap-research-costs-fills"
+  ],
+  "objectives": [
+    "Use an isolated seeded RNG and bounded versioned configuration to replay a synthetic resampling computation without mutating global random state.",
+    "Build a deterministic content manifest for data/config/runtime/kernel tag, and separate replay identity from source authenticity, statistical validity and cross-version promises.",
+    "Apply deterministic experiments and configuration invariants safely and identify scope boundaries."
+  ],
+  "motivation": "An experiment is a declared question, data snapshot, code/configuration, selection protocol, runtime and result, not only a seed. Record units, time/universe filters, cost/fill policy, dependencies/hardware relevant to numerics, random streams, threading and failures.",
+  "blocks": [
+    {
+      "type": "p",
+      "md": "An experiment is a declared question, data snapshot, code/configuration, selection protocol, runtime and result, not only a seed. Record units, time/universe filters, cost/fill policy, dependencies/hardware relevant to numerics, random streams, threading and failures. A later changed input/configuration is a new experiment, not an overwrite of the old result. Keep results and diagnostics tied to the actual evaluated manifest. This example is a tiny empirical resampling demonstration, not a strategy backtest or a statistical return forecast."
+    },
+    {
+      "type": "p",
+      "md": "A local random.Random(seed) instance isolates a pseudorandom stream from unrelated calls to Python's global generator. The seed identifies a stream only with the algorithm/runtime and sequence of calls; changing loop order or adding draws can change results. Python documents limits on cross-version reproducibility; randrange and other algorithms may change. Record the actual tested Python runtime rather than promise every future version emits the same resamples. Pseudorandom reproducibility is not cryptographic randomness or evidence of independent market returns."
+    },
+    {
+      "type": "steps",
+      "title": "Same content,not dictionary insertion order",
+      "items": [
+        "Data are synthetic returns in integer basis points [10,-5,20]. Config is version 1, seed 7, resamples 4. For each resample, draw 3 indexes with replacement and store their integer sum; the mean is sum/3 bps, not the sum itself.",
+        "Serialize a manifest containing data, config, kernel tag and actual Python version using sorted keys, explicit separators/encoding and no nonfinite values. Reordering dict insertion does not change those bytes or digest.",
+        "Changing a datum, seed, budget or runtime should change the content record. The SHA256 digest is a content identity aid, not a guarantee of mathematical validity, source code authenticity or historical availability. Keep the separately checked source/build hash and trusted source provenance alongside it."
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import hashlib,json,platform,random\n\ndef resample_experiment(data,config):\n    # OWN iid empirical resample demonstration,NOTa time-series confidence interval.\n    if type(data) is not list or not 1<=len(data)<=32 or any(type(x) is not int or not -10000<=x<=10000 for x in data):\n        raise ValueError(\"invalid integer bps data\")\n    if type(config) is not dict or set(config)!={\"version\",\"seed\",\"resamples\"}:\n        raise ValueError(\"invalid experiment config keys\")\n    if type(config[\"version\"]) is not int or config[\"version\"]!=1:\n        raise ValueError(\"unsupported experiment version\")\n    if type(config[\"seed\"]) is not int or not 0<=config[\"seed\"]<2**32:\n        raise ValueError(\"invalid seed\")\n    if type(config[\"resamples\"]) is not int or not 1<=config[\"resamples\"]<=100:\n        raise ValueError(\"invalid resample budget\")\n    manifest={\"kernel\":\"iid-mean-bps-v1\",\"python\":platform.python_version(),\"data_bps\":data[:],\"config\":dict(config)}\n    raw=json.dumps(manifest,sort_keys=True,separators=(\",\",\":\"),ensure_ascii=True,allow_nan=False).encode(\"utf-8\")\n    identity=hashlib.sha256(raw).hexdigest()\n    rng=random.Random(config[\"seed\"])\n    sums=tuple(sum(data[rng.randrange(len(data))] for _ in range(len(data))) for _ in range(config[\"resamples\"]))\n    return identity,raw.decode(\"utf-8\"),sums,len(data)\n\nconfig={\"version\":1,\"seed\":7,\"resamples\":4}\na=resample_experiment([10,-5,20],config)\nb=resample_experiment([10,-5,20],dict(reversed(list(config.items()))))\nprint(a[2],\"denominator\",a[3])\nprint(\"replay\",a==b)\nrandom.seed(999);random.random()\nprint(\"global RNGindependent\",resample_experiment([10,-5,20],config)==a)\nprint(\"changed data identity\",resample_experiment([10,-5,21],config)[0]!=a[0])\ntry:resample_experiment([10],{**config,\"unknown\":0})\nexcept ValueError as error:print(error)",
+      "caption": "Expected Python 3.12.15 sums (0,40,25,50), denominator 3; replay True; global RNGindependent True; changed data identity True; invalid experiment config keys. Complete code stores exact resample totals and denominator, avoiding silent bps/mean confusion. Kernel tag must be bound to the actual reviewed source/build hash outside this toy manifest. It returns data in memory only, no persisted run registry, result signature, parallel stream assignment or cross-version randrange guarantee."
+    },
+    {
+      "type": "p",
+      "md": "Drawing individual rows with replacement treats observations as exchangeable iid empirical draws. Financial series often have serial dependence, changing volatility, overlapping labels and regime shifts. This code does not establish a valid time-series bootstrap confidence interval. Block/stationary/other dependence-aware methods need justified resampling units and tuning, and still cannot invent unseen regimes. Do not label exact deterministic resample output as statistical coverage or future-return evidence."
+    },
+    {
+      "type": "p",
+      "md": "Canonical JSON here means explicit stable serialization under this restricted string-key/integer/list schema, not a universal canonicalization standard for arbitrary objects/floats/dates/Unicode. Python's built-in hash() is not an archival digest substitute. SHA256 collision risk is not the main workflow danger: wrong inputs, unrecorded filters, ambiguous units and a stale success label can all produce confidently repeatable wrong results. Keep schema validation and human/source review separate."
+    },
+    {
+      "type": "p",
+      "md": "For parallel experiments, assign recorded independent/appropriate child streams to stable task IDs rather than letting scheduling choose which worker consumes the next global draw. A repeated seed on every worker can duplicate samples instead of providing independent replications. Floating reductions across threads/hardware may differ even with the same seed; state tolerances/deterministic settings. Our bounded sequential integer-sum example avoids those specific effects but does not solve general distributed reproducibility."
+    },
+    {
+      "type": "p",
+      "md": "A replay check compares the exact data/config/runtime/code/result protocol, not only a final rounded score. Retain failed/excluded attempts and reason codes, especially when search decisions depend on them. A failed run should not reuse a previous run's success metadata. Result completion and durable/atomic publication are separate from a pure function returning a value; later lessons handle local artifacts and recovery. No network service or paid system is involved."
+    },
+    {
+      "type": "p",
+      "md": "Independent transfer: reorder config keys and verify identical canonical bytes/result; change one data value or seed and record the distinct manifest. Perturb global RNG state and verify this local stream does not change; also verify the function itself leaves global state untouched. Reconstruct each small resample from saved index draws in an independent checker. Explain why repeated identical output establishes replay but not iid assumptions or a confidence interval for tomorrow's return."
+    },
+    {
+      "type": "p",
+      "md": "Sources: [Python 3.12 random/reproducibility](https://docs.python.org/3.12/library/random.html), [JSON explicit serialization options](https://docs.python.org/3.12/library/json.html), [hashlib SHA256 bytes API](https://docs.python.org/3.12/library/hashlib.html). Retrieved 3.12 documentation may show a newer patch level than the tested 3.12.15 runtime; the actual fixture runtime is recorded separately. Own resampling/manifest contract is not an external standard."
+    },
+    {
+      "type": "ref",
+      "items": [
+        {
+          "label": "Python 3.12 random/reproducibility",
+          "url": "https://docs.python.org/3.12/library/random.html"
+        },
+        {
+          "label": "JSON explicit serialization options",
+          "url": "https://docs.python.org/3.12/library/json.html"
+        },
+        {
+          "label": "hashlib SHA256 bytes API",
+          "url": "https://docs.python.org/3.12/library/hashlib.html"
+        }
+      ]
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Why is repeating the same score with the same seed insufficient to claim a research result is reproducible and trustworthy?",
+    "hints": [
+      "Names full replay inputs.",
+      "Separates digest/seed from provenance/correctness.",
+      "Keeps statistical/model limits explicit."
+    ],
+    "solution": "Need exact raw/vintage/universe/units/filter data, code/build/config/runtime/dependencies, random call/parallel/numeric protocol and full results/failures. Seed alone misses those; content digest is not authenticity, source availability, model correctness or statistical validity. Dependence/selection/cost assumptions require independent review."
+  },
+  "independentExercise": {
+    "prompt": "Write a small test case that deliberately breaks the contract boundary in \"Deterministic experiments and configuration\" and verify how your implementation rejects or handles it.",
+    "hints": [
+      "Test zero, negative, empty, duplicate, and boundary values.",
+      "Confirm both time/memory complexity and numerical precision remain within spec."
+    ],
+    "solution": "import hashlib,json,platform,random\n\ndef resample_experiment(data,config):\n    # OWN iid empirical resample demonstration,NOTa time-series confidence interval.\n    if type(data) is not list or not 1<=len(data)<=32 or any(type(x) is not int or not -10000<=x<=10000 for x in data):\n        raise ValueError(\"invalid integer bps data\")\n    if type(config) is not dict or set(config)!={\"version\",\"seed\",\"resamples\"}:\n        raise ValueError(\"invalid experiment config keys\")\n    if type(config[\"version\"]) is not int or config[\"version\"]!=1:\n        raise ValueError(\"unsupported experiment version\")\n    if type(config[\"seed\"]) is not int or not 0<=config[\"seed\"]<2**32:\n        raise ValueError(\"invalid seed\")\n    if type(config[\"resamples\"]) is not int or not 1<=config[\"resamples\"]<=100:\n        raise ValueError(\"invalid resample budget\")\n    manifest={\"kernel\":\"iid-mean-bps-v1\",\"python\":platform.python_version(),\"data_bps\":data[:],\"config\":dict(config)}\n    raw=json.dumps(manifest,sort_keys=True,separators=(\",\",\":\"),ensure_ascii=True,allow_nan=False).encode(\"utf-8\")\n    identity=hashlib.sha256(raw).hexdigest()\n    rng=random.Random(config[\"seed\"])\n    sums=tuple(sum(data[rng.randrange(len(data))] for _ in range(len(data))) for _ in range(config[\"resamples\"]))\n    return identity,raw.decode(\"utf-8\"),sums,len(data)\n\nconfig={\"version\":1,\"seed\":7,\"resamples\":4}\na=resample_experiment([10,-5,20],config)\nb=resample_experiment([10,-5,20],dict(reversed(list(config.items()))))\nprint(a[2],\"denominator\",a[3])\nprint(\"replay\",a==b)\nrandom.seed(999);random.random()\nprint(\"global RNGindependent\",resample_experiment([10,-5,20],config)==a)\nprint(\"changed data identity\",resample_experiment([10,-5,21],config)[0]!=a[0])\ntry:resample_experiment([10],{**config,\"unknown\":0})\nexcept ValueError as error:print(error)"
+  },
+  "commonMistakes": [
+    "State which stream and call protocol the seed controls. (Unrelated global calls do not consume it.)",
+    "Keep identity, provenance and correctness separate. (It is not a source/validity certificate.)",
+    "60/3=20; sum and mean have different scale."
+  ],
+  "realWorldApplication": "Used directly across production quantitative research, execution systems, and validation pipelines.",
+  "quantFinanceApplication": "Applies rigorous engineering contracts to quantitative modeling and live trading infrastructure.",
+  "summary": [
+    "Replay needs exact data/config/code/runtime and isolated random streams, not a seed alone.",
+    "A deterministic manifest digest aids content identity but does not authenticate inputs or validate iid/dependence assumptions.",
+    "This sequential integer resample is not a time-series interval or durable experiment platform."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "Why use a local random.Random instance here?",
+      "objective": 0,
+      "options": [
+        "To prove financial observations iid",
+        "To isolate this stream from global draws",
+        "To guarantee every future Python algorithm matches",
+        "To make randomness cryptographically secret"
+      ],
+      "answerIndex": 1,
+      "explanation": "State which stream and call protocol the seed controls. (Unrelated global calls do not consume it.)"
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "What does a matching content digest alone establish?",
+      "objective": 1,
+      "options": [
+        "Correct model assumptions",
+        "Historical availability of all data",
+        "A byte-content identity check",
+        "A certificate that the declared kernel tag matches the actual source code"
+      ],
+      "answerIndex": 2,
+      "explanation": "Keep identity, provenance and correctness separate. (It is not a source/validity certificate.)"
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "A 3-row resample has stored sum 60 bps. What mean bps?",
+      "objective": 2,
+      "answer": 20,
+      "tolerance": 0.000001,
+      "explanation": "60/3=20; sum and mean have different scale."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "Why can using the same seed on every worker be wrong?",
+      "objective": 0,
+      "options": [
+        "It can duplicate random samples",
+        "It always produces independent streams",
+        "It automatically fixes floating reductions",
+        "It makes results impossible to reproduce"
+      ],
+      "answerIndex": 0,
+      "explanation": "Reproducibility does not imply independent replications. (Independent replications need an appropriate recorded stream plan.)"
+    },
+    {
+      "id": "q5",
+      "type": "mcq",
+      "prompt": "What does iid row-resampling assume that this code does not prove?",
+      "objective": 1,
+      "options": [
+        "All values are integer bps",
+        "The list length is bounded",
+        "The seed is an exact integer",
+        "Exchangeable independent observations"
+      ],
+      "answerIndex": 3,
+      "explanation": "A valid implementation can target an invalid resampling model. (Market dependence/regimes can violate this.)"
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "What core invariant governs Deterministic experiments and configuration?",
+      "back": "State which stream and call protocol the seed controls. (Unrelated global calls do not consume it.)"
+    },
+    {
+      "type": "definition",
+      "front": "In Deterministic experiments and configuration, how do you verify: Build a deterministic content manifest for data/config/runtime/kernel tag, and separate replay identity from source authenticity, statistical validity and cross-version promises.?",
+      "back": "Keep identity, provenance and correctness separate. (It is not a source/validity certificate.)"
+    },
+    {
+      "type": "error-identification",
+      "front": "What failure mode happens if the contract in Deterministic experiments and configuration is violated?",
+      "back": "60/3=20; sum and mean have different scale."
+    }
+  ],
+  "references": [
+    {
+      "label": "Python 3.12 random/reproducibility",
+      "url": "https://docs.python.org/3.12/library/random.html"
+    },
+    {
+      "label": "JSON explicit serialization options",
+      "url": "https://docs.python.org/3.12/library/json.html"
+    },
+    {
+      "label": "hashlib SHA256 bytes API",
+      "url": "https://docs.python.org/3.12/library/hashlib.html"
+    }
+  ],
+  "skills": [
+    "backtesting",
+    "quant-modelling",
+    "data-infrastructure",
+    "statistics"
+  ]
+}

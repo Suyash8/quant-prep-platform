@@ -1,0 +1,229 @@
+{
+  "id": "ap-statistics-sampling-simulation",
+  "moduleId": "ap-statistics",
+  "title": "Sampling, random streams and Monte Carlo",
+  "estMinutes": 22,
+  "difficulty": "core",
+  "prereqs": [
+    "ap-statistics-distributions-tails"
+  ],
+  "objectives": [
+    "Use isolated reproducible pseudo-random state without confusing replay or different seeds with statistical independence.",
+    "Compute a Monte Carlo estimate and its standard error under stated iid finite-variance assumptions, and distinguish simulation error from model error.",
+    "Apply sampling, random streams and monte carlo invariants safely and identify scope boundaries."
+  ],
+  "motivation": "Sampling means drawing outcomes under a probability mechanism. With replacement, a uniform draw can repeat a value; sampling without replacement changes dependence and usually the variance formula.",
+  "blocks": [
+    {
+      "type": "p",
+      "md": "Sampling means drawing outcomes under a probability mechanism. With replacement, a uniform draw can repeat a value; sampling without replacement changes dependence and usually the variance formula. A pseudo-random generator is deterministic state evolution initialized by a seed. It is useful for repeatable simulations, not for secret passwords, authentication tokens or cryptography. The worked simulation assumes successive generated fair-die draws approximate iid model draws; a seed alone does not prove that a real data process is iid."
+    },
+    {
+      "type": "p",
+      "md": "Use an explicit Random instance for each logical simulation component instead of letting unrelated features consume a shared global stream. A seed initializes state; each draw advances it. Save the seed, implementation/version, algorithm, parameters, draw order and code revision for reproduction. getstate/setstate can replay a segment within the supported generator context. Different methods or versions can consume state differently; Python guarantees certain compatible-seeder random() behavior, not every derived algorithm result across every version."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "from random import Random\nleft = Random(17)\nright = Random(17)\nprint([left.randrange(1,7) for _ in range(5)] ==\n      [right.randrange(1,7) for _ in range(5)])\ndiagnostics = Random(99)\nfor _ in range(1000):\n    diagnostics.random()\nprint(left.random() == right.random())\nstate = left.getstate()\nsegment = [left.random() for _ in range(3)]\nleft.setstate(state)\nprint(segment == [left.random() for _ in range(3)])\n# Wrong for a multi-draw simulation: recreate the first draw each time.\nrestarted = [Random(17).randrange(1,7) for _ in range(5)]\nprint(len(set(restarted)))",
+      "caption": "Expected output: True, True, True, then 1. Separate diagnostic draws leave the other instances unchanged. Two instances with the same seed and matching calls replay the same sequence, not independent replicates. Recreating the generator inside every loop iteration repeats its first draw, producing only one distinct value here. Separate chosen seeds can organize experiments but do not mathematically certify independent streams or independent data."
+    },
+    {
+      "type": "p",
+      "md": "To approximate θ=E[g(X)] under a declared model, generate n iid draws X_i and average Y_i=g(X_i): $\\hat\\theta_n=\\frac1n\\sum_{i=1}^n Y_i$. The function g is part of the target: simulating prices but averaging the wrong payoff estimates a different quantity. With an integrable target, the iid law of large numbers gives convergence; it does not promise that each larger run has smaller realized error. The finite-die example has known expectation 3.5, making it a checkable teaching benchmark rather than a problem that requires Monte Carlo."
+    },
+    {
+      "type": "p",
+      "md": "If iid Y_i have finite variance σ², variance addition gives $\\operatorname{Var}(\\hat\\theta_n)=n\\sigma^2/n^2=\\sigma^2/n$. Its standard deviation across repeated model runs is the Monte Carlo standard error σ/√n. When σ is unknown, estimate it by the sample standard deviation s, using $s^2=\\sum_i(Y_i-\\bar Y)^2/(n-1)$ for n≥2, then report s/√n. This is a random estimate of spread, not a bound on this run's absolute error. It is not the spread of individual Y_i and not a standard deviation of the seed integer."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "from math import fsum, sqrt, isfinite\nfrom random import Random\n\ndef mean_standard_error(values):\n    if type(values) is not list or not 2 <= len(values) <= 100000:\n        raise ValueError(\"expected a list of 2..100000 bounded finite real values\")\n    if any(type(x) not in (int,float) or abs(x) > 1000000 or not isfinite(x) for x in values):\n        raise ValueError(\"expected finite int/float values with abs(x)<=1000000, excluding bool\")\n    mean = fsum(values) / len(values)\n    sample_variance = fsum((x-mean)**2 for x in values) / (len(values)-1)\n    return mean, sqrt(sample_variance / len(values))\n\ndef simulate_die(n, seed):\n    if type(n) is not int or not 2 <= n <= 100000 or type(seed) is not int:\n        raise ValueError(\"expected integer n in [2,100000] and integer seed\")\n    rng = Random(seed)\n    values = [rng.randrange(1,7) for _ in range(n)]\n    return mean_standard_error(values)\n\nestimate, estimated_se = simulate_die(10000, 2026)\nprint(f\"{estimate:.6f}\")\nprint(f\"{estimated_se:.6f}\")\nprint(f\"{sqrt((35/12)/10000):.6f}\")\nprint(simulate_die(10000, 2026) == (estimate, estimated_se))",
+      "caption": "Expected output in the recorded Python 3.12.15 runtime: 3.468900, then 0.017037, then 0.017078, then True. The third line is theoretical SE under the fair iid die model, using Var(die)=35/12; the second estimates it from the sample. The final equality checks replay, not independent replication or correct model specification. The helper keeps an O(n) list for transparency, caps n at 100000, and bounds magnitudes at 1000000; an online implementation can use the earlier streaming-statistics invariant."
+    },
+    {
+      "type": "steps",
+      "title": "Precision has square-root cost",
+      "items": [
+        "For iid target variance σ²=4 and n=100, theoretical SE=2/sqrt(100)=0.2.",
+        "Increasing n to 400 yields SE=2/sqrt(400)=0.1. Halving standard error takes four times as many draws, not twice.",
+        "This compares repeated-run spread under the same model and sampling mechanism. One particular 400-draw estimate need not be closer to truth than one particular 100-draw estimate."
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "from fractions import Fraction\nfrom itertools import product\n# All 36 equally likely outcomes of two INDEPENDENT fair-die draws.\nmeans = [Fraction(a+b,2) for a,b in product(range(1,7), repeat=2)]\nmean = sum(means) / len(means)\nvariance = sum((value-mean)**2 for value in means) / len(means)\nprint(mean)\nprint(variance)\n# Copying the SAME die result twice does not average away its variation.\ncopied = [Fraction(2*a,2) for a in range(1,7)]\ncopied_mean = sum(copied) / len(copied)\nprint(sum((value-copied_mean)**2 for value in copied) / len(copied))",
+      "caption": "Expected output: 7/2, then 35/24, then 35/12. Enumerating all independent pairs gives variance (35/12)/2 for their average. Copying one draw twice leaves its original variance 35/12 instead. An apparently doubled sample count is not doubled independent information."
+    },
+    {
+      "type": "p",
+      "md": "Simulation error asks how well the finite simulation approximates its own specified model quantity. Model error asks whether that model describes the world or decision of interest. More draws can reduce Monte Carlo noise without fixing bad parameters, missing transaction costs, biased sampling or a false iid/normal assumption. Dependence introduces covariance terms, so s/√n is not a general standard error for time series or Markov chains. Infinite target variance can invalidate the stated finite-variance formula. Repeated identical seeded paths do not count as new evidence."
+    },
+    {
+      "type": "p",
+      "md": "For a rare-event indicator, seeing no successes gives an empirical indicator variance of 0. That does not prove the population event probability or simulation uncertainty is 0; the sample may simply have missed the tail. Do not present such a zero plug-in error as certainty. More careful intervals, rare-event methods and dependent-sample variance estimation are later topics, not features supplied by this simple die helper."
+    },
+    {
+      "type": "p",
+      "md": "The summary helper requires 2 to 100000 values, each an exact int or float excluding bool, finite, and with magnitude at most 1000000. This declared bound keeps the illustrated sums and centered squares within floating range; it does not make floating arithmetic exact. Its intended simulation domain is die values 1 through 6, not an unrestricted financial aggregator. Controlled finite values and fsum reduce avoidable arithmetic error but do not fix sampling/model assumptions. A failed contract stops computation rather than returning plausible zero uncertainty."
+    },
+    {
+      "type": "p",
+      "md": "Independent transfer: fix a sample size in advance and run the fair-die simulation under several recorded seeds. Compare the variation across estimates with the theoretical SE without requiring every error to shrink monotonically. Then add unrelated draws on a separate diagnostic generator and verify simulation output stays unchanged. Finally replace two independent draws by two copies of one draw and explain which variance step fails. Record n, seed/version, target/payoff, estimate and estimated SE together."
+    },
+    {
+      "type": "p",
+      "md": "References: [Python 3.12 random](https://docs.python.org/3.12/library/random.html) for state/reproducibility/security and [University of Iowa Monte Carlo notes](https://homepage.stat.uiowa.edu/~luke/classes/STAT7400-2023/_book/markov-chain-monte-carlo.html) for iid averaging and dependence caveats. This lesson does not implement MCMC, effective-sample-size estimation, confidence intervals, or a real trading simulator."
+    },
+    {
+      "type": "interactive",
+      "component": "MonteCarloPi",
+      "params": {},
+      "caption": "Experiment: observe Monte Carlo convergence rate N^{-1/2}."
+    },
+    {
+      "type": "ref",
+      "items": [
+        {
+          "label": "Python 3.12 random",
+          "url": "https://docs.python.org/3.12/library/random.html"
+        },
+        {
+          "label": "University of Iowa Monte Carlo notes",
+          "url": "https://homepage.stat.uiowa.edu/~luke/classes/STAT7400-2023/_book/markov-chain-monte-carlo.html"
+        }
+      ]
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "A huge simulation reports a tiny Monte Carlo SE. Why might its real-world decision still be poor?",
+    "hints": [
+      "Separates simulation precision from model validity.",
+      "Checks target, assumptions and omitted costs/tails.",
+      "Does not treat small Monte Carlo SE as guaranteed profit."
+    ],
+    "solution": "The SE measures simulation noise within a model. Check parameter/model uncertainty, assumptions, dependence, costs, target/payoff correctness, rare tails and whether any real decision/action was authorized."
+  },
+  "independentExercise": {
+    "prompt": "Write a small test case that deliberately breaks the contract boundary in \"Sampling, random streams and Monte Carlo\" and verify how your implementation rejects or handles it.",
+    "hints": [
+      "Test zero, negative, empty, duplicate, and boundary values.",
+      "Confirm both time/memory complexity and numerical precision remain within spec."
+    ],
+    "solution": "from math import fsum, sqrt, isfinite\nfrom random import Random\n\ndef mean_standard_error(values):\n    if type(values) is not list or not 2 <= len(values) <= 100000:\n        raise ValueError(\"expected a list of 2..100000 bounded finite real values\")\n    if any(type(x) not in (int,float) or abs(x) > 1000000 or not isfinite(x) for x in values):\n        raise ValueError(\"expected finite int/float values with abs(x)<=1000000, excluding bool\")\n    mean = fsum(values) / len(values)\n    sample_variance = fsum((x-mean)**2 for x in values) / (len(values)-1)\n    return mean, sqrt(sample_variance / len(values))\n\ndef simulate_die(n, seed):\n    if type(n) is not int or not 2 <= n <= 100000 or type(seed) is not int:\n        raise ValueError(\"expected integer n in [2,100000] and integer seed\")\n    rng = Random(seed)\n    values = [rng.randrange(1,7) for _ in range(n)]\n    return mean_standard_error(values)\n\nestimate, estimated_se = simulate_die(10000, 2026)\nprint(f\"{estimate:.6f}\")\nprint(f\"{estimated_se:.6f}\")\nprint(f\"{sqrt((35/12)/10000):.6f}\")\nprint(simulate_die(10000, 2026) == (estimate, estimated_se))"
+  },
+  "commonMistakes": [
+    "Replay is a software property. Independent sampling is a probability/model requirement that equal-seeded copies do not provide. (Equal-seeded replay is useful for debugging, not extra independent evidence.)",
+    "Local ownership of generator state separates unrelated consumers and makes reproduction easier to explain. (Unrelated diagnostic draws should not change the intended simulation draw order.)",
+    "The estimated standard error is sqrt(sample_variance/n)=sqrt(2/2)=1. This is an estimated repeated-run spread, not a guaranteed bound on error."
+  ],
+  "realWorldApplication": "Used directly across production quantitative research, execution systems, and validation pipelines.",
+  "quantFinanceApplication": "Applies rigorous engineering contracts to quantitative modeling and live trading infrastructure.",
+  "summary": [
+    "Isolate and record reproducible random state.",
+    "Monte Carlo standard error measures repeated-run noise within a model under stated sampling and moment assumptions, not model truth, a guaranteed error bound or independent information created by replay.",
+    "Use isolated reproducible pseudo-random state without confusing replay or different seeds with statistical independence."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "Two Random instances use the same seed and the same sequence of method calls. What do matching draws establish?",
+      "objective": 0,
+      "options": [
+        "That they are independent replications",
+        "That the simulated market model is empirically correct",
+        "Reproduction under that recorded setup, not independence",
+        "That no version or call-order record is useful"
+      ],
+      "answerIndex": 2,
+      "explanation": "Replay is a software property. Independent sampling is a probability/model requirement that equal-seeded copies do not provide. (Equal-seeded replay is useful for debugging, not extra independent evidence.)"
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "Why use a separate diagnostic Random instance during a simulation?",
+      "objective": 1,
+      "options": [
+        "To guarantee perfect independence of every real-world input",
+        "To avoid diagnostics consuming the simulation stream state",
+        "To turn a pseudo-random generator into a cryptographic source",
+        "To make restarting the same seed on every draw correct"
+      ],
+      "answerIndex": 1,
+      "explanation": "Local ownership of generator state separates unrelated consumers and makes reproduction easier to explain. (Unrelated diagnostic draws should not change the intended simulation draw order.)"
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "For two observed values [1,3], the sample mean is 2 and n-1 sample variance is 2. Under the iid summary formula, what estimated standard error s/sqrt(n) does the helper return?",
+      "objective": 2,
+      "answer": 1,
+      "tolerance": 0.000001,
+      "explanation": "The estimated standard error is sqrt(sample_variance/n)=sqrt(2/2)=1. This is an estimated repeated-run spread, not a guaranteed bound on error."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "What does the usual finite-variance iid Monte Carlo standard error measure?",
+      "objective": 0,
+      "options": [
+        "Repeated-run spread of the simulated mean around its model target",
+        "A guaranteed upper bound on this run's absolute error",
+        "Whether the model matches a live market",
+        "The spread of the unaveraged payoff with no n adjustment"
+      ],
+      "answerIndex": 0,
+      "explanation": "The model, target function, sampling mechanism and finite variance are part of the standard-error claim. (It is the standard deviation of the estimator under the stated model.)"
+    },
+    {
+      "id": "q5",
+      "type": "mcq",
+      "prompt": "You repeat one simulated draw 100 times and average its copies. May you divide its standard deviation by sqrt(100) as if they were iid?",
+      "objective": 1,
+      "options": [
+        "Yes, because there are 100 list entries",
+        "Yes, because each copied entry retains the right marginal distribution",
+        "Yes, if the single original draw was generated with a recorded seed",
+        "No; the copies do not create 100 independent observations"
+      ],
+      "answerIndex": 3,
+      "explanation": "The independence-based variance addition fails. Repeated values from a legitimate iid mechanism can occur, but deliberately copied draws are a different mechanism. (The average equals the original draw and retains its variance.)"
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "What core invariant governs Sampling, random streams and Monte Carlo?",
+      "back": "Replay is a software property. Independent sampling is a probability/model requirement that equal-seeded copies do not provide. (Equal-seeded replay is useful for debugging, not extra independent evidence.)"
+    },
+    {
+      "type": "definition",
+      "front": "In Sampling, random streams and Monte Carlo, how do you verify: Compute a Monte Carlo estimate and its standard error under stated iid finite-variance assumptions, and distinguish simulation error from model error.?",
+      "back": "Local ownership of generator state separates unrelated consumers and makes reproduction easier to explain. (Unrelated diagnostic draws should not change the intended simulation draw order.)"
+    },
+    {
+      "type": "error-identification",
+      "front": "What failure mode happens if the contract in Sampling, random streams and Monte Carlo is violated?",
+      "back": "The estimated standard error is sqrt(sample_variance/n)=sqrt(2/2)=1. This is an estimated repeated-run spread, not a guaranteed bound on error."
+    }
+  ],
+  "references": [
+    {
+      "label": "Python 3.12 random",
+      "url": "https://docs.python.org/3.12/library/random.html"
+    },
+    {
+      "label": "University of Iowa Monte Carlo notes",
+      "url": "https://homepage.stat.uiowa.edu/~luke/classes/STAT7400-2023/_book/markov-chain-monte-carlo.html"
+    }
+  ],
+  "skills": [
+    "probability",
+    "distributions",
+    "statistics",
+    "quant-modelling"
+  ]
+}

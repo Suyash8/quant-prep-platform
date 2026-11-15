@@ -1,0 +1,226 @@
+{
+  "id": "ap-cpp-cpp-component",
+  "moduleId": "ap-cpp",
+  "title": "Build a checked C++ component",
+  "estMinutes": 22,
+  "difficulty": "advanced",
+  "prereqs": [
+    "ap-cpp-testing-sanitizers"
+  ],
+  "objectives": [
+    "Implement a complete bounded single-symbol long-only confirmed-fill component with explicit validation/status/duplicate/funds policies and safe precommit arithmetic/resource ordering.",
+    "Reconcile accepted fills independently and test rejected-state immutability, retry policy and resource/exception limits without claiming durable transaction/account/settlement or app-runtime qualification.",
+    "Apply build a checked c++ component invariants safely and identify scope boundaries."
+  ],
+  "motivation": "Build one synthetic single-currency, single-instrument account starting flat, initial economic cash in [0,10^9] cents. Each already-confirmed Fill has positive int ID within one declared source/account namespace, signed quantity in [-10^6,10^6] excluding 0, positive price<=10^6 cents/share, fee in [0,10^6] cents.",
+  "blocks": [
+    {
+      "type": "p",
+      "md": "Build one synthetic single-currency, single-instrument account starting flat, initial economic cash in [0,10^9] cents. Each already-confirmed Fill has positive int ID within one declared source/account namespace, signed quantity in [-10^6,10^6] excluding 0, positive price<=10^6 cents/share, fee in [0,10^6] cents. At most 1000 accepted fills; position must remain long-only in [0,10^6] and economic cash nonnegative. This is an own acceptance policy, not a broker execution/settlement protocol or permission to trade. No marks/realized basis/tax/FX/income/corporate/borrow/settlement functionality is implied."
+    },
+    {
+      "type": "p",
+      "md": "Every rejected append returns a specific status and leaves cash/position/accepted-ID list unchanged. Validation runs first, then duplicate-ID rejection, capacity, proposed position and funding. Any repeated accepted ID is rejected even with identical payload; this policy deliberately differs from the earlier portfolio replay no-op policy and must not be silently swapped. Rejected IDs are not consumed, so a corrected retry of a previously rejected ID can later succeed. Correction/bust authentication and multi-source namespace merging need separate protocols."
+    },
+    {
+      "type": "p",
+      "md": "The precommit arithmetic uses long long. Before each accepted operation, position is bounded by 10^6. A candidate position plus bounded delta lies in [-10^6,2*10^6], safe before its range check. Each absolute notional is at most 10^12 cents and fee at most 10^6. Over at most 1000 accepted fills, absolute cash is bounded by initial 10^9+1000*(10^12+10^6), well below the standard minimum signed long long maximum. A proposed next cash uses at most one more bounded operation before the capacity check prevents further acceptance, so no unbounded accumulation/abs(LLONG_MIN)/narrow product is evaluated. Changing these limits requires revisiting this proof."
+    },
+    {
+      "type": "steps",
+      "title": "Only accepted fills change the ledger",
+      "items": [
+        "Start 10000 cents, 0 shares. Accept ID1 buy 5 at 1000 fee 2: cash 4998, position 5, count 1.",
+        "Reject repeated ID1 as duplicate. Reject sell 9 because it would create a short position; both leave state unchanged.",
+        "Accept ID3 sell 2 at 1100 fee 1: cash 7197, position 3, count 2. Independent sums are 10000-5000-2+2200-1 and 5-2.",
+        "No successful fill is inferred from an order/target. These input records are confirmed under the synthetic source contract; a local component cannot authenticate that fact."
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <iostream>\n#include <stdexcept>\n#include <vector>\n\nstruct Fill {\n    int id;\n    long long delta;\n    long long price;\n    long long fee;\n};\nenum class ApplyStatus { applied, invalid, duplicate, capacity, position, funds };\n\nclass CheckedLedger {\n    long long cash_;\n    long long position_ = 0;\n    std::vector<int> ids_;\npublic:\n    explicit CheckedLedger(long long initial_cash) : cash_{initial_cash} {\n        if (initial_cash < 0 || initial_cash > 1000000000LL) {\n            throw std::invalid_argument(\"initial cash out of range\");\n        }\n    }\n    long long cash() const noexcept { return cash_; }\n    long long position() const noexcept { return position_; }\n    std::size_t count() const noexcept { return ids_.size(); }\n    ApplyStatus apply(const Fill& fill) {\n        if (fill.id <= 0 || fill.delta == 0 || fill.delta < -1000000LL || fill.delta > 1000000LL\n            || fill.price < 1 || fill.price > 1000000LL || fill.fee < 0 || fill.fee > 1000000LL) {\n            return ApplyStatus::invalid;\n        }\n        for (const int id : ids_) {\n            if (id == fill.id) return ApplyStatus::duplicate;\n        }\n        if (ids_.size() >= 1000) return ApplyStatus::capacity;\n        const long long next_position = position_ + fill.delta;\n        if (next_position < 0 || next_position > 1000000LL) return ApplyStatus::position;\n        const long long next_cash = cash_ - fill.delta * fill.price - fill.fee;\n        if (next_cash < 0) return ApplyStatus::funds;\n        ids_.push_back(fill.id); // May throw; scalar state not changed yet.\n        cash_ = next_cash;       // Nonthrowing scalar commit after successful int append.\n        position_ = next_position;\n        return ApplyStatus::applied;\n    }\n};\n\nint main() {\n    CheckedLedger book{10000};\n    std::cout << (book.apply({1, 5, 1000, 2}) == ApplyStatus::applied) << '\\n';\n    std::cout << (book.apply({1, 5, 1000, 2}) == ApplyStatus::duplicate) << '\\n';\n    std::cout << (book.apply({2, -9, 1100, 1}) == ApplyStatus::position) << '\\n';\n    std::cout << (book.apply({3, -2, 1100, 1}) == ApplyStatus::applied) << '\\n';\n    std::cout << book.cash() << ' ' << book.position() << ' ' << book.count() << '\\n';\n}",
+      "caption": "Expected lines: 1, 1, 1, 1, then 7197 3 2. Boolean comparisons show each expected status. The complete component exposes read-only snapshots and validates before mutation. Accepted-ID append can allocate/throw; with int vector elements its failed push_back leaves the vector unchanged, and scalars are assigned only after successful append. This is in-memory exception behavior, not durable commit, crash atomicity or concurrency safety."
+    },
+    {
+      "type": "p",
+      "md": "The vector<int> append is the only potentially throwing operation after domain validation. For this element type it has the strong exception guarantee; after successful append the long long assignments do not throw. No public partially committed state is exposed under this single-threaded model. Do not turn this argument into \"all vector types/allocators or multi-record transactions are atomic\". Allocation failure is an exception, not an ApplyStatus::funds business rejection. No forced allocation-failure injection is claimed by an ordinary successful local test."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <iostream>\n#include <stdexcept>\n#include <vector>\n\nstruct Fill {\n    int id;\n    long long delta;\n    long long price;\n    long long fee;\n};\nenum class ApplyStatus { applied, invalid, duplicate, capacity, position, funds };\n\nclass CheckedLedger {\n    long long cash_;\n    long long position_ = 0;\n    std::vector<int> ids_;\npublic:\n    explicit CheckedLedger(long long initial_cash) : cash_{initial_cash} {\n        if (initial_cash < 0 || initial_cash > 1000000000LL) {\n            throw std::invalid_argument(\"initial cash out of range\");\n        }\n    }\n    long long cash() const noexcept { return cash_; }\n    long long position() const noexcept { return position_; }\n    std::size_t count() const noexcept { return ids_.size(); }\n    ApplyStatus apply(const Fill& fill) {\n        if (fill.id <= 0 || fill.delta == 0 || fill.delta < -1000000LL || fill.delta > 1000000LL\n            || fill.price < 1 || fill.price > 1000000LL || fill.fee < 0 || fill.fee > 1000000LL) {\n            return ApplyStatus::invalid;\n        }\n        for (const int id : ids_) {\n            if (id == fill.id) return ApplyStatus::duplicate;\n        }\n        if (ids_.size() >= 1000) return ApplyStatus::capacity;\n        const long long next_position = position_ + fill.delta;\n        if (next_position < 0 || next_position > 1000000LL) return ApplyStatus::position;\n        const long long next_cash = cash_ - fill.delta * fill.price - fill.fee;\n        if (next_cash < 0) return ApplyStatus::funds;\n        ids_.push_back(fill.id); // May throw; scalar state not changed yet.\n        cash_ = next_cash;       // Nonthrowing scalar commit after successful int append.\n        position_ = next_position;\n        return ApplyStatus::applied;\n    }\n};\n\nint main() {\n    CheckedLedger book{10000};\n    if (book.apply({1,5,1000,2}) != ApplyStatus::applied) return 1;\n    const auto cash = book.cash();\n    const auto quantity = book.position();\n    const auto count = book.count();\n    if (book.apply({2,6,1000,0}) != ApplyStatus::funds) return 2;\n    if (book.cash()!=cash || book.position()!=quantity || book.count()!=count) return 3;\n    if (book.apply({2,-2,1100,1}) != ApplyStatus::applied) return 4;\n    // Independent confirmed-fill sums in this fixed trace, not a matching mirror update loop.\n    const long long reference_cash = 10000 - 5*1000 - 2 + 2*1100 - 1;\n    const long long reference_position = 5 - 2;\n    if (book.cash()!=reference_cash || book.position()!=reference_position || book.count()!=2) return 5;\n    std::cout << \"ledger reconciled \" << book.cash() << ' ' << book.position() << '\\n';\n}",
+      "caption": "Expected output: ledger reconciled 7197 3, exit 0. A buy rejected for funds leaves every snapshot field unchanged and does not consume ID2; the later valid ID2 sell is accepted. The final cash/quantity reference uses independently written fixed-trace sums, not the exact mutation loop copied into a second helper. No broker statement or source completeness is validated by this synthetic reference."
+    },
+    {
+      "type": "p",
+      "md": "Test valid buy/sell, zero/negative invalid fields, huge values rejected BEFORE multiplication, duplicate IDs, rejected retry, exact funding, insufficient cash, insufficient inventory, position cap and 1000/1001 capacity. Compare cash/quantity to a separate accepted-fill reference and require all rejection statuses preserve snapshots. Check constructor invalid cash. Replaying a successful batch into the same instance yields duplicates rather than applying again. Test empty/start state independently. Instrumented runs cover only those executed cases; account provenance, source completeness, persistence, synchronization and actual runner gates remain separate."
+    },
+    {
+      "type": "p",
+      "md": "Independent transfer: add a read-only accepted-fill audit log rather than just IDs, preserving exception-safe ordering and capacity. Derive how that changes allocation/copy exceptions and resource bounds before claiming the same guarantee. Add a mark-only equity query without changing economic cash/position; state price/time/currency/short assumptions. Do not add a balancing event merely because an independent statement differs."
+    },
+    {
+      "type": "p",
+      "md": "Sources: [Core Guidelines ownership/error/invariants](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines.html), [vector behavior](https://en.cppreference.com/w/cpp/container/vector.html), and [instrumented-testing scope](https://gcc.gnu.org/onlinedocs/gcc/Instrumentation-Options.html). Integer/resource/status policies are explicit own synthetic contracts, not a real brokerage acceptance model. The exact [vector push_back exception contract](https://en.cppreference.com/w/cpp/container/vector/push_back.html) supports the int-element ordering argument; no injected allocation-failure test is claimed."
+    },
+    {
+      "type": "ref",
+      "items": [
+        {
+          "label": "Core Guidelines ownership/error/invariants",
+          "url": "https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines.html"
+        },
+        {
+          "label": "vector behavior",
+          "url": "https://en.cppreference.com/w/cpp/container/vector.html"
+        },
+        {
+          "label": "instrumented-testing scope",
+          "url": "https://gcc.gnu.org/onlinedocs/gcc/Instrumentation-Options.html"
+        },
+        {
+          "label": "vector push_back exception contract",
+          "url": "https://en.cppreference.com/w/cpp/container/vector/push_back.html"
+        }
+      ]
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "What must be added before calling this local capstone an actual durable portfolio service?",
+    "hints": [
+      "Names source and event-model gaps.",
+      "Separates durable/concurrent recovery from local exception behavior.",
+      "Keeps actual runner/UI qualification and limits explicit."
+    ],
+    "solution": "Authenticated complete source/account/instrument/currency/correction protocols, independent reconciliation, real storage with transactional commit/recovery/idempotency rules, concurrency and resource-failure tests, settlement/marks/other event scope and actual runner/UI verification. A local pass or exception-order proof is not production account capability."
+  },
+  "independentExercise": {
+    "prompt": "Write a small test case that deliberately breaks the contract boundary in \"Build a checked C++ component\" and verify how your implementation rejects or handles it.",
+    "hints": [
+      "Test zero, negative, empty, duplicate, and boundary values.",
+      "Confirm both time/memory complexity and numerical precision remain within spec."
+    ],
+    "solution": "#include <iostream>\n#include <stdexcept>\n#include <vector>\n\nstruct Fill {\n    int id;\n    long long delta;\n    long long price;\n    long long fee;\n};\nenum class ApplyStatus { applied, invalid, duplicate, capacity, position, funds };\n\nclass CheckedLedger {\n    long long cash_;\n    long long position_ = 0;\n    std::vector<int> ids_;\npublic:\n    explicit CheckedLedger(long long initial_cash) : cash_{initial_cash} {\n        if (initial_cash < 0 || initial_cash > 1000000000LL) {\n            throw std::invalid_argument(\"initial cash out of range\");\n        }\n    }\n    long long cash() const noexcept { return cash_; }\n    long long position() const noexcept { return position_; }\n    std::size_t count() const noexcept { return ids_.size(); }\n    ApplyStatus apply(const Fill& fill) {\n        if (fill.id <= 0 || fill.delta == 0 || fill.delta < -1000000LL || fill.delta > 1000000LL\n            || fill.price < 1 || fill.price > 1000000LL || fill.fee < 0 || fill.fee > 1000000LL) {\n            return ApplyStatus::invalid;\n        }\n        for (const int id : ids_) {\n            if (id == fill.id) return ApplyStatus::duplicate;\n        }\n        if (ids_.size() >= 1000) return ApplyStatus::capacity;\n        const long long next_position = position_ + fill.delta;\n        if (next_position < 0 || next_position > 1000000LL) return ApplyStatus::position;\n        const long long next_cash = cash_ - fill.delta * fill.price - fill.fee;\n        if (next_cash < 0) return ApplyStatus::funds;\n        ids_.push_back(fill.id); // May throw; scalar state not changed yet.\n        cash_ = next_cash;       // Nonthrowing scalar commit after successful int append.\n        position_ = next_position;\n        return ApplyStatus::applied;\n    }\n};\n\nint main() {\n    CheckedLedger book{10000};\n    if (book.apply({1,5,1000,2}) != ApplyStatus::applied) return 1;\n    const auto cash = book.cash();\n    const auto quantity = book.position();\n    const auto count = book.count();\n    if (book.apply({2,6,1000,0}) != ApplyStatus::funds) return 2;\n    if (book.cash()!=cash || book.position()!=quantity || book.count()!=count) return 3;\n    if (book.apply({2,-2,1100,1}) != ApplyStatus::applied) return 4;\n    // Independent confirmed-fill sums in this fixed trace, not a matching mirror update loop.\n    const long long reference_cash = 10000 - 5*1000 - 2 + 2*1100 - 1;\n    const long long reference_position = 5 - 2;\n    if (book.cash()!=reference_cash || book.position()!=reference_position || book.count()!=2) return 5;\n    std::cout << \"ledger reconciled \" << book.cash() << ' ' << book.position() << '\\n';\n}"
+  },
+  "commonMistakes": [
+    "Preserve the actual interface policy instead of assuming every ledger handles retries the same way. (This component differs explicitly from no-op portfolio replay.)",
+    "The proof depends on int element/vector guarantees and nonthrowing scalar assignments, not a generic atomicity slogan. (For this vector<int> case a failed append leaves state unchanged.)",
+    "10000-5000-2+2200-1=7197. Rejected fills do not enter that sum."
+  ],
+  "realWorldApplication": "Used directly across production quantitative research, execution systems, and validation pipelines.",
+  "quantFinanceApplication": "Applies rigorous engineering contracts to quantitative modeling and live trading infrastructure.",
+  "summary": [
+    "A checked component needs exact bounded arithmetic, identity/status policy, validation before commit and independent accepted-fill reconciliation.",
+    "Rejected appends preserve state under the reviewed in-memory contract; durable/source/account/settlement/concurrency and app qualification remain separate.",
+    "Implement a complete bounded single-symbol long-only confirmed-fill component with explicit validation/status/duplicate/funds policies and safe precommit arithmetic/resource ordering."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "What is the duplicate policy of THIS component?",
+      "objective": 0,
+      "options": [
+        "Exact duplicate IDs silently add a second fill",
+        "Any repeated accepted ID is rejected without changing state",
+        "Every changed payload automatically replaces old state",
+        "IDs from every account can be merged without namespace"
+      ],
+      "answerIndex": 1,
+      "explanation": "Preserve the actual interface policy instead of assuming every ledger handles retries the same way. (This component differs explicitly from no-op portfolio replay.)"
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "Why append the accepted int ID before assigning cash/position?",
+      "objective": 1,
+      "options": [
+        "Cash and position should be committed first because an int-vector append cannot throw",
+        "A rejected fill should deliberately consume its ID",
+        "The potential vector allocation can fail before scalar commit",
+        "This ordering proves crash-safe disk atomicity"
+      ],
+      "answerIndex": 2,
+      "explanation": "The proof depends on int element/vector guarantees and nonthrowing scalar assignments, not a generic atomicity slogan. (For this vector<int> case a failed append leaves state unchanged.)"
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "After initial 10000, buy 5 at 1000 fee 2, then sell 2 at 1100 fee 1, what is economic cash?",
+      "objective": 2,
+      "answer": 7197,
+      "tolerance": 0.000001,
+      "explanation": "10000-5000-2+2200-1=7197. Rejected fills do not enter that sum."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "Why should a rejected fill preserve both economic values AND accepted-ID count?",
+      "objective": 0,
+      "options": [
+        "Otherwise a retry could be blocked or state partly committed",
+        "Only cash ever affects later execution",
+        "Every rejected fill is an accepted trade",
+        "An unchanged printed status proves all hidden state"
+      ],
+      "answerIndex": 0,
+      "explanation": "Identity/resource state is part of the commit contract, not just the amount printed. (The stated rejection contract covers all observable state.)"
+    },
+    {
+      "id": "q5",
+      "type": "mcq",
+      "prompt": "What does the fixed-trace reference sum prove?",
+      "objective": 1,
+      "options": [
+        "The real broker account has no missing executions",
+        "All disk and concurrency interleavings are safe",
+        "No allocation can ever fail",
+        "The shown accepted synthetic fills reconcile arithmetically"
+      ],
+      "answerIndex": 3,
+      "explanation": "An independent synthetic reference is useful but does not authenticate external records. (Source completeness and durable behavior need separate evidence.)"
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "What core invariant governs Build a checked C++ component?",
+      "back": "Preserve the actual interface policy instead of assuming every ledger handles retries the same way. (This component differs explicitly from no-op portfolio replay.)"
+    },
+    {
+      "type": "definition",
+      "front": "In Build a checked C++ component, how do you verify: Reconcile accepted fills independently and test rejected-state immutability, retry policy and resource/exception limits without claiming durable transaction/account/settlement or app-runtime qualification.?",
+      "back": "The proof depends on int element/vector guarantees and nonthrowing scalar assignments, not a generic atomicity slogan. (For this vector<int> case a failed append leaves state unchanged.)"
+    },
+    {
+      "type": "error-identification",
+      "front": "What failure mode happens if the contract in Build a checked C++ component is violated?",
+      "back": "10000-5000-2+2200-1=7197. Rejected fills do not enter that sum."
+    }
+  ],
+  "references": [
+    {
+      "label": "Core Guidelines ownership/error/invariants",
+      "url": "https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines.html"
+    },
+    {
+      "label": "vector behavior",
+      "url": "https://en.cppreference.com/w/cpp/container/vector.html"
+    },
+    {
+      "label": "instrumented-testing scope",
+      "url": "https://gcc.gnu.org/onlinedocs/gcc/Instrumentation-Options.html"
+    },
+    {
+      "label": "vector push_back exception contract",
+      "url": "https://en.cppreference.com/w/cpp/container/vector/push_back.html"
+    }
+  ],
+  "skills": [
+    "cpp",
+    "cpp-memory",
+    "cpp-stl",
+    "cpp-engineering"
+  ]
+}

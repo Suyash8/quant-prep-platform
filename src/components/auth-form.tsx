@@ -151,8 +151,10 @@ export function AuthForm({ mode, stats }: { mode: 'login' | 'register'; stats?: 
               </ul>
               <div className="mt-6 pt-5 border-t-2 border-border">
                 <div className="flex items-center justify-between text-[15px] font-black">
-                  <span className="text-muted">Price</span>
-                  <span className="text-accent-deep dark:text-accent">Free, while we earn your trust</span>
+                  <span className="text-muted">Plan</span>
+                  <Link href="/pricing" className="text-accent-deep dark:text-accent hover:underline">
+                    Free Starter · Pro $29/mo
+                  </Link>
                 </div>
                 <div className="mt-2.5 flex items-center justify-between text-[15px] font-black">
                   <span className="text-muted">Catch</span>

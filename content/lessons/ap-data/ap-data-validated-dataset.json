@@ -1,0 +1,214 @@
+{
+  "id": "ap-data-validated-dataset",
+  "moduleId": "ap-data",
+  "title": "Build a validated price-data pipeline",
+  "estMinutes": 22,
+  "difficulty": "core",
+  "prereqs": [
+    "ap-data-serialization"
+  ],
+  "objectives": [
+    "Build a local bounded ingestion report with source-byte identity, explicit schema/time/precision rules and visible rejects.",
+    "Test parsing, record policy, reconciliation and reproducibility separately rather than trust one successful sample.",
+    "Apply build a validated price-data pipeline invariants safely and identify scope boundaries."
+  ],
+  "motivation": "Build a local ingestion boundary for synthetic CSV bytes, not a live market-data service. Schema version 1 expects exactly the header order symbol,event_time,available_time,price_usd.",
+  "blocks": [
+    {
+      "type": "p",
+      "md": "Build a local ingestion boundary for synthetic CSV bytes, not a live market-data service. Schema version 1 expects exactly the header order symbol,event_time,available_time,price_usd. Data is UTF-8 without a BOM. Symbol is a nonempty string of at most 32 characters. Times must parse as timezone-aware ISO values, normalize to UTC, and availability must not precede event time under this synthetic contract. Real feeds can have clock/correction complexities and need their own policy."
+    },
+    {
+      "type": "p",
+      "md": "Price text allows 1 to 7 ASCII digits before an optional decimal point followed by 1 or 2 digits; no sign, exponent, grouping, whitespace or more precision. Price must be positive. That bounded domain fits the explicitly pinned local Decimal precision of 28 for the cents multiplication here, so the conversion to integer cents needs no rounding. Reject 1.235 rather than silently round it. Identity is (symbol, normalized event instant). This strict version rejects a later accepted-ID duplicate; it is not a production correction-feed model."
+    },
+    {
+      "type": "p",
+      "md": "The batch is capped at 65536 bytes and 1000 logical data records. Wrong headers, malformed UTF-8/CSV or limit failures fail the whole load with an exception and produce no result. A structurally parseable record with invalid fields, symbol, time, price or duplicate identity is reported as a record reject; other valid records still load. Reason priority is fields, symbol, price, time, duplicate. Record numbers are one-based logical data records, not physical line numbers. The caller must handle batch exceptions visibly rather than label them as a zero-row valid dataset."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import csv\nimport hashlib\nimport io\nimport re\nfrom datetime import datetime, timezone\nfrom decimal import Context, Decimal, localcontext\n\nHEADERS = [\"symbol\", \"event_time\", \"available_time\", \"price_usd\"]\nPRICE = re.compile(r\"[0-9]{1,7}(?:\\.[0-9]{1,2})?\\Z\")\n\ndef load_dataset(payload):\n    if type(payload) is not bytes or len(payload) > 65536:\n        raise ValueError(\"expected at most 65536 bytes\")\n    source_hash = hashlib.sha256(payload).hexdigest()\n    text = payload.decode(\"utf-8\", errors=\"strict\")\n    reader = csv.reader(io.StringIO(text, newline=\"\"), strict=True)\n    if next(reader, None) != HEADERS:\n        raise ValueError(\"header/schema mismatch\")\n    accepted, rejected, seen = [], [], set()\n    for record_number, fields in enumerate(reader, start=1):\n        if record_number > 1000:\n            raise ValueError(\"row limit\")\n        reason = None\n        if len(fields) != len(HEADERS):\n            reason = \"fields\"\n        else:\n            symbol, event_text, available_text, price_text = fields\n            if not symbol or len(symbol) > 32:\n                reason = \"symbol\"\n            elif PRICE.fullmatch(price_text) is None or Decimal(price_text) <= 0:\n                reason = \"price\"\n            else:\n                try:\n                    event = datetime.fromisoformat(event_text)\n                    available = datetime.fromisoformat(available_text)\n                    if event.utcoffset() is None or available.utcoffset() is None:\n                        raise ValueError(\"naive time\")\n                    event, available = event.astimezone(timezone.utc), available.astimezone(timezone.utc)\n                    if available < event:\n                        raise ValueError(\"availability precedes event\")\n                except (ValueError, OverflowError):\n                    reason = \"time\"\n                if reason is None:\n                    identity = (symbol, event)\n                    if identity in seen:\n                        reason = \"duplicate\"\n        if reason is not None:\n            rejected.append({\"record\": record_number, \"reason\": reason})\n            continue\n        seen.add(identity)\n        with localcontext(Context(prec=28)):\n            price_cents = int(Decimal(price_text) * 100)\n        accepted.append({\"symbol\": symbol, \"event\": event, \"available\": available,\n                         \"price_cents\": price_cents})\n    accepted.sort(key=lambda row: (row[\"symbol\"], row[\"event\"]))\n    return {\"schema_version\": 1, \"source_sha256\": source_hash,\n            \"accepted\": accepted, \"rejected\": rejected,\n            \"records_read\": len(accepted) + len(rejected)}\n\npayload = (\"symbol,event_time,available_time,price_usd\\n\"\n           \"A,2026-01-15T10:00:00+00:00,2026-01-15T10:00:01+00:00,12.35\\n\"\n           \"A,2026-01-15T10:00:00+00:00,2026-01-15T10:00:02+00:00,12.36\\n\"\n           \"B,2026-01-15T10:00:00+00:00,2026-01-15T10:00:01+00:00,1.235\\n\").encode(\"utf-8\")\nreport = load_dataset(payload)\nprint(report[\"records_read\"])\nprint([row[\"price_cents\"] for row in report[\"accepted\"]])\nprint(report[\"rejected\"])\nprint(report[\"source_sha256\"] == hashlib.sha256(payload).hexdigest())",
+      "caption": "Expected output: 3, then [1235], then [{'record':2,'reason':'duplicate'},{'record':3,'reason':'price'}] with ordinary Python spacing, then True. Hash comparison records exact byte identity. Everything runs in memory; no database/network writes or paid feed is used. CSV framing is supplied by the standard library, not a hand-written parser."
+    },
+    {
+      "type": "p",
+      "md": "The report names schema_version and SHA-256 of the exact original bytes, before text decoding or newline normalization. Equal hashes are useful byte-identity evidence under the hash assumptions; they do not authenticate who supplied the data or whether its prices are true. Store source identifier/version, capture time and the transform code/runtime revision beside a real artifact. These extra external facts are not fabricated by the pure loader. Do not hash a differently normalized payload and call it the original-source hash."
+    },
+    {
+      "type": "p",
+      "md": "records_read equals accepted plus rejected because every parsed record follows exactly one branch. A byte/CSV/limit failure is different: the function never returns a partial success report. Accepted rows are sorted together by symbol and event time, preserving each row's field pairing. Sorting is not a repair for future information: any downstream historical decision must still filter by available time and freshness. This loader does not run a strategy or imply a price is usable before availability."
+    },
+    {
+      "type": "p",
+      "md": "Use tests at each layer: byte type/size and UTF-8 failure; CSV quoted commas/newlines and wrong field counts; exact/duplicate headers; invalid symbol; price zero/negative/extra precision/exponent; naive and reversed timestamps; normalized-UTC duplicate identity; empty header-only data; and count reconciliation. Verify that an invalid first record does not reserve an ID. For accepted records, verify price_cents and source hash independently. Compare two runs on identical bytes and record the same schema/outputs, excluding deliberately external timestamps."
+    },
+    {
+      "type": "p",
+      "md": "Independent transfer: implement from the written specification, then compare against the worked loader on synthetic fixtures. Write RUN.md naming Python/runtime, code revision, exact input hash, schema and reject policy, commands and observed test results. A production pipeline still needs authenticated sources, external persistence/transactions, retries, quarantine/replay, metrics/alerts, schema migrations, access control and operational limits. Do not call those built because this in-memory example works."
+    },
+    {
+      "type": "p",
+      "md": "References: [CSV](https://docs.python.org/3/library/csv.html), [Decimal](https://docs.python.org/3/library/decimal.html), [datetime](https://docs.python.org/3/library/datetime.html), [hashlib](https://docs.python.org/3/library/hashlib.html). The byte/row caps, schema and event/availability policy are explicit teaching choices. The library CSV example does not certify readiness for implementing a quote-state-machine parser from scratch."
+    },
+    {
+      "type": "ref",
+      "items": [
+        {
+          "label": "CSV",
+          "url": "https://docs.python.org/3/library/csv.html"
+        },
+        {
+          "label": "Decimal",
+          "url": "https://docs.python.org/3/library/decimal.html"
+        },
+        {
+          "label": "datetime",
+          "url": "https://docs.python.org/3/library/datetime.html"
+        },
+        {
+          "label": "hashlib",
+          "url": "https://docs.python.org/3/library/hashlib.html"
+        }
+      ]
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "What is still missing before this local loader can be called a production ingestion service?",
+    "hints": [
+      "Names operational/data integrity needs.",
+      "Names security or source authenticity.",
+      "Separates local evidence from unbuilt service capabilities."
+    ],
+    "solution": "Authenticated source access, persistence/transactions, safe retries, quarantine/replay, observability, migrations, access control and tested operational recovery. Report what actually ran, not just a feature wish list."
+  },
+  "independentExercise": {
+    "prompt": "Write a small test case that deliberately breaks the contract boundary in \"Build a validated price-data pipeline\" and verify how your implementation rejects or handles it.",
+    "hints": [
+      "Test zero, negative, empty, duplicate, and boundary values.",
+      "Confirm both time/memory complexity and numerical precision remain within spec."
+    ],
+    "solution": "import csv\nimport hashlib\nimport io\nimport re\nfrom datetime import datetime, timezone\nfrom decimal import Context, Decimal, localcontext\n\nHEADERS = [\"symbol\", \"event_time\", \"available_time\", \"price_usd\"]\nPRICE = re.compile(r\"[0-9]{1,7}(?:\\.[0-9]{1,2})?\\Z\")\n\ndef load_dataset(payload):\n    if type(payload) is not bytes or len(payload) > 65536:\n        raise ValueError(\"expected at most 65536 bytes\")\n    source_hash = hashlib.sha256(payload).hexdigest()\n    text = payload.decode(\"utf-8\", errors=\"strict\")\n    reader = csv.reader(io.StringIO(text, newline=\"\"), strict=True)\n    if next(reader, None) != HEADERS:\n        raise ValueError(\"header/schema mismatch\")\n    accepted, rejected, seen = [], [], set()\n    for record_number, fields in enumerate(reader, start=1):\n        if record_number > 1000:\n            raise ValueError(\"row limit\")\n        reason = None\n        if len(fields) != len(HEADERS):\n            reason = \"fields\"\n        else:\n            symbol, event_text, available_text, price_text = fields\n            if not symbol or len(symbol) > 32:\n                reason = \"symbol\"\n            elif PRICE.fullmatch(price_text) is None or Decimal(price_text) <= 0:\n                reason = \"price\"\n            else:\n                try:\n                    event = datetime.fromisoformat(event_text)\n                    available = datetime.fromisoformat(available_text)\n                    if event.utcoffset() is None or available.utcoffset() is None:\n                        raise ValueError(\"naive time\")\n                    event, available = event.astimezone(timezone.utc), available.astimezone(timezone.utc)\n                    if available < event:\n                        raise ValueError(\"availability precedes event\")\n                except (ValueError, OverflowError):\n                    reason = \"time\"\n                if reason is None:\n                    identity = (symbol, event)\n                    if identity in seen:\n                        reason = \"duplicate\"\n        if reason is not None:\n            rejected.append({\"record\": record_number, \"reason\": reason})\n            continue\n        seen.add(identity)\n        with localcontext(Context(prec=28)):\n            price_cents = int(Decimal(price_text) * 100)\n        accepted.append({\"symbol\": symbol, \"event\": event, \"available\": available,\n                         \"price_cents\": price_cents})\n    accepted.sort(key=lambda row: (row[\"symbol\"], row[\"event\"]))\n    return {\"schema_version\": 1, \"source_sha256\": source_hash,\n            \"accepted\": accepted, \"rejected\": rejected,\n            \"records_read\": len(accepted) + len(rejected)}\n\npayload = (\"symbol,event_time,available_time,price_usd\\n\"\n           \"A,2026-01-15T10:00:00+00:00,2026-01-15T10:00:01+00:00,12.35\\n\"\n           \"A,2026-01-15T10:00:00+00:00,2026-01-15T10:00:02+00:00,12.36\\n\"\n           \"B,2026-01-15T10:00:00+00:00,2026-01-15T10:00:01+00:00,1.235\\n\").encode(\"utf-8\")\nreport = load_dataset(payload)\nprint(report[\"records_read\"])\nprint([row[\"price_cents\"] for row in report[\"accepted\"]])\nprint(report[\"rejected\"])\nprint(report[\"source_sha256\"] == hashlib.sha256(payload).hexdigest())"
+  },
+  "commonMistakes": [
+    "The hash helps reproduce and compare byte identity. Source authenticity, truth and permissions need separate evidence. (The digest is computed before decoding or normalization.)",
+    "The loader's explicit no-rounding policy differs from the serialization lesson's demonstration of an optional named rounding mode. (This violates the declared price-text precision rule.)",
+    "Batch-level parsing/schema failures do not become a successful zero-row report. The caller must surface the failed load. (Header failure prevents the boundary from interpreting records.)"
+  ],
+  "realWorldApplication": "Used directly across production quantitative research, execution systems, and validation pipelines.",
+  "quantFinanceApplication": "Applies rigorous engineering contracts to quantitative modeling and live trading infrastructure.",
+  "summary": [
+    "A trustworthy dataset handover records original-byte identity, schema/units/time rules, rejects, reconciliation and executed tests.",
+    "Keep batch failure distinct from record rejection and state every production capability not yet built.",
+    "Build a local bounded ingestion report with source-byte identity, explicit schema/time/precision rules and visible rejects."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "What does source_sha256 in this loader identify?",
+      "objective": 0,
+      "options": [
+        "The exact original input bytes used in this run",
+        "The verified legal owner of every price",
+        "The exchange's approved final schema",
+        "The normalized CSV text after whitespace and newline cleanup"
+      ],
+      "answerIndex": 0,
+      "explanation": "The hash helps reproduce and compare byte identity. Source authenticity, truth and permissions need separate evidence. (The digest is computed before decoding or normalization.)"
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "A price record contains 1.235 under this loader's cent precision policy. What happens?",
+      "objective": 1,
+      "options": [
+        "It is rounded to 1.24 automatically",
+        "It is accepted as an approximate float",
+        "Its record is rejected with reason price",
+        "The entire batch fails and returns no record-level report"
+      ],
+      "answerIndex": 2,
+      "explanation": "The loader's explicit no-rounding policy differs from the serialization lesson's demonstration of an optional named rounding mode. (This violates the declared price-text precision rule.)"
+    },
+    {
+      "id": "q3",
+      "type": "mcq",
+      "prompt": "The CSV header is wrong. Which behavior matches this project specification?",
+      "objective": 2,
+      "options": [
+        "Return an empty accepted dataset and pretend it loaded",
+        "Fail the whole load visibly with an exception",
+        "Guess the columns by whichever numbers look plausible",
+        "Reject only the first data record and continue with later records"
+      ],
+      "answerIndex": 1,
+      "explanation": "Batch-level parsing/schema failures do not become a successful zero-row report. The caller must surface the failed load. (Header failure prevents the boundary from interpreting records.)"
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "Why must a strategy still check availability after this loader sorts accepted rows?",
+      "objective": 0,
+      "options": [
+        "Sorting authenticates every source price",
+        "The loader already trades every row at its event time",
+        "All sorted data is automatically known from the beginning",
+        "Event order does not prove information was available"
+      ],
+      "answerIndex": 3,
+      "explanation": "Sorting a dataset and restricting its usable information set are distinct operations. Keep availability/freshness checks in the downstream contract. (Historical use needs the decision-time information set.)"
+    },
+    {
+      "id": "q5",
+      "type": "numeric",
+      "prompt": "The worked loader reads 3 records, accepts 1 and rejects 2. What must accepted+rejected equal?",
+      "objective": 1,
+      "answer": 3,
+      "tolerance": 0.000001,
+      "explanation": "Every successfully parsed data record appears once in the accepted/rejected partition, so 1+2=3. A batch exception is not a partial returned success."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "What core invariant governs Build a validated price-data pipeline?",
+      "back": "The hash helps reproduce and compare byte identity. Source authenticity, truth and permissions need separate evidence. (The digest is computed before decoding or normalization.)"
+    },
+    {
+      "type": "definition",
+      "front": "In Build a validated price-data pipeline, how do you verify: Test parsing, record policy, reconciliation and reproducibility separately rather than trust one successful sample.?",
+      "back": "The loader's explicit no-rounding policy differs from the serialization lesson's demonstration of an optional named rounding mode. (This violates the declared price-text precision rule.)"
+    },
+    {
+      "type": "error-identification",
+      "front": "What failure mode happens if the contract in Build a validated price-data pipeline is violated?",
+      "back": "Batch-level parsing/schema failures do not become a successful zero-row report. The caller must surface the failed load. (Header failure prevents the boundary from interpreting records.)"
+    }
+  ],
+  "references": [
+    {
+      "label": "CSV",
+      "url": "https://docs.python.org/3/library/csv.html"
+    },
+    {
+      "label": "Decimal",
+      "url": "https://docs.python.org/3/library/decimal.html"
+    },
+    {
+      "label": "datetime",
+      "url": "https://docs.python.org/3/library/datetime.html"
+    },
+    {
+      "label": "hashlib",
+      "url": "https://docs.python.org/3/library/hashlib.html"
+    }
+  ],
+  "skills": [
+    "python",
+    "scientific-python",
+    "databases",
+    "data-infrastructure"
+  ]
+}

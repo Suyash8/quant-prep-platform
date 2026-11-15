@@ -118,13 +118,6 @@ export function buildLessonCards(lesson: Lesson): PlayerCard[] {
         flush();
         cards.push({ kind: 'concept', title: '', blocks: [block] });
         break;
-      case 'code':
-        // Code sticks with a following explanation? Keep it standalone for focus.
-
-
-        flush();
-        cards.push({ kind: 'concept', title: '', blocks: [block] });
-        break;
       case 'ref':
         // References stay in reference mode; skipped in the card flow.
 

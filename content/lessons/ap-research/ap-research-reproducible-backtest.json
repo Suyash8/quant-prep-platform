@@ -1,0 +1,223 @@
+{
+  "id": "ap-research-reproducible-backtest",
+  "moduleId": "ap-research",
+  "title": "Build and audit a reproducible backtest",
+  "estMinutes": 22,
+  "difficulty": "specialist",
+  "prereqs": [
+    "ap-research-research-scale"
+  ],
+  "objectives": [
+    "Compose complete point-in-time close selection, historical-only synthetic signal, next-open cost/capacity ledger and versioned content manifest into an auditable pure backtest.",
+    "Audit decision evidence, full ledger/terminal state and replay/future-prefix invariants while keeping strategy selection, inference, storage and real-market/production qualification separate.",
+    "Apply build and audit a reproducible backtest invariants safely and identify scope boundaries."
+  ],
+  "motivation": "This complete source composes the earlier revision selector and next-open engine without fragment imports. It supports ONE permanent synthetic asset A, integer observation/availability clocks, integer cents, one share or flat target, and a fixed positive-rise signal.",
+  "blocks": [
+    {
+      "type": "p",
+      "md": "This complete source composes the earlier revision selector and next-open engine without fragment imports. It supports ONE permanent synthetic asset A, integer observation/availability clocks, integer cents, one share or flat target, and a fixed positive-rise signal. No fitted parameters, cross-validation, external dataset, universe service, corporate actions or live account is hidden inside. It is a small auditable research slice, not every technique taught in this module exposed through one API."
+    },
+    {
+      "type": "p",
+      "md": "For decision time t, select the latest eligible revision for current close observation t and previous observation t-1 AS OF t. If either required observation is unavailable, fail rather than forward/backward fill silently. Compare current-minus-previous close to a declared integer threshold; target 1 only if the rise is STRICTLY greater, otherwise 0. A correction to the previous observation available by t may legitimately affect this NEW signal, but cannot rewrite already executed earlier decisions."
+    },
+    {
+      "type": "steps",
+      "title": "From vintage evidence to actual modeled cash",
+      "items": [
+        "Own closes 100,110,105,108 are available at their respective 0..3 times; threshold 0 produces targets 0,1,0,1. Those are close-time targets, not same-bar fills.",
+        "At time 2 open 112, the prior target 1 buys one at 114 with spread 1+slip 1 and fee 1, cash 885. Mark 105 gives equity 990. At time 3 open 104, target 0 sells at 102 less fee 1, cash 986, flat.",
+        "Final pending target 1 has no next opening and is not filled. The manifest includes the exact raw revision set, opening scenarios, threshold, cash/costs, runtime and kernel tag; decision evidence stores actual chosen rows. Adding a future correction may change raw content ID but must not alter earlier decisions/ledger."
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "def vintage_rows(rows,cutoff):\n    # Synthetic schema:(permanent_asset_id,observation_time,available_time,revision,value_cents).\n    if type(cutoff) is not int or cutoff<0 or type(rows) is not list or len(rows)>128:\n        raise ValueError(\"invalid snapshot boundary\")\n    seen=set();groups={}\n    for row in rows:\n        if type(row) is not tuple or len(row)!=5:raise ValueError(\"invalid revision row\")\n        asset,obs,available,revision,value=row\n        if type(asset) is not str or not asset or any(type(x) is not int for x in row[1:]):\n            raise ValueError(\"invalid revision types\")\n        if not 0<=obs<=available or revision<0 or value<=0:\n            raise ValueError(\"invalid revision domain\")\n        key=(asset,obs,revision)\n        if key in seen:raise ValueError(\"duplicate revision key\")\n        seen.add(key);groups.setdefault((asset,obs),[]).append(row)\n    for group in groups.values():\n        ordered=sorted(group,key=lambda row:row[3])\n        if any(a[2]>b[2] for a,b in zip(ordered,ordered[1:])):\n            raise ValueError(\"revision availability runs backward\")\n    chosen={}\n    for row in rows:\n        asset,obs,available,revision,value=row\n        if available>cutoff:continue\n        key=(asset,obs)\n        if key not in chosen or (available,revision)>(chosen[key][2],chosen[key][3]):chosen[key]=row\n    return tuple(chosen[key] for key in sorted(chosen))\n\ndef bar_backtest(bars,targets,initial_cash,half_spread=0,adverse_slip=0,fee_per_unit=0):\n    # OWN schema:(time,opening_reference_cents,closing_mark_cents,open_executable_capacity).\n    if type(bars) is not list or type(targets) is not list or len(bars)!=len(targets) or len(bars)>128:\n        raise ValueError(\"invalid bar or target lists\")\n    if type(initial_cash) is not int or not 0<=initial_cash<=10**9:\n        raise ValueError(\"invalid initial cash\")\n    if any(type(x) is not int or not 0<=x<=1000 for x in (half_spread,adverse_slip,fee_per_unit)):\n        raise ValueError(\"invalid cost parameters\")\n    for index,(bar,target) in enumerate(zip(bars,targets)):\n        if type(bar) is not tuple or len(bar)!=4 or any(type(x) is not int for x in bar):\n            raise ValueError(\"invalid bar schema\")\n        time,opening,close,capacity=bar\n        if time!=index or not 1<=opening<=10**6 or not 1<=close<=10**6 or not 0<=capacity<=10:\n            raise ValueError(\"invalid bar domain or order\")\n        if opening<=half_spread+adverse_slip+fee_per_unit:\n            raise ValueError(\"costs exceed supported sell proceeds\")\n        if type(target) is not int or not 0<=target<=10:raise ValueError(\"invalid close target\")\n    cash=initial_cash;position=0;pending=None;rows=[]\n    for (time,opening,close,capacity),target in zip(bars,targets):\n        delta=0 if pending is None else pending-position\n        price=None;executed=0;unfilled=abs(delta)\n        if delta>0:\n            candidate=opening+half_spread+adverse_slip\n            quantity=min(delta,capacity,cash//(candidate+fee_per_unit))\n            if quantity:\n                cash-=quantity*(candidate+fee_per_unit);position+=quantity\n                executed=quantity;price=candidate\n        elif delta<0:\n            candidate=opening-half_spread-adverse_slip\n            quantity=min(-delta,capacity,position)\n            if quantity:\n                cash+=quantity*(candidate-fee_per_unit);position-=quantity\n                executed=-quantity;price=candidate\n        unfilled-=abs(executed)\n        # Opening attempt expires;mark then accept a NEW close-time target.\n        equity=cash+position*close;pending=target\n        rows.append((time,executed,price,cash,position,close,equity,target,unfilled))\n    return tuple(rows),pending\n\nimport hashlib,json,platform\n\ndef audited_backtest(history,opens,threshold=0,initial=1000,costs=(1,1,1)):\n    # Own one-asset chronological close signal;no fit/search/held-out inference performed.\n    vintage_rows(history,0) # validate FULL revision input even if later excluded\n    if any(row[0]!=\"A\" for row in history):raise ValueError(\"only permanent asset A supported\")\n    if type(opens) is not list or not 1<=len(opens)<=128 or type(costs) is not tuple or len(costs)!=3:\n        raise ValueError(\"invalid audit input schema\")\n    if type(threshold) is not int or not 0<=threshold<=1000:raise ValueError(\"invalid rise threshold cents\")\n    placeholder=[]\n    for row in opens:\n        if type(row) is not tuple or len(row)!=3:raise ValueError(\"invalid opening schema\")\n        time,price,capacity=row;placeholder.append((time,price,price,capacity))\n    bar_backtest(placeholder,[0]*len(opens),initial,*costs) # full open/cost domain checks\n    bars=[];targets=[];decisions=[]\n    for time,opening,capacity in opens:\n        snapshot={row[1]:row for row in vintage_rows(history,time)}\n        if time not in snapshot or time>0 and time-1 not in snapshot:\n            raise ValueError(\"required point-in-time close unavailable\")\n        current=snapshot[time]\n        previous=None if time==0 else snapshot[time-1]\n        target=int(previous is not None and current[4]-previous[4]>threshold)\n        bars.append((time,opening,current[4],capacity));targets.append(target)\n        decisions.append((time,current,previous,target))\n    ledger,pending=bar_backtest(bars,targets,initial,*costs)\n    manifest={\"kernel\":\"point-in-time-next-open-v1\",\"python\":platform.python_version(),\"asset\":\"A\",\"currency\":\"OWN-CENTS\",\"history\":[list(row) for row in history],\"opens\":[list(row) for row in opens],\"threshold\":threshold,\"initial_cash\":initial,\"costs\":list(costs)}\n    raw=json.dumps(manifest,sort_keys=True,separators=(\",\",\":\"),ensure_ascii=True,allow_nan=False)\n    return {\"schema\":1,\"run_id\":hashlib.sha256(raw.encode(\"utf-8\")).hexdigest(),\"manifest\":raw,\"decisions\":tuple(decisions),\"ledger\":ledger,\"pending_target\":pending,\"final_marked_equity\":ledger[-1][6]}\n\nhistory=[(\"A\",i,i,0,value) for i,value in enumerate([100,110,105,108])]\nopens=[(0,100,10),(1,101,10),(2,112,10),(3,104,10)]\nrun=audited_backtest(history,opens)\nprint(\"targets\",tuple(row[3] for row in run[\"decisions\"]))\nprint(\"fills\",tuple(row[1] for row in run[\"ledger\"]))\nprint(\"final\",run[\"final_marked_equity\"],\"pending\",run[\"pending_target\"])\nprint(\"replay\",run==audited_backtest(history,opens))\nfuture=audited_backtest(history+[(\"A\",1,4,1,999)],opens)\nprint(\"future correction same ledger\",future[\"ledger\"]==run[\"ledger\"],\"new content ID\",future[\"run_id\"]!=run[\"run_id\"])\ntry:audited_backtest(history[1:],opens)\nexcept ValueError as error:print(error)",
+      "caption": "Expected: targets (0,1,0,1); fills (0,0,1,-1); final 986 pending 1; replay True; future correction same ledger True new content ID True; required point-in-time close unavailable. Full selector+engine+facade, strict schema/domain/max bounds inherited. Own manifest preserves raw row order, so a permutation can change content ID while selected decisions/ledger remain equivalent. Kernel tag is not a source hash; separate build/source ledger binds actual code. Pure return only, no durable artifact or app-runner certification."
+    },
+    {
+      "type": "p",
+      "md": "Inspect chosen current/previous revision rows and their availability<=decision, threshold comparison, target creation, next-open execution, capacity/unfilled size, commission cashflow, inventory, mark and final pending state. Reconcile independent cashflow/quantity totals to final equity. Retain raw/config/build/runtime IDs and rejected-input reasons without leaking credentials. A run ID helps bind content, not authenticate supplied timestamps or prove the dataset has every historically relevant event."
+    },
+    {
+      "type": "p",
+      "md": "Change future-only revisions or later openings and compare earlier decision/ledger prefixes. Valid future data must not change an earlier state;invalid whole-input data may correctly reject the full run. Adding raw data can legitimately change the manifest ID without changing model outputs. Test exact availability and threshold boundaries, missing required observation, wrong asset, revision conflict, zero capacity/insufficient cash and final unexecuted target. Replay equality alone is not independent mathematical or market validation."
+    },
+    {
+      "type": "p",
+      "md": "The threshold is supplied and recorded, not optimized here. If a researcher tries many thresholds, that is a search requiring the prior trial/temporal/held-out protocol; do not treat this run's final profit/loss as an unbiased chosen-strategy estimate. The toy fair-sign test is not automatically applicable. Compare appropriate same-rule baselines/costs and report all runs/failures before any claim about strategy performance. A deterministic losing sample is not a problem to fix by changing labels or deleting trades."
+    },
+    {
+      "type": "p",
+      "md": "This facade returns one validated candidate dictionary. Persisting it can use a separately reviewed content-keyed artifact protocol, but that integration is NOT implemented by this pure return. Do not claim durable history, concurrent publication, backup or a distributed batch scheduler. Actual app renderer/math/code/task/mobile/a11y/offline/recovery and any deployment/risk review must be checked on the actual current revision. Source-level tests and educational assessments are not professional/trading competence proof."
+    },
+    {
+      "type": "p",
+      "md": "Independent transfer: build a separate cashflow audit from selected opening fills and confirm 986; independently reconstruct each signal from eligible revisions. Perturb only a future correction and confirm prior decisions unchanged while content identity changes. Make a previous-close revision arrive at a current decision and explain the causal signal change; make it arrive one step later and exclude it. Report missing data as failure with no stale successful report, then define a held-out threshold-selection experiment WITHOUT using this final sample for both choosing and testing."
+    },
+    {
+      "type": "p",
+      "md": "Technical pieces inherit original [ALFRED vintage semantics](https://alfred.stlouisfed.org/help/downloaddata), [Backtrader next-bar principle](https://www.backtrader.com/docu/order-creation-execution/order-creation-execution/), [Python JSON](https://docs.python.org/3.12/library/json.html), [hashlib](https://docs.python.org/3.12/library/hashlib.html), and scoped prior source review. The one-asset rise rule, exact costs and audit manifest are own synthetic design, not a validated profitable strategy."
+    },
+    {
+      "type": "ref",
+      "items": [
+        {
+          "label": "ALFRED vintage semantics",
+          "url": "https://alfred.stlouisfed.org/help/downloaddata"
+        },
+        {
+          "label": "Backtrader next-bar principle",
+          "url": "https://www.backtrader.com/docu/order-creation-execution/order-creation-execution/"
+        },
+        {
+          "label": "Python JSON",
+          "url": "https://docs.python.org/3.12/library/json.html"
+        },
+        {
+          "label": "hashlib",
+          "url": "https://docs.python.org/3.12/library/hashlib.html"
+        }
+      ]
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "What remains before treating this source-tested auditable slice as a production or live trading system?",
+    "hints": [
+      "Names data/market and inference limits.",
+      "Keeps actual operational gates held.",
+      "No competence/live authority inferred."
+    ],
+    "solution": "Actual source/data/authenticated point-in-time/universe/corporate-action and market cost/fill validity;trial/temporal/held-out inference and risk limits;real app/runtime/mobile/a11y/durable/concurrent/offline/recovery/security/deployment review and explicit authority for any live effects. Pure replay/ledger/hash tests do not supply these."
+  },
+  "independentExercise": {
+    "prompt": "Write a small test case that deliberately breaks the contract boundary in \"Build and audit a reproducible backtest\" and verify how your implementation rejects or handles it.",
+    "hints": [
+      "Test zero, negative, empty, duplicate, and boundary values.",
+      "Confirm both time/memory complexity and numerical precision remain within spec."
+    ],
+    "solution": "def vintage_rows(rows,cutoff):\n    # Synthetic schema:(permanent_asset_id,observation_time,available_time,revision,value_cents).\n    if type(cutoff) is not int or cutoff<0 or type(rows) is not list or len(rows)>128:\n        raise ValueError(\"invalid snapshot boundary\")\n    seen=set();groups={}\n    for row in rows:\n        if type(row) is not tuple or len(row)!=5:raise ValueError(\"invalid revision row\")\n        asset,obs,available,revision,value=row\n        if type(asset) is not str or not asset or any(type(x) is not int for x in row[1:]):\n            raise ValueError(\"invalid revision types\")\n        if not 0<=obs<=available or revision<0 or value<=0:\n            raise ValueError(\"invalid revision domain\")\n        key=(asset,obs,revision)\n        if key in seen:raise ValueError(\"duplicate revision key\")\n        seen.add(key);groups.setdefault((asset,obs),[]).append(row)\n    for group in groups.values():\n        ordered=sorted(group,key=lambda row:row[3])\n        if any(a[2]>b[2] for a,b in zip(ordered,ordered[1:])):\n            raise ValueError(\"revision availability runs backward\")\n    chosen={}\n    for row in rows:\n        asset,obs,available,revision,value=row\n        if available>cutoff:continue\n        key=(asset,obs)\n        if key not in chosen or (available,revision)>(chosen[key][2],chosen[key][3]):chosen[key]=row\n    return tuple(chosen[key] for key in sorted(chosen))\n\ndef bar_backtest(bars,targets,initial_cash,half_spread=0,adverse_slip=0,fee_per_unit=0):\n    # OWN schema:(time,opening_reference_cents,closing_mark_cents,open_executable_capacity).\n    if type(bars) is not list or type(targets) is not list or len(bars)!=len(targets) or len(bars)>128:\n        raise ValueError(\"invalid bar or target lists\")\n    if type(initial_cash) is not int or not 0<=initial_cash<=10**9:\n        raise ValueError(\"invalid initial cash\")\n    if any(type(x) is not int or not 0<=x<=1000 for x in (half_spread,adverse_slip,fee_per_unit)):\n        raise ValueError(\"invalid cost parameters\")\n    for index,(bar,target) in enumerate(zip(bars,targets)):\n        if type(bar) is not tuple or len(bar)!=4 or any(type(x) is not int for x in bar):\n            raise ValueError(\"invalid bar schema\")\n        time,opening,close,capacity=bar\n        if time!=index or not 1<=opening<=10**6 or not 1<=close<=10**6 or not 0<=capacity<=10:\n            raise ValueError(\"invalid bar domain or order\")\n        if opening<=half_spread+adverse_slip+fee_per_unit:\n            raise ValueError(\"costs exceed supported sell proceeds\")\n        if type(target) is not int or not 0<=target<=10:raise ValueError(\"invalid close target\")\n    cash=initial_cash;position=0;pending=None;rows=[]\n    for (time,opening,close,capacity),target in zip(bars,targets):\n        delta=0 if pending is None else pending-position\n        price=None;executed=0;unfilled=abs(delta)\n        if delta>0:\n            candidate=opening+half_spread+adverse_slip\n            quantity=min(delta,capacity,cash//(candidate+fee_per_unit))\n            if quantity:\n                cash-=quantity*(candidate+fee_per_unit);position+=quantity\n                executed=quantity;price=candidate\n        elif delta<0:\n            candidate=opening-half_spread-adverse_slip\n            quantity=min(-delta,capacity,position)\n            if quantity:\n                cash+=quantity*(candidate-fee_per_unit);position-=quantity\n                executed=-quantity;price=candidate\n        unfilled-=abs(executed)\n        # Opening attempt expires;mark then accept a NEW close-time target.\n        equity=cash+position*close;pending=target\n        rows.append((time,executed,price,cash,position,close,equity,target,unfilled))\n    return tuple(rows),pending\n\nimport hashlib,json,platform\n\ndef audited_backtest(history,opens,threshold=0,initial=1000,costs=(1,1,1)):\n    # Own one-asset chronological close signal;no fit/search/held-out inference performed.\n    vintage_rows(history,0) # validate FULL revision input even if later excluded\n    if any(row[0]!=\"A\" for row in history):raise ValueError(\"only permanent asset A supported\")\n    if type(opens) is not list or not 1<=len(opens)<=128 or type(costs) is not tuple or len(costs)!=3:\n        raise ValueError(\"invalid audit input schema\")\n    if type(threshold) is not int or not 0<=threshold<=1000:raise ValueError(\"invalid rise threshold cents\")\n    placeholder=[]\n    for row in opens:\n        if type(row) is not tuple or len(row)!=3:raise ValueError(\"invalid opening schema\")\n        time,price,capacity=row;placeholder.append((time,price,price,capacity))\n    bar_backtest(placeholder,[0]*len(opens),initial,*costs) # full open/cost domain checks\n    bars=[];targets=[];decisions=[]\n    for time,opening,capacity in opens:\n        snapshot={row[1]:row for row in vintage_rows(history,time)}\n        if time not in snapshot or time>0 and time-1 not in snapshot:\n            raise ValueError(\"required point-in-time close unavailable\")\n        current=snapshot[time]\n        previous=None if time==0 else snapshot[time-1]\n        target=int(previous is not None and current[4]-previous[4]>threshold)\n        bars.append((time,opening,current[4],capacity));targets.append(target)\n        decisions.append((time,current,previous,target))\n    ledger,pending=bar_backtest(bars,targets,initial,*costs)\n    manifest={\"kernel\":\"point-in-time-next-open-v1\",\"python\":platform.python_version(),\"asset\":\"A\",\"currency\":\"OWN-CENTS\",\"history\":[list(row) for row in history],\"opens\":[list(row) for row in opens],\"threshold\":threshold,\"initial_cash\":initial,\"costs\":list(costs)}\n    raw=json.dumps(manifest,sort_keys=True,separators=(\",\",\":\"),ensure_ascii=True,allow_nan=False)\n    return {\"schema\":1,\"run_id\":hashlib.sha256(raw.encode(\"utf-8\")).hexdigest(),\"manifest\":raw,\"decisions\":tuple(decisions),\"ledger\":ledger,\"pending_target\":pending,\"final_marked_equity\":ledger[-1][6]}\n\nhistory=[(\"A\",i,i,0,value) for i,value in enumerate([100,110,105,108])]\nopens=[(0,100,10),(1,101,10),(2,112,10),(3,104,10)]\nrun=audited_backtest(history,opens)\nprint(\"targets\",tuple(row[3] for row in run[\"decisions\"]))\nprint(\"fills\",tuple(row[1] for row in run[\"ledger\"]))\nprint(\"final\",run[\"final_marked_equity\"],\"pending\",run[\"pending_target\"])\nprint(\"replay\",run==audited_backtest(history,opens))\nfuture=audited_backtest(history+[(\"A\",1,4,1,999)],opens)\nprint(\"future correction same ledger\",future[\"ledger\"]==run[\"ledger\"],\"new content ID\",future[\"run_id\"]!=run[\"run_id\"])\ntry:audited_backtest(history[1:],opens)\nexcept ValueError as error:print(error)"
+  },
+  "commonMistakes": [
+    "Preserve full raw provenance without allowing future decision changes. (Future rows are excluded at earlier cutoffs.)",
+    "Terminal intentions are not actual positions. (Report it separately from current holdings.)",
+    "1000-115+101=986."
+  ],
+  "realWorldApplication": "Used directly across production quantitative research, execution systems, and validation pipelines.",
+  "quantFinanceApplication": "Applies rigorous engineering contracts to quantitative modeling and live trading infrastructure.",
+  "summary": [
+    "A reproducible backtest traces point-in-time selected rows to historical close signals, next-open fills, cash/positions/marks and terminal state with content/build evidence.",
+    "Causal replay and independent accounting are necessary source checks, not strategy selection/inference, market realism, durable storage or app/production approval.",
+    "Compose complete point-in-time close selection, historical-only synthetic signal, next-open cost/capacity ledger and versioned content manifest into an auditable pure backtest."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "A future-only correction changes raw content ID but not the earlier ledger. Is that coherent?",
+      "objective": 0,
+      "options": [
+        "No, every raw change must alter every fill",
+        "Yes, new raw content can yield same eligible decisions",
+        "No, the correction must be backfilled into old fills",
+        "Yes, so source authenticity is proven"
+      ],
+      "answerIndex": 1,
+      "explanation": "Preserve full raw provenance without allowing future decision changes. (Future rows are excluded at earlier cutoffs.)"
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "What does final pending target 1 mean after the last bar?",
+      "objective": 1,
+      "options": [
+        "One share has already been bought",
+        "A reserved executed share whose settlement alone is pending",
+        "An unexecuted desired position",
+        "Cash must already be debited"
+      ],
+      "answerIndex": 2,
+      "explanation": "Terminal intentions are not actual positions. (Report it separately from current holdings.)"
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "After buy 114 plus fee 1 from 1000 cash, then sell 102 less fee 1, what final cents?",
+      "objective": 2,
+      "answer": 986,
+      "tolerance": 0.000001,
+      "explanation": "1000-115+101=986."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "A required historical close is missing at decision time. What happens?",
+      "objective": 0,
+      "options": [
+        "The pure run fails explicitly",
+        "Use today's corrected value silently",
+        "Reuse a prior different run's success",
+        "Pretend the close was zero"
+      ],
+      "answerIndex": 0,
+      "explanation": "Keep no-result state distinct from numerical output. (No silent future fill/backfill is permitted.)"
+    },
+    {
+      "id": "q5",
+      "type": "mcq",
+      "prompt": "Does this facade select an optimal threshold and validate its future performance?",
+      "objective": 1,
+      "options": [
+        "Yes, one deterministic run proves optimality",
+        "Yes, if it has a hash",
+        "Only if the sample PnL is positive",
+        "No, it records a supplied threshold"
+      ],
+      "answerIndex": 3,
+      "explanation": "Keep execution audit separate from strategy inference. (Selection needs a separate temporal/held-out plan.)"
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "What core invariant governs Build and audit a reproducible backtest?",
+      "back": "Preserve full raw provenance without allowing future decision changes. (Future rows are excluded at earlier cutoffs.)"
+    },
+    {
+      "type": "definition",
+      "front": "In Build and audit a reproducible backtest, how do you verify: Audit decision evidence, full ledger/terminal state and replay/future-prefix invariants while keeping strategy selection, inference, storage and real-market/production qualification separate.?",
+      "back": "Terminal intentions are not actual positions. (Report it separately from current holdings.)"
+    },
+    {
+      "type": "error-identification",
+      "front": "What failure mode happens if the contract in Build and audit a reproducible backtest is violated?",
+      "back": "1000-115+101=986."
+    }
+  ],
+  "references": [
+    {
+      "label": "ALFRED vintage semantics",
+      "url": "https://alfred.stlouisfed.org/help/downloaddata"
+    },
+    {
+      "label": "Backtrader next-bar principle",
+      "url": "https://www.backtrader.com/docu/order-creation-execution/order-creation-execution/"
+    },
+    {
+      "label": "Python JSON",
+      "url": "https://docs.python.org/3.12/library/json.html"
+    },
+    {
+      "label": "hashlib",
+      "url": "https://docs.python.org/3.12/library/hashlib.html"
+    }
+  ],
+  "skills": [
+    "backtesting",
+    "quant-modelling",
+    "data-infrastructure",
+    "statistics"
+  ]
+}

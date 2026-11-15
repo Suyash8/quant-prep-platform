@@ -1,0 +1,262 @@
+{
+  "id": "ap-python-functions-contracts",
+  "moduleId": "ap-python",
+  "title": "Functions and input/output contracts",
+  "estMinutes": 60,
+  "difficulty": "core",
+  "prereqs": [
+    "ap-python-control-flow"
+  ],
+  "objectives": [
+    "Trace argument binding without changing the caller variable by accident.",
+    "Write and test a function whose returned value is separate from printed output and side effects.",
+    "Decode a bounded positional numeral with a prefix-value Horner invariant and valid digit alphabet/case rules.",
+    "Encode an arbitrary nonnegative integer by quotient/remainder reversal with canonical zero and match the supplied string-return parser contract."
+  ],
+  "motivation": "A function is an interface: it accepts specified inputs, produces a specified result and may have stated side effects. For the first example, price and quantity are already valid nonnegative integer cents/shares.",
+  "blocks": [
+    {
+      "type": "p",
+      "md": "A function is an interface: it accepts specified inputs, produces a specified result and may have stated side effects. For the first example, price and quantity are already valid nonnegative integer cents/shares. The function computes notional cents. Validation belongs to the next boundary lesson; do not pretend the type hints enforce it at runtime."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "def notional_cents(price_cents: int, quantity_shares: int) -> int:\n    return price_cents * quantity_shares\n\nprice = 207\namount = notional_cents(price, 3)\nprint(amount)\nprint(price)",
+      "caption": "Expected output: 621, then 207. Binding the parameter does not reassign the caller variable price."
+    },
+    {
+      "type": "p",
+      "md": "Python binds local parameter names to the supplied objects. Rebinding a local name does not rebind the caller variable. Mutating a passed mutable object is different, as the record lesson shows. Avoid the misleading rule that every argument is simply passed by value or copied."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "def display_total(a, b):\n    print(a * b)\n\ndef return_total(a, b):\n    return a * b\n\nx = display_total(2, 3)\ny = return_total(2, 3)\nprint(x)\nprint(y)",
+      "caption": "Expected output: 6, then None, then 6. A function with no explicit return value returns None."
+    },
+    {
+      "type": "p",
+      "md": "A returned amount can feed another calculation, be tested, or be stored by its caller. Printing is an output side effect, not a substitute for returning a value. Keep the arithmetic function free of file/network writes so callers can use and test it without hidden effects. A pure computation can still raise an error when its preconditions are not met; the contract should say so."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "def add_tag(tag, tags=None):\n    if tags is None:\n        tags = []\n    tags.append(tag)\n    return tags\n\nprint(add_tag(\"checked\"))\nprint(add_tag(\"replayed\"))",
+      "caption": "Expected output: ['checked'], then ['replayed']. A new list is made for each call that omits tags."
+    },
+    {
+      "type": "callout",
+      "variant": "warn",
+      "title": "Boundary condition",
+      "md": "Default argument objects are created when the function is defined, not anew for every call. A default tags=[] can unintentionally retain prior tags. Using None and creating a list inside avoids that shared-default state. If the caller supplies a list to this example, append still mutates that supplied list; the contract must say so."
+    },
+    {
+      "type": "p",
+      "md": "Independent transfer: write fee_cents(quantity_shares,per_share_fee_cents) for prevalidated nonnegative integer inputs. Return their product without printing or mutating anything. Check (3,2) -> 6, (0,2) -> 0 and (5,0) -> 0. Then separately write a caller that prints the returned fee. These are deliberately different responsibilities.\n\nTechnical references: [Python control-flow/functions tutorial](https://docs.python.org/3/tutorial/controlflow.html) for parameter binding, return and mutable defaults. The financial schemas, policies and synthetic cases in this lesson are declared teaching contracts, not claims about a particular venue or employer."
+    },
+    {
+      "type": "p",
+      "md": "Foundation extension for qfp-base-convert, exact source 73d6975: up to 2000 independent queries, bases 2..36, input 1..60 valid digits, case-insensitive ASCII 0..9/A..Z. Output uppercase, no leading zeros, zero exactly \"0\". The supplied parser already loops queries and prints convert(a,b,digits). Return ONE string, not a list of characters/lines, and do not print inside convert. The source constraints ensure valid digits; the teaching function also validates them."
+    },
+    {
+      "type": "p",
+      "md": "For source base a, digits d0..d(L-1) represent sum(dj*a^(L-1-j)). Prefix invariant: before reading the next digit, value equals the integer represented by the consumed prefix. Appending digit d shifts every old place one power left, so new_value=old_value*a+d. Start at 0 for the empty prefix. Thus Horner decoding is correct by induction. Digit values must satisfy 0<=d<a; normalizing ASCII letter case does not change value. Python integers grow as needed. This is not a 64-bit quantity."
+    },
+    {
+      "type": "steps",
+      "title": "Decode AF base 16, then reverse base-2 remainders",
+      "items": [
+        "A means 10, F means 15. Start 0; read A: 0*16+10=10; read F: 10*16+15=175. Leading 00 does not change value.",
+        "Divide 175 by 2: quotient 87, remainder 1; then 87->43 r1, 43->21 r1, 21->10 r1, 10->5 r0, 5->2 r1, 2->1 r0, 1->0 r1. Remainders are least-significant first.",
+        "Reverse to 10101111. For target b, Euclidean division v=b*q+r, 0<=r<b proves the last output digit is r; repeat on q. Positive v decreases for b>=2, so it terminates. If original v=0, the loop emits nothing and must explicitly return \"0\"."
+      ]
+    },
+    {
+      "type": "p",
+      "md": "Reading the Python extension: ALPHABET is an indexed string mapping digit values to symbols; .upper() normalizes ASCII letters, .index(ch) finds a digit value, and len gives length. A temporary list out starts as []; append adds a digit, reversed visits it backwards, and \"\".join concatenates the symbols. divmod(v,b) returns the quotient/remainder pair. any(condition for x in values) is True when the condition holds for at least one x. The checks below use conditions that identify invalid input, so any(...) triggers rejection if one such case is found. This validation shorthand is separate from the positional proof. Python ** means exponentiation; ^ in Python code would mean bitwise XOR. The optional C++ block is a later-language transfer, not a prerequisite for this Python path."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "ALPHABET = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'\n\ndef convert(a, b, digits):\n    if any((type(x) is not int or not 2 <= x <= 36 for x in (a, b))) or type(digits) is not str or (not 1 <= len(digits) <= 60):\n        raise ValueError('invalid radix input')\n    if any((ch not in ALPHABET + ALPHABET.lower() for ch in digits)):\n        raise ValueError('invalid digit')\n    value = 0\n    for ch in digits.upper():\n        if ch not in ALPHABET or ALPHABET.index(ch) >= a:\n            raise ValueError('invalid digit')\n        value = value * a + ALPHABET.index(ch)\n    if value == 0:\n        return '0'\n    out = []\n    while value:\n        (value, remainder) = divmod(value, b)\n        out.append(ALPHABET[remainder])\n    return ''.join(reversed(out))\nprint(convert(16, 2, '00aF'))\nprint(convert(2, 36, '0000'))\nprint(convert(36, 10, 'Z'))\nprint(type(convert(10, 2, '10')).__name__)\ntry:\n    convert(2, 10, '2')\nexcept ValueError as error:\n    print(error)",
+      "caption": "Expected output: 10101111, 0, 35, str, then invalid digit (one per line). Complete Python 3.12 source uses exact growing integers, explicit ASCII digit validation and canonical output. No parser main is needed inside the function. Output length can exceed 60 when converting high-base input to binary. Up to 60 base-36 digits are less than 2^311, so a signed 64-bit representation is insufficient."
+    },
+    {
+      "type": "p",
+      "md": "Optional C++ transfer: the Python path above is complete without this language. Read the later C++ values, vectors and string lessons before implementing this transfer. For C++ without a big-integer library, store the source numeral as a vector of base-a digit values. To divide this big numeral by target b, scan left-to-right with carry initially 0: current=carry*a+digit; append quotient_digit=current/b, carry=current%b. The prefix division invariant says consumed_prefix=b*quotient_prefix+carry. Because carry<b<=36 and digit<a<=36, current<36*36=1296, so int is safe for this intermediate. Quotient digits remain <a. Strip leading zero quotient digits, record carry as the next target digit, and repeat until quotient empty; reverse output remainders. All-zero input returns \"0\". This derives a portable digit-array algorithm, not a claim that unsigned long long can hold 60 digits."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <algorithm>\n#include <iostream>\n#include <stdexcept>\n#include <string>\n#include <vector>\nusing namespace std;\n\nstring convert(int a, int b, const string& digits) {\n    const string alphabet = \"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ\";\n    if (a < 2 || a > 36 || b < 2 || b > 36 || digits.empty() || digits.size() > 60)\n        throw invalid_argument(\"invalid radix input\");\n    vector<int> current;\n    for (char ch : digits) {\n        if (ch >= 'a' && ch <= 'z') ch = char(ch - 'a' + 'A');\n        auto pos = alphabet.find(ch);\n        if (pos == string::npos || int(pos) >= a) throw invalid_argument(\"invalid digit\");\n        if (!current.empty() || pos != 0) current.push_back(int(pos));\n    }\n    if (current.empty()) return \"0\";\n    string output;\n    while (!current.empty()) {\n        vector<int> quotient;\n        int carry = 0;\n        for (int digit : current) {\n            int combined = carry * a + digit;  // <=1295, not the whole integer\n            int next = combined / b;\n            carry = combined % b;\n            if (!quotient.empty() || next != 0) quotient.push_back(next);\n        }\n        output.push_back(alphabet[carry]);\n        current.swap(quotient);\n    }\n    reverse(output.begin(), output.end());\n    return output;\n}\n\nint main() {\n    ios::sync_with_stdio(false);\n    cin.tie(nullptr);\n    int q;\n    if (!(cin >> q)) return 0;\n    while (q--) {\n        int a, b;\n        string digits;\n        cin >> a >> b >> digits;\n        cout << convert(a, b, digits) << '\\n';\n    }\n}",
+      "caption": "Complete C++17 multiquery adapter and digit-array conversion. Try input 3 then lines 16 2 00aF, 2 36 0000, and 36 10 Z; output is 10101111, 0, 35 on separate lines. Each long-division intermediate is at most 1295, with no whole-value fixed-width conversion. Local GCC execution evidence is separate from app capability; app runnable remains false."
+    },
+    {
+      "type": "p",
+      "md": "Python Horner does L big-int multiply/add steps plus R divmods, where R is the target output length. Big-int operations are NOT constant time. Digit-array long division takes O(L*R) small-integer work and O(L+R) storage; quotients shrink. R<=311 for 60 base-36 digits converted to binary (number<36^60<2^311). Across 2000 queries retain one output per query, not one giant cross-query integer. No external judge/time-limit qualification is inferred from these bounds."
+    },
+    {
+      "type": "p",
+      "md": "Python int(digits,a) can decode bases 2..36 and letters case-insensitively, but its accepted language also permits syntax beyond this task, such as some prefixes, underscores, whitespace, signs and Unicode digits. Do not broaden the task silently; our explicit ASCII alphabet validation keeps the stated contract. str(value) encodes decimal only, not arbitrary target bases. Floating or logarithmic conversion can lose integer digits. Exact input/output and case/zero rules are part of correctness, not cosmetic formatting."
+    },
+    {
+      "type": "p",
+      "md": "Independent transfer: convert a 60-digit base-36 value into every target base, then independently decode the output with Python int and compare the source value. Test source/target same, casing, leading zeros, all zeros and maximum output length. Optional later C++ transfer, after the C++ prerequisites: implement the digit-array pass from its prefix invariant and compare it to the exact Python reference. This is not required to complete the Python path. Check the 2000-query parser adaptation separately. A roundtrip alone can share a bug, so also compare positional weighted-sum and known values."
+    },
+    {
+      "type": "p",
+      "md": "Sources: [Middlebury positional/Horner/division lecture](https://www.cs.middlebury.edu/~candrews/classes/cs202-s23/lectures/lecture05-numbers), [Python int base syntax](https://docs.python.org/3.12/library/functions.html#int). Exact parser/constraints from reviewed problem 73d6975, not hidden tests. Main teaching is this extension, not the earlier generic function-return lesson alone."
+    },
+    {
+      "type": "ref",
+      "items": [
+        {
+          "label": "Python control-flow/functions tutorial",
+          "url": "https://docs.python.org/3/tutorial/controlflow.html"
+        },
+        {
+          "label": "Middlebury positional/Horner/division lecture",
+          "url": "https://www.cs.middlebury.edu/~candrews/classes/cs202-s23/lectures/lecture05-numbers"
+        },
+        {
+          "label": "Python int base syntax",
+          "url": "https://docs.python.org/3.12/library/functions.html#int"
+        }
+      ]
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "What should the notional function document before another component uses it?",
+    "hints": [
+      "Names input/output units.",
+      "Distinguishes preconditions from runtime checks.",
+      "Names return behaviour and side effects."
+    ],
+    "solution": "Document input units/types/ranges, the returned unit, error behaviour and any side effects. Clarify whether validation is inside the function or a caller precondition."
+  },
+  "independentExercise": {
+    "prompt": "Prove the all-zero and repeated-division output rules without relying only on a roundtrip test.",
+    "hints": [
+      "Handles zero/termination.",
+      "Explains quotient/remainder reversal.",
+      "Keeps canonical/internal digit semantics."
+    ],
+    "solution": "Zero needs an explicit \"0\" because the loop has no remainders. For positive v and b>=2, v=b*q+r with 0<=r<b; r is the least-significant digit, and q is smaller. Induction on the quotient proves the reversed output, and repeated division terminates at q=0. Strip only leading zeros, not internal zeros. Compare an independent positional-value oracle too."
+  },
+  "commonMistakes": [
+    "Parameter names are local bindings. Assigning a new integer to a local parameter does not assign the caller variable. (Rebinding and mutating a shared mutable object are different.)",
+    "A function without an explicit returned value returns None. Its output may still contain 6 because printing is a side effect. (Falling off the function returns None.)",
+    "The returned value is 3*2=6 cents. The function need not print it; the caller decides how to use the returned amount."
+  ],
+  "realWorldApplication": "Used directly across production quantitative research, execution systems, and validation pipelines.",
+  "quantFinanceApplication": "Directly prepares you for judged problem: base-convert.",
+  "summary": [
+    "Functions separate returned values from printed output and make argument/side-effect contracts explicit.",
+    "Radix extension derives positional Horner decoding, quotient/remainder encoding, ASCII/canonical output and safe C++ digit-array arithmetic.",
+    "Trace argument binding without changing the caller variable by accident."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "If a function locally assigns quantity=0, what happens to a caller integer variable passed as quantity?",
+      "objective": 0,
+      "options": [
+        "The caller variable is automatically rebound to zero",
+        "The caller integer object is mutated in place",
+        "The call fails because parameters cannot be rebound",
+        "The local name changes; the caller name stays as it was"
+      ],
+      "answerIndex": 3,
+      "explanation": "Parameter names are local bindings. Assigning a new integer to a local parameter does not assign the caller variable. (Rebinding and mutating a shared mutable object are different.)"
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "A function only calls print(6) and has no explicit return. What value does its caller receive?",
+      "objective": 1,
+      "options": [
+        "The integer 6 because it appeared on the screen",
+        "A string containing the characters 6",
+        "None, despite the visible printed output",
+        "An exception because every function needs return"
+      ],
+      "answerIndex": 2,
+      "explanation": "A function without an explicit returned value returns None. Its output may still contain 6 because printing is a side effect. (Falling off the function returns None.)"
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "fee_cents(q,fee) returns q*fee for validated integer inputs. What does fee_cents(3,2) return?",
+      "objective": 2,
+      "answer": 6,
+      "tolerance": 0.000001,
+      "explanation": "The returned value is 3*2=6 cents. The function need not print it; the caller decides how to use the returned amount."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "Why can a default parameter tags=[] retain values across separate calls?",
+      "objective": 3,
+      "options": [
+        "Python creates that default object when defining the function",
+        "Python creates an empty replacement list at every call",
+        "All local lists are automatically global variables",
+        "Lists cannot be changed after a function returns"
+      ],
+      "answerIndex": 0,
+      "explanation": "A mutable default is one object created at definition time. Using None and allocating inside the function avoids accidental sharing for omitted arguments. (The default object can then be reused by later calls.)"
+    },
+    {
+      "id": "q5",
+      "type": "mcq",
+      "prompt": "Which contract makes a notional calculation easiest to reuse in tests and another component?",
+      "objective": 0,
+      "options": [
+        "It always writes the result to a fixed production file",
+        "It returns cents and declares any validation or side effects",
+        "It prints dollars but leaves the stored unit unspecified",
+        "It silently converts every bad input to zero"
+      ],
+      "answerIndex": 1,
+      "explanation": "A reusable contract specifies inputs, units, returned result and effects. Silent repair and fixed external writes make testing and composition less reliable. (Callers can use the value while understanding the boundary.)"
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "What core invariant governs Functions and input/output contracts?",
+      "back": "Parameter names are local bindings. Assigning a new integer to a local parameter does not assign the caller variable. (Rebinding and mutating a shared mutable object are different.)"
+    },
+    {
+      "type": "definition",
+      "front": "In Functions and input/output contracts, how do you verify: Write and test a function whose returned value is separate from printed output and side effects.?",
+      "back": "A function without an explicit returned value returns None. Its output may still contain 6 because printing is a side effect. (Falling off the function returns None.)"
+    },
+    {
+      "type": "error-identification",
+      "front": "What failure mode happens if the contract in Functions and input/output contracts is violated?",
+      "back": "The returned value is 3*2=6 cents. The function need not print it; the caller decides how to use the returned amount."
+    }
+  ],
+  "references": [
+    {
+      "label": "Python control-flow/functions tutorial",
+      "url": "https://docs.python.org/3/tutorial/controlflow.html"
+    },
+    {
+      "label": "Middlebury positional/Horner/division lecture",
+      "url": "https://www.cs.middlebury.edu/~candrews/classes/cs202-s23/lectures/lecture05-numbers"
+    },
+    {
+      "label": "Python int base syntax",
+      "url": "https://docs.python.org/3.12/library/functions.html#int"
+    }
+  ],
+  "skills": [
+    "python",
+    "programming-fundamentals",
+    "software-engineering"
+  ]
+}

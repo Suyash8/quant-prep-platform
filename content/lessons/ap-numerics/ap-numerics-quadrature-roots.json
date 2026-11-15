@@ -1,0 +1,243 @@
+{
+  "id": "ap-numerics-quadrature-roots",
+  "moduleId": "ap-numerics",
+  "title": "Quadrature, root finding and error budgets",
+  "estMinutes": 22,
+  "difficulty": "advanced",
+  "prereqs": [
+    "ap-numerics-optimization"
+  ],
+  "objectives": [
+    "Derive a composite trapezoid approximation and its smooth-function discretization/evaluation error budget with explicit units and reference checks.",
+    "Maintain a continuous sign-changing bisection bracket and derive a midpoint location bound, separating residual magnitude, uncertain signs and iteration-budget status.",
+    "Apply quadrature, root finding and error budgets invariants safely and identify scope boundaries."
+  ],
+  "motivation": "The definite integral I=integral_a^b f(x)dx is the limit of weighted sums over increasingly fine partitions when that limit exists. For continuous f on a finite closed interval it exists.",
+  "blocks": [
+    {
+      "type": "p",
+      "md": "The definite integral I=integral_a^b f(x)dx is the limit of weighted sums over increasingly fine partitions when that limit exists. For continuous f on a finite closed interval it exists. It measures signed accumulation, with units(output of f)*(input x). Integrating a rate in currency/day over days gives currency, not another rate. Here a≤b are ordered finite endpoints; a=b gives zero accumulation. Stating a numerical integral does not establish that f models the intended process or that its inputs were available at decision time."
+    },
+    {
+      "type": "p",
+      "md": "Split [a,b] into n equal panels of width h=(b-a)/n, with x_j=a+jh. Linearly interpolate f between adjacent nodes and integrate each line: panel contribution is h*(f(x_j)+f(x_{j+1}))/2. Adding panels gives T_n=h*[f(a)/2+sum_{j=1}^{n-1}f(x_j)+f(b)/2]. Interior nodes appear in two adjacent half-weighted panels; endpoints appear once. This derivation explains the weights rather than treating them as arbitrary constants."
+    },
+    {
+      "type": "p",
+      "md": "Assume f has continuous second derivative and |f''|≤M on [a,b]. On one panel [u,u+h], interpolation error is f(x)-L(x)=f''(ξ_x)*(x-u)*(x-u-h)/2. Its absolute integral is at most (M/2)*integral_0^h t*(h-t)dt=M*h³/12. Sum n panels to get |I-T_n|≤(b-a)*M*h²/12. This is an upper bound, not an exact error or universal observed rate. Extra cancellation can improve some functions; nonsmooth/singular cases may not satisfy this bound at all."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "\"\"\"Exact bounded quadratic quadrature illustration, not a generic integrator.\"\"\"\nfrom fractions import Fraction\n\n\ndef trapezoid_square(a, b, panels):\n    if any(type(x) not in (int, Fraction) or abs(x) > 1000 for x in (a, b)):\n        raise ValueError(\"expected bounded exact int/Fraction endpoints\")\n    if a > b:\n        raise ValueError(\"expected ordered endpoints\")\n    if type(panels) is not int or not 1 <= panels <= 1000:\n        raise ValueError(\"expected1..1000panels, excluding bool\")\n    a, b = Fraction(a), Fraction(b)\n    width = (b-a)/panels\n    value = width*((a*a+b*b)/2 + sum((a+j*width)**2 for j in range(1, panels)))\n    # For f=x^2, M2=2 and exact evaluation give a proved absolute error bound.\n    absolute_error_bound = (b-a)*width*width/6\n    return value, absolute_error_bound\n\n\nif __name__ == \"__main__\":\n    for n in (1, 2, 4):\n        value, bound = trapezoid_square(0, 1, n)\n        print(n, str(value), str(bound), value-Fraction(1, 3) == bound)",
+      "caption": "Expected lines: 1 1/2 1/6 True; 2 3/8 1/24 True; 4 11/32 1/96 True. The exact integral of x² over [0,1] is 1/3. Here f''=2 and the trapezoid overestimate exactly equals the bound 1/(6n²). This bounded int/Fraction helper intentionally integrates only x²; it does not claim adaptive or general-purpose quadrature."
+    },
+    {
+      "type": "p",
+      "md": "If each function value at its exact intended node has absolute error at most η, the positive trapezoid weights sum to b-a. Thus evaluation perturbation contributes at most (b-a)*η. Combine this with discretization as |I-computed_T|≤(b-a)*M*h²/12+(b-a)*η, before adding any separately analyzed node-rounding/summation or model error. Making n larger does not remove the evaluation-error floor. The exact polynomial example avoids these numerical terms only within its stated rational model."
+    },
+    {
+      "type": "p",
+      "md": "A root r satisfies f(r)=0. If f is continuous on [a,b] and endpoint values have opposite signs, the intermediate value theorem guarantees at least one root. An exact endpoint zero can be returned immediately. Continuity matters: a step jumping from -1 to +1 can have a sign change but no zero. A pole inside a bracket also breaks continuity. Conversely, f(x)=x² has a root at 0 without a sign change around it, so no sign bracket is not proof that no root exists."
+    },
+    {
+      "type": "p",
+      "md": "For continuous opposite-sign endpoints, evaluate m=(a+b)/2. If f(m)=0 exactly, finish. Otherwise replace the endpoint having the same sign as f(m), retaining an opposite-sign half and therefore at least one root. Each replacement halves width. After k replacements, W_k=(b-a)/2^k, and the CURRENT bracket midpoint has distance at most W_k/2 from a root in that bracket. To request absolute location error≤tol, require W_k/2≤tol, not merely a small f(midpoint). Continuity and reliable signs are part of this reasoning; uniqueness needs additional information such as strict monotonicity."
+    },
+    {
+      "type": "steps",
+      "title": "Track the bracket, then its midpoint error",
+      "items": [
+        "For f(x)=x²-2 on [1,2], continuity and strict increase for x≥0 give exactly one nonnegative root. Initial values -1 and 2 have opposite signs.",
+        "m=3/2 has f(m)=1/4>0, so bracket becomes [1,3/2]. Its NEW midpoint is 5/4 with guaranteed location error≤1/4; the evaluated old midpoint 3/2 is now an endpoint, not that new midpoint.",
+        "Next m=5/4 has f(m)=-7/16<0, giving [5/4,3/2], new midpoint 11/8 and error≤1/8. Third m=11/8 has f(m)=-7/64<0, giving [11/8,3/2], new midpoint 23/16 and error≤1/16.",
+        "Distinguish evaluation count, replacement count, current bracket and the particular estimate returned. A budget cap may preserve a valid bracket while failing the requested tolerance."
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "from fractions import Fraction\n# Fixed continuous f(x)=x*x-2 has one nonnegative root, initially in[1,2].\nlower,upper = Fraction(1),Fraction(2)\nfor iteration in range(1,4):\n    midpoint = (lower+upper)/2\n    if midpoint*midpoint < 2:\n        lower = midpoint\n    else:\n        upper = midpoint\n    print(iteration,str(lower),str(upper),str((upper-lower)/2))\nprint(lower*lower <= 2 <= upper*upper)\n# A tiny residual can coexist with large location error.\nprint(Fraction(1,10**12)*(0-100),100)",
+      "caption": "Expected lines: 1 1 3/2 1/4; 2 5/4 3/2 1/8; 3 11/8 3/2 1/16; True; then -1/10000000000 100. This is a fixed three-step trace, not a generic root API. For g(x)=1e-12*(x-100), g(0) has tiny magnitude 1e-10 while root-location error is 100. Rescaling function values changes residuals but not roots."
+    },
+    {
+      "type": "p",
+      "md": "If a function evaluation has a CERTIFIED absolute error bound η, its sign is established only when the whole interval [value-η,value+η] lies strictly above or below zero. An interval containing zero has an indeterminate sign; refine the inner computation or report uncertainty instead of choosing a bisection half as though the sign were known. A quadrature routine's reported error ESTIMATE is not automatically a certified enclosure. Root finding around an approximate inner integral needs an explicit combined error policy."
+    },
+    {
+      "type": "p",
+      "md": "Record absolute/relative location tolerances, iteration/evaluation budgets, returned bracket/estimate, residual and stop reason. In floating arithmetic also detect midpoint==endpoint or nonfinite values rather than looping forever or declaring exactness from a rounded zero. Library algorithms such as Brent combine bracketing/interpolation but retain continuity/sign assumptions. SciPy quad calls its abserr an estimate; a requested tolerance is not model truth or unconditional proof. These lessons do not claim SciPy availability in the app."
+    },
+    {
+      "type": "p",
+      "md": "Independent transfer: integrate a linear function with the trapezoid formula and explain exactness when f''=0. Derive the fourfold quadratic-error reduction when n doubles and state the smoothness/evaluation assumptions. Build a discontinuous sign-change counterexample and an even root without a sign change. Finally calculate how many halvings shrink an initial width 8 to a midpoint error at most 1/8: W_k/2=4/2^k≤1/8 requires k≥5."
+    },
+    {
+      "type": "p",
+      "md": "References: [composite Newton-Cotes formula](https://yaningliucudenver.github.io/Numerical-Analysis-I/bookchapter5-2.html), [MIT error/cancellation notes](https://math.mit.edu/~stevenj/trapezoidal.pdf), [FNC bracket proof](https://fncbook.com/python/secant/), [root conditioning](https://fncbook.com/rootproblem/), [bisection tolerance/status contract](https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.bisect.html), and [quadrature error estimates](https://docs.scipy.org/doc/scipy/reference/generated/scipy.integrate.quad.html). Own exact model examples are not generic floating numerical certification."
+    },
+    {
+      "type": "interactive",
+      "component": "IntegralLab",
+      "params": {},
+      "caption": "Experiment: compare Riemann and refined quadrature convergence."
+    },
+    {
+      "type": "ref",
+      "items": [
+        {
+          "label": "composite Newton-Cotes formula",
+          "url": "https://yaningliucudenver.github.io/Numerical-Analysis-I/bookchapter5-2.html"
+        },
+        {
+          "label": "MIT error/cancellation notes",
+          "url": "https://math.mit.edu/~stevenj/trapezoidal.pdf"
+        },
+        {
+          "label": "FNC bracket proof",
+          "url": "https://fncbook.com/python/secant/"
+        },
+        {
+          "label": "root conditioning",
+          "url": "https://fncbook.com/rootproblem/"
+        }
+      ]
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "An optimizer reports a small root residual around an approximate integral. What would you check before asserting a root-location tolerance?",
+    "hints": [
+      "Separates residual from location.",
+      "Accounts for inner evaluation uncertainty.",
+      "Checks bracket/status rather than trusting a requested tolerance."
+    ],
+    "solution": "Check continuity/uniqueness assumptions, actual bracket and reliable signs, inner integration error and whether estimated or certified, location/residual units and conditioning, actual stop status/budgets, and floating stagnation."
+  },
+  "independentExercise": {
+    "prompt": "Write a small test case that deliberately breaks the contract boundary in \"Quadrature, root finding and error budgets\" and verify how your implementation rejects or handles it.",
+    "hints": [
+      "Test zero, negative, empty, duplicate, and boundary values.",
+      "Confirm both time/memory complexity and numerical precision remain within spec."
+    ],
+    "solution": "from fractions import Fraction\n# Fixed continuous f(x)=x*x-2 has one nonnegative root, initially in[1,2].\nlower,upper = Fraction(1),Fraction(2)\nfor iteration in range(1,4):\n    midpoint = (lower+upper)/2\n    if midpoint*midpoint < 2:\n        lower = midpoint\n    else:\n        upper = midpoint\n    print(iteration,str(lower),str(upper),str((upper-lower)/2))\nprint(lower*lower <= 2 <= upper*upper)\n# A tiny residual can coexist with large location error.\nprint(Fraction(1,10**12)*(0-100),100)"
+  },
+  "commonMistakes": [
+    "Each panel contributes h/2 times each endpoint, so an interior shared node receives h while a global endpoint receives h/2. (Summing the integrated straight-line panels yields the weights.)",
+    "The derivation requires f∈C² and a second-derivative bound; evaluation/node/summation errors are separate. (The theorem and numerical evaluation budget both need contracts.)",
+    "Bisection preserves a theorem-backed interval, not only a promising-looking point. (The intermediate value theorem applies to that subinterval.)"
+  ],
+  "realWorldApplication": "Used directly across production quantitative research, execution systems, and validation pipelines.",
+  "quantFinanceApplication": "Applies rigorous engineering contracts to quantitative modeling and live trading infrastructure.",
+  "summary": [
+    "Quadrature needs weights, units and a smoothness/evaluation error budget.",
+    "A continuous reliable sign bracket bounds root location through its width; tiny residuals, requested tolerances and error estimates have different meanings.",
+    "Derive a composite trapezoid approximation and its smooth-function discretization/evaluation error budget with explicit units and reference checks."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "Why do interior nodes have full weight but endpoints half weight in composite trapezoid?",
+      "objective": 0,
+      "options": [
+        "Every node is counted exactly twice without halves",
+        "Interior nodes belong to two adjacent half-weighted panels",
+        "Interior points have guaranteed zero evaluation error",
+        "The rule automatically uses a probability distribution"
+      ],
+      "answerIndex": 1,
+      "explanation": "Each panel contributes h/2 times each endpoint, so an interior shared node receives h while a global endpoint receives h/2. (Summing the integrated straight-line panels yields the weights.)"
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "What is needed before using the stated O(h²) trapezoid bound?",
+      "objective": 1,
+      "options": [
+        "Any finite list of values, with no function assumptions",
+        "A smaller h alone proves the function is smooth",
+        "A second-derivative bound and valid evaluations",
+        "An error estimate always equals a rigorous bound"
+      ],
+      "answerIndex": 2,
+      "explanation": "The derivation requires f∈C² and a second-derivative bound; evaluation/node/summation errors are separate. (The theorem and numerical evaluation budget both need contracts.)"
+    },
+    {
+      "id": "q3",
+      "type": "mcq",
+      "prompt": "Which statement justifies retaining a root after a bisection update?",
+      "objective": 2,
+      "options": [
+        "Continuity and opposite signs on the retained half",
+        "A sign jump always contains an exact zero",
+        "Every root has opposite signs around it",
+        "A tiny residual proves the unique root is close"
+      ],
+      "answerIndex": 0,
+      "explanation": "Bisection preserves a theorem-backed interval, not only a promising-looking point. (The intermediate value theorem applies to that subinterval.)"
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "A certified evaluation interval contains zero. What should a bracket update do?",
+      "objective": 0,
+      "options": [
+        "Pick whichever sign produces a shorter-looking computation",
+        "Treat the midpoint as an exact root",
+        "Suppress the uncertainty and report converged",
+        "Refine evaluation or report an indeterminate-sign state"
+      ],
+      "answerIndex": 3,
+      "explanation": "The invariant depends on reliable signs. Estimated accuracy and certified sign bounds are different contracts. (Do not discard a half based on an unestablished sign.)"
+    },
+    {
+      "id": "q5",
+      "type": "numeric",
+      "prompt": "For x² on [0,1] with n=2, exact trapezoid error is 1/(6n²). What is 24 times that error?",
+      "objective": 1,
+      "answer": 1,
+      "tolerance": 0.000001,
+      "explanation": "n²=4, so the error is 1/24. Multiplying by 24 gives 1."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "What core invariant governs Quadrature, root finding and error budgets?",
+      "back": "Each panel contributes h/2 times each endpoint, so an interior shared node receives h while a global endpoint receives h/2. (Summing the integrated straight-line panels yields the weights.)"
+    },
+    {
+      "type": "definition",
+      "front": "In Quadrature, root finding and error budgets, how do you verify: Maintain a continuous sign-changing bisection bracket and derive a midpoint location bound, separating residual magnitude, uncertain signs and iteration-budget status.?",
+      "back": "The derivation requires f∈C² and a second-derivative bound; evaluation/node/summation errors are separate. (The theorem and numerical evaluation budget both need contracts.)"
+    },
+    {
+      "type": "error-identification",
+      "front": "What failure mode happens if the contract in Quadrature, root finding and error budgets is violated?",
+      "back": "Bisection preserves a theorem-backed interval, not only a promising-looking point. (The intermediate value theorem applies to that subinterval.)"
+    }
+  ],
+  "references": [
+    {
+      "label": "composite Newton-Cotes formula",
+      "url": "https://yaningliucudenver.github.io/Numerical-Analysis-I/bookchapter5-2.html"
+    },
+    {
+      "label": "MIT error/cancellation notes",
+      "url": "https://math.mit.edu/~stevenj/trapezoidal.pdf"
+    },
+    {
+      "label": "FNC bracket proof",
+      "url": "https://fncbook.com/python/secant/"
+    },
+    {
+      "label": "root conditioning",
+      "url": "https://fncbook.com/rootproblem/"
+    }
+  ],
+  "skills": [
+    "linear-algebra",
+    "numerical-analysis",
+    "optimization"
+  ]
+}

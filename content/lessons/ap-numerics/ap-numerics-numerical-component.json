@@ -1,0 +1,225 @@
+{
+  "id": "ap-numerics-numerical-component",
+  "moduleId": "ap-numerics",
+  "title": "Build a numerically validated component",
+  "estMinutes": 22,
+  "difficulty": "advanced",
+  "prereqs": [
+    "ap-numerics-quadrature-roots"
+  ],
+  "objectives": [
+    "Specify and implement a bounded exact square-root enclosure with preserved invariants, explicit error bound, budget and result statuses, including rejected input boundaries.",
+    "Test the component against independent exact references and metamorphic/invariant properties, preserving exact serialization and distinguishing verified scope from app/production qualification.",
+    "Apply build a numerically validated component invariants safely and identify scope boundaries."
+  ],
+  "motivation": "Build one small component, not a numerical kitchen sink. Input n is an exact integer 0≤n≤1000000, excluding bool.",
+  "blocks": [
+    {
+      "type": "p",
+      "md": "Build one small component, not a numerical kitchen sink. Input n is an exact integer 0≤n≤1000000, excluding bool. It requests the unique NONNEGATIVE root of x²-n, using exact rational endpoints. Absolute tolerance is a positive int/Fraction at most 1 with bounded numerator/denominator, not a string, float or percentage. max_iterations is an exact integer 0..128, excluding bool. A zero iteration budget may return a valid enclosure without meeting tolerance. Invalid contracts raise ValueError; an exhausted valid run returns an explicit status."
+    },
+    {
+      "type": "p",
+      "md": "For n≥0, initial interval [0,max(1,n)] contains sqrt(n): lower²=0≤n, while upper²≥n. On nonnegative x, x² is strictly increasing, so a midpoint square below n means the root lies to its right, and above n means it lies to its left. Equality gives an exact rational root. The invariant 0≤lower≤sqrt(n)≤upper is therefore maintained, equivalently checked here by lower²≤n≤upper². No approximate evaluation/sign error exists for this fixed integer/Fraction polynomial; do not extend that fact to arbitrary callbacks or measured data."
+    },
+    {
+      "type": "p",
+      "md": "Return status, original n, lower/upper, estimate=(lower+upper)/2, absolute_error_bound=(upper-lower)/2, requested absolute_tolerance and completed iteration count. exact means the bracket collapsed to an exactly verified square root; bracket-tolerance means the bracket's half-width meets the request. iteration-limit retains its useful enclosure but does NOT mean the request was met. The error bound describes the returned midpoint relative to the mathematical nonnegative root under this exact model, not a confidence interval or model-risk allowance."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "\"\"\"Bounded exact square-root enclosure component; not a generic floating root finder.\"\"\"\nfrom fractions import Fraction\n\n\ndef sqrt_bracket(n, absolute_tolerance=Fraction(1, 1000000), max_iterations=64):\n    \"\"\"Enclose the nonnegative sqrt of a bounded nonnegative integer exactly.\n\n    The tolerance bounds midpoint absolute error by half the returned bracket\n    width. Exact rational arithmetic removes evaluation/rounding uncertainty\n    only for this fixed polynomial. It is not a generic floating root finder.\n    \"\"\"\n    if type(n) is not int or not 0 <= n <= 1000000:\n        raise ValueError(\"expected integer n in 0..1000000, excluding bool\")\n    if type(absolute_tolerance) not in (int, Fraction):\n        raise ValueError(\"expected exact int/Fraction tolerance\")\n    tolerance = Fraction(absolute_tolerance)\n    if not 0 < tolerance <= 1 or max(abs(tolerance.numerator), tolerance.denominator) > 10**12:\n        raise ValueError(\"expected tolerance in (0,1] with bounded exact representation\")\n    if type(max_iterations) is not int or not 0 <= max_iterations <= 128:\n        raise ValueError(\"expected0..128iterations, excluding bool\")\n    lower, upper = Fraction(0), Fraction(max(1, n))\n\n    def result(status, iterations):\n        return {\"status\": status, \"n\": n, \"lower\": lower, \"upper\": upper,\n                \"estimate\": (lower + upper)/2, \"absolute_error_bound\": (upper-lower)/2,\n                \"absolute_tolerance\": tolerance, \"iterations\": iterations}\n\n    if n in (0, 1):\n        lower = upper = Fraction(n)\n        return result(\"exact\", 0)\n    for iterations in range(max_iterations + 1):\n        if (upper-lower)/2 <= tolerance:\n            return result(\"bracket-tolerance\", iterations)\n        if iterations == max_iterations:\n            return result(\"iteration-limit\", iterations)\n        midpoint = (lower + upper)/2\n        square = midpoint*midpoint\n        if square == n:\n            lower = upper = midpoint\n            return result(\"exact\", iterations+1)\n        if square < n:\n            lower = midpoint\n        else:\n            upper = midpoint\n    raise AssertionError(\"unreachable bounded-loop exit\")\n\n\ndef encode_result(result):\n    \"\"\"JSON-safe exact rationals as canonical strings; do not round to floats.\"\"\"\n    return {key: str(value) if type(value) is Fraction else value\n            for key, value in result.items()}\n\n\nif __name__ == \"__main__\":\n    import json\n    for arguments in [(4, Fraction(1, 1000), 8), (2, Fraction(1, 8), 8), (2, Fraction(1, 1000), 1)]:\n        print(json.dumps(encode_result(sqrt_bracket(*arguments)), sort_keys=True))",
+      "caption": "Expected three JSON lines have statuses exact, bracket-tolerance and iteration-limit. For n=4 the result collapses to lower=upper=estimate=\"2\", error=\"0\", iterations 1. For n=2, tol=1/8 the bracket is [\"5/4\",\"3/2\"], estimate=\"11/8\", error=\"1/8\", iterations 3. With tol=1/1000 and only one iteration, bracket [\"1\",\"2\"] has estimate=\"3/2\" and error=\"1/2\", status iteration-limit. JSON rational strings preserve the exact contract rather than rounding to floats. Keys are sorted by json.dumps for this display only."
+    },
+    {
+      "type": "steps",
+      "title": "Read the bounded loop before trusting its status",
+      "items": [
+        "Input n=2,tol=1/8,max_iterations=8 starts [0,2]. Width/2=1 exceeds tolerance. First midpoint 1 squares below 2, so lower becomes 1 and completed iterations becomes 1.",
+        "Next midpoint 3/2 squares above 2, so upper becomes 3/2. Next midpoint 5/4 squares below 2, giving [5/4,3/2] with half-width 1/8 after three replacements.",
+        "At the next loop-top check, the tolerance condition is tested before the budget cap. A request met exactly on the final permitted replacement is therefore reported as success, not a spurious limit.",
+        "n=0 and n=1 are exact endpoint cases before the loop. A valid zero-iteration run for another n can return bracket-tolerance only if the initial half-width already meets the tolerance; otherwise it returns iteration-limit without replacing a bracket."
+      ]
+    },
+    {
+      "type": "p",
+      "md": "A test is stronger when its reference does not repeat the same algorithm and bug. Use math.isqrt for perfect-square integer roots and closed square identities for fixtures; for irrational roots, check the algebraic enclosure lower²≤n≤upper² without using a rounded floating sqrt as an exact oracle. These checks are complementary, not a formal proof of all inputs. Include n=0, 1, perfect squares, nonsquares, the maximum n, invalid types/ranges, tolerance boundaries and budgets 0/1/128."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "\"\"\"Bounded exact square-root enclosure component; not a generic floating root finder.\"\"\"\nfrom fractions import Fraction\n\n\ndef sqrt_bracket(n, absolute_tolerance=Fraction(1, 1000000), max_iterations=64):\n    \"\"\"Enclose the nonnegative sqrt of a bounded nonnegative integer exactly.\n\n    The tolerance bounds midpoint absolute error by half the returned bracket\n    width. Exact rational arithmetic removes evaluation/rounding uncertainty\n    only for this fixed polynomial. It is not a generic floating root finder.\n    \"\"\"\n    if type(n) is not int or not 0 <= n <= 1000000:\n        raise ValueError(\"expected integer n in 0..1000000, excluding bool\")\n    if type(absolute_tolerance) not in (int, Fraction):\n        raise ValueError(\"expected exact int/Fraction tolerance\")\n    tolerance = Fraction(absolute_tolerance)\n    if not 0 < tolerance <= 1 or max(abs(tolerance.numerator), tolerance.denominator) > 10**12:\n        raise ValueError(\"expected tolerance in (0,1] with bounded exact representation\")\n    if type(max_iterations) is not int or not 0 <= max_iterations <= 128:\n        raise ValueError(\"expected0..128iterations, excluding bool\")\n    lower, upper = Fraction(0), Fraction(max(1, n))\n\n    def result(status, iterations):\n        return {\"status\": status, \"n\": n, \"lower\": lower, \"upper\": upper,\n                \"estimate\": (lower + upper)/2, \"absolute_error_bound\": (upper-lower)/2,\n                \"absolute_tolerance\": tolerance, \"iterations\": iterations}\n\n    if n in (0, 1):\n        lower = upper = Fraction(n)\n        return result(\"exact\", 0)\n    for iterations in range(max_iterations + 1):\n        if (upper-lower)/2 <= tolerance:\n            return result(\"bracket-tolerance\", iterations)\n        if iterations == max_iterations:\n            return result(\"iteration-limit\", iterations)\n        midpoint = (lower + upper)/2\n        square = midpoint*midpoint\n        if square == n:\n            lower = upper = midpoint\n            return result(\"exact\", iterations+1)\n        if square < n:\n            lower = midpoint\n        else:\n            upper = midpoint\n    raise AssertionError(\"unreachable bounded-loop exit\")\n\n\ndef encode_result(result):\n    \"\"\"JSON-safe exact rationals as canonical strings; do not round to floats.\"\"\"\n    return {key: str(value) if type(value) is Fraction else value\n            for key, value in result.items()}\n\n\nfrom math import isqrt\nchecks = 0\nfor n in range(101):\n    result = sqrt_bracket(n,Fraction(1,1000),64)\n    lo,hi = result[\"lower\"],result[\"upper\"]\n    assert 0 <= lo <= hi and lo*lo <= n <= hi*hi\n    assert result[\"status\"] in (\"exact\",\"bracket-tolerance\")\n    assert result[\"absolute_error_bound\"] <= Fraction(1,1000)\n    checks += 1\n    oracle = isqrt(n)  # independent exact integer-square reference\n    if oracle*oracle == n:\n        assert lo <= oracle <= hi\n        checks += 1\nlimited = sqrt_bracket(2,Fraction(1,1000),1)\nassert limited[\"status\"] == \"iteration-limit\"\nassert limited[\"absolute_error_bound\"] > limited[\"absolute_tolerance\"]\nchecks += 1\nprint(checks)\nprint(limited[\"status\"])\nfor invalid in (True,-1,1000001,2.0):\n    try:\n        sqrt_bracket(invalid)\n    except ValueError:\n        print(\"rejected\")",
+      "caption": "Expected output: 113, iteration-limit, then rejected on four lines. The self-contained test listing repeats the same component source before running it; it has no hidden previous-cell dependency. It checks 101 inputs, 11 perfect squares from 0² through 10² and one explicit capped failure. It does not claim 113 independent problem instances or exhaust all possible rational tolerances. These are local assertions, not an online judge or app-runtime test."
+    },
+    {
+      "type": "p",
+      "md": "Additional useful properties: lower/upper must remain nonnegative and ordered; returned midpoint and half-width must match the bracket exactly; iterations must not exceed the budget. For a fixed request, increasing the budget should yield a nested bracket and not worsen its width. exact requires an exact square identity, and any success status must meet its declared error contract. An iteration-limit can still have a valid bracket; test that it does not silently turn into tolerance success. These properties check the result semantics, not only a few printed decimal answers."
+    },
+    {
+      "type": "p",
+      "md": "JSON has no native Fraction type. encode_result emits canonical rational strings such as \"11/8\" while retaining integer n/iterations and text status. A consumer must explicitly parse this documented format with bounded rational parsing, never eval arbitrary text. Converting to float for display introduces a new rounding error; if the displayed decimal itself is the reported estimate, add/track that error rather than preserving the rational bound unmodified by assumption. This lesson does not implement a network endpoint or untrusted-input parser."
+    },
+    {
+      "type": "p",
+      "md": "The caps limit input magnitudes and loop count, not a production latency guarantee. Fraction numerators/denominators grow with repeated bisection; exact arithmetic is deliberately chosen for transparent teaching and bounded fixtures. Actual resource ceilings, cancellation, overflow/rounding, parallel calls, hostile traffic and durable service state need separate design if adapting the component. Review the proof, contracts, implementation and independent tests together. Passing local assertions does not establish security, actual app capability, production readiness or professional competence."
+    },
+    {
+      "type": "p",
+      "md": "Independent transfer: add an explicit read-only audit trace of each accepted bracket and verify every transition preserves enclosure and halves width. Keep return/result contracts unchanged. Then write tests that would catch a swapped update branch, returning an endpoint while claiming a midpoint half-width bound, success on an exhausted cap, accidentally accepting bool as int, or silently changing exact JSON fractions to rounded decimals. State which tests need a proof or independent reference rather than more random samples."
+    },
+    {
+      "type": "p",
+      "md": "The component specializes the [FNC continuity/bracket argument](https://fncbook.com/python/secant/) to its own exact nonnegative polynomial and bounded rational contract. [Fraction](https://docs.python.org/3.12/library/fractions.html) preserves rational arithmetic and [math.isqrt](https://docs.python.org/3.12/library/math.html) supplies an independent integer-square reference. The status names, budget order, JSON wire format and error-bound fields are explicitly defined here, not promised by a SciPy API. No generic callbacks, floating sign uncertainty, network service or app runtime is qualified."
+    },
+    {
+      "type": "ref",
+      "items": [
+        {
+          "label": "FNC continuity/bracket argument",
+          "url": "https://fncbook.com/python/secant/"
+        },
+        {
+          "label": "Fraction",
+          "url": "https://docs.python.org/3.12/library/fractions.html"
+        },
+        {
+          "label": "math.isqrt",
+          "url": "https://docs.python.org/3.12/library/math.html"
+        }
+      ]
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "The component passes local tests. What is still unverified before using it as a general numerical service?",
+    "hints": [
+      "Keeps the mathematical scope bounded.",
+      "Names service/runtime boundaries.",
+      "Does not upgrade local passes into production or professional qualification."
+    ],
+    "solution": "Its scope is a fixed bounded exact polynomial, not generic callbacks/floating errors. A service needs supported parsing/serialization, resource/security/concurrency/error policies, actual runtime and interface testing; model suitability and user authority remain separate."
+  },
+  "independentExercise": {
+    "prompt": "Write a small test case that deliberately breaks the contract boundary in \"Build a numerically validated component\" and verify how your implementation rejects or handles it.",
+    "hints": [
+      "Test zero, negative, empty, duplicate, and boundary values.",
+      "Confirm both time/memory complexity and numerical precision remain within spec."
+    ],
+    "solution": "\"\"\"Bounded exact square-root enclosure component; not a generic floating root finder.\"\"\"\nfrom fractions import Fraction\n\n\ndef sqrt_bracket(n, absolute_tolerance=Fraction(1, 1000000), max_iterations=64):\n    \"\"\"Enclose the nonnegative sqrt of a bounded nonnegative integer exactly.\n\n    The tolerance bounds midpoint absolute error by half the returned bracket\n    width. Exact rational arithmetic removes evaluation/rounding uncertainty\n    only for this fixed polynomial. It is not a generic floating root finder.\n    \"\"\"\n    if type(n) is not int or not 0 <= n <= 1000000:\n        raise ValueError(\"expected integer n in 0..1000000, excluding bool\")\n    if type(absolute_tolerance) not in (int, Fraction):\n        raise ValueError(\"expected exact int/Fraction tolerance\")\n    tolerance = Fraction(absolute_tolerance)\n    if not 0 < tolerance <= 1 or max(abs(tolerance.numerator), tolerance.denominator) > 10**12:\n        raise ValueError(\"expected tolerance in (0,1] with bounded exact representation\")\n    if type(max_iterations) is not int or not 0 <= max_iterations <= 128:\n        raise ValueError(\"expected0..128iterations, excluding bool\")\n    lower, upper = Fraction(0), Fraction(max(1, n))\n\n    def result(status, iterations):\n        return {\"status\": status, \"n\": n, \"lower\": lower, \"upper\": upper,\n                \"estimate\": (lower + upper)/2, \"absolute_error_bound\": (upper-lower)/2,\n                \"absolute_tolerance\": tolerance, \"iterations\": iterations}\n\n    if n in (0, 1):\n        lower = upper = Fraction(n)\n        return result(\"exact\", 0)\n    for iterations in range(max_iterations + 1):\n        if (upper-lower)/2 <= tolerance:\n            return result(\"bracket-tolerance\", iterations)\n        if iterations == max_iterations:\n            return result(\"iteration-limit\", iterations)\n        midpoint = (lower + upper)/2\n        square = midpoint*midpoint\n        if square == n:\n            lower = upper = midpoint\n            return result(\"exact\", iterations+1)\n        if square < n:\n            lower = midpoint\n        else:\n            upper = midpoint\n    raise AssertionError(\"unreachable bounded-loop exit\")\n\n\ndef encode_result(result):\n    \"\"\"JSON-safe exact rationals as canonical strings; do not round to floats.\"\"\"\n    return {key: str(value) if type(value) is Fraction else value\n            for key, value in result.items()}\n\n\nfrom math import isqrt\nchecks = 0\nfor n in range(101):\n    result = sqrt_bracket(n,Fraction(1,1000),64)\n    lo,hi = result[\"lower\"],result[\"upper\"]\n    assert 0 <= lo <= hi and lo*lo <= n <= hi*hi\n    assert result[\"status\"] in (\"exact\",\"bracket-tolerance\")\n    assert result[\"absolute_error_bound\"] <= Fraction(1,1000)\n    checks += 1\n    oracle = isqrt(n)  # independent exact integer-square reference\n    if oracle*oracle == n:\n        assert lo <= oracle <= hi\n        checks += 1\nlimited = sqrt_bracket(2,Fraction(1,1000),1)\nassert limited[\"status\"] == \"iteration-limit\"\nassert limited[\"absolute_error_bound\"] > limited[\"absolute_tolerance\"]\nchecks += 1\nprint(checks)\nprint(limited[\"status\"])\nfor invalid in (True,-1,1000001,2.0):\n    try:\n        sqrt_bracket(invalid)\n    except ValueError:\n        print(\"rejected\")"
+  },
+  "commonMistakes": [
+    "The squared inequalities and nonnegative ordered endpoints support a root-location statement without a rounded sqrt oracle. (Monotonic square on the nonnegative domain gives the enclosure.)",
+    "Separate invalid input, exact result, tolerance success and budget-limited output. (The returned bracket can still be useful without mislabeling the cap as success.)",
+    "Independent references and algebraic properties reduce common-mode implementation/reference mistakes within the stated scope. (They avoid treating one approximate sqrt implementation as exact ground truth.)"
+  ],
+  "realWorldApplication": "Used directly across production quantitative research, execution systems, and validation pipelines.",
+  "quantFinanceApplication": "Applies rigorous engineering contracts to quantitative modeling and live trading infrastructure.",
+  "summary": [
+    "A numerical component needs a proved invariant, explicit tolerance/result/budget contract and independent reference tests.",
+    "Exact bounded algebra can make a trustworthy teaching enclosure without pretending to qualify a general floating solver or production service.",
+    "Specify and implement a bounded exact square-root enclosure with preserved invariants, explicit error bound, budget and result statuses, including rejected input boundaries."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "Which invariant encloses the nonnegative square root in this component?",
+      "objective": 0,
+      "options": [
+        "lower≤n≤upper in every case",
+        "The midpoint residual is always exactly zero",
+        "0≤lower≤upper and lower²≤n≤upper²",
+        "Every endpoint may be negative with no other checks"
+      ],
+      "answerIndex": 2,
+      "explanation": "The squared inequalities and nonnegative ordered endpoints support a root-location statement without a rounded sqrt oracle. (Monotonic square on the nonnegative domain gives the enclosure.)"
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "What does iteration-limit mean here?",
+      "objective": 1,
+      "options": [
+        "The root is proved not to exist",
+        "Budget exhausted, enclosure valid, tolerance unmet",
+        "The midpoint is automatically an exact root",
+        "The input was invalid and silently replaced"
+      ],
+      "answerIndex": 1,
+      "explanation": "Separate invalid input, exact result, tolerance success and budget-limited output. (The returned bracket can still be useful without mislabeling the cap as success.)"
+    },
+    {
+      "id": "q3",
+      "type": "mcq",
+      "prompt": "Why use math.isqrt/perfect squares and enclosure identities in tests?",
+      "objective": 2,
+      "options": [
+        "They provide independent exact references/checks under this input model",
+        "They prove the app has the same Python environment",
+        "They guarantee all generic nonlinear roots are bracketed",
+        "They replace the need to review the contract"
+      ],
+      "answerIndex": 0,
+      "explanation": "Independent references and algebraic properties reduce common-mode implementation/reference mistakes within the stated scope. (They avoid treating one approximate sqrt implementation as exact ground truth.)"
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "Why serialize a Fraction as \"11/8\" rather than an unqualified float?",
+      "objective": 0,
+      "options": [
+        "JSON numbers always preserve every rational exactly",
+        "It hides the result from reviewers",
+        "It authorizes eval on any received string",
+        "It preserves the exact rational estimate"
+      ],
+      "answerIndex": 3,
+      "explanation": "Wire-format conversion is part of the numerical contract; do not silently change the estimate while keeping an unadjusted bound. (A decimal display conversion needs its own rounding policy.)"
+    },
+    {
+      "id": "q5",
+      "type": "numeric",
+      "prompt": "Returned lower=5/4 and upper=3/2. What is 8 times the midpoint error bound?",
+      "objective": 1,
+      "answer": 1,
+      "tolerance": 0.000001,
+      "explanation": "Width=1/4 and half-width=1/8, so 8 times the bound is 1."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "What core invariant governs Build a numerically validated component?",
+      "back": "The squared inequalities and nonnegative ordered endpoints support a root-location statement without a rounded sqrt oracle. (Monotonic square on the nonnegative domain gives the enclosure.)"
+    },
+    {
+      "type": "definition",
+      "front": "In Build a numerically validated component, how do you verify: Test the component against independent exact references and metamorphic/invariant properties, preserving exact serialization and distinguishing verified scope from app/production qualification.?",
+      "back": "Separate invalid input, exact result, tolerance success and budget-limited output. (The returned bracket can still be useful without mislabeling the cap as success.)"
+    },
+    {
+      "type": "error-identification",
+      "front": "What failure mode happens if the contract in Build a numerically validated component is violated?",
+      "back": "Independent references and algebraic properties reduce common-mode implementation/reference mistakes within the stated scope. (They avoid treating one approximate sqrt implementation as exact ground truth.)"
+    }
+  ],
+  "references": [
+    {
+      "label": "FNC continuity/bracket argument",
+      "url": "https://fncbook.com/python/secant/"
+    },
+    {
+      "label": "Fraction",
+      "url": "https://docs.python.org/3.12/library/fractions.html"
+    },
+    {
+      "label": "math.isqrt",
+      "url": "https://docs.python.org/3.12/library/math.html"
+    }
+  ],
+  "skills": [
+    "linear-algebra",
+    "numerical-analysis",
+    "optimization"
+  ]
+}

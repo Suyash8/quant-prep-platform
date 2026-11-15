@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { getCurrentUser } from '@/lib/auth';
 import { getRegistry, getMap } from '@/lib/content';
-import { AppShell, PublicHeader } from '@/components/app-shell';
+import { AppShell, PublicHeader, PublicFooter } from '@/components/app-shell';
 import { Brain, Repeat, Layers, Gauge, ClipboardCheck, ListChecks, GraduationCap, ArrowRight, BookCheck, Target, PencilLine, MessageSquareText, RefreshCcw } from 'lucide-react';
 
 export const metadata = { title: 'Methodology. QuantFoundry' };
@@ -14,8 +14,8 @@ export default async function MethodologyPage() {
   const principles = [
     { icon: Brain, tile: 'icon-tile-accent', title: 'Start with foundations', desc: 'The teaching goal is to explain variables, derivatives, pointers, distributions and instruments from their foundations, with reasons before formulas.' },
     { icon: Layers, tile: 'icon-tile-info', title: 'Learning in prerequisite order', desc: `Lessons unlock through a prerequisite graph covering ${reg.lessons.length} lessons. The graph supports learning order; its size does not establish that every prerequisite explanation is complete.` },
-    { icon: Gauge, tile: 'icon-tile-violet', title: 'Mastery over exposure', desc: 'In the classic workspace, score 80%+ on the knowledge check and finish the exercises, and the lesson is “passed”. To call it “mastered” you have to hold onto it, the material comes back later, and you have to land it again.' },
-    { icon: Repeat, tile: 'icon-tile-warning', title: 'Spaced retrieval', desc: 'The classic workspace schedules flashcards with SM-2. The rebuilt workspace also offers retrieval review, with its own saved progress and review records.' },
+    { icon: Gauge, tile: 'icon-tile-violet', title: 'Mastery over exposure', desc: 'Score 80%+ on the knowledge check and finish the interactive exercises to mark a lesson “passed”. To earn “mastered”, you have to retain it — the material returns later in spaced retrieval and you have to prove it again.' },
+    { icon: Repeat, tile: 'icon-tile-warning', title: 'Spaced retrieval', desc: 'Every completed lesson enters an SM-2 spaced retrieval schedule backed by your unified progress and review records.' },
     { icon: ClipboardCheck, tile: 'icon-tile-gold', title: 'Clear limits', desc: 'No employment promises or fixed-time mastery guarantees. Inventory counts, structural checks, grader fixtures and evidence of learning answer different questions.' },
   ];
 
@@ -63,8 +63,8 @@ export default async function MethodologyPage() {
       {/* evidence band, canonical horizontal stat tiles, two hues + neutral */}
       <div className="mt-6 grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
-          { icon: BookCheck, tile: 'icon-tile-accent', value: String(reg.lessons.length), label: 'Classic lessons' },
-          { icon: Layers, tile: 'icon-tile-info', value: String(map.phases.reduce((n, p) => n + p.modules.length, 0)), label: 'Classic modules' },
+          { icon: BookCheck, tile: 'icon-tile-accent', value: String(reg.lessons.length), label: 'Authored lessons' },
+          { icon: Layers, tile: 'icon-tile-info', value: String(map.phases.reduce((n, p) => n + p.modules.length, 0)), label: 'Curriculum modules' },
           { icon: ListChecks, tile: 'icon-tile-neutral', value: '20', label: 'Target lesson parts' },
           { icon: ClipboardCheck, tile: 'icon-tile-neutral', value: '9', label: 'Assessment types' },
         ].map((s, i) => (
@@ -192,7 +192,7 @@ export default async function MethodologyPage() {
             ))}
           </ul>
           <p className="mt-4 text-[15px] text-muted leading-relaxed font-semibold max-w-2xl">
-            The classic inventory contains {reg.lessons.length} lessons across {map.phases.reduce((n, p) => n + p.modules.length, 0)} modules. These counts are not a validation pass report. The rebuilt workspace has separate content and progress. Check results apply only to the version and scope tested; passing a structural check does not certify teaching quality or mathematical correctness.
+            The curriculum currently includes {reg.lessons.length} authored lessons across {map.phases.reduce((n, p) => n + p.modules.length, 0)} modules in {map.phases.length} sequential phases. Structural check results apply to the tested snapshot; passing a schema or grader fixture check verifies format and rubric consistency rather than replacing human domain review.
           </p>
           <div className="mt-5 flex flex-wrap gap-3">
             <Link href="/curriculum" className="btn3d">
@@ -208,7 +208,7 @@ export default async function MethodologyPage() {
   );
 
   if (!user) {
-    return <div className="min-h-screen flex flex-col"><PublicHeader user={null} />{body}</div>;
+    return <div className="min-h-screen flex flex-col"><PublicHeader user={null} /><main className="flex-1">{body}</main><PublicFooter /></div>;
   }
   return <AppShell user={{ name: user.name, email: user.email, role: user.role }} isAdmin={user.role === 'admin'}>{body}</AppShell>;
 }

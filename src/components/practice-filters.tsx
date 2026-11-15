@@ -13,21 +13,15 @@ interface Row {
   estMinutes: number; status: string; xp: number; summary: string;
 }
 
-const CATEGORIES = [
-  'all', 'fundamentals', 'arrays-strings', 'hashing', 'recursion', 'binary-search', 'trees', 'graphs',
-  'dynamic-programming', 'advanced', 'mathematics', 'probability', 'cpp-internals', 'concurrency',
-  'systems-design', 'quant-finance',
-];
-
-// per-category icons, visual rhythm instead of 28 identical play buttons
-
-
 const CATEGORY_ICON: Record<string, typeof CirclePlay> = {
   fundamentals: CirclePlay,
   'arrays-strings': Braces,
+  strings: Braces,
+  dsa: Layers,
   hashing: Hash,
   recursion: Repeat,
   'binary-search': Search,
+  heaps: Layers,
   trees: TreePine,
   graphs: Network,
   'dynamic-programming': Layers,
@@ -36,6 +30,7 @@ const CATEGORY_ICON: Record<string, typeof CirclePlay> = {
   probability: Dices,
   'cpp-internals': Cpu,
   concurrency: Zap,
+  systems: Server,
   'systems-design': Server,
   'quant-finance': LineChart,
 };
@@ -46,7 +41,18 @@ export function PracticeFilters({ problems }: { problems: Row[] }) {
   const [difficulty, setDifficulty] = React.useState('all');
   const [category, setCategory] = React.useState('all');
   const [status, setStatus] = React.useState('all');
-  const [showAll, setShowAll] = React.useState(false);
+
+  const categories = React.useMemo(() => {
+    const seen = new Set<string>();
+    const list = ['all'];
+    for (const p of problems) {
+      if (p.category && !seen.has(p.category)) {
+        seen.add(p.category);
+        list.push(p.category);
+      }
+    }
+    return list;
+  }, [problems]);
 
   function surpriseMe() {
     const pool = problems.filter(p => p.status !== 'solved');
@@ -112,7 +118,7 @@ export function PracticeFilters({ problems }: { problems: Row[] }) {
           <option value="hard">Hard</option>
         </select>
         <select value={category} onChange={e => setCategory(e.target.value)} className="qf-select-sm w-auto" aria-label="Category">
-          {CATEGORIES.map(c => <option key={c} value={c}>{c === 'all' ? 'All categories' : c.replace(/-/g, ' ')}</option>)}
+          {categories.map(c => <option key={c} value={c}>{c === 'all' ? 'All categories' : c.replace(/-/g, ' ')}</option>)}
         </select>
         <select value={status} onChange={e => setStatus(e.target.value)} className="qf-select-sm w-auto" aria-label="Status">
           <option value="all">Any status</option>
@@ -149,7 +155,7 @@ export function PracticeFilters({ problems }: { problems: Row[] }) {
       })()}
 
       <div className="mt-6 space-y-8">
-        {(grouped && !showAll && groups.length > 4 && q === '' && difficulty === 'all' && status === 'all' ? groups.slice(0, 4) : groups).map(g => {
+        {groups.map(g => {
           const solvedInGroup = g.rows.filter(r => r.status === 'solved').length;
           const GroupIcon = CATEGORY_ICON[g.key] ?? CirclePlay;
           return (
@@ -171,13 +177,6 @@ export function PracticeFilters({ problems }: { problems: Row[] }) {
             </section>
           );
         })}
-
-        {grouped && !showAll && groups.length > 4 && q === '' && difficulty === 'all' && status === 'all' && (
-          <div className="qf-card flex flex-wrap items-center justify-between gap-3 p-5">
-            <p className="text-[16px] font-bold text-muted">{groups.length - 4} more categories, {groups.slice(4).reduce((a, g) => a + g.rows.length, 0)} more problems</p>
-            <button onClick={() => setShowAll(true)} className="btn3d btn3d-ghost">Show all categories ({groups.length})</button>
-          </div>
-        )}
 
         {rows.length === 0 && (
           <div className="qf-empty anim-pop-in">

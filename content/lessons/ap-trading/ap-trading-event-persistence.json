@@ -1,0 +1,223 @@
+{
+  "id": "ap-trading-event-persistence",
+  "moduleId": "ap-trading",
+  "title": "Event logs, checkpoints and replay contracts",
+  "estMinutes": 22,
+  "difficulty": "specialist",
+  "prereqs": [
+    "ap-trading-matching-simulation"
+  ],
+  "objectives": [
+    "Define bounded versioned source/sequence event identity and exact duplicate/conflict handling without confusing command intent with external execution facts.",
+    "Use an explicit SQL transaction to commit event plus applied-cursor/projection together, demonstrate controlled rollback, and explain the additional file/settings/storage/recovery evidence required for durability.",
+    "Apply event logs, checkpoints and replay contracts invariants safely and identify scope boundaries."
+  ],
+  "motivation": "A log must explain what happened under which schema, source/session/order namespace and ordering rule. Include event version, identity, units, payload meanings and required historical rule/reference inputs.",
+  "blocks": [
+    {
+      "type": "p",
+      "md": "A log must explain what happened under which schema, source/session/order namespace and ordering rule. Include event version, identity, units, payload meanings and required historical rule/reference inputs. A command is intent, not proof a venue accepted or filled it. Never reinterpret old payloads under new rules silently; define versioned readers/upcasters/migrations with retained originals and replay fixtures. Our count event (version, sequence, source, delta) is an own miniature schema, not FIX or a durable exchange journal."
+    },
+    {
+      "type": "p",
+      "md": "Own schema 1, source SIM1, sequence 1..16, exact integer delta -10..10. Initial count 10; projection (value, through_seq) uses inclusive last-applied cursor. An exact stored sequence/content retry returns duplicate; different content conflicts; new events must be next contiguous sequence and keep count 0..100. One private database, one caller, one namespace, <=16 events. SQL primary key enforces sequence uniqueness here; real multi-source IDs must include the actual namespace. Malformed fields are rejected before beginning. Bound SQL parameters transport values; do not build SQL by interpolating event text."
+    },
+    {
+      "type": "steps",
+      "title": "Insert and projection are one commit boundary",
+      "items": [
+        "Initial journal empty, through 0, value 10. Event 1 delta +2 commits both event row and projection (1,12). These must not be published as independent successful writes.",
+        "Event 2 delta +3 is inserted and projection changed to (2,15) inside an explicit transaction. Inject failure before COMMIT: ROLLBACK restores both to event 1/(1,12). No acknowledged append 2 exists.",
+        "Retry event 2 without failure commits (2,15); exact retry is duplicate, no extra delta. The demo remains in memory and disappears on close. Catching an exception is not an OS crash or power-loss test."
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import sqlite3\n\ndef create_demo():\n    # Python3.12+ explicit SQL transaction mode; MEMORY database is NOT durable.\n    db=sqlite3.connect(\":memory:\",autocommit=True)\n    db.execute(\"CREATE TABLE events(seq INTEGER PRIMARY KEY, version INTEGER, source TEXT, delta INTEGER)\")\n    db.execute(\"CREATE TABLE projection(id INTEGER PRIMARY KEY CHECK(id=1), through_seq INTEGER, value INTEGER)\")\n    db.execute(\"INSERT INTO projection VALUES(1,0,10)\")\n    return db\n\ndef append_demo(db,event,fail_stage=None):\n    # Accept only a private database created/owned by create_demo(),one caller.\n    if type(event) is not tuple or len(event)!=4:\n        raise ValueError(\"invalid event shape\")\n    version,seq,source,delta=event\n    if (type(version) is not int or version!=1 or type(seq) is not int or not 1<=seq<=16\n        or type(source) is not str or source!=\"SIM1\" or type(delta) is not int or not -10<=delta<=10):\n        raise ValueError(\"invalid event fields\")\n    if fail_stage not in (None,\"insert\",\"projection\"):\n        raise ValueError(\"invalid injection stage\")\n    db.execute(\"BEGIN IMMEDIATE\")\n    try:\n        old=db.execute(\"SELECT version,seq,source,delta FROM events WHERE seq=?\",(seq,)).fetchone()\n        if old is not None:\n            if old!=event:raise ValueError(\"conflicting sequence content\")\n            db.execute(\"COMMIT\")\n            return \"duplicate\"\n        through,value=db.execute(\"SELECT through_seq,value FROM projection WHERE id=1\").fetchone()\n        if seq!=through+1:raise ValueError(\"noncontiguous event\")\n        updated=value+delta\n        if not 0<=updated<=100:raise ValueError(\"count invariant\")\n        db.execute(\"INSERT INTO events VALUES(?,?,?,?)\",(seq,version,source,delta))\n        if fail_stage==\"insert\":raise RuntimeError(\"injected after insert\")\n        db.execute(\"UPDATE projection SET through_seq=?,value=? WHERE id=1\",(seq,updated))\n        if fail_stage==\"projection\":raise RuntimeError(\"injected after projection\")\n        db.execute(\"COMMIT\")\n        return \"appended\"\n    except Exception:\n        if db.in_transaction:db.execute(\"ROLLBACK\")\n        raise\n\ndb=create_demo()\ntry:\n    print(append_demo(db,(1,1,\"SIM1\",2)))\n    try:append_demo(db,(1,2,\"SIM1\",3),\"projection\")\n    except RuntimeError:print(\"rolled back\")\n    print(db.execute(\"SELECT count(*) FROM events\").fetchone()[0],db.execute(\"SELECT through_seq,value FROM projection\").fetchone())\n    print(append_demo(db,(1,2,\"SIM1\",3)))\n    print(append_demo(db,(1,2,\"SIM1\",3)))\n    print(db.execute(\"SELECT through_seq,value FROM projection\").fetchone())\nfinally:db.close()",
+      "caption": "Expected: appended; rolled back; 1 (1, 12); appended; duplicate; (2, 15). Python 3.12+ sqlite3, local tested SQLite 3.53.1. MEMORY database: SQL rollback/atomic event+projection demonstration, NOT file persistence, power-loss test or durable checkpoint. App runnable disabled until sqlite3/Python capability is verified. Single private connection/database; not an arbitrary schema validator or network broker adapter."
+    },
+    {
+      "type": "p",
+      "md": "This example explicitly uses Python 3.12 sqlite3.connect(autocommit=True), then SQL BEGIN IMMEDIATE/COMMIT/ROLLBACK. In this mode Python Connection.commit()/rollback() have no effect, so do not replace the SQL commands blindly. No executescript is used inside the transaction. BEGIN IMMEDIATE can fail busy if a different writer holds the database; production retry must preserve identity, reload/revalidate and have bounded backoff. The private in-memory connection tests no competing writers. The transaction prevents the demonstrated partial local state, not unrelated external sends."
+    },
+    {
+      "type": "p",
+      "md": "A recovery checkpoint must pair state with exactly the applied prefix plus schema/source/session/reducer/configuration. The projection row here updates its cursor and count in the same event transaction. Rebuilding from ordered events can independently verify that projection matches its prefix. A database WAL checkpoint is a different storage operation transferring WAL content toward the main database; it is not automatically an application snapshot contract. Do not conflate WAL checkpoint completion with authenticated coherent strategy state."
+    },
+    {
+      "type": "p",
+      "md": "To persist beyond process exit, use a file-backed database with an intentional supported journal/synchronous policy, transaction completion/error handling, backups and tested restore. SQLite documents atomic commit and the assumptions it needs from OS/filesystem/storage flush behavior; turning off journaling/synchronization changes safety. A Python flush, successful close or renamed JSON file alone is not proof of durable event+cursor commit across power loss. Do not copy only an active database main file while omitting required journal/WAL state;use a supported consistent backup procedure. This lesson does not execute or certify file/WAL/backup/power-loss recovery."
+    },
+    {
+      "type": "p",
+      "md": "A local COMMIT cannot atomically guarantee that a remote venue executed an order exactly once. If committed intent must later cause an external effect, use a separately specified durable outbox/effect dispatcher with remote-supported identities, retry/unknown-outcome policy and reconciliation. Replaying old events must rebuild local state without resending old orders. Checksums can detect some corruption but do not authenticate source or prove schema meaning. Reject/hold unsupported versions, gaps or conflicts rather than quietly skipping them while advancing the applied cursor."
+    },
+    {
+      "type": "p",
+      "md": "Independent transfer: enumerate bounded valid delta logs, compare ordered event sum with projection, and repeat every accepted ID exactly. Inject failure after insert and after projection for every next event; check journal+projection unchanged, then retry once and compare with clean reference. Separately design file-backed process-kill/reopen tests and storage fault tests without calling controlled exceptions power failure. State exact durability settings and source boundaries before claiming recovery readiness."
+    },
+    {
+      "type": "p",
+      "md": "Sources: [Python 3.12 sqlite3 transaction modes](https://docs.python.org/3.12/library/sqlite3.html), [SQLite transactions](https://www.sqlite.org/lang_transaction.html), [atomic commit and storage assumptions](https://www.sqlite.org/atomiccommit.html), [isolation](https://www.sqlite.org/isolation.html), [PRAGMA settings](https://www.sqlite.org/pragma.html), [event sourcing tradeoffs](https://learn.microsoft.com/en-us/azure/architecture/patterns/event-sourcing). Concrete schema/bounds are own model. SQL transaction semantics do not turn this memory demonstration into a durable live trading service."
+    },
+    {
+      "type": "ref",
+      "items": [
+        {
+          "label": "Python 3.12 sqlite3 transaction modes",
+          "url": "https://docs.python.org/3.12/library/sqlite3.html"
+        },
+        {
+          "label": "SQLite transactions",
+          "url": "https://www.sqlite.org/lang_transaction.html"
+        },
+        {
+          "label": "atomic commit and storage assumptions",
+          "url": "https://www.sqlite.org/atomiccommit.html"
+        },
+        {
+          "label": "isolation",
+          "url": "https://www.sqlite.org/isolation.html"
+        }
+      ]
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Why is a successful in-memory SQL rollback test insufficient to sign off a durable trading journal?",
+    "hints": [
+      "Names memory and controlled-exception scope.",
+      "Requires file/settings/storage/recovery evidence.",
+      "Separates remote effects."
+    ],
+    "solution": "It does not test file persistence, process/OS crash, power loss, journal/synchronous settings, storage flush behavior, backup/restore or concurrent writers. Need source/version/cursor consistency, reopen/crash/fault tests and reconciled remote effects separately. Controlled exception rollback proves only its tested local transaction boundary."
+  },
+  "independentExercise": {
+    "prompt": "Write a small test case that deliberately breaks the contract boundary in \"Event logs, checkpoints and replay contracts\" and verify how your implementation rejects or handles it.",
+    "hints": [
+      "Test zero, negative, empty, duplicate, and boundary values.",
+      "Confirm both time/memory complexity and numerical precision remain within spec."
+    ],
+    "solution": "import sqlite3\n\ndef create_demo():\n    # Python3.12+ explicit SQL transaction mode; MEMORY database is NOT durable.\n    db=sqlite3.connect(\":memory:\",autocommit=True)\n    db.execute(\"CREATE TABLE events(seq INTEGER PRIMARY KEY, version INTEGER, source TEXT, delta INTEGER)\")\n    db.execute(\"CREATE TABLE projection(id INTEGER PRIMARY KEY CHECK(id=1), through_seq INTEGER, value INTEGER)\")\n    db.execute(\"INSERT INTO projection VALUES(1,0,10)\")\n    return db\n\ndef append_demo(db,event,fail_stage=None):\n    # Accept only a private database created/owned by create_demo(),one caller.\n    if type(event) is not tuple or len(event)!=4:\n        raise ValueError(\"invalid event shape\")\n    version,seq,source,delta=event\n    if (type(version) is not int or version!=1 or type(seq) is not int or not 1<=seq<=16\n        or type(source) is not str or source!=\"SIM1\" or type(delta) is not int or not -10<=delta<=10):\n        raise ValueError(\"invalid event fields\")\n    if fail_stage not in (None,\"insert\",\"projection\"):\n        raise ValueError(\"invalid injection stage\")\n    db.execute(\"BEGIN IMMEDIATE\")\n    try:\n        old=db.execute(\"SELECT version,seq,source,delta FROM events WHERE seq=?\",(seq,)).fetchone()\n        if old is not None:\n            if old!=event:raise ValueError(\"conflicting sequence content\")\n            db.execute(\"COMMIT\")\n            return \"duplicate\"\n        through,value=db.execute(\"SELECT through_seq,value FROM projection WHERE id=1\").fetchone()\n        if seq!=through+1:raise ValueError(\"noncontiguous event\")\n        updated=value+delta\n        if not 0<=updated<=100:raise ValueError(\"count invariant\")\n        db.execute(\"INSERT INTO events VALUES(?,?,?,?)\",(seq,version,source,delta))\n        if fail_stage==\"insert\":raise RuntimeError(\"injected after insert\")\n        db.execute(\"UPDATE projection SET through_seq=?,value=? WHERE id=1\",(seq,updated))\n        if fail_stage==\"projection\":raise RuntimeError(\"injected after projection\")\n        db.execute(\"COMMIT\")\n        return \"appended\"\n    except Exception:\n        if db.in_transaction:db.execute(\"ROLLBACK\")\n        raise\n\ndb=create_demo()\ntry:\n    print(append_demo(db,(1,1,\"SIM1\",2)))\n    try:append_demo(db,(1,2,\"SIM1\",3),\"projection\")\n    except RuntimeError:print(\"rolled back\")\n    print(db.execute(\"SELECT count(*) FROM events\").fetchone()[0],db.execute(\"SELECT through_seq,value FROM projection\").fetchone())\n    print(append_demo(db,(1,2,\"SIM1\",3)))\n    print(append_demo(db,(1,2,\"SIM1\",3)))\n    print(db.execute(\"SELECT through_seq,value FROM projection\").fetchone())\nfinally:db.close()"
+  },
+  "commonMistakes": [
+    "Sequence identity is source-bound by this one-namespace private model; conflicts are not no-ops. (Identity and normalized content must agree.)",
+    "Do not elevate a local exception test into durability evidence. (Both local writes share one SQL transaction.)",
+    "Only event 1 committed: 10+2=12."
+  ],
+  "realWorldApplication": "Used directly across production quantitative research, execution systems, and validation pipelines.",
+  "quantFinanceApplication": "Applies rigorous engineering contracts to quantitative modeling and live trading infrastructure.",
+  "summary": [
+    "Versioned source-bound event semantics and consistent state/cursor matter.",
+    "Commit event plus projection in one local transaction; test rollback, duplicates and replay.",
+    "In-memory SQL, controlled exceptions and local commit do not prove file durability, power-loss recovery or remote exactly-once effects."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "A stored sequence is retried with different delta content. What should this own journal do?",
+      "objective": 0,
+      "options": [
+        "Treat it as an exact duplicate",
+        "Raise a conflict without committing a change",
+        "Append both under the same primary key silently",
+        "Advance the cursor and omit both"
+      ],
+      "answerIndex": 1,
+      "explanation": "Sequence identity is source-bound by this one-namespace private model; conflicts are not no-ops. (Identity and normalized content must agree.)"
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "What does this in-memory transaction fixture establish?",
+      "objective": 1,
+      "options": [
+        "Physical power-loss recovery",
+        "Every external order executes once",
+        "Controlled SQL rollback",
+        "A permanent file backup exists"
+      ],
+      "answerIndex": 2,
+      "explanation": "Do not elevate a local exception test into durability evidence. (Both local writes share one SQL transaction.)"
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "After committed event 1 +2 from 10, event 2 +3 fails before COMMIT and rolls back. What value remains?",
+      "objective": 2,
+      "answer": 12,
+      "tolerance": 0.000001,
+      "explanation": "Only event 1 committed: 10+2=12."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "With autocommit=True here, which operation commits the explicitly opened SQL transaction?",
+      "objective": 0,
+      "options": [
+        "SQL COMMIT",
+        "Ignoring the pending transaction",
+        "Calling Python Connection.commit() instead of the SQL COMMIT command in this mode",
+        "Only updating the cursor in a different database"
+      ],
+      "answerIndex": 0,
+      "explanation": "Transaction API semantics depend on the chosen mode. (Python Connection.commit() has no effect in this mode.)"
+    },
+    {
+      "id": "q5",
+      "type": "mcq",
+      "prompt": "Which input must a versioned replay preserve?",
+      "objective": 1,
+      "options": [
+        "Only today's current default rules",
+        "Only the event bytes, while silently applying the newest schema to old payloads",
+        "An arbitrary fresh random seed on each replay",
+        "Events plus source/version/rules"
+      ],
+      "answerIndex": 3,
+      "explanation": "Schema/source/configuration are part of replay meaning. (The reducer needs its actual determining inputs.)"
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "What core invariant governs Event logs, checkpoints and replay contracts?",
+      "back": "Sequence identity is source-bound by this one-namespace private model; conflicts are not no-ops. (Identity and normalized content must agree.)"
+    },
+    {
+      "type": "definition",
+      "front": "In Event logs, checkpoints and replay contracts, how do you verify: Use an explicit SQL transaction to commit event plus applied-cursor/projection together, demonstrate controlled rollback, and explain the additional file/settings/storage/recovery evidence required for durability.?",
+      "back": "Do not elevate a local exception test into durability evidence. (Both local writes share one SQL transaction.)"
+    },
+    {
+      "type": "error-identification",
+      "front": "What failure mode happens if the contract in Event logs, checkpoints and replay contracts is violated?",
+      "back": "Only event 1 committed: 10+2=12."
+    }
+  ],
+  "references": [
+    {
+      "label": "Python 3.12 sqlite3 transaction modes",
+      "url": "https://docs.python.org/3.12/library/sqlite3.html"
+    },
+    {
+      "label": "SQLite transactions",
+      "url": "https://www.sqlite.org/lang_transaction.html"
+    },
+    {
+      "label": "atomic commit and storage assumptions",
+      "url": "https://www.sqlite.org/atomiccommit.html"
+    },
+    {
+      "label": "isolation",
+      "url": "https://www.sqlite.org/isolation.html"
+    }
+  ],
+  "skills": [
+    "trading-systems",
+    "low-latency",
+    "microstructure",
+    "risk"
+  ]
+}

@@ -1,0 +1,215 @@
+{
+  "id": "ap-research-backtest-engine",
+  "moduleId": "ap-research",
+  "title": "Event-driven backtest state and accounting",
+  "estMinutes": 22,
+  "difficulty": "specialist",
+  "prereqs": [
+    "ap-research-temporal-validation"
+  ],
+  "objectives": [
+    "Trace a complete deterministic one-asset long-only next-open target backtest with explicit fill/mark/signal ordering and unfilled/terminal state.",
+    "Reconcile signed executions, cash, positions and marked equity under bounded integer-cents assumptions, without treating marks or pending orders as realized trades.",
+    "Apply event-driven backtest state and accounting invariants safely and identify scope boundaries."
+  ],
+  "motivation": "A backtest is a state transition system, not a vector of attractive returns. State here is integer cash cents, integer shares 0..10 and a pending TARGET position created after each close.",
+  "blocks": [
+    {
+      "type": "p",
+      "md": "A backtest is a state transition system, not a vector of attractive returns. State here is integer cash cents, integer shares 0..10 and a pending TARGET position created after each close. Each synthetic bar contains (time, opening reference cents, closing mark cents, executable capacity at open). Capacity is a supplied ex-ante scenario at the opening attempt, NOT full-day volume magically known at the open. This educational engine has no real exchange, account, margin, borrowing, dividends, splits, funding or short sales."
+    },
+    {
+      "type": "p",
+      "md": "At each bar: attempt the PREVIOUS close target at the current open, constrain quantity by scenario capacity/cash/holdings, expire any remainder, mark position at this bar's close, then accept a NEW close target. A close-derived target cannot execute at the same close in this own next-open model. Targets in this example are externally supplied hypothetical decisions; the engine does not prove they were generated from historical-only inputs. Point-in-time signal construction remains a separate requirement."
+    },
+    {
+      "type": "steps",
+      "title": "Signal price is not execution price",
+      "items": [
+        "Start 1000 cents, no shares. At bar 0 close 100 create target 2. No earlier order exists, so no fill and equity 1000.",
+        "At bar 1 open 110 buy 2 for 220, leaving cash 780 and position 2. Close mark 115 gives equity 780+2*115=1010. At that close create target 0.",
+        "At bar 2 open 120 sell 2 for 240, cash 1020, position 0, equity 1020. New final target 0 is still pending with no next bar. The 20 cent PnL is from actual buy 110/sell 120, not the earlier signal close 100."
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "def bar_backtest(bars,targets,initial_cash,half_spread=0,adverse_slip=0,fee_per_unit=0):\n    # OWN schema:(time,opening_reference_cents,closing_mark_cents,open_executable_capacity).\n    if type(bars) is not list or type(targets) is not list or len(bars)!=len(targets) or len(bars)>128:\n        raise ValueError(\"invalid bar or target lists\")\n    if type(initial_cash) is not int or not 0<=initial_cash<=10**9:\n        raise ValueError(\"invalid initial cash\")\n    if any(type(x) is not int or not 0<=x<=1000 for x in (half_spread,adverse_slip,fee_per_unit)):\n        raise ValueError(\"invalid cost parameters\")\n    for index,(bar,target) in enumerate(zip(bars,targets)):\n        if type(bar) is not tuple or len(bar)!=4 or any(type(x) is not int for x in bar):\n            raise ValueError(\"invalid bar schema\")\n        time,opening,close,capacity=bar\n        if time!=index or not 1<=opening<=10**6 or not 1<=close<=10**6 or not 0<=capacity<=10:\n            raise ValueError(\"invalid bar domain or order\")\n        if opening<=half_spread+adverse_slip+fee_per_unit:\n            raise ValueError(\"costs exceed supported sell proceeds\")\n        if type(target) is not int or not 0<=target<=10:raise ValueError(\"invalid close target\")\n    cash=initial_cash;position=0;pending=None;rows=[]\n    for (time,opening,close,capacity),target in zip(bars,targets):\n        delta=0 if pending is None else pending-position\n        price=None;executed=0;unfilled=abs(delta)\n        if delta>0:\n            candidate=opening+half_spread+adverse_slip\n            quantity=min(delta,capacity,cash//(candidate+fee_per_unit))\n            if quantity:\n                cash-=quantity*(candidate+fee_per_unit);position+=quantity\n                executed=quantity;price=candidate\n        elif delta<0:\n            candidate=opening-half_spread-adverse_slip\n            quantity=min(-delta,capacity,position)\n            if quantity:\n                cash+=quantity*(candidate-fee_per_unit);position-=quantity\n                executed=-quantity;price=candidate\n        unfilled-=abs(executed)\n        # Opening attempt expires;mark then accept a NEW close-time target.\n        equity=cash+position*close;pending=target\n        rows.append((time,executed,price,cash,position,close,equity,target,unfilled))\n    return tuple(rows),pending\n\nbars=[(0,100,100,10),(1,110,115,10),(2,120,120,10)]\nledger,pending=bar_backtest(bars,[2,0,0],1000)\nfor row in ledger:print(row)\nprint(\"pending target\",pending)\n# A changed signal can first affect execution on the following bar.\nprint(bar_backtest(bars,[0,0,0],1000)[0][-1][6])\ntry:bar_backtest([(1,100,100,10)],[0],1000)\nexcept ValueError as error:print(error)",
+      "caption": "Expected rows: (0,0,None,1000,0,100,1000,2,0);(1,2,110,780,2,115,1010,0,0);(2,-2,120,1020,0,120,1020,0,0); pending target 0; flat strategy 1000; invalid bar domain or order. Full source includes optional cost arguments taught next, all zero here. Max 128 bars/10 shares, strict integer inputs, no bool, contiguous own times. Entire input validated before returns. Last pending target is metadata, not a final execution or forced liquidation."
+    },
+    {
+      "type": "p",
+      "md": "At a buy quantity q, execution price x and per-unit fee f: cash_new=cash_old-q*(x+f), position_new=position_old+q. At a sell: cash_new=cash_old+q*(x-f), position_new=position_old-q. At a closing mark m, equity=cash+position*m. This single-asset integer-cents model has exact arithmetic, not float reconciliation noise. The price/units policy must be changed explicitly for fractional shares, FX, multipliers, fees with rounding or corporate actions."
+    },
+    {
+      "type": "p",
+      "md": "A target is a desired position, not an instruction to buy that many additional shares each time. Delta=pending_target-current_position; capacity/cash can yield partial or zero fill. An unfilled remainder expires at the one opening attempt; the next close can independently create the same target again. Marked equity is an accounting valuation, not executable liquidation proceeds. If the final position is nonzero, report it and the pending target; do not silently force a last-close sale or label all PnL realized."
+    },
+    {
+      "type": "p",
+      "md": "After every row require nonnegative cash, position 0..10, equity identity, abs(execution)<=capacity, and cash/position change exactly matching price/fee. First row has no fill; no earlier ledger prefix should change if a later bar/target is perturbed, except that whole-input invalidity can fail the run. Determinism shows reproducibility of the stated model, not market realism or strategy validity. Bars ordered/complete in this own integer clock do not implement sessions, halts or auctions."
+    },
+    {
+      "type": "p",
+      "md": "Backtrader's documented bar model fills market orders at the next bar open and says its default execution logic ignores volume. QuantConnect uses different asset/order/data-specific fill rules, including best-effort bid/ask and documented complete-fill assumptions. These are source-specific model choices, not a universal exchange law. Our capacity-limited one-attempt target model is its own design and must not be labeled as either library's implementation."
+    },
+    {
+      "type": "p",
+      "md": "Independent transfer: use one bar only and confirm no fill; change the first target and show it cannot change first-bar equity. Give bar 1 capacity 1 with target 2 and inspect one filled/one expired share; make cash insufficient and confirm it cannot go negative. End with a nonzero holding and reconcile marked equity separately from hypothetical liquidation. Build an independent cashflow ledger rather than copying the same transition formulas into the sole oracle."
+    },
+    {
+      "type": "p",
+      "md": "Sources: [Backtrader bar-order execution](https://www.backtrader.com/docu/order-creation-execution/order-creation-execution/), [QuantConnect fill concepts](https://www.quantconnect.com/docs/v2/writing-algorithms/reality-modeling/trade-fills/key-concepts), [Equity fill source-specific rules](https://www.quantconnect.com/docs/v2/writing-algorithms/reality-modeling/trade-fills/supported-models/equity-model). Own bar/target schema and accounting example are synthetic. No external package required."
+    },
+    {
+      "type": "ref",
+      "items": [
+        {
+          "label": "Backtrader bar-order execution",
+          "url": "https://www.backtrader.com/docu/order-creation-execution/order-creation-execution/"
+        },
+        {
+          "label": "QuantConnect fill concepts",
+          "url": "https://www.quantconnect.com/docs/v2/writing-algorithms/reality-modeling/trade-fills/key-concepts"
+        },
+        {
+          "label": "Equity fill source-specific rules",
+          "url": "https://www.quantconnect.com/docs/v2/writing-algorithms/reality-modeling/trade-fills/supported-models/equity-model"
+        }
+      ]
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "What evidence would you inspect before believing a backtest ledger rather than only its final return?",
+    "hints": [
+      "Names per-event accounting.",
+      "Checks signal/execution/terminal timing.",
+      "Separates model consistency from realism."
+    ],
+    "solution": "Event order and historical-only signals; cash/positions/fees/marks/pending state per event; independent cashflow/quantity reconciliation, domain constraints and missing/corporate-action policy; prefix causality and terminal holdings; fill/cost/source assumptions. Final equity and deterministic replay alone do not prove real fills or future performance."
+  },
+  "independentExercise": {
+    "prompt": "Write a small test case that deliberately breaks the contract boundary in \"Event-driven backtest state and accounting\" and verify how your implementation rejects or handles it.",
+    "hints": [
+      "Test zero, negative, empty, duplicate, and boundary values.",
+      "Confirm both time/memory complexity and numerical precision remain within spec."
+    ],
+    "solution": "def bar_backtest(bars,targets,initial_cash,half_spread=0,adverse_slip=0,fee_per_unit=0):\n    # OWN schema:(time,opening_reference_cents,closing_mark_cents,open_executable_capacity).\n    if type(bars) is not list or type(targets) is not list or len(bars)!=len(targets) or len(bars)>128:\n        raise ValueError(\"invalid bar or target lists\")\n    if type(initial_cash) is not int or not 0<=initial_cash<=10**9:\n        raise ValueError(\"invalid initial cash\")\n    if any(type(x) is not int or not 0<=x<=1000 for x in (half_spread,adverse_slip,fee_per_unit)):\n        raise ValueError(\"invalid cost parameters\")\n    for index,(bar,target) in enumerate(zip(bars,targets)):\n        if type(bar) is not tuple or len(bar)!=4 or any(type(x) is not int for x in bar):\n            raise ValueError(\"invalid bar schema\")\n        time,opening,close,capacity=bar\n        if time!=index or not 1<=opening<=10**6 or not 1<=close<=10**6 or not 0<=capacity<=10:\n            raise ValueError(\"invalid bar domain or order\")\n        if opening<=half_spread+adverse_slip+fee_per_unit:\n            raise ValueError(\"costs exceed supported sell proceeds\")\n        if type(target) is not int or not 0<=target<=10:raise ValueError(\"invalid close target\")\n    cash=initial_cash;position=0;pending=None;rows=[]\n    for (time,opening,close,capacity),target in zip(bars,targets):\n        delta=0 if pending is None else pending-position\n        price=None;executed=0;unfilled=abs(delta)\n        if delta>0:\n            candidate=opening+half_spread+adverse_slip\n            quantity=min(delta,capacity,cash//(candidate+fee_per_unit))\n            if quantity:\n                cash-=quantity*(candidate+fee_per_unit);position+=quantity\n                executed=quantity;price=candidate\n        elif delta<0:\n            candidate=opening-half_spread-adverse_slip\n            quantity=min(-delta,capacity,position)\n            if quantity:\n                cash+=quantity*(candidate-fee_per_unit);position-=quantity\n                executed=-quantity;price=candidate\n        unfilled-=abs(executed)\n        # Opening attempt expires;mark then accept a NEW close-time target.\n        equity=cash+position*close;pending=target\n        rows.append((time,executed,price,cash,position,close,equity,target,unfilled))\n    return tuple(rows),pending\n\nbars=[(0,100,100,10),(1,110,115,10),(2,120,120,10)]\nledger,pending=bar_backtest(bars,[2,0,0],1000)\nfor row in ledger:print(row)\nprint(\"pending target\",pending)\n# A changed signal can first affect execution on the following bar.\nprint(bar_backtest(bars,[0,0,0],1000)[0][-1][6])\ntry:bar_backtest([(1,100,100,10)],[0],1000)\nexcept ValueError as error:print(error)"
+  },
+  "commonMistakes": [
+    "Separate decision and execution clocks. (The target belongs to the previous close.)",
+    "Only actual inventory contributes to the mark. (The units reconcile in the single-currency model.)",
+    "780+2*115=1010."
+  ],
+  "realWorldApplication": "Used directly across production quantitative research, execution systems, and validation pipelines.",
+  "quantFinanceApplication": "Applies rigorous engineering contracts to quantitative modeling and live trading infrastructure.",
+  "summary": [
+    "Execute previous close targets only at the next opening attempt, then mark and create new targets.",
+    "Cash/position/equity must reconcile at each step.",
+    "Pending targets and marked holdings are not realized fills; deterministic source tests do not certify market realism."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "A target is computed after bar 0 closes. When can this own model first fill it?",
+      "objective": 0,
+      "options": [
+        "At bar 0 close before it was computed",
+        "At bar 1 opening attempt",
+        "At any earlier favorable price",
+        "Automatically after the final dataset ends"
+      ],
+      "answerIndex": 1,
+      "explanation": "Separate decision and execution clocks. (The target belongs to the previous close.)"
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "How is closing marked equity computed here?",
+      "objective": 1,
+      "options": [
+        "Cash alone even with shares held",
+        "Position quantity alone",
+        "Cash plus position times closing mark",
+        "Every pending target times last price"
+      ],
+      "answerIndex": 2,
+      "explanation": "Only actual inventory contributes to the mark. (The units reconcile in the single-currency model.)"
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "Cash 780, position 2, closing mark 115. What marked equity cents?",
+      "objective": 2,
+      "answer": 1010,
+      "tolerance": 0.000001,
+      "explanation": "780+2*115=1010."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "An opening attempt fills 1 of 2 desired shares. What happens to the remainder here?",
+      "objective": 0,
+      "options": [
+        "Expires at that attempt",
+        "Becomes a guaranteed future fill",
+        "Is counted as held inventory",
+        "Remains pending automatically until the same target eventually fills"
+      ],
+      "answerIndex": 0,
+      "explanation": "This own IOC-like target attempt is not a persistent limit order. (A later close may create a new target.)"
+    },
+    {
+      "id": "q5",
+      "type": "mcq",
+      "prompt": "A final holding has marked profit but has not sold. What is honest?",
+      "objective": 1,
+      "options": [
+        "All profit is realized cash",
+        "Pretend a last-close fill occurred",
+        "Ignore pending orders and holdings",
+        "Report marked equity and terminal holdings"
+      ],
+      "answerIndex": 3,
+      "explanation": "Valuation and executable liquidation differ. (Hypothetical liquidation needs its own modeled costs/fill.)"
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "What core invariant governs Event-driven backtest state and accounting?",
+      "back": "Separate decision and execution clocks. (The target belongs to the previous close.)"
+    },
+    {
+      "type": "definition",
+      "front": "In Event-driven backtest state and accounting, how do you verify: Reconcile signed executions, cash, positions and marked equity under bounded integer-cents assumptions, without treating marks or pending orders as realized trades.?",
+      "back": "Only actual inventory contributes to the mark. (The units reconcile in the single-currency model.)"
+    },
+    {
+      "type": "error-identification",
+      "front": "What failure mode happens if the contract in Event-driven backtest state and accounting is violated?",
+      "back": "780+2*115=1010."
+    }
+  ],
+  "references": [
+    {
+      "label": "Backtrader bar-order execution",
+      "url": "https://www.backtrader.com/docu/order-creation-execution/order-creation-execution/"
+    },
+    {
+      "label": "QuantConnect fill concepts",
+      "url": "https://www.quantconnect.com/docs/v2/writing-algorithms/reality-modeling/trade-fills/key-concepts"
+    },
+    {
+      "label": "Equity fill source-specific rules",
+      "url": "https://www.quantconnect.com/docs/v2/writing-algorithms/reality-modeling/trade-fills/supported-models/equity-model"
+    }
+  ],
+  "skills": [
+    "backtesting",
+    "quant-modelling",
+    "data-infrastructure",
+    "statistics"
+  ]
+}

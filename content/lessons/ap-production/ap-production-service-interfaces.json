@@ -1,0 +1,216 @@
+{
+  "id": "ap-production-service-interfaces",
+  "moduleId": "ap-production",
+  "title": "Service boundaries and schema compatibility",
+  "estMinutes": 22,
+  "difficulty": "specialist",
+  "prereqs": [
+    "ap-trading-exchange-simulator",
+    "ap-pricing-pricing-library",
+    "ap-research-reproducible-backtest"
+  ],
+  "objectives": [
+    "Decode a bounded versioned synthetic reservation request into a normalized business command with explicit fields/types/units and metadata separation.",
+    "Distinguish source/wire/semantic compatibility and plan versioned request/response/error changes without silently treating valid schema as authentication or authorization.",
+    "Apply service boundaries and schema compatibility invariants safely and identify scope boundaries."
+  ],
+  "motivation": "A service boundary separates a caller-visible contract from internal implementation. Specify operation/schema version, required/optional fields, types, units/ranges, identity/authentication/authorization, error/retry behavior, resource bounds and response semantics.",
+  "blocks": [
+    {
+      "type": "p",
+      "md": "A service boundary separates a caller-visible contract from internal implementation. Specify operation/schema version, required/optional fields, types, units/ranges, identity/authentication/authorization, error/retry behavior, resource bounds and response semantics. This pure decoder handles only a synthetic request shape. It does not listen on a port, authenticate a client, reserve inventory or change a real account. Schema-valid means well-formed under this contract, not permitted."
+    },
+    {
+      "type": "p",
+      "md": "Own schema 1 requires request_id, sku A or B, quantity exact integer 1..10. IDs are bounded ASCII letters/digits/underscore/hyphen, not credentials. Optional trace_id is validated metadata but excluded from the normalized business tuple. Every other field and unsupported version is rejected. Quantity is synthetic inventory units, not dollars,contracts or user spending authority. Exact bool rejection matters because Python bool is a subclass of int. No implicit string-to-number/unit conversion occurs."
+    },
+    {
+      "type": "steps",
+      "title": "Metadata can change without changing the requested operation",
+      "items": [
+        "Request (schema 1,r1,A,3) normalizes to (1,r1,A,3). Adding trace_id t2 does not change this business command. A trace helps correlation but does not grant any permission or change deduplication scope.",
+        "Changing quantity to True fails exact integer validation, rather than reserving 1 unit. Changing schema to 2 fails instead of guessing what v2 means. Adding currency USD also fails because this inventory interface never defined a currency field.",
+        "Pure validation leaves the caller dictionary unchanged and returns a candidate command. The next lesson separately verifies inventory and transaction/idempotency rules; do not label successful parsing as accepted reservation."
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "def decode_reservation(payload):\n    # OWN v1synthetic inventory units,not money or a live account.\n    required={\"schema\",\"request_id\",\"sku\",\"quantity\"}\n    if type(payload) is not dict or not required<=set(payload) or not set(payload)<=required|{\"trace_id\"}:\n        raise ValueError(\"unsupported request fields\")\n    if type(payload[\"schema\"]) is not int or payload[\"schema\"]!=1:raise ValueError(\"unsupported request schema\")\n    def identifier(value):\n        return type(value) is str and 1<=len(value)<=32 and all(c in \"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-\" for c in value)\n    if not identifier(payload[\"request_id\"]):raise ValueError(\"invalid request id\")\n    if \"trace_id\" in payload and not identifier(payload[\"trace_id\"]):raise ValueError(\"invalid trace id\")\n    if type(payload[\"sku\"]) is not str or payload[\"sku\"] not in (\"A\",\"B\"):raise ValueError(\"unsupported sku\")\n    if type(payload[\"quantity\"]) is not int or not 1<=payload[\"quantity\"]<=10:raise ValueError(\"invalid reservation quantity\")\n    return (1,payload[\"request_id\"],payload[\"sku\"],payload[\"quantity\"])\n\nrequest={\"schema\":1,\"request_id\":\"r1\",\"sku\":\"A\",\"quantity\":3}\nprint(decode_reservation(request))\nprint(\"trace independent\",decode_reservation({**request,\"trace_id\":\"t2\"})==decode_reservation(request))\nfor change in ({\"schema\":2},{\"quantity\":True},{\"currency\":\"USD\"}):\n    try:decode_reservation({**request,**change})\n    except ValueError as error:print(error)\nprint(\"caller unchanged\",request=={\"schema\":1,\"request_id\":\"r1\",\"sku\":\"A\",\"quantity\":3})",
+      "caption": "Expected (1,r1,A,3); trace independent True; unsupported request schema; invalid reservation quantity; unsupported request fields; caller unchanged True. Exact tuple output quotes strings. Full pure source, no JSON parser/server/network/permission middleware. Input transport byte size,duplicate JSON object keys and number parsing must be constrained BEFORE this dict boundary in a real service."
+    },
+    {
+      "type": "p",
+      "md": "Google AIP 180 distinguishes source, wire and semantic compatibility. A field can deserialize yet change meaning, units/defaults or failure behavior in a breaking way. Renaming sku, changing quantity units, adding a new REQUIRED field, changing enum meanings or retry semantics can break clients. Adding an optional field is compatible only for relevant old-client/new-server and new-client/old-server directions under actual unknown-field/default behavior. Our closed decoder deliberately rejects unknown fields;do not call arbitrary field additions universally safe."
+    },
+    {
+      "type": "p",
+      "md": "Keep schema/model versions explicit and document an upgrade/migration/deprecation path with tested old/new client combinations. Response versions and structured error codes need contracts too; do not leak internal exception details/secrets to external callers. Distinguish malformed, unsupported, unauthorized, conflict, insufficient-resource, transient and unknown-commit outcomes. This small snippet raises ValueError for local teaching only; it does not implement HTTP status mapping or a stable public error taxonomy."
+    },
+    {
+      "type": "p",
+      "md": "Authenticate principal separately and authorize the operation/resource under least privilege, then enforce business invariants at the authoritative mutation boundary. request_id or trace_id provided by a caller is not proof of identity. Scope idempotency keys to the appropriate authenticated tenant/operation in a real system. This toy has one trusted caller scope and no tenant/auth layer;using its unscoped keys across real users would be wrong."
+    },
+    {
+      "type": "p",
+      "md": "Test missing fields, extra fields, boundary values, bool versus int, invalid enums, ID length/characters and optional metadata invariance. Contract tests should cover actual old/new wire clients and semantic outputs, not only compile-time type assignments. Resource/deadline/rate limits, cancellation, observability and secret-safe failures need actual service tests. The decoder is a source-level pure slice, not a deployed secure API."
+    },
+    {
+      "type": "p",
+      "md": "Independent transfer: write a table of known accepted/rejected requests, then independently compare normalized tuples and caller data before/after. Propose v2 adding a new unit type and state why silently changing quantity interpretation is breaking. Design explicit compatibility/error migration tests. Show how two principals may both use request_id r1 without sharing authority or deduplication state, then explain why this single-scope toy must be extended before that use."
+    },
+    {
+      "type": "p",
+      "md": "Sources: [JSON Schema object/extra-field semantics](https://json-schema.org/understanding-json-schema/reference/object?highlight=additionalproperties), [Google AIP 180 compatibility dimensions](https://google.aip.dev/180), [MDN HTTP idempotent semantics](https://developer.mozilla.org/en-US/docs/Glossary/Idempotent). Own Python decoder is not a JSON Schema validator nor an HTTP server; compatibility examples retain their direction/default assumptions."
+    },
+    {
+      "type": "ref",
+      "items": [
+        {
+          "label": "JSON Schema object/extra-field semantics",
+          "url": "https://json-schema.org/understanding-json-schema/reference/object?highlight=additionalproperties"
+        },
+        {
+          "label": "Google AIP 180 compatibility dimensions",
+          "url": "https://google.aip.dev/180"
+        },
+        {
+          "label": "MDN HTTP idempotent semantics",
+          "url": "https://developer.mozilla.org/en-US/docs/Glossary/Idempotent"
+        }
+      ]
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Why is changing request field names/types only one part of a safe API evolution review?",
+    "hints": [
+      "Names compatibility dimensions/directions.",
+      "Includes default/unit/error semantics.",
+      "Separates schema and authority/commit."
+    ],
+    "solution": "Defaults/units/meaning/error/retry and authorization/resource behavior can break clients even if wire types parse. Need source/wire/semantic direction-specific old/new tests, version/migration and response/error contracts. Shape validation does not grant authority or prove business commit/security."
+  },
+  "independentExercise": {
+    "prompt": "Write a small test case that deliberately breaks the contract boundary in \"Service boundaries and schema compatibility\" and verify how your implementation rejects or handles it.",
+    "hints": [
+      "Test zero, negative, empty, duplicate, and boundary values.",
+      "Confirm both time/memory complexity and numerical precision remain within spec."
+    ],
+    "solution": "def decode_reservation(payload):\n    # OWN v1synthetic inventory units,not money or a live account.\n    required={\"schema\",\"request_id\",\"sku\",\"quantity\"}\n    if type(payload) is not dict or not required<=set(payload) or not set(payload)<=required|{\"trace_id\"}:\n        raise ValueError(\"unsupported request fields\")\n    if type(payload[\"schema\"]) is not int or payload[\"schema\"]!=1:raise ValueError(\"unsupported request schema\")\n    def identifier(value):\n        return type(value) is str and 1<=len(value)<=32 and all(c in \"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-\" for c in value)\n    if not identifier(payload[\"request_id\"]):raise ValueError(\"invalid request id\")\n    if \"trace_id\" in payload and not identifier(payload[\"trace_id\"]):raise ValueError(\"invalid trace id\")\n    if type(payload[\"sku\"]) is not str or payload[\"sku\"] not in (\"A\",\"B\"):raise ValueError(\"unsupported sku\")\n    if type(payload[\"quantity\"]) is not int or not 1<=payload[\"quantity\"]<=10:raise ValueError(\"invalid reservation quantity\")\n    return (1,payload[\"request_id\"],payload[\"sku\"],payload[\"quantity\"])\n\nrequest={\"schema\":1,\"request_id\":\"r1\",\"sku\":\"A\",\"quantity\":3}\nprint(decode_reservation(request))\nprint(\"trace independent\",decode_reservation({**request,\"trace_id\":\"t2\"})==decode_reservation(request))\nfor change in ({\"schema\":2},{\"quantity\":True},{\"currency\":\"USD\"}):\n    try:decode_reservation({**request,**change})\n    except ValueError as error:print(error)\nprint(\"caller unchanged\",request=={\"schema\":1,\"request_id\":\"r1\",\"sku\":\"A\",\"quantity\":3})"
+  },
+  "commonMistakes": [
+    "Validation is not authorization or mutation. (Business/auth decisions remain separate.)",
+    "Wire success does not guarantee unchanged meaning. (The same number now means a different operation.)",
+    "Exact integer 1 through 10; bool does not count."
+  ],
+  "realWorldApplication": "Used directly across production quantitative research, execution systems, and validation pipelines.",
+  "quantFinanceApplication": "Applies rigorous engineering contracts to quantitative modeling and live trading infrastructure.",
+  "summary": [
+    "A versioned schema boundary validates normalized fields/types/units, not authority or business acceptance.",
+    "Compatibility includes source, wire and meaning; unknown fields/defaults/directions matter.",
+    "This pure single-scope synthetic decoder is not a deployed authenticated service."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "A request passes decode_reservation. What is established?",
+      "objective": 0,
+      "options": [
+        "Client authorization to reserve real assets",
+        "Valid shape under the toy contract",
+        "A committed inventory change",
+        "A secure deployed HTTP endpoint"
+      ],
+      "answerIndex": 1,
+      "explanation": "Validation is not authorization or mutation. (Business/auth decisions remain separate.)"
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "Which can break semantic compatibility while still parsing?",
+      "objective": 1,
+      "options": [
+        "Keeping the same documented units",
+        "Adding internal comments",
+        "Changing quantity from units to currency",
+        "Preserving old default behavior"
+      ],
+      "answerIndex": 2,
+      "explanation": "Wire success does not guarantee unchanged meaning. (The same number now means a different operation.)"
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "What minimum quantity does this interface accept?",
+      "objective": 2,
+      "answer": 1,
+      "tolerance": 0.000001,
+      "explanation": "Exact integer 1 through 10; bool does not count."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "How does this decoder treat optional trace_id?",
+      "objective": 0,
+      "options": [
+        "Validated metadata only",
+        "Uses it as proof of login",
+        "Adds it to quantity",
+        "Executes the reservation immediately"
+      ],
+      "answerIndex": 0,
+      "explanation": "Separate metadata, identity and business semantics. (Correlation metadata must not alter the requested reservation.)"
+    },
+    {
+      "id": "q5",
+      "type": "mcq",
+      "prompt": "Is adding an optional field always safe for every old/new client/server pair?",
+      "objective": 1,
+      "options": [
+        "Yes, all decoders ignore extras",
+        "Yes, if the version label stays the same",
+        "Yes, provided the field is optional in the new schema",
+        "No, unknown/default/direction rules matter"
+      ],
+      "answerIndex": 3,
+      "explanation": "Compatibility is directional and behavior-dependent. (Test actual wire and semantic combinations.)"
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "What core invariant governs Service boundaries and schema compatibility?",
+      "back": "Validation is not authorization or mutation. (Business/auth decisions remain separate.)"
+    },
+    {
+      "type": "definition",
+      "front": "In Service boundaries and schema compatibility, how do you verify: Distinguish source/wire/semantic compatibility and plan versioned request/response/error changes without silently treating valid schema as authentication or authorization.?",
+      "back": "Wire success does not guarantee unchanged meaning. (The same number now means a different operation.)"
+    },
+    {
+      "type": "error-identification",
+      "front": "What failure mode happens if the contract in Service boundaries and schema compatibility is violated?",
+      "back": "Exact integer 1 through 10; bool does not count."
+    }
+  ],
+  "references": [
+    {
+      "label": "JSON Schema object/extra-field semantics",
+      "url": "https://json-schema.org/understanding-json-schema/reference/object?highlight=additionalproperties"
+    },
+    {
+      "label": "Google AIP 180 compatibility dimensions",
+      "url": "https://google.aip.dev/180"
+    },
+    {
+      "label": "MDN HTTP idempotent semantics",
+      "url": "https://developer.mozilla.org/en-US/docs/Glossary/Idempotent"
+    }
+  ],
+  "skills": [
+    "production-engineering",
+    "distributed-systems",
+    "software-engineering"
+  ]
+}

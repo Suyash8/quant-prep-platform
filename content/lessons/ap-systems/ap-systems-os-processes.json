@@ -1,0 +1,229 @@
+{
+  "id": "ap-systems-os-processes",
+  "moduleId": "ap-systems",
+  "title": "Processes, files and virtual memory",
+  "estMinutes": 22,
+  "difficulty": "advanced",
+  "prereqs": [
+    "ap-systems-memory-cache"
+  ],
+  "objectives": [
+    "Distinguish program/process/thread and private memory from explicit IPC/shared files, checking child status/data and owned file lifetimes without shell or durability shortcuts.",
+    "Explain virtual addresses/mappings/residency/page faults and access permissions using OS-scoped evidence without equating virtual size, RSS, cached translation or physical memory.",
+    "Apply processes, files and virtual memory invariants safely and identify scope boundaries."
+  ],
+  "motivation": "A program/executable describes instructions/data; a process is an executing instance with OS-managed resources and an address-space context. Threads within one process normally share its address space while having their own execution state/stacks.",
+  "blocks": [
+    {
+      "type": "p",
+      "md": "A program/executable describes instructions/data; a process is an executing instance with OS-managed resources and an address-space context. Threads within one process normally share its address space while having their own execution state/stacks. Different processes normally have separate virtual address spaces; explicit shared memory, inherited resources, files and IPC can intentionally connect them. The same numeric virtual address in two processes is not proof of the same physical byte or object. Process isolation is an OS access-control mechanism, not a claim that any child command is safe to run."
+    },
+    {
+      "type": "p",
+      "md": "The following standard-library Python program starts only fixed authored child code through the current sys.executable, without a shell, sends explicit JSON through stdin and receives a completed stdout/status. The child creates its own list from serialized input and changes that list, not the parent object. This is explicit copied data exchange, not shared mutable Python state or a fork/copy-on-write guarantee. Child launch/execution can fail or timeout; check=True raises on a nonzero completed exit, while the deliberate exit 7 uses check=False so the status is examined."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import json\nimport subprocess\nimport sys\n\nparent_values=[1,2,3]\nchild_source=\"import json,sys; values=json.loads(sys.stdin.read()); values.append(4); print(json.dumps(values))\"\ncompleted=subprocess.run([sys.executable,\"-I\",\"-c\",child_source],input=json.dumps(parent_values),\n                         text=True,capture_output=True,timeout=5,check=True)\nchild_values=json.loads(completed.stdout)\nprint(parent_values)\nprint(child_values)\nprint(completed.returncode)\nfailed=subprocess.run([sys.executable,\"-I\",\"-c\",\"import sys; sys.exit(7)\"],\n                      text=True,capture_output=True,timeout=5,check=False)\nprint(failed.returncode)\nprint(failed.stdout==\"\" and failed.stderr==\"\")",
+      "caption": "Expected lines: [1, 2, 3]; [1, 2, 3, 4]; 0; 7; True. A nonzero status is not automatically a crash: this child deliberately exits 7. stdout/stderr are separate captured channels. The bounded authored payload/output avoids unbounded pipe capture here; subprocess support may be unavailable in an actual app sandbox and is not inferred from local execution."
+    },
+    {
+      "type": "p",
+      "md": "Virtual memory is the process-facing address abstraction translated/protected by OS/hardware mechanisms. A mapping associates a virtual range with permissions and backing behavior, not necessarily one resident physical page per virtual page right now. Code, data, dynamic allocations, stacks and mapped files can inhabit the space; their layout/directions/page size are OS/ABI/configuration details, not fixed cartoons. Virtual size, resident-set size (RSS) and proportional shared-memory accounting (PSS) answer different questions. Adding RSS values can double-count shared physical pages."
+    },
+    {
+      "type": "p",
+      "md": "A page fault is a trap/event requiring OS handling for an access condition, and is not always fatal: demand-zero allocation, a nonresident page or copy-on-write can be handled so the instruction continues under the platform rules. Invalid/protection accesses can instead cause an error/signal/termination. A TLB miss concerns an uncached translation and may be resolved without a disk read or a fatal page fault. Conversely a mapped range or a plausible pointer does not prove the C++ object lifetime/type/access contract is valid."
+    },
+    {
+      "type": "steps",
+      "title": "Do not turn a virtual range into a physical-memory bill",
+      "items": [
+        "A synthetic process reserves a large virtual range but touches only a small part. A virtual-size report can include the whole range while residency includes only pages currently resident under that OS accounting.",
+        "Two processes map a shared read-only code page. Both can have a resident mapping of it; naively summing their RSS can count that physical page twice. PSS apportions shared pages rather than treating each mapping as fully private.",
+        "On Linux, /proc/pid/maps lists mapped ranges/access flags; /proc/pid/smaps adds accounting such as RSS/PSS and page sizes. These files are permission-controlled, dynamic Linux diagnostics, not a portable memory API or an address/object provenance certificate."
+      ]
+    },
+    {
+      "type": "p",
+      "md": "A file path names a filesystem entry; an opened stream/descriptor is a live handle with its own lifetime and operations. Linux descriptors refer to open file descriptions, so path identity and shared offsets/inheritance need their own semantics. Closing a handle releases the local resource, not proof a business update is durably committed to storage. Reads can return fewer bytes than requested at the OS boundary; a positive count is data, 0 means EOF under the relevant interface, and an error is not EOF. Buffered high-level file methods can perform several underlying operations and have their own exception/return contract."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "from pathlib import Path\nfrom tempfile import TemporaryDirectory\n\nwith TemporaryDirectory() as directory:\n    root=Path(directory)\n    path=root/\"sample.bin\"\n    payload=b\"ABCDEF\"\n    with path.open(\"xb\") as stream:\n        written=stream.write(payload)\n        if written!=len(payload):\n            raise OSError(\"incomplete buffered file write\")\n    with path.open(\"rb\") as stream:\n        first=stream.read(2)\n        rest=stream.read()\n        end=stream.read(1)\n    print(first,rest,end)\n    print(first+rest==payload)\n    try:\n        (root/\"absent.bin\").read_bytes()\n    except FileNotFoundError:\n        print(\"missing is an error, not EOF\")\nprint(root.exists())",
+      "caption": "Expected lines: b'AB' b'CDEF' b''; True; missing is an error, not EOF; False. Only an owned temporary directory/file is created, and handles close through with before cleanup. The second read gets the rest through the high-level buffered interface; this is not a proof one OS read always returns a full file. No fsync/crash-durability, atomic rename, permissions protocol or actual app filesystem capability is claimed."
+    },
+    {
+      "type": "p",
+      "md": "TemporaryDirectory removes its owned tree on normal context exit; permission/platform/process termination can change cleanup behavior. A with statement releases a successfully entered resource on the shown normal/exception paths, not after every possible crash. Avoid leaking file/child resources on errors and report timeout/launch/nonzero failures distinctly. Captured output can consume memory, and blocking external commands need limits; these fixed tiny examples are not a general untrusted command runner."
+    },
+    {
+      "type": "p",
+      "md": "Independent transfer: make a fixed child return a JSON object with a computed sum, validate its schema/status and show parent input unchanged. Test deliberate nonzero exit without hiding stderr/status, not a destructive command. With an owned temporary file, test empty file EOF versus absent-file exception, bounded chunk accumulation and handle cleanup. Explain which memory/accounting statements are Linux-only and why virtual allocation is not a resident-memory or C++ lifetime certificate."
+    },
+    {
+      "type": "p",
+      "md": "Sources: [OSTEP address spaces](https://pages.cs.wisc.edu/~remzi/OSTEP/vm-intro.pdf), [Linux maps](https://www.man7.org/linux/man-pages/man5/proc_pid_maps.5.html), [Linux smaps](https://www.man7.org/linux/man-pages/man5/proc_pid_smaps.5.html), [Linux read counts/EOF/errors](https://www.man7.org/linux/man-pages/man2/read.2.html), [Python subprocess](https://docs.python.org/3/library/subprocess.html), and [temporary resources](https://docs.python.org/3/library/tempfile.html). Local examples are ordinary subprocess/buffered-file operations; no live account files or network services are accessed. The [OSTEP page-fault/TLB mechanism chapter](https://pages.cs.wisc.edu/~remzi/OSTEP/vm-beyondphys.pdf) distinguishes a present-page TLB miss, a serviced nonresident-page fault and invalid access; the introductory address-space chapter alone is not that detailed mechanism evidence."
+    },
+    {
+      "type": "ref",
+      "items": [
+        {
+          "label": "OSTEP address spaces",
+          "url": "https://pages.cs.wisc.edu/~remzi/OSTEP/vm-intro.pdf"
+        },
+        {
+          "label": "Linux maps",
+          "url": "https://www.man7.org/linux/man-pages/man5/proc_pid_maps.5.html"
+        },
+        {
+          "label": "Linux smaps",
+          "url": "https://www.man7.org/linux/man-pages/man5/proc_pid_smaps.5.html"
+        },
+        {
+          "label": "Linux read counts/EOF/errors",
+          "url": "https://www.man7.org/linux/man-pages/man2/read.2.html"
+        }
+      ]
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Why do closed file handles and a clean child exit not prove a durable account update?",
+    "hints": [
+      "Separates resources/status from durable business state.",
+      "Names commit/recovery/reconciliation evidence.",
+      "Keeps platform and data-validation scope explicit."
+    ],
+    "solution": "They establish resource/completion behavior only for the shown process/file interface. Actual update integrity needs validated source/schema, expected status/data, commit/fsync/transaction and recovery/reconciliation policies, permissions and concurrency control. Local cleanup/exit alone does not show crash persistence or business correctness."
+  },
+  "independentExercise": {
+    "prompt": "Write a small test case that deliberately breaks the contract boundary in \"Processes, files and virtual memory\" and verify how your implementation rejects or handles it.",
+    "hints": [
+      "Test zero, negative, empty, duplicate, and boundary values.",
+      "Confirm both time/memory complexity and numerical precision remain within spec."
+    ],
+    "solution": "from pathlib import Path\nfrom tempfile import TemporaryDirectory\n\nwith TemporaryDirectory() as directory:\n    root=Path(directory)\n    path=root/\"sample.bin\"\n    payload=b\"ABCDEF\"\n    with path.open(\"xb\") as stream:\n        written=stream.write(payload)\n        if written!=len(payload):\n            raise OSError(\"incomplete buffered file write\")\n    with path.open(\"rb\") as stream:\n        first=stream.read(2)\n        rest=stream.read()\n        end=stream.read(1)\n    print(first,rest,end)\n    print(first+rest==payload)\n    try:\n        (root/\"absent.bin\").read_bytes()\n    except FileNotFoundError:\n        print(\"missing is an error, not EOF\")\nprint(root.exists())"
+  },
+  "commonMistakes": [
+    "This is explicit serialized input/output exchange, not in-place mutation of the parent object. (Shared memory is a separate explicit mechanism.)",
+    "Nonzero completion, launch failure, timeout and crash are distinct outcomes to diagnose. (Interpret status under this exact program/platform contract.)",
+    "Only the child list becomes length 4; the parent stays length 3."
+  ],
+  "realWorldApplication": "Used directly across production quantitative research, execution systems, and validation pipelines.",
+  "quantFinanceApplication": "Applies rigorous engineering contracts to quantitative modeling and live trading infrastructure.",
+  "summary": [
+    "Processes have OS-managed address/resource boundaries; explicit data exchange is not a shared caller object.",
+    "Virtual mapping, residency, translation misses, page faults and object validity differ.",
+    "File/child handles need checked status/lifetime/error policies, and local cleanup is not crash durability."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "Why is parent_values unchanged after the shown child appends 4?",
+      "objective": 0,
+      "options": [
+        "Every subprocess secretly shares the same Python list object",
+        "A child can never receive any input",
+        "The child mutates the parent list only after completed.stdout is read",
+        "The child modifies its own deserialized list"
+      ],
+      "answerIndex": 3,
+      "explanation": "This is explicit serialized input/output exchange, not in-place mutation of the parent object. (Shared memory is a separate explicit mechanism.)"
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "What does the deliberate child exit status 7 mean here?",
+      "objective": 1,
+      "options": [
+        "Every status 7 is a memory crash on all platforms",
+        "The child requested a nonzero completion status",
+        "check=False changes that nonzero returncode to zero",
+        "The parent must silently call it success"
+      ],
+      "answerIndex": 1,
+      "explanation": "Nonzero completion, launch failure, timeout and crash are distinct outcomes to diagnose. (Interpret status under this exact program/platform contract.)"
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "The parent starts with 3 elements and the child appends 1 to its copied list. How many elements remain in parent_values?",
+      "objective": 2,
+      "answer": 3,
+      "tolerance": 0.000001,
+      "explanation": "Only the child list becomes length 4; the parent stays length 3."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "Why can virtual size exceed resident memory?",
+      "objective": 0,
+      "options": [
+        "Every mapped byte must be private physical RAM now",
+        "A virtual address always identifies a live C++ object",
+        "Mapped ranges need not all be resident simultaneously",
+        "RSS is always a globally unique physical byte count"
+      ],
+      "answerIndex": 2,
+      "explanation": "Virtual address-space accounting is not a direct sum of currently private physical pages. (Residency/backing/access policies govern actual physical use.)"
+    },
+    {
+      "id": "q5",
+      "type": "mcq",
+      "prompt": "Which statement about a page fault is accurate?",
+      "objective": 1,
+      "options": [
+        "Some faults are handled normally rather than terminating",
+        "Every TLB miss means disk swap and a crash",
+        "A mapping makes every access permitted regardless of flags",
+        "A successful page translation validates every C++ alias"
+      ],
+      "answerIndex": 0,
+      "explanation": "The OS/platform and access condition decide handling; do not equate every fault with a fatal error. (Demand allocation/nonresident/COW cases can be recoverable.)"
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "What core invariant governs Processes, files and virtual memory?",
+      "back": "This is explicit serialized input/output exchange, not in-place mutation of the parent object. (Shared memory is a separate explicit mechanism.)"
+    },
+    {
+      "type": "definition",
+      "front": "In Processes, files and virtual memory, how do you verify: Explain virtual addresses/mappings/residency/page faults and access permissions using OS-scoped evidence without equating virtual size, RSS, cached translation or physical memory.?",
+      "back": "Nonzero completion, launch failure, timeout and crash are distinct outcomes to diagnose. (Interpret status under this exact program/platform contract.)"
+    },
+    {
+      "type": "error-identification",
+      "front": "What failure mode happens if the contract in Processes, files and virtual memory is violated?",
+      "back": "Only the child list becomes length 4; the parent stays length 3."
+    }
+  ],
+  "references": [
+    {
+      "label": "OSTEP address spaces",
+      "url": "https://pages.cs.wisc.edu/~remzi/OSTEP/vm-intro.pdf"
+    },
+    {
+      "label": "Linux maps",
+      "url": "https://www.man7.org/linux/man-pages/man5/proc_pid_maps.5.html"
+    },
+    {
+      "label": "Linux smaps",
+      "url": "https://www.man7.org/linux/man-pages/man5/proc_pid_smaps.5.html"
+    },
+    {
+      "label": "Linux read counts/EOF/errors",
+      "url": "https://www.man7.org/linux/man-pages/man2/read.2.html"
+    }
+  ],
+  "skills": [
+    "operating-systems",
+    "networking",
+    "concurrency",
+    "cpp-performance"
+  ]
+}

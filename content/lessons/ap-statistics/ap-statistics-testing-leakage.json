@@ -1,0 +1,234 @@
+{
+  "id": "ap-statistics-testing-leakage",
+  "moduleId": "ap-statistics",
+  "title": "Hypothesis tests, multiplicity and temporal leakage",
+  "estMinutes": 22,
+  "difficulty": "core",
+  "prereqs": [
+    "ap-statistics-regression"
+  ],
+  "objectives": [
+    "Interpret a predeclared exact test and apply a Bonferroni familywise bound without confusing p-values, effect size or post-selection evidence.",
+    "Enforce point-in-time feature and training-label availability, keeping preprocessing and model choice out of the final evaluation data.",
+    "Apply hypothesis tests, multiplicity and temporal leakage invariants safely and identify scope boundaries."
+  ],
+  "motivation": "A test starts with a specified null model, alternative, statistic, sampling/stopping rule and decision threshold. A p-value is a tail probability of the observed-or-more-extreme statistic UNDER that null model and its assumptions.",
+  "blocks": [
+    {
+      "type": "p",
+      "md": "A test starts with a specified null model, alternative, statistic, sampling/stopping rule and decision threshold. A p-value is a tail probability of the observed-or-more-extreme statistic UNDER that null model and its assumptions. It is not P(null is true), the chance the result was caused by chance alone, the size of an effect, or a trading instruction. Not rejecting a null does not establish that it is true; rejecting can reflect an incorrect null or other violated model assumptions."
+    },
+    {
+      "type": "p",
+      "md": "Synthetic example: fix n=8 independent binary trials in advance, null success probability 1/2, and the one-sided alternative p>1/2. The statistic K is the success count; larger is more extreme. For observed K=7, the exact right-tail p-value is P0(K≥7)=C(8,7)/256+C(8,8)/256=9/256. The tail direction was not chosen after seeing the result. A two-sided alternative needs its own predeclared extremeness rule; this helper implements only the stated one-sided tail."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "from fractions import Fraction\nfrom math import comb\n\ndef binomial_right_tail(n, observed, null_p):\n    if type(n) is not int or not 0 <= n <= 50 or type(observed) is not int or not 0 <= observed <= n:\n        raise ValueError(\"expected integer n in [0,50] and observed in [0,n]\")\n    if type(null_p) is not Fraction or not 0 <= null_p <= 1:\n        raise ValueError(\"expected Fraction null probability in [0,1]\")\n    return sum((comb(n,k)*null_p**k*(1-null_p)**(n-k)\n                for k in range(observed,n+1)), Fraction(0))\n\np_value = binomial_right_tail(8, 7, Fraction(1,2))\nalpha = Fraction(1,20)\nfamily_size = 20\nprint(p_value)\nprint(p_value <= alpha)\nprint(alpha / family_size)\nprint(p_value <= alpha / family_size)\nprint(min(Fraction(1), family_size*p_value))",
+      "caption": "Expected output: 9/256, True, 1/400, False, then 45/64. At α=1/20 the predeclared single test crosses its threshold. For a complete family of 20 valid tests, α/20=1/400; this p-value does not cross that Bonferroni threshold. Multiplying by 20 and capping at 1 gives its Bonferroni-adjusted p-value, not a posterior probability."
+    },
+    {
+      "type": "p",
+      "md": "If m tests each have a valid null rejection probability at most α/m, the union bound gives P(at least one false rejection)≤Σ_(true nulls)P(reject that null)≤m*(α/m)=α. This Bonferroni familywise guarantee does not require independence between tests, but it DOES require valid individual test procedures and a correctly defined family. Within-test dependence or unplanned optional stopping that invalidates an individual p-value is not repaired by multiplication. The bound may be conservative and lower power; it is not a promise of exactly α false findings."
+    },
+    {
+      "type": "p",
+      "md": "The family can include many features, horizons, parameter choices, subgroup analyses and repeated looks, not merely the one result printed in a final report. Reporting only the smallest p-value hides this selection. Record all attempted comparisons and stopping decisions. Reusing a final holdout to choose the winning model turns it into development data; a correction based on a conveniently smaller family does not restore an untouched evaluation. Preplanned sequential or selective methods exist, but are not implemented here."
+    },
+    {
+      "type": "p",
+      "md": "For a prediction decided at time d, a feature must have been available no later than d, not merely describe an earlier event. A future label can become available after d, but it cannot train a model before its label-availability time. The metadata helper defines an explicit frozen fit snapshot at t: training decisions must be strictly before t and labels available by t; final evaluation decisions must be strictly after t. Equal-time decisions are excluded by this policy to avoid implying that fitting and prediction happen simultaneously."
+    },
+    {
+      "type": "steps",
+      "title": "Event order alone is not enough",
+      "items": [
+        "At the frozen fit cutoff t=15, A has decision 10 and label available 13, so it can train.",
+        "B has decision 11 but label available 18. Its early decision does not make the future outcome known at fitting; exclude it from training.",
+        "C has decision 16, after the snapshot, and D has decision 15 exactly at it. Neither belongs to this strict-before training policy.",
+        "A feature available at 12 for a decision at 10 is a contract error, even if its original event timestamp was earlier."
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "def training_ids(rows, fit_time):\n    # Row: (id, decision_time, feature_available_time, label_available_time).\n    if type(rows) is not list or len(rows) > 1000 or type(fit_time) is not int or not 0 <= fit_time <= 1000000000:\n        raise ValueError(\"expected bounded rows and integer fit time\")\n    result, seen = [], set()\n    for row in rows:\n        if type(row) is not tuple or len(row) != 4:\n            raise ValueError(\"expected four-field tuples\")\n        name, decision, feature_available, label_available = row\n        if type(name) is not str or not name or name in seen:\n            raise ValueError(\"expected unique nonempty row IDs\")\n        if any(type(t) is not int or not 0 <= t <= 1000000000\n               for t in (decision, feature_available, label_available)):\n            raise ValueError(\"expected bounded integer timestamps\")\n        if feature_available > decision or label_available < decision:\n            raise ValueError(\"invalid point-in-time feature or future-label contract\")\n        seen.add(name)\n        if decision < fit_time and label_available <= fit_time:\n            result.append(name)\n    return result\n\nrows = [(\"A\",10,9,13), (\"B\",11,11,18), (\"C\",16,15,17), (\"D\",15,14,15)]\nprint(training_ids(rows, 15))\ntry:\n    training_ids([(\"bad\",10,12,13)], 15)\nexcept ValueError:\n    print(\"future feature rejected\")",
+      "caption": "Expected output: ['A'], then future feature rejected. Integer timestamps are synthetic shared-clock units, not a timezone parser. Rows identify a future-outcome task; label_available must be at or after its decision. All row metadata is validated before a result is returned, and input order is preserved. This is an eligibility example, not a complete purged walk-forward splitter."
+    },
+    {
+      "type": "p",
+      "md": "Split before learning any transformation: imputation values, centering/scaling, feature selection and model parameters must be fitted within the training fold. Apply that frozen transformation to later validation/test rows. For train values [1,3] and held-out value 100, training mean 2 gives held-out centered value 98. Using all three values gives mean 104/3 and leaks the held-out distribution into the transform. A pipeline helps maintain this boundary, but cannot fix incorrectly timestamped source features."
+    },
+    {
+      "type": "p",
+      "md": "Chronological row order alone does not guarantee clean evaluation: overlapping target windows, duplicated entities, delayed revisions and labels that cross fold boundaries can share information. Define event/feature/label availability and the full outcome interval, then choose exclusions or a gap appropriate to that task. A gap counted in rows is not automatically a fixed time duration on irregular data. The referenced TimeSeriesSplit is not executed here and does not by itself infer label-window or revision semantics."
+    },
+    {
+      "type": "p",
+      "md": "Independent transfer: compute the exact right-tail p-value for 8 successes in 8 trials and compare it with α/20, preserving the original one-sided null. Then design a timeline with one late label and one late feature: state which is temporarily ineligible and which violates a prediction-time contract. Describe train/validation/final-test roles and list every transformation learned before evaluation. Explain what new untouched evidence would be needed after tuning on a former test set."
+    },
+    {
+      "type": "p",
+      "md": "References: [ASA p-value principles](https://www.amstat.org/asa/files/pdfs/P-ValueStatement.pdf), [NIST Bonferroni inequality](https://itl.nist.gov/div898/handbook/prc/section4/prc473.htm), [scikit-learn leakage guidance](https://scikit-learn.org/stable/common_pitfalls.html) and [TimeSeriesSplit contract](https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.TimeSeriesSplit.html). Only standard-library synthetic code is executed; no scikit-learn capability or live-data validation is implied."
+    },
+    {
+      "type": "ref",
+      "items": [
+        {
+          "label": "ASA p-value principles",
+          "url": "https://www.amstat.org/asa/files/pdfs/P-ValueStatement.pdf"
+        },
+        {
+          "label": "NIST Bonferroni inequality",
+          "url": "https://itl.nist.gov/div898/handbook/prc/section4/prc473.htm"
+        },
+        {
+          "label": "scikit-learn leakage guidance",
+          "url": "https://scikit-learn.org/stable/common_pitfalls.html"
+        },
+        {
+          "label": "TimeSeriesSplit contract",
+          "url": "https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.TimeSeriesSplit.html"
+        }
+      ]
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "What evidence belongs with a strong historical strategy result before calling it out-of-sample?",
+    "hints": [
+      "Names selection/multiplicity and untouched evaluation.",
+      "Checks availability and overlapping targets.",
+      "Distinguishes a historical result from action authority."
+    ],
+    "solution": "Record all tried models/tests and stopping decisions, exact time/availability/label windows, training-only transformations, untouched evaluation periods/entities, dependence/overlap handling, baseline/costs and uncertainties. A score alone is not approval to trade."
+  },
+  "independentExercise": {
+    "prompt": "Write a small test case that deliberately breaks the contract boundary in \"Hypothesis tests, multiplicity and temporal leakage\" and verify how your implementation rejects or handles it.",
+    "hints": [
+      "Test zero, negative, empty, duplicate, and boundary values.",
+      "Confirm both time/memory complexity and numerical precision remain within spec."
+    ],
+    "solution": "def training_ids(rows, fit_time):\n    # Row: (id, decision_time, feature_available_time, label_available_time).\n    if type(rows) is not list or len(rows) > 1000 or type(fit_time) is not int or not 0 <= fit_time <= 1000000000:\n        raise ValueError(\"expected bounded rows and integer fit time\")\n    result, seen = [], set()\n    for row in rows:\n        if type(row) is not tuple or len(row) != 4:\n            raise ValueError(\"expected four-field tuples\")\n        name, decision, feature_available, label_available = row\n        if type(name) is not str or not name or name in seen:\n            raise ValueError(\"expected unique nonempty row IDs\")\n        if any(type(t) is not int or not 0 <= t <= 1000000000\n               for t in (decision, feature_available, label_available)):\n            raise ValueError(\"expected bounded integer timestamps\")\n        if feature_available > decision or label_available < decision:\n            raise ValueError(\"invalid point-in-time feature or future-label contract\")\n        seen.add(name)\n        if decision < fit_time and label_available <= fit_time:\n            result.append(name)\n    return result\n\nrows = [(\"A\",10,9,13), (\"B\",11,11,18), (\"C\",16,15,17), (\"D\",15,14,15)]\nprint(training_ids(rows, 15))\ntry:\n    training_ids([(\"bad\",10,12,13)], 15)\nexcept ValueError:\n    print(\"future feature rejected\")"
+  },
+  "commonMistakes": [
+    "Tail probability is computed under the null and sampling assumptions. It does not reverse the conditioning direction. (It includes the observed and more-extreme success count.)",
+    "The result follows by summing true-null rejection probabilities. Each probability must meet its stated marginal bound. (An invalid p-value or omitted selection path is not repaired by the bound.)",
+    "Testing and reporting include the path that led to the result, not only the final row shown. (The reported single-test threshold ignores the search that selected it.)"
+  ],
+  "realWorldApplication": "Used directly across production quantitative research, execution systems, and validation pipelines.",
+  "quantFinanceApplication": "Applies rigorous engineering contracts to quantitative modeling and live trading infrastructure.",
+  "summary": [
+    "A p-value is conditional on a test model, not the probability a hypothesis is true.",
+    "Multiplicity needs a complete family and valid tests.",
+    "Evaluation must respect availability, training-only transformations and genuinely untouched outcomes."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "In the predeclared one-sided example, what does p=9/256 represent?",
+      "objective": 0,
+      "options": [
+        "P(null hypothesis is true | data)",
+        "The probability of future profit",
+        "P0(K>=7) under the specified null model",
+        "The size of a real economic effect"
+      ],
+      "answerIndex": 2,
+      "explanation": "Tail probability is computed under the null and sampling assumptions. It does not reverse the conditioning direction. (It includes the observed and more-extreme success count.)"
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "Which condition is needed for Bonferroni familywise control?",
+      "objective": 1,
+      "options": [
+        "Independent tests in every application",
+        "Valid individual null tests and a correctly counted family",
+        "Reporting only whichever test passes",
+        "Exactly one false positive in every family"
+      ],
+      "answerIndex": 1,
+      "explanation": "The result follows by summing true-null rejection probabilities. Each probability must meet its stated marginal bound. (An invalid p-value or omitted selection path is not repaired by the bound.)"
+    },
+    {
+      "id": "q3",
+      "type": "mcq",
+      "prompt": "You choose the smallest p-value after trying 20 strategies but report one test. What is wrong?",
+      "objective": 2,
+      "options": [
+        "The selection family was hidden",
+        "Twenty trials prove at least one strategy is profitable",
+        "A final printed p-value reveals the full search automatically",
+        "Only the printed strategy belongs to the family because the other trials were not published"
+      ],
+      "answerIndex": 0,
+      "explanation": "Testing and reporting include the path that led to the result, not only the final row shown. (The reported single-test threshold ignores the search that selected it.)"
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "A row decision was at 11, but its target label became available at 18. May it train a model frozen at 15?",
+      "objective": 0,
+      "options": [
+        "Yes, because decision 11 is before 15",
+        "Yes, if it improves the final test score",
+        "Yes, if rows are in chronological decision-time order",
+        "No; the label was unavailable at fitting"
+      ],
+      "answerIndex": 3,
+      "explanation": "Training must use information available to that fitting process, including label-availability time rather than just row-decision time. (It can become eligible at a later justified fit snapshot.)"
+    },
+    {
+      "id": "q5",
+      "type": "numeric",
+      "prompt": "For a family of 20 valid tests with α=0.05, the Bonferroni per-test cutoff is 1/d. What is d?",
+      "objective": 1,
+      "answer": 400,
+      "tolerance": 0.000001,
+      "explanation": "0.05/20=(1/20)/20=1/400. This bound still requires valid tests and the complete comparison family."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "What core invariant governs Hypothesis tests, multiplicity and temporal leakage?",
+      "back": "Tail probability is computed under the null and sampling assumptions. It does not reverse the conditioning direction. (It includes the observed and more-extreme success count.)"
+    },
+    {
+      "type": "definition",
+      "front": "In Hypothesis tests, multiplicity and temporal leakage, how do you verify: Enforce point-in-time feature and training-label availability, keeping preprocessing and model choice out of the final evaluation data.?",
+      "back": "The result follows by summing true-null rejection probabilities. Each probability must meet its stated marginal bound. (An invalid p-value or omitted selection path is not repaired by the bound.)"
+    },
+    {
+      "type": "error-identification",
+      "front": "What failure mode happens if the contract in Hypothesis tests, multiplicity and temporal leakage is violated?",
+      "back": "Testing and reporting include the path that led to the result, not only the final row shown. (The reported single-test threshold ignores the search that selected it.)"
+    }
+  ],
+  "references": [
+    {
+      "label": "ASA p-value principles",
+      "url": "https://www.amstat.org/asa/files/pdfs/P-ValueStatement.pdf"
+    },
+    {
+      "label": "NIST Bonferroni inequality",
+      "url": "https://itl.nist.gov/div898/handbook/prc/section4/prc473.htm"
+    },
+    {
+      "label": "scikit-learn leakage guidance",
+      "url": "https://scikit-learn.org/stable/common_pitfalls.html"
+    },
+    {
+      "label": "TimeSeriesSplit contract",
+      "url": "https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.TimeSeriesSplit.html"
+    }
+  ],
+  "skills": [
+    "probability",
+    "distributions",
+    "statistics",
+    "quant-modelling"
+  ]
+}

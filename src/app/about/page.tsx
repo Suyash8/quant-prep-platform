@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { getCurrentUser } from '@/lib/auth';
 import { getRegistry, listProblems, listProjects, listCompanies, getMap } from '@/lib/content';
-import { AppShell, PublicHeader } from '@/components/app-shell';
+import { AppShell, PublicHeader, PublicFooter } from '@/components/app-shell';
 import {
   BookOpen, Puzzle, FolderKanban, Building2, Clock, Layers, Info,
   ScrollText, ArrowRight, CheckCircle2, XCircle, GraduationCap, Code2, FlaskConical,
@@ -199,7 +199,7 @@ export default async function AboutPage() {
   );
 
   if (!user) {
-    return <div className="min-h-screen flex flex-col"><PublicHeader user={null} />{body}</div>;
+    return <div className="min-h-screen flex flex-col"><PublicHeader user={null} /><main className="flex-1">{body}</main><PublicFooter /></div>;
   }
   return <AppShell user={{ name: user.name, email: user.email, role: user.role }} isAdmin={user.role === 'admin'}>{body}</AppShell>;
 }

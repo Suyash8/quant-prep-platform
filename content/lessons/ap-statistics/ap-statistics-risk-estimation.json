@@ -1,0 +1,234 @@
+{
+  "id": "ap-statistics-risk-estimation",
+  "moduleId": "ap-statistics",
+  "title": "Build and challenge a risk estimate",
+  "estMinutes": 22,
+  "difficulty": "core",
+  "prereqs": [
+    "ap-statistics-testing-leakage"
+  ],
+  "objectives": [
+    "Build a transparent finite-sample loss-quantile/tail-mean report with exact boundary mass and explicit sample, unit and horizon conventions.",
+    "Challenge that report using tail sensitivity, point-in-time evaluation and distinctions among sampling, model and scenario uncertainty rather than claim a guaranteed loss bound.",
+    "Apply build and challenge a risk estimate invariants safely and identify scope boundaries."
+  ],
+  "motivation": "Build a report for a SYNTHETIC fixed-position, one-period profit-and-loss dataset. Declare one currency and cents as the amount unit; loss L=-PnL, so larger positive L is worse and a negative loss is a gain.",
+  "blocks": [
+    {
+      "type": "p",
+      "md": "Build a report for a SYNTHETIC fixed-position, one-period profit-and-loss dataset. Declare one currency and cents as the amount unit; loss L=-PnL, so larger positive L is worse and a negative loss is a gain. State the position/notional, period/horizon, date window, data/revision availability, missingness policy and costs before computing a statistic. Do not mix currency amounts with percentage returns or sum different horizons without a justified conversion. This capstone is a learning report, not a live risk limit, regulatory capital calculation or instruction to trade."
+    },
+    {
+      "type": "p",
+      "md": "An unweighted empirical distribution puts mass 1/n on each of n observed losses. It is a declared finite model of the observations, not proof that all future losses must lie among them. At confidence q in (0,1), define lower empirical quantile VaR_q=inf{x:F_n(x)≥q}, which for sorted losses is observation ceil(qn), using one-based rank. Other software conventions interpolate differently; report the convention rather than silently matching a default. Here VaR is a loss quantile, not a maximum possible loss."
+    },
+    {
+      "type": "p",
+      "md": "Define this lesson's expected shortfall ES_q as the average loss in exactly the worst 1-q fraction of empirical probability mass, splitting a boundary atom when necessary. With n equally weighted records, that is the mean over (1-q)n equivalent observation weights: take worst losses fully and only the required fraction of the boundary observation. This is the discrete tail-distribution convention corresponding to CVaR in the primary reference. Averaging all L>VaR or all L≥VaR can give a different answer when there is boundary mass."
+    },
+    {
+      "type": "steps",
+      "title": "A fractional boundary is part of the definition",
+      "items": [
+        "There are ten synthetic losses: eight zeros, then 10, then 50 cents. Set q=17/20=0.85.",
+        "The one-based lower empirical quantile rank is ceil(8.5)=9, so VaR=10 cents.",
+        "The upper tail has mass 0.15, equivalent to 1.5 records. Include all 0.1 probability at 50 cents and 0.05 of the 0.1 probability at 10 cents.",
+        "ES=(0.1*50+0.05*10)/0.15=110/3 cents. Taking both nonzero observations in full would give 30, while taking only losses strictly above 10 would give 50; neither uses the required 0.15 tail mass."
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "from fractions import Fraction\n\ndef empirical_loss_tail(losses_cents, confidence):\n    if type(losses_cents) is not list or not 1 <= len(losses_cents) <= 10000:\n        raise ValueError(\"expected 1..10000 loss observations\")\n    if any(type(x) is not int or abs(x) > 1000000000 for x in losses_cents):\n        raise ValueError(\"expected bounded integer loss cents, excluding bool\")\n    if type(confidence) is not Fraction or not 0 < confidence < 1 or confidence.denominator > 1000000:\n        raise ValueError(\"expected Fraction confidence in (0,1), denominator <=1000000\")\n    ordered = sorted(losses_cents)\n    rank = confidence * len(ordered)\n    ceiling_rank = (rank.numerator+rank.denominator-1) // rank.denominator\n    quantile = ordered[ceiling_rank-1]\n    tail_count = (1-confidence) * len(ordered)\n    remaining, weighted_loss = tail_count, Fraction(0)\n    for loss in reversed(ordered):\n        take = min(remaining, Fraction(1))\n        weighted_loss += take*loss\n        remaining -= take\n        if remaining == 0:\n            break\n    return quantile, weighted_loss/tail_count, tail_count\n\nlosses = [0,0,0,0,0,0,0,0,10,50]\nfor confidence in (Fraction(17,20), Fraction(19,20)):\n    var, es, equivalent_tail_count = empirical_loss_tail(losses, confidence)\n    print(var, es, equivalent_tail_count)\nstress_losses = losses[:-1] + [500]\nprint(*empirical_loss_tail(stress_losses, Fraction(17,20)))\nprint(losses[-1])",
+      "caption": "Expected output: 10 110/3 3/2, then 50 50 1/2, then 10 1010/3 3/2, then 50. Every VaR/ES amount is in synthetic loss cents; the last returned value is equivalent tail count, not a loss. At 85%, changing just the worst observation 50 to 500 leaves VaR 10 but changes ES sharply. The final 50 shows the helper did not mutate the original input. At 95% with only ten rows, the empirical tail uses half a worst-record weight and cannot reveal unseen larger population losses."
+    },
+    {
+      "type": "p",
+      "md": "Sampling uncertainty concerns how this report would change under another dataset from a stated sampling process. Model uncertainty concerns whether equal historical weights, stationarity, independence, the payoff map and tail support describe the target future situation. Scenario uncertainty concerns what happens under explicit alternate losses/conditions. Replacing 50 by 500 above is a sensitivity scenario, not a draw from a calibrated distribution and not a confidence interval. Reporting a tiny arithmetic rounding error addresses none of these uncertainties."
+    },
+    {
+      "type": "p",
+      "md": "Report n and the nominal empirical tail weight alongside the estimate. A 99% empirical loss quantile from 100 observations sits near one extreme observation; more decimal places do not create tail information. An iid bootstrap resamples observed values and cannot invent an unobserved crash; dependence may require different resampling or sampling theory. This capstone does not implement a bootstrap confidence interval or a general dependent-tail standard error. The earlier s/√n mean formula is not automatically a quantile or ES uncertainty formula."
+    },
+    {
+      "type": "p",
+      "md": "Vary the window/regime, confidence level and one influential tail observation, recording which definition stays fixed and which modeling choice changes. Compare plausible model/scenario outputs without labeling their disagreement a probability interval. Check for survivorship, missing extreme days, corporate actions, stale marks, revised data, currency/unit mismatches and omitted fees/liquidity. Test an explicit adverse scenario with joint moves and altered costs where relevant. A stress scenario need not be probable to be informative, but its probability must not be invented."
+    },
+    {
+      "type": "p",
+      "md": "Freeze the estimation window, method and threshold before evaluating later outcomes. Keep feature/data/label availability and costs consistent with the claimed decision horizon. Report strict exceedances L>frozen VaR separately from L≥frozen VaR when data have ties. Under the empirical training model, quantile coverage is a definition; it is not a guarantee of future coverage under a changed or misspecified population. Five later observations are too little to declare calibration or failure with certainty, especially if dependent."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "from fractions import Fraction\n# Freeze the prior training-window empirical 85% quantile at10cents.\nfrozen_var_cents = 10\nlater_losses_cents = [0,20,-5,50,10]\nstrict_exceedances = sum(loss > frozen_var_cents for loss in later_losses_cents)\nat_or_above = sum(loss >= frozen_var_cents for loss in later_losses_cents)\nprint(Fraction(strict_exceedances, len(later_losses_cents)))\nprint(Fraction(at_or_above, len(later_losses_cents)))\n# This descriptive count is not a calibrated test or a confidence interval.",
+      "caption": "Expected output: 2/5, then 3/5. The tied loss 10 cents changes the inclusive count but not the strict exceedance count. These are descriptive realized frequencies over five later synthetic losses; no backtest p-value, confidence bound, independence test or risk-limit approval is supplied."
+    },
+    {
+      "type": "p",
+      "md": "Submit a readable report with: (1) target position/horizon/currency and loss sign; (2) source window/availability and quality checks; (3) n, weighting, q and exact quantile/ES convention; (4) worked rank and boundary-tail arithmetic; (5) a frozen later-window descriptive check; (6) a sensitivity/stress table with assumptions; (7) sampling/model limitations and the next evidence needed. Include source code, runtime and reproducible inputs. Distinguish a hypothetical stress, an empirical estimate and an inferential interval in the labels."
+    },
+    {
+      "type": "p",
+      "md": "Test empty inputs, all equal losses, gains only, mixed gains/losses, duplicate thresholds, fractional tail count, confidence endpoints and non-integer/bool amounts. Sorting must not mutate the original order used for temporal evaluation. q=0 or 1 is outside this helper contract; an endpoint needs a separately defined statistic. The helper is O(n log n) for sorting plus a bounded tail pass, with exact rational arithmetic cost depending on bit size. It is not a streaming/live portfolio valuation engine."
+    },
+    {
+      "type": "p",
+      "md": "Independent transfer: reproduce the ten-row report at 85% and 95%, then double every loss and verify both amounts double while tail count stays unchanged. Shift each loss by a fixed amount and verify the amounts shift by that amount. Replace the maximum loss with 500 without altering other observations; explain why VaR and ES react differently here. Finish by naming the uncertainty you cannot quantify honestly from these ten rows and the separate data/evaluation plan that would be needed."
+    },
+    {
+      "type": "p",
+      "md": "References: [NumPy quantile conventions](https://numpy.org/doc/stable/reference/generated/numpy.quantile.html), [Rockafellar/Uryasev general-loss CVaR](https://sites.math.washington.edu/~rtr/papers/rtr187-CVaR2.pdf), and [Federal Reserve-hosted model-risk research](https://www.federalreserve.gov/econres/feds/model-risk-of-risk-models.htm). The primary paper distinguishes boundary-mass tail means from naive conditional shortcuts. No NumPy execution is required, no present regulation is claimed, and the research is not treated as investment advice."
+    },
+    {
+      "type": "ref",
+      "items": [
+        {
+          "label": "NumPy quantile conventions",
+          "url": "https://numpy.org/doc/stable/reference/generated/numpy.quantile.html"
+        },
+        {
+          "label": "Rockafellar/Uryasev general-loss CVaR",
+          "url": "https://sites.math.washington.edu/~rtr/papers/rtr187-CVaR2.pdf"
+        },
+        {
+          "label": "Federal Reserve-hosted model-risk research",
+          "url": "https://www.federalreserve.gov/econres/feds/model-risk-of-risk-models.htm"
+        }
+      ]
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "What would prevent you from presenting this capstone as a fully calibrated live risk system?",
+    "hints": [
+      "Names sample/model/operational limits.",
+      "Separates stress from statistical confidence.",
+      "Does not imply production or trading authority."
+    ],
+    "solution": "It uses a tiny synthetic empirical window, fixed simplified exposures and no demonstrated live valuation, data lineage, dependence/tail inference, regime validation, real costs/liquidity or operational controls. A transparent estimate and stress report is not a guaranteed loss bound or permission to trade."
+  },
+  "independentExercise": {
+    "prompt": "Write a small test case that deliberately breaks the contract boundary in \"Build and challenge a risk estimate\" and verify how your implementation rejects or handles it.",
+    "hints": [
+      "Test zero, negative, empty, duplicate, and boundary values.",
+      "Confirm both time/memory complexity and numerical precision remain within spec."
+    ],
+    "solution": "from fractions import Fraction\n# Freeze the prior training-window empirical 85% quantile at10cents.\nfrozen_var_cents = 10\nlater_losses_cents = [0,20,-5,50,10]\nstrict_exceedances = sum(loss > frozen_var_cents for loss in later_losses_cents)\nat_or_above = sum(loss >= frozen_var_cents for loss in later_losses_cents)\nprint(Fraction(strict_exceedances, len(later_losses_cents)))\nprint(Fraction(at_or_above, len(later_losses_cents)))\n# This descriptive count is not a calibrated test or a confidence interval."
+  },
+  "commonMistakes": [
+    "The empirical quantile is defined by a finite sample convention and does not prove future population coverage. (The rank/method, sample, unit and horizon are part of its meaning.)",
+    "The definition averages a fixed upper-tail probability share, with the boundary fraction needed to make that share exact. (Including all or none of a tied boundary can use a different mass.)",
+    "Stress responses show consequences of assumptions; inferential probability claims need a justified model and procedure. (Its role and assumed changes must be labeled.)"
+  ],
+  "realWorldApplication": "Used directly across production quantitative research, execution systems, and validation pipelines.",
+  "quantFinanceApplication": "Applies rigorous engineering contracts to quantitative modeling and live trading infrastructure.",
+  "summary": [
+    "A risk number needs a loss convention, horizon, empirical/model definition, tail arithmetic and uncertainty statement.",
+    "Quantiles and tail averages are not maximum-loss guarantees; a capstone is complete only when it challenges its own data and assumptions.",
+    "Build a transparent finite-sample loss-quantile/tail-mean report with exact boundary mass and explicit sample, unit and horizon conventions."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "What does this capstone's empirical 85% loss VaR mean?",
+      "objective": 0,
+      "options": [
+        "The maximum possible future loss",
+        "A specified lower empirical loss quantile",
+        "An amount exceeded by exactly 15% of the observed losses in every dataset",
+        "The average of losses strictly above the empirical quantile"
+      ],
+      "answerIndex": 1,
+      "explanation": "The empirical quantile is defined by a finite sample convention and does not prove future population coverage. (The rank/method, sample, unit and horizon are part of its meaning.)"
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "Why split boundary observation weight in the discrete ES calculation?",
+      "objective": 1,
+      "options": [
+        "To reduce every reported risk number arbitrarily",
+        "To remove inconvenient losses from the dataset",
+        "To use exactly the required 1-q tail mass",
+        "To claim half an independent real observation was collected"
+      ],
+      "answerIndex": 2,
+      "explanation": "The definition averages a fixed upper-tail probability share, with the boundary fraction needed to make that share exact. (Including all or none of a tied boundary can use a different mass.)"
+    },
+    {
+      "id": "q3",
+      "type": "mcq",
+      "prompt": "Replacing the worst observed loss with a hypothetical larger loss yields what?",
+      "objective": 2,
+      "options": [
+        "A sensitivity/stress scenario, not a confidence interval",
+        "The exact probability of a future crash",
+        "An iid bootstrap replication from the original empirical sample",
+        "An inferential upper confidence bound for the original risk estimate"
+      ],
+      "answerIndex": 0,
+      "explanation": "Stress responses show consequences of assumptions; inferential probability claims need a justified model and procedure. (Its role and assumed changes must be labeled.)"
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "Why can an iid bootstrap of ten observed losses miss an unobserved crash tail?",
+      "objective": 0,
+      "options": [
+        "It always generates all possible future events",
+        "Resampling proves that returns are independent",
+        "More repeats eliminate all model uncertainty",
+        "Its empirical source distribution lacks that unseen event"
+      ],
+      "answerIndex": 3,
+      "explanation": "Resampling can study uncertainty under an empirical model; it cannot by itself supply unseen support or fix dependence. (Dependence and source-model limits remain even with many repetitions.)"
+    },
+    {
+      "id": "q5",
+      "type": "numeric",
+      "prompt": "At q=0.85 with n=10, the lower empirical quantile uses one-based rank ceil(qn). What rank is that?",
+      "objective": 1,
+      "answer": 9,
+      "tolerance": 0.000001,
+      "explanation": "ceil(8.5)=9. The ninth sorted loss in the worked sample is 10 cents; software using another interpolation convention can differ."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "What core invariant governs Build and challenge a risk estimate?",
+      "back": "The empirical quantile is defined by a finite sample convention and does not prove future population coverage. (The rank/method, sample, unit and horizon are part of its meaning.)"
+    },
+    {
+      "type": "definition",
+      "front": "In Build and challenge a risk estimate, how do you verify: Challenge that report using tail sensitivity, point-in-time evaluation and distinctions among sampling, model and scenario uncertainty rather than claim a guaranteed loss bound.?",
+      "back": "The definition averages a fixed upper-tail probability share, with the boundary fraction needed to make that share exact. (Including all or none of a tied boundary can use a different mass.)"
+    },
+    {
+      "type": "error-identification",
+      "front": "What failure mode happens if the contract in Build and challenge a risk estimate is violated?",
+      "back": "Stress responses show consequences of assumptions; inferential probability claims need a justified model and procedure. (Its role and assumed changes must be labeled.)"
+    }
+  ],
+  "references": [
+    {
+      "label": "NumPy quantile conventions",
+      "url": "https://numpy.org/doc/stable/reference/generated/numpy.quantile.html"
+    },
+    {
+      "label": "Rockafellar/Uryasev general-loss CVaR",
+      "url": "https://sites.math.washington.edu/~rtr/papers/rtr187-CVaR2.pdf"
+    },
+    {
+      "label": "Federal Reserve-hosted model-risk research",
+      "url": "https://www.federalreserve.gov/econres/feds/model-risk-of-risk-models.htm"
+    }
+  ],
+  "skills": [
+    "probability",
+    "distributions",
+    "statistics",
+    "quant-modelling"
+  ]
+}

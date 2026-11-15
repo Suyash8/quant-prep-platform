@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { getCurrentUser } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { getMap, getRegistry, getCurriculumGraph } from '@/lib/content';
-import { PublicHeader, AppShell } from '@/components/app-shell';
+import { PublicHeader, PublicFooter, AppShell } from '@/components/app-shell';
 import { Lock, Circle, CircleDot, CheckCircle2, Award, Map as MapIcon, List } from 'lucide-react';
 import { CurriculumSearch } from '@/components/curriculum-search';
 import { LearningPath } from '@/components/gamified/learning-path';
@@ -184,7 +184,8 @@ export default async function CurriculumPage({ searchParams }: { searchParams: P
     return (
       <div className="min-h-screen flex flex-col">
         <PublicHeader user={null} />
-        {body}
+        <main className="flex-1">{body}</main>
+        <PublicFooter />
       </div>
     );
   }

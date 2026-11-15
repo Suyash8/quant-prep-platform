@@ -1,0 +1,215 @@
+{
+  "id": "ap-pricing-pricing-library",
+  "moduleId": "ap-pricing",
+  "title": "Build a validated pricing/risk library",
+  "estMinutes": 22,
+  "difficulty": "specialist",
+  "prereqs": [
+    "ap-pricing-calibration"
+  ],
+  "objectives": [
+    "Compose a complete versioned bounded no-dividend European price/Greek batch facade with explicit currency, per-unit/position units, validation and all-or-error pure-result semantics.",
+    "Build a layered validation plan separating invariant/metamorphic/round-trip checks from independent numerical references, market model suitability and actual app/production qualification.",
+    "Apply build a validated pricing/risk library invariants safely and identify scope boundaries."
+  ],
+  "motivation": "A usable library is more than a formula collection. Specify model/version, currency, contract/exercise/dividend convention, input types/ranges, year fraction, rate/vol units, position scaling, output units and error behavior.",
+  "blocks": [
+    {
+      "type": "p",
+      "md": "A usable library is more than a formula collection. Specify model/version, currency, contract/exercise/dividend convention, input types/ranges, year fraction, rate/vol units, position scaling, output units and error behavior. This full self-contained capstone embeds prior price/call-Greek definitions, then adds a batch facade with PUT Greeks via no-dividend parity derivatives. It returns prices and local sensitivities, not calibration/covariance/VaR or a promise that every preceding technique is exposed through one API. It uses no files/network/accounts."
+    },
+    {
+      "type": "p",
+      "md": "Each request is (version 1, kind call/put, S, K, r, T, sigma, signed_underlying_units). At most 16 requests, one fixed USD pricing currency, one no-dividend European stock model family. Units are already aggregated signed underlying-equivalent units, not number of option contracts; caller must apply contract multiplier/currency mapping BEFORE this boundary. Numeric domains inherit the earlier bounded float kernel. This RISK facade requires positive smooth time/vol even though the price-only function has zero branches. A nonzero output risk for an unsupported boundary is not invented."
+    },
+    {
+      "type": "steps",
+      "title": "A call-minus-put position reconciles to parity",
+      "items": [
+        "Long 100 underlying-unit call exposure and short 100 put units share S=K 100, r 5%, T 1, sigma 20%. Price difference is S-K*exp(-r*T), so total position value≈487.705755 USD.",
+        "No-dividend call-minus-put delta per unit=1, gamma/vega differences 0. Therefore aggregate delta 100, gamma 0, vega 0. Rho difference=K*T*D, so total rho per 1.0≈9512.294245. Calendar theta difference=-r*K*D, so total theta/year≈-475.614712.",
+        "This is a deterministic model identity, not proof that a live synthetic forward has no funding, dividend, transaction, liquidity or counterparty risk. Position Greeks are local derivatives with the earlier unit conventions."
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "import math\n\ndef normal_cdf(x):\n    return 0.5*math.erfc(-x/math.sqrt(2.0))\n\ndef european_pair(spot,strike,rate,years,vol):\n    # No dividends,European exercise,continuous annual rate and annualized vol.\n    for value,low,high in ((spot,1.0,10000.0),(strike,1.0,10000.0),(rate,-0.2,0.5),(years,0.0,10.0),(vol,0.0,2.0)):\n        if type(value) is not float or not math.isfinite(value) or not low<=value<=high:\n            raise ValueError(\"invalid bounded pricing input\")\n    if years==0.0:return max(spot-strike,0.0),max(strike-spot,0.0)\n    discounted_strike=strike*math.exp(-rate*years)\n    if vol==0.0:return max(spot-discounted_strike,0.0),max(discounted_strike-spot,0.0)\n    if years<1e-6 or vol<1e-6:\n        raise ValueError(\"positive time/vol below teaching numerical domain\")\n    width=vol*math.sqrt(years)\n    d1=(math.log(spot/strike)+(rate+0.5*vol*vol)*years)/width\n    d2=d1-width\n    if max(abs(d1),abs(d2))>8.0:\n        raise ValueError(\"normal tail outside teaching numerical domain\")\n    # Compute the out-of-money side directly,then parity for the other side.\n    if spot<=discounted_strike:\n        call=spot*normal_cdf(d1)-discounted_strike*normal_cdf(d2)\n        put=call+discounted_strike-spot\n    else:\n        put=discounted_strike*normal_cdf(-d2)-spot*normal_cdf(-d1)\n        call=put+spot-discounted_strike\n    return call,put\n\ndef call_greeks(spot,strike,rate,years,vol):\n    european_pair(spot,strike,rate,years,vol) # same finite/range checks\n    if years==0.0 or vol==0.0:raise ValueError(\"smooth Greeks require positive time and vol\")\n    root=math.sqrt(years)\n    d1=(math.log(spot/strike)+(rate+0.5*vol*vol)*years)/(vol*root)\n    d2=d1-vol*root\n    density=math.exp(-0.5*d1*d1)/math.sqrt(2.0*math.pi)\n    kd=strike*math.exp(-rate*years)\n    return {\"delta\":normal_cdf(d1),\"gamma\":density/(spot*vol*root),\n            \"vega_per_1\":spot*density*root,\"rho_per_1\":years*kd*normal_cdf(d2),\n            \"theta_per_year\":-spot*density*vol/(2.0*root)-rate*kd*normal_cdf(d2)}\n\ndef price_risk_batch(requests):\n    # Own schema:(version,kind,S,K,r,T,sigma,signed_underlying_units),USD only.\n    if type(requests) is not list or len(requests)>16:raise ValueError(\"invalid batch\")\n    for req in requests:\n        if type(req) is not tuple or len(req)!=8:raise ValueError(\"invalid request schema\")\n        version,kind,s,k,rate,t,v,units=req\n        if type(version) is not int or version!=1 or type(kind) is not str or kind not in (\"call\",\"put\"):\n            raise ValueError(\"unsupported schema or kind\")\n        if type(units) is not float or not math.isfinite(units) or not -1000.0<=units<=1000.0:\n            raise ValueError(\"invalid signed underlying units\")\n        european_pair(s,k,rate,t,v)\n        if t==0.0 or v==0.0:raise ValueError(\"risk batch requires smooth positive time and vol\")\n    rows=[]\n    for index,req in enumerate(requests):\n        _,kind,s,k,rate,t,v,units=req\n        prices=european_pair(s,k,rate,t,v)\n        g=call_greeks(s,k,rate,t,v)\n        if kind==\"put\":\n            kd=k*math.exp(-rate*t)\n            g[\"delta\"]-=1.0\n            g[\"rho_per_1\"]-=t*kd\n            g[\"theta_per_year\"]+=rate*kd\n        risk=tuple(units*g[key] for key in (\"delta\",\"gamma\",\"vega_per_1\",\"rho_per_1\",\"theta_per_year\"))\n        price=prices[0 if kind==\"call\" else 1]\n        rows.append((index,kind,price,units*price,risk))\n    totals=(math.fsum(row[3] for row in rows),tuple(math.fsum(row[4][j] for row in rows) for j in range(5)))\n    return \"BS-NODIV-EU-v1\",\"USD\",tuple(rows),totals\n\nbatch=[(1,\"call\",100.0,100.0,0.05,1.0,0.2,100.0),(1,\"put\",100.0,100.0,0.05,1.0,0.2,-100.0)]\nmodel,currency,rows,totals=price_risk_batch(batch)\nprint(model,currency)\nprint(f\"value={totals[0]:.6f}\")\nprint(\"risks\",tuple(round(x,6) for x in totals[1]))\nprint(price_risk_batch([])[3])\ntry:price_risk_batch(batch+[(1,\"call\",100.0,100.0,0.05,0.0,0.2,1.0)])\nexcept ValueError as error:print(error)",
+      "caption": "Expected model/currency BS-NODIV-EU-v1 USD; value=487.705755; risks (100.0, 0.0, 0.0, 9512.294245, -475.614712); empty totals (0.0, (0.0,0.0,0.0,0.0,0.0)); risk batch requires smooth positive time and vol. Complete source, not a fragment. Validates every request before producing rows; no candidate returned on any error, caller list/tuples not mutated. This is not concurrent atomic publication, durable storage or actual app-runner verification."
+    },
+    {
+      "type": "p",
+      "md": "From C-P=S-K*D derive put delta=call delta-1, put gamma=call gamma, put vega=call vega, put rho=call rho-K*T*D and put calendar theta=call theta+r*K*D. The batch now IMPLEMENTS these put conversions, unlike earlier transfer-only material. Verify both call and put independently with high-precision numerical derivatives, not only these same parity equalities. All five tuple positions are fixed (delta,gamma,vega_per_1,rho_per_1,theta_per_year); version the schema if order/meaning changes."
+    },
+    {
+      "type": "p",
+      "md": "Layer 1: validate schema, nonfinite/types/ranges/supported numerical domain and zero/smooth boundary behavior. Layer 2: known branch fixtures, price bounds, parity, Greek identities, positive scale/position aggregation, permutation behavior and no mutation. Layer 3: independent high-precision normal expectation/derivative reference and another method where appropriate, with stated tolerances. Layer 4: model/contract/data suitability, calibration/outcomes and use limits. Passing one layer does not imply the next, and a reference that calls the same kernel is not independent."
+    },
+    {
+      "type": "p",
+      "md": "The function validates all requests before evaluating output rows, and returns only a final tuple; an invalid last request does not publish earlier rows. It does not send events or modify a global store. A server/UI still needs revision-bound request/result identity, capability checks, resource limits, serialization, concurrent state/error handling and durable history policy. Do not show a cached success from different parameters after a failed evaluation. Include model/schema/version and actual input snapshot with reproducibility evidence; source hash alone proves neither correctness nor trusted input provenance."
+    },
+    {
+      "type": "p",
+      "md": "A source-level validated slice can record tested runtime, code hashes, exact fixtures, reference method/tolerances, known unsupported domains and remaining gates. App execution/rendering/mobile/a11y/offline/recovery tests and production review must run on the actual revision before sign-off. The current April 2026 SR26-2 guidance emphasizes reliability/limitations, effective objective challenge, outcomes and monitoring with use-dependent rigor; it supersedes SR11-7 and is not a universal enforceable standard. This educational artifact does not claim independent organizational approval or professional competence."
+    },
+    {
+      "type": "p",
+      "md": "Independent transfer: enumerate small call/put signed-position batches, compare each value/risk with an independent high-precision reference, check totals and input permutation, then inject malformed final rows and confirm no result/mutation. Test unsupported version, wrong kind/currency assumptions, zero time/vol and numerical tail boundary. Design a versioned extension for dividends or another exercise style only after changing model/validation evidence, not by relabeling this no-dividend source. Keep live orders and money outside this library."
+    },
+    {
+      "type": "p",
+      "md": "Sources: [current SR26-2 model-risk guidance](https://www.federalreserve.gov/supervisionreg/srletters/SR2602.pdf), [current guidance web text](https://www.federalreserve.gov/frrs/guidance/supervisory-guidance-on-model-risk-management.htm), [NIST fit-versus-validation limits](https://www.itl.nist.gov/div898/handbook/pmd/section4/pmd44.htm),and the preceding independently checked Black-Scholes/Greek technical references. Model/domain/schema details here are own bounded design, not a production banking-control certification."
+    },
+    {
+      "type": "ref",
+      "items": [
+        {
+          "label": "current SR26-2 model-risk guidance",
+          "url": "https://www.federalreserve.gov/supervisionreg/srletters/SR2602.pdf"
+        },
+        {
+          "label": "current guidance web text",
+          "url": "https://www.federalreserve.gov/frrs/guidance/supervisory-guidance-on-model-risk-management.htm"
+        },
+        {
+          "label": "NIST fit-versus-validation limits",
+          "url": "https://www.itl.nist.gov/div898/handbook/pmd/section4/pmd44.htm"
+        }
+      ]
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "What should a release record say so a source-tested pricing slice is not mistaken for a production risk system?",
+    "hints": [
+      "Names reproducible scoped evidence.",
+      "Separates validation layers.",
+      "Keeps unsupported/held gates explicit."
+    ],
+    "solution": "Exact model/schema/version, input/unit/domain contracts, runtime/hashes/reference methods/tolerances and tested failures,plus explicit unsupported features and held app/mobile/a11y/durable/concurrent/model-use gates. Distinguish invariant/round-trip from independent math validation and market/organizational approval. No live trading or competence guarantee."
+  },
+  "independentExercise": {
+    "prompt": "Write a small test case that deliberately breaks the contract boundary in \"Build a validated pricing/risk library\" and verify how your implementation rejects or handles it.",
+    "hints": [
+      "Test zero, negative, empty, duplicate, and boundary values.",
+      "Confirm both time/memory complexity and numerical precision remain within spec."
+    ],
+    "solution": "import math\n\ndef normal_cdf(x):\n    return 0.5*math.erfc(-x/math.sqrt(2.0))\n\ndef european_pair(spot,strike,rate,years,vol):\n    # No dividends,European exercise,continuous annual rate and annualized vol.\n    for value,low,high in ((spot,1.0,10000.0),(strike,1.0,10000.0),(rate,-0.2,0.5),(years,0.0,10.0),(vol,0.0,2.0)):\n        if type(value) is not float or not math.isfinite(value) or not low<=value<=high:\n            raise ValueError(\"invalid bounded pricing input\")\n    if years==0.0:return max(spot-strike,0.0),max(strike-spot,0.0)\n    discounted_strike=strike*math.exp(-rate*years)\n    if vol==0.0:return max(spot-discounted_strike,0.0),max(discounted_strike-spot,0.0)\n    if years<1e-6 or vol<1e-6:\n        raise ValueError(\"positive time/vol below teaching numerical domain\")\n    width=vol*math.sqrt(years)\n    d1=(math.log(spot/strike)+(rate+0.5*vol*vol)*years)/width\n    d2=d1-width\n    if max(abs(d1),abs(d2))>8.0:\n        raise ValueError(\"normal tail outside teaching numerical domain\")\n    # Compute the out-of-money side directly,then parity for the other side.\n    if spot<=discounted_strike:\n        call=spot*normal_cdf(d1)-discounted_strike*normal_cdf(d2)\n        put=call+discounted_strike-spot\n    else:\n        put=discounted_strike*normal_cdf(-d2)-spot*normal_cdf(-d1)\n        call=put+spot-discounted_strike\n    return call,put\n\ndef call_greeks(spot,strike,rate,years,vol):\n    european_pair(spot,strike,rate,years,vol) # same finite/range checks\n    if years==0.0 or vol==0.0:raise ValueError(\"smooth Greeks require positive time and vol\")\n    root=math.sqrt(years)\n    d1=(math.log(spot/strike)+(rate+0.5*vol*vol)*years)/(vol*root)\n    d2=d1-vol*root\n    density=math.exp(-0.5*d1*d1)/math.sqrt(2.0*math.pi)\n    kd=strike*math.exp(-rate*years)\n    return {\"delta\":normal_cdf(d1),\"gamma\":density/(spot*vol*root),\n            \"vega_per_1\":spot*density*root,\"rho_per_1\":years*kd*normal_cdf(d2),\n            \"theta_per_year\":-spot*density*vol/(2.0*root)-rate*kd*normal_cdf(d2)}\n\ndef price_risk_batch(requests):\n    # Own schema:(version,kind,S,K,r,T,sigma,signed_underlying_units),USD only.\n    if type(requests) is not list or len(requests)>16:raise ValueError(\"invalid batch\")\n    for req in requests:\n        if type(req) is not tuple or len(req)!=8:raise ValueError(\"invalid request schema\")\n        version,kind,s,k,rate,t,v,units=req\n        if type(version) is not int or version!=1 or type(kind) is not str or kind not in (\"call\",\"put\"):\n            raise ValueError(\"unsupported schema or kind\")\n        if type(units) is not float or not math.isfinite(units) or not -1000.0<=units<=1000.0:\n            raise ValueError(\"invalid signed underlying units\")\n        european_pair(s,k,rate,t,v)\n        if t==0.0 or v==0.0:raise ValueError(\"risk batch requires smooth positive time and vol\")\n    rows=[]\n    for index,req in enumerate(requests):\n        _,kind,s,k,rate,t,v,units=req\n        prices=european_pair(s,k,rate,t,v)\n        g=call_greeks(s,k,rate,t,v)\n        if kind==\"put\":\n            kd=k*math.exp(-rate*t)\n            g[\"delta\"]-=1.0\n            g[\"rho_per_1\"]-=t*kd\n            g[\"theta_per_year\"]+=rate*kd\n        risk=tuple(units*g[key] for key in (\"delta\",\"gamma\",\"vega_per_1\",\"rho_per_1\",\"theta_per_year\"))\n        price=prices[0 if kind==\"call\" else 1]\n        rows.append((index,kind,price,units*price,risk))\n    totals=(math.fsum(row[3] for row in rows),tuple(math.fsum(row[4][j] for row in rows) for j in range(5)))\n    return \"BS-NODIV-EU-v1\",\"USD\",tuple(rows),totals\n\nbatch=[(1,\"call\",100.0,100.0,0.05,1.0,0.2,100.0),(1,\"put\",100.0,100.0,0.05,1.0,0.2,-100.0)]\nmodel,currency,rows,totals=price_risk_batch(batch)\nprint(model,currency)\nprint(f\"value={totals[0]:.6f}\")\nprint(\"risks\",tuple(round(x,6) for x in totals[1]))\nprint(price_risk_batch([])[3])\ntry:price_risk_batch(batch+[(1,\"call\",100.0,100.0,0.05,0.0,0.2,1.0)])\nexcept ValueError as error:print(error)"
+  },
+  "commonMistakes": [
+    "Do not silently mix contract count and per-underlying units. (Per-unit prices/Greeks are multiplied by this number.)",
+    "Different wrappers do not create independent validation. (Its assumptions and tolerances still need review.)",
+    "100*(delta_call-delta_put)=100."
+  ],
+  "realWorldApplication": "Used directly across production quantitative research, execution systems, and validation pipelines.",
+  "quantFinanceApplication": "Applies rigorous engineering contracts to quantitative modeling and live trading infrastructure.",
+  "summary": [
+    "A versioned pure price/risk facade needs explicit model, units, domains and failure semantics plus layered independent tests.",
+    "This bounded European no-dividend batch slice is source-verified, not a full-market model suite, concurrent/durable service, live trading system or app/production qualification.",
+    "Compose a complete versioned bounded no-dividend European price/Greek batch facade with explicit currency, per-unit/position units, validation and all-or-error pure-result semantics."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "What do signed_underlying_units represent at this boundary?",
+      "objective": 0,
+      "options": [
+        "Raw contract count with unknown multiplier",
+        "Aggregated signed underlying-equivalent units",
+        "A guaranteed safe notional limit",
+        "A currency exchange rate"
+      ],
+      "answerIndex": 1,
+      "explanation": "Do not silently mix contract count and per-underlying units. (Per-unit prices/Greeks are multiplied by this number.)"
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "Which reference is genuinely independent of this price kernel?",
+      "objective": 1,
+      "options": [
+        "The same function called under a new name",
+        "Only parity imposed by the same code",
+        "An independent high-precision integral method",
+        "The same normal-CDF helper and price formula copied into a second wrapper"
+      ],
+      "answerIndex": 2,
+      "explanation": "Different wrappers do not create independent validation. (Its assumptions and tolerances still need review.)"
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "Long 100 call units and short 100 put units have per-unit delta difference 1. What aggregate delta?",
+      "objective": 2,
+      "answer": 100,
+      "tolerance": 0.000001,
+      "explanation": "100*(delta_call-delta_put)=100."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "An invalid final request follows valid rows. What is returned?",
+      "objective": 0,
+      "options": [
+        "An error, no batch candidate",
+        "Earlier rows marked complete for every request",
+        "Earlier valid rows plus a zero-filled substitute for the invalid row",
+        "A zero price substituted for the invalid row"
+      ],
+      "answerIndex": 0,
+      "explanation": "All-or-error pure return does not itself implement concurrent/durable publication. (The pure function publishes only a completed return.)"
+    },
+    {
+      "id": "q5",
+      "type": "mcq",
+      "prompt": "What remains after source tests pass?",
+      "objective": 1,
+      "options": [
+        "Nothing; production and mobile are proven",
+        "Only changing the completion label",
+        "Automatic regulatory approval",
+        "Actual app/use/model/production gates"
+      ],
+      "answerIndex": 3,
+      "explanation": "Validation is layered and scoped. (Keep source evidence separate from broader qualification.)"
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "What core invariant governs Build a validated pricing/risk library?",
+      "back": "Do not silently mix contract count and per-underlying units. (Per-unit prices/Greeks are multiplied by this number.)"
+    },
+    {
+      "type": "definition",
+      "front": "In Build a validated pricing/risk library, how do you verify: Build a layered validation plan separating invariant/metamorphic/round-trip checks from independent numerical references, market model suitability and actual app/production qualification.?",
+      "back": "Different wrappers do not create independent validation. (Its assumptions and tolerances still need review.)"
+    },
+    {
+      "type": "error-identification",
+      "front": "What failure mode happens if the contract in Build a validated pricing/risk library is violated?",
+      "back": "100*(delta_call-delta_put)=100."
+    }
+  ],
+  "references": [
+    {
+      "label": "current SR26-2 model-risk guidance",
+      "url": "https://www.federalreserve.gov/supervisionreg/srletters/SR2602.pdf"
+    },
+    {
+      "label": "current guidance web text",
+      "url": "https://www.federalreserve.gov/frrs/guidance/supervisory-guidance-on-model-risk-management.htm"
+    },
+    {
+      "label": "NIST fit-versus-validation limits",
+      "url": "https://www.itl.nist.gov/div898/handbook/pmd/section4/pmd44.htm"
+    }
+  ],
+  "skills": [
+    "pricing",
+    "numerical-finance",
+    "options",
+    "risk"
+  ]
+}

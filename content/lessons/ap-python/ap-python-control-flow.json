@@ -1,0 +1,232 @@
+{
+  "id": "ap-python-control-flow",
+  "moduleId": "ap-python",
+  "title": "Control flow and traceable state",
+  "estMinutes": 31,
+  "difficulty": "core",
+  "prereqs": [
+    "ap-python-values-units"
+  ],
+  "objectives": [
+    "Apply a stated rejection policy before changing an accepted total.",
+    "Trace a loop and verify its invariant on each processed prefix, including empty input.",
+    "Track and flush maximal equal-character runs, including the final run, without replacing adjacency by global frequency."
+  ],
+  "motivation": "A loop applies updates in order. If an invalid record changes the total before rejection, the program has already broken its policy.",
+  "blocks": [
+    {
+      "type": "p",
+      "md": "A loop applies updates in order. If an invalid record changes the total before rejection, the program has already broken its policy. In this lesson supplied quantities are integers; positive values are accepted and nonpositive values are rejected. This is a synthetic exercise, not a universal policy for cancellation or signed-position events."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "quantities = [3, 0, 2, -1, 5]\naccepted_total = 0\nrejected_count = 0\nfor quantity in quantities:\n    if quantity <= 0:\n        rejected_count += 1\n        continue\n    accepted_total += quantity\nprint(accepted_total)\nprint(rejected_count)",
+      "caption": "Expected output: 10, then 2. continue skips the rest of the current iteration, not the whole loop."
+    },
+    {
+      "type": "steps",
+      "title": "Inspect the state after each record",
+      "items": [
+        "After 3: total 3, rejects 0.",
+        "After 0: total 3, rejects 1. The update is skipped.",
+        "After 2: total 5, rejects 1.",
+        "After -1: total 5, rejects 2. The earlier total is unchanged.",
+        "After 5: total 10, rejects 2."
+      ]
+    },
+    {
+      "type": "p",
+      "md": "The invariant is a claim that holds before the first update and after every processed record: accepted_total is the sum of positive quantities seen so far; rejected_count counts nonpositive quantities seen so far. Moving the total update before rejection would violate that claim for -1. continue does not undo earlier assignments.\n\nEmpty input has total 0 and rejects 0 because the accumulators are initialised before the loop. This code assumes integer inputs. Boundary validation still needs type checks: text and missing values are not automatically zero, and Python booleans need a deliberate policy if integer quantities exclude them."
+    },
+    {
+      "type": "callout",
+      "variant": "warn",
+      "title": "Boundary condition",
+      "md": "A correct total for accepted records can still be incomplete. Report rejection counts and decide whether partial acceptance is allowed. A production boundary may instead reject the whole batch. This lesson has no external writes or trading effects."
+    },
+    {
+      "type": "p",
+      "md": "Transfer to event state: keep a signed balance and the lowest balance seen, initially 0. Each event has a kind and an optional amount. Deposit D adds its amount. Withdrawal W first computes a candidate balance and accepts it only if it is at least minus the credit limit. Fee F subtracts 1 only while the balance is negative, and this fee is allowed to breach the withdrawal limit. Thus balance>=-limit is NOT a universal invariant. After every event, including a rejected withdrawal, update lowest=min(lowest,balance). A rejected withdrawal leaves the balance unchanged but still has an event index."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "limit = 10\nevents = [(\"D\", 5), (\"W\", 12), (\"W\", 4), (\"F\", 0), (\"D\", 20)]\nbalance = lowest = 0\nfor index, (kind, amount) in enumerate(events, start=1):\n    if kind == \"D\":\n        balance += amount\n    elif kind == \"W\":\n        candidate = balance - amount\n        if candidate < -limit:\n            print(\"REJECT\", index)\n        else:\n            balance = candidate\n    elif kind == \"F\":\n        if balance < 0:\n            balance -= 1\n    else:\n        raise ValueError(\"unknown event\")\n    lowest = min(lowest, balance)\nprint(\"BALANCE\", balance)\nprint(\"MIN\", lowest)",
+      "caption": "Expected output: REJECT 3, then BALANCE 12, then MIN -8, with spaces between labels and values. Each pair in events contains kind and amount; F uses an unused 0. enumerate(...,start=1) gives a one-based event index. Input parsing is supplied separately in the practice starter."
+    },
+    {
+      "type": "p",
+      "md": "Reference: [Python control flow](https://docs.python.org/3/tutorial/controlflow.html). All input is supplied locally; no market-data account, paid service or network action is needed.\n\nTechnical references: [Python control-flow tutorial](https://docs.python.org/3/tutorial/controlflow.html) for branches, loops and continue. The financial schemas, policies and synthetic cases in this lesson are declared teaching contracts, not claims about a particular venue or employer."
+    },
+    {
+      "type": "p",
+      "md": "Pending run invariant\n\nThe input is one nonempty lowercase string, up to 1000000 characters. Maintain previous and count for the unfinished run at the end of the processed prefix. The token output contains exactly all completed earlier maximal runs in order. A matching character extends count. A different character completes the old run: append its character/count, then begin a new run of length 1."
+    },
+    {
+      "type": "p",
+      "md": "The final flush is necessary\n\nWhen input ends, no different character arrives to flush the pending run. Append it explicitly after the loop. Each completed run becomes one token such as a3, with no internal space. For aaabbca, runs are a3, b2, c1, a1, each a glued character and decimal count. The final a is a new run, not combined with the initial a. Global frequency counting would lose this adjacency and order information. A one-character string has one final run and no change transition."
+    },
+    {
+      "type": "p",
+      "md": "Parser and work boundaries\n\nThe public string has lowercase letters only, so the supplied whitespace-token parser preserves the complete string even when no final newline is present. Do not generalize that parser to strings containing spaces. One scan is O(len(s)), pending numeric/character state is fixed-size at these bounds, and stored output is O(number of runs). The iterator avoids copying a large suffix. The output is ONE joined string of run tokens such as a3 b2, with one space between tokens and no space inside a token. Return a one-element list containing this joined line: returning one list element per run would make the supplied main print separate lines and fail. No list brackets or colon separators are printed. Test constant, alternating, singleton and no-newline inputs."
+    },
+    {
+      "type": "p",
+      "md": "Syntax bridge for this early extension\n\nYou can first trace the run state without writing a function. In the complete example, def declares a named function; its indented lines run when called, and return sends its result to the caller. iter(s) creates a character iterator and next(...) consumes its first character, which is safe because this contract excludes empty strings. A for-loop consumes the remaining characters. [] starts an empty list, append stores one completed token, and str(count) turns the count into text. The + between two strings concatenates them. \" \".join(tokens) builds one line with a single space between tokens. The returned [line] is a one-element list for the supplied main, not one element per run. Parentheses such as (previous, count) = (...) assign a pair of values. Functions and containers get their own fuller lessons next; this bridge is enough to read and trace this example.\n\nReferences: [functions and loops](https://docs.python.org/3.12/tutorial/controlflow.html), [iter and next](https://docs.python.org/3.12/library/functions.html), and [lists and string join](https://docs.python.org/3.12/library/stdtypes.html)."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "def run_lengths(s):\n    characters = iter(s)\n    previous = next(characters)\n    count = 1\n    tokens = []\n    for character in characters:\n        if character == previous:\n            count += 1\n        else:\n            tokens.append(previous + str(count))\n            (previous, count) = (character, 1)\n    tokens.append(previous + str(count))\n    return [' '.join(tokens)]\n\nprint(*run_lengths('aaabbca'))\nprint(*run_lengths('z'))",
+      "caption": "Expected stdout:\na3 b2 c1 a1\nz1\n\nPrevalidated inputs follow the captured public contract. This completes the named Python function using its original supplied main/parser. It does not claim independent parser, C++, app-runner or judge qualification."
+    },
+    {
+      "type": "p",
+      "md": "References: [1](https://docs.python.org/3.12/library/itertools.html), [2](https://docs.python.org/3.12/library/stdtypes.html). Public task hash 5e66e86e9a96c8c559e7dd6c72ab3bbd3bd7e2f653d99da05bb6c4ed39bfc177. These references establish language/container semantics; the exact task framing is the captured public contract. This extension preserves the earlier bounded examples and their policies rather than silently broadening those APIs."
+    },
+    {
+      "type": "ref",
+      "items": [
+        {
+          "label": "Python control flow",
+          "url": "https://docs.python.org/3/tutorial/controlflow.html"
+        },
+        {
+          "label": "functions and loops",
+          "url": "https://docs.python.org/3.12/tutorial/controlflow.html"
+        },
+        {
+          "label": "iter and next",
+          "url": "https://docs.python.org/3.12/library/functions.html"
+        },
+        {
+          "label": "lists and string join",
+          "url": "https://docs.python.org/3.12/library/stdtypes.html"
+        }
+      ]
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "Why should an invariant hold after every iteration rather than only at the end?",
+    "hints": [
+      "Explains that the invariant covers every processed prefix.",
+      "Connects the check-before-update order to preserving the invariant.",
+      "Recognises that a correct final number can hide earlier errors."
+    ],
+    "solution": "A prefix invariant supports reasoning about each update and catches errors that can accidentally cancel by the final result. It connects the initial state, each transition and the final claim."
+  },
+  "independentExercise": {
+    "prompt": "Apply the concepts from this lesson by solving the linked practice problems: run-length-encode, ledger-replay.",
+    "hints": [
+      "Test zero, negative, empty, duplicate, and boundary values.",
+      "Confirm both time/memory complexity and numerical precision remain within spec."
+    ],
+    "solution": "limit = 10\nevents = [(\"D\", 5), (\"W\", 12), (\"W\", 4), (\"F\", 0), (\"D\", 20)]\nbalance = lowest = 0\nfor index, (kind, amount) in enumerate(events, start=1):\n    if kind == \"D\":\n        balance += amount\n    elif kind == \"W\":\n        candidate = balance - amount\n        if candidate < -limit:\n            print(\"REJECT\", index)\n        else:\n            balance = candidate\n    elif kind == \"F\":\n        if balance < 0:\n            balance -= 1\n    else:\n        raise ValueError(\"unknown event\")\n    lowest = min(lowest, balance)\nprint(\"BALANCE\", balance)\nprint(\"MIN\", lowest)"
+  },
+  "commonMistakes": [
+    "The rejection check must precede the update, with a branch that prevents rejected values from reaching it. The policy is explicit, not a universal trading rule. (This preserves the stated accepted-total rule.)",
+    "After 2, the total is 2. The -3 record is rejected before the update, so the total remains 2 until the final 4 is processed.",
+    "Initialising rejected_count=0 before the loop gives 0 even when no records are processed. A missing result would be a different interface policy."
+  ],
+  "realWorldApplication": "Used directly across production quantitative research, execution systems, and validation pipelines.",
+  "quantFinanceApplication": "Directly prepares you for judged problems: run-length-encode, ledger-replay.",
+  "summary": [
+    "Check before updating.",
+    "continue skips the rest of one iteration.",
+    "Use a prefix invariant and explicit empty-input/rejection policy to make loop state inspectable.",
+    "Practice transfer: maximal character runs."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "A loop rejects nonpositive integer quantities. What must happen before an accepted-total update?",
+      "objective": 0,
+      "options": [
+        "Add every value, then just count the rejected records",
+        "Replace all values with zero before checking their sign",
+        "Check the value and skip the update for rejected records",
+        "Return after reading the first quantity, valid or not"
+      ],
+      "answerIndex": 2,
+      "explanation": "The rejection check must precede the update, with a branch that prevents rejected values from reaching it. The policy is explicit, not a universal trading rule. (This preserves the stated accepted-total rule.)"
+    },
+    {
+      "id": "q2",
+      "type": "numeric",
+      "prompt": "Process quantities [2, -3, 4], accepting only positives. What is the accepted total immediately after processing -3?",
+      "objective": 1,
+      "answer": 2,
+      "tolerance": 0.000001,
+      "explanation": "After 2, the total is 2. The -3 record is rejected before the update, so the total remains 2 until the final 4 is processed."
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "For empty input, the accumulators start at zero and the loop performs no iterations. What is the rejected count?",
+      "objective": 2,
+      "answer": 0,
+      "tolerance": 0.000001,
+      "explanation": "Initialising rejected_count=0 before the loop gives 0 even when no records are processed. A missing result would be a different interface policy."
+    },
+    {
+      "id": "q4",
+      "type": "numeric",
+      "prompt": "A ledger balance is -10 and withdrawal limit is 10. Its policy applies a fee of 1 whenever balance is negative, even beyond the withdrawal floor. What balance follows F?",
+      "objective": 0,
+      "answer": -11,
+      "tolerance": 0.000001,
+      "explanation": "The fee rule subtracts 1 from a negative balance without a withdrawal-limit check, so the result is -11. The floor applies to withdrawals, not every event."
+    },
+    {
+      "id": "q5",
+      "type": "numeric",
+      "prompt": "Starting at 0, accepted balances after events are 5, -7, -7, -8, 12. Including the start, what is the running minimum after the last event?",
+      "objective": 1,
+      "answer": -8,
+      "tolerance": 0.000001,
+      "explanation": "The minimum of 0, 5, -7, -7, -8, 12 is -8. A later deposit raises the current balance but does not erase a previous minimum."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "What core invariant governs Control flow and traceable state?",
+      "back": "The rejection check must precede the update, with a branch that prevents rejected values from reaching it. The policy is explicit, not a universal trading rule. (This preserves the stated accepted-total rule.)"
+    },
+    {
+      "type": "definition",
+      "front": "In Control flow and traceable state, how do you verify: Trace a loop and verify its invariant on each processed prefix, including empty input.?",
+      "back": "After 2, the total is 2. The -3 record is rejected before the update, so the total remains 2 until the final 4 is processed."
+    },
+    {
+      "type": "error-identification",
+      "front": "What failure mode happens if the contract in Control flow and traceable state is violated?",
+      "back": "Initialising rejected_count=0 before the loop gives 0 even when no records are processed. A missing result would be a different interface policy."
+    }
+  ],
+  "references": [
+    {
+      "label": "Python control flow",
+      "url": "https://docs.python.org/3/tutorial/controlflow.html"
+    },
+    {
+      "label": "functions and loops",
+      "url": "https://docs.python.org/3.12/tutorial/controlflow.html"
+    },
+    {
+      "label": "iter and next",
+      "url": "https://docs.python.org/3.12/library/functions.html"
+    },
+    {
+      "label": "lists and string join",
+      "url": "https://docs.python.org/3.12/library/stdtypes.html"
+    }
+  ],
+  "skills": [
+    "python",
+    "programming-fundamentals",
+    "software-engineering"
+  ]
+}

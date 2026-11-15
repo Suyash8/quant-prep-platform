@@ -1,0 +1,246 @@
+{
+  "id": "ap-cpp-types-toolchain",
+  "moduleId": "ap-cpp",
+  "title": "Types, build tools and warnings",
+  "estMinutes": 30,
+  "difficulty": "advanced",
+  "prereqs": [
+    "ap-python-trade-validator",
+    "ap-algorithms-dp-greedy"
+  ],
+  "objectives": [
+    "Identify compile, link and runtime failure stages, build a complete C++20 program with explicit diagnostics and distinguish warning cleanliness from correctness.",
+    "Derive pre-operation integer range guards and safe signed/unsigned index checks without relying on overflow, late casts or a machine-specific int width.",
+    "Apply types, build tools and warnings invariants safely and identify scope boundaries."
+  ],
+  "motivation": "C++ is compiled, and its ordinary integer types have bounded ranges. Do not translate Python integer arithmetic by changing only syntax.",
+  "blocks": [
+    {
+      "type": "p",
+      "md": "C++ is compiled, and its ordinary integer types have bounded ranges. Do not translate Python integer arithmetic by changing only syntax. Each example here is a complete standalone C++20 source file with its own main function; save and build it separately, not by concatenating all main functions into one file. The app C++ execution capability is not assumed. These blocks are locally compiled teaching examples with app runnable=false until an actual current runner is verified; that is not a learner failure."
+    },
+    {
+      "type": "p",
+      "md": "Reading bridge: start with the program's shape\n\nBefore the range proof, read the first complete example, `checked-cpp-notional`, below from the outside in. `#include <iostream>` makes the standard stream declarations available; `<limits>` supplies numeric limits and `<optional>` supplies the optional-value type. `std::` qualifies a name in the standard-library namespace. This is not a Python import statement, and the angle brackets in an include name are not comparisons.\n\n`int main() { ... }` is the program entry function. Braces group its body; ordinary declarations and expression statements end with semicolons. The helper definitions above `main` describe work to call later; defining `display` does not call it. In `display(4, 500);`, the arguments become the helper's parameters. A function declaration puts its return type before its name: `void display(...)` returns no value, while `bool valid_index(...)` in the later index-checking example returns true or false. Reaching the end of this ordinary `main` returns success as if it executed `return 0;`. Each example has its own `main`, so build one example at a time."
+    },
+    {
+      "type": "p",
+      "md": "Read types, guards and the optional result\n\n`long long quantity` declares an integer parameter with a bounded range. `const auto maximum = ...;` asks the compiler to deduce the variable's type from its initializer; `const` prevents changing that variable through this name. It is not a dynamically changing Python type. In `std::numeric_limits<long long>`, the angle-bracket argument selects the type whose limits are queried; `::max()` calls its static member function. Later lessons develop templates in detail.\n\n`std::optional<long long>` means a result that either contains one `long long` or contains no value. `std::nullopt` constructs the empty result. In `if (amount)`, the test asks whether a value is present, not whether that value is nonzero. Only inside that successful branch does `*amount` read the contained integer. The `*` here is optional dereference, not multiplication. A present zero therefore prints 0; an empty result takes the `else` branch. Do not dereference an empty optional.\n\nRead the built-in `||` here as short-circuit logical OR and `&&` as short-circuit logical AND. In `quantity != 0 && price > maximum / quantity`, the right side is not evaluated when quantity is zero. That evaluation order makes the division guard safe. `return` ends the current helper call, so a rejected input never reaches its later multiplication."
+    },
+    {
+      "type": "p",
+      "md": "Trace one call before reading the proof\n\n`std::cout << value << '\\n';` writes a value followed by a newline to standard output. This stream use of `<<` is not a bit shift. Single quotes delimit the newline character; double quotes delimit string text such as `\"rejected\\n\"`. Neither form is a Python formatted string.\n\nTrace `display(0, 500)`: the negative-input guard is false; the nonzero-quantity guard skips division; the helper returns a present integer 0. The presence test succeeds and the output is `0`, not `rejected`. Trace `display(-1, 500)`: the first guard returns an empty optional, so the output is `rejected`. Before running, cover the displayed output and explain those two paths aloud or on paper. Then check the full example. This is a reading bridge, not a new claim about app execution.\n\nReading references: [main and implicit success return](https://en.cppreference.com/w/cpp/language/main_function.html), [optional presence and contained-value access](https://en.cppreference.com/w/cpp/utility/optional.html), [auto type deduction](https://en.cppreference.com/w/cpp/language/auto.html), [stream insertion](https://en.cppreference.com/w/cpp/io/basic_ostream/operator_ltlt.html), [built-in logical operators](https://en.cppreference.com/w/cpp/language/operator_logical.html). Read the C++20 behavior used here; these living references also describe newer features that the examples do not use."
+    },
+    {
+      "type": "p",
+      "md": "For a prepared GCC toolchain, save one example as lesson.cpp and run: `g++ -std=c++20 -Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion -Werror lesson.cpp -o lesson`, then run `./lesson` only if the build succeeded. Record compiler version, language mode, flags and source revision. Flags and diagnostic wording are compiler/version dependent. Here -Werror promotes enabled warnings to errors for a fixed local teaching build; it is not a universal dependency-policy recommendation. -Wall does not mean every warning is enabled."
+    },
+    {
+      "type": "p",
+      "md": "Preprocessing handles includes/macros; compilation translates a translation unit and checks many language rules; linking resolves definitions across object files/libraries into a program. A one-command g++ build usually drives these stages. `g++ -std=c++20 -c lesson.cpp -o lesson.o` stops before linking and produces an object file, not a directly runnable executable. A missing declaration or invalid narrowing can fail compilation; a declared function with no linked definition can fail linking. A successfully linked program can still reject an input, fail a test, encounter undefined behavior or violate its business contract."
+    },
+    {
+      "type": "steps",
+      "title": "Diagnose the stage before editing random flags",
+      "items": [
+        "`int shares{3.5};` is ill-formed narrowing initialization and must be diagnosed. For these strict GCC builds it is an expected compile rejection, not an executable example.",
+        "`int compute(); int main(){return compute();}` can compile to an object because the declaration is present, but fails the normal standalone link when no definition/library is supplied.",
+        "Returning a result with the wrong currency can compile and link without warnings. Check units and expected values at runtime/tests; a clean compiler report cannot infer the intended financial contract."
+      ]
+    },
+    {
+      "type": "p",
+      "md": "Use std::numeric_limits<T>::lowest()/max() to inspect supported bounds rather than assuming int is 32 bits or long is 64 bits. Exact-width aliases such as std::int64_t are available only when the implementation supplies that exact-width type. This lesson uses long long and its queried range. Unsigned arithmetic is modulo its type range after the language conversion/promotion rules; that is defined arithmetic, not evidence that wrapping financial quantities is valid. Signed arithmetic whose result is outside its type range has undefined behavior. A test that once printed a wrapped value does not define it."
+    },
+    {
+      "type": "p",
+      "md": "For nonnegative long long quantity q and price p, let M be max(). If q=0 the product is 0 without division. Otherwise q>0 and q*p <= M is equivalent to p <= floor(M/q). Check this division inequality BEFORE multiplication. Do not compute q*p and inspect it afterward, and do not expect assigning a product of narrower operands into a wider destination to widen the earlier multiplication. The helper rejects negatives or unrepresentable products with an empty optional, and returns a valid zero as a present value. Integer cents and integer shares imply cents of notional under this declared model."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <iostream>\n#include <limits>\n#include <optional>\n\nstd::optional<long long> notional_cents(long long quantity, long long price) {\n    if (quantity < 0 || price < 0) {\n        return std::nullopt;\n    }\n    const auto maximum = std::numeric_limits<long long>::max();\n    if (quantity != 0 && price > maximum / quantity) {\n        return std::nullopt;\n    }\n    return quantity * price;\n}\n\nvoid display(long long quantity, long long price) {\n    const auto amount = notional_cents(quantity, price);\n    if (amount) {\n        std::cout << *amount << '\\n';\n    } else {\n        std::cout << \"rejected\\n\";\n    }\n}\n\nint main() {\n    display(4, 500);\n    display(0, 500);\n    display(-1, 500);\n    display(std::numeric_limits<long long>::max(), 2);\n}",
+      "caption": "Expected output: 2000, then 0, then rejected, then rejected on separate lines. This complete program checks range before multiplication, distinguishes a present zero optional from an empty one, and uses no fixed hard-coded maximum. It does not parse text/JSON, apply fee/tick/lot/FX rules or implement a real broker boundary."
+    },
+    {
+      "type": "p",
+      "md": "An implicit signed-to-unsigned conversion can turn a negative index into a large positive value; mixing signed values with size_t in a comparison requires deliberate treatment. C++20 std::cmp_less compares supported signed/unsigned integer values without that usual-conversion trap. A valid index also requires index>=0 and index<count. Do not silence a warning with a cast until a range proof justifies that cast. Bounds checks are meaningful only while the container/storage and its size remain valid; concurrent mutation is not handled here."
+    },
+    {
+      "type": "code",
+      "lang": "cpp",
+      "code": "#include <cstddef>\n#include <iostream>\n#include <utility>\n\nbool valid_index(long long index, std::size_t count) {\n    return index >= 0 && std::cmp_less(index, count);\n}\n\nint main() {\n    const std::size_t count = 3;\n    std::cout << std::boolalpha;\n    for (const long long index : {-1LL, 0LL, 2LL, 3LL}) {\n        std::cout << valid_index(index, count) << '\\n';\n    }\n    std::cout << 5 / 2 << '\\n';\n    std::cout << static_cast<double>(5) / 2 << '\\n';\n}",
+      "caption": "Expected output: false, true, true, false, 2, 2.5 on separate lines. index=-1 is invalid even though it is mathematically less than count. Integer division 5/2 truncates to 2; converting the operand before division yields 2.5. Casting the already computed integer quotient would only produce 2.0, not recover the lost fraction."
+    },
+    {
+      "type": "p",
+      "md": "Warnings, tests and sanitizers answer different questions. Warning-clean source can contain out-of-bounds access, a dangling observer, data races or a wrong fee policy. Optimize only after correctness contracts and measurements exist; do not suppress a warning merely to make the build green. A clean run on one compiler/target does not prove portable layout, numeric behavior or current app capability. Later lessons cover testing and sanitizers with their own scope."
+    },
+    {
+      "type": "p",
+      "md": "Independent transfer: implement a checked nonnegative addition helper for cents using the guard b<=M-a after validating a,b>=0. Explain why evaluating a+b first is too late. Keep present zero distinct from failure, test max()+0 and max()+1 without ever evaluating the latter overflowing sum, then compile a separate intentionally narrowing fixture and classify its failure stage."
+    },
+    {
+      "type": "p",
+      "md": "Sources: [GCC warning options](https://gcc.gnu.org/onlinedocs/gcc/Warning-Options.html), [numeric_limits](https://en.cppreference.com/w/cpp/types/numeric_limits.html), [C++20 integer comparison](https://en.cppreference.com/w/cpp/utility/intcmp.html), and [integer type/overflow draft wording](https://eel.is/c++draft/basic.fundamental). The draft is a living language reference, not a claim that every later language feature is supported by the locally tested C++20 compiler. Local build evidence names the exact compiler and flags."
+    },
+    {
+      "type": "ref",
+      "items": [
+        {
+          "label": "main and implicit success return",
+          "url": "https://en.cppreference.com/w/cpp/language/main_function.html"
+        },
+        {
+          "label": "optional presence and contained-value access",
+          "url": "https://en.cppreference.com/w/cpp/utility/optional.html"
+        },
+        {
+          "label": "auto type deduction",
+          "url": "https://en.cppreference.com/w/cpp/language/auto.html"
+        },
+        {
+          "label": "stream insertion",
+          "url": "https://en.cppreference.com/w/cpp/io/basic_ostream/operator_ltlt.html"
+        }
+      ]
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "A local C++ example prints the expected result once. What evidence and limits should accompany that claim?",
+    "hints": [
+      "Names reproducible toolchain/source/input evidence.",
+      "Separates build/runtime/business/runner claims.",
+      "Keeps untested ranges and platforms explicit."
+    ],
+    "solution": "Record exact source revision/hash, compiler/version/target, language mode/flags, build diagnostics, inputs, exit status/stdout and test scope. Separate build success, runtime tests and app runner capability. Do not infer portability, safety for all inputs or financial correctness from one output."
+  },
+  "independentExercise": {
+    "prompt": "Write a small test case that deliberately breaks the contract boundary in \"Types, build tools and warnings\" and verify how your implementation rejects or handles it.",
+    "hints": [
+      "Test zero, negative, empty, duplicate, and boundary values.",
+      "Confirm both time/memory complexity and numerical precision remain within spec."
+    ],
+    "solution": "#include <cstddef>\n#include <iostream>\n#include <utility>\n\nbool valid_index(long long index, std::size_t count) {\n    return index >= 0 && std::cmp_less(index, count);\n}\n\nint main() {\n    const std::size_t count = 3;\n    std::cout << std::boolalpha;\n    for (const long long index : {-1LL, 0LL, 2LL, 3LL}) {\n        std::cout << valid_index(index, count) << '\\n';\n    }\n    std::cout << 5 / 2 << '\\n';\n    std::cout << static_cast<double>(5) / 2 << '\\n';\n}"
+  },
+  "commonMistakes": [
+    "The standalone object may compile, but the missing definition prevents the normal complete link. (A declaration alone is not the linked implementation.)",
+    "Validate nonnegative inputs and handle q=0 before the positive-divisor guard. (Division by positive q gives the equivalent representability condition.)",
+    "floor(100/4)=25. The product is then at most 100; p=26 must be rejected before multiplication in the toy range."
+  ],
+  "realWorldApplication": "Used directly across production quantitative research, execution systems, and validation pipelines.",
+  "quantFinanceApplication": "Applies rigorous engineering contracts to quantitative modeling and live trading infrastructure.",
+  "summary": [
+    "A successful build is evidence for that source/toolchain, not business correctness.",
+    "Guard bounded integer arithmetic before evaluating it, keep signed/unsigned comparisons deliberate and distinguish compile, link and runtime outcomes.",
+    "Identify compile, link and runtime failure stages, build a complete C++20 program with explicit diagnostics and distinguish warning cleanliness from correctness."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "A function is declared, called from main and never defined in the standalone build. Which stage usually reports the missing definition?",
+      "objective": 0,
+      "options": [
+        "Lexical preprocessing before any types exist",
+        "Linking object code and required definitions",
+        "Only the first successful production order",
+        "The definition is supplied automatically because a declaration was seen"
+      ],
+      "answerIndex": 1,
+      "explanation": "The standalone object may compile, but the missing definition prevents the normal complete link. (A declaration alone is not the linked implementation.)"
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "Which guard is safe for nonnegative long long q,p when q>0 and M is max()?",
+      "objective": 1,
+      "options": [
+        "First multiply q*p, then compare the result with M",
+        "Convert the possibly overflowed result to unsigned afterward",
+        "Check p<=M/q before evaluating q*p",
+        "Assume long long can hold any Python integer"
+      ],
+      "answerIndex": 2,
+      "explanation": "Validate nonnegative inputs and handle q=0 before the positive-divisor guard. (Division by positive q gives the equivalent representability condition.)"
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "For a toy maximum M=100 and positive q=4, what is the largest nonnegative integer p allowed by p<=M/q?",
+      "objective": 2,
+      "answer": 25,
+      "tolerance": 0.000001,
+      "explanation": "floor(100/4)=25. The product is then at most 100; p=26 must be rejected before multiplication in the toy range."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "Why not silence every signed/unsigned warning with static_cast?",
+      "objective": 0,
+      "options": [
+        "A cast can hide the warning without proving the value fits",
+        "Every explicit cast automatically checks financial units",
+        "size_t always represents negative values directly",
+        "Every mixed comparison is a syntax error"
+      ],
+      "answerIndex": 0,
+      "explanation": "A deliberate range/sign proof is needed; the absence of the diagnostic after a cast is not the proof. (Validate the intended range before a justified conversion.)"
+    },
+    {
+      "id": "q5",
+      "type": "mcq",
+      "prompt": "A program builds with all selected warnings enabled and no diagnostics. What follows?",
+      "objective": 1,
+      "options": [
+        "All possible warnings were enabled by -Wall",
+        "The financial units and source identity are certified",
+        "Runtime tests and source review can be discarded",
+        "This source passed this configured build"
+      ],
+      "answerIndex": 3,
+      "explanation": "Compiler/version/flags/source scope matter, and a successful build is not full qualification. (Runtime safety and domain correctness remain separate.)"
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "What core invariant governs Types, build tools and warnings?",
+      "back": "The standalone object may compile, but the missing definition prevents the normal complete link. (A declaration alone is not the linked implementation.)"
+    },
+    {
+      "type": "definition",
+      "front": "In Types, build tools and warnings, how do you verify: Derive pre-operation integer range guards and safe signed/unsigned index checks without relying on overflow, late casts or a machine-specific int width.?",
+      "back": "Validate nonnegative inputs and handle q=0 before the positive-divisor guard. (Division by positive q gives the equivalent representability condition.)"
+    },
+    {
+      "type": "error-identification",
+      "front": "What failure mode happens if the contract in Types, build tools and warnings is violated?",
+      "back": "floor(100/4)=25. The product is then at most 100; p=26 must be rejected before multiplication in the toy range."
+    }
+  ],
+  "references": [
+    {
+      "label": "main and implicit success return",
+      "url": "https://en.cppreference.com/w/cpp/language/main_function.html"
+    },
+    {
+      "label": "optional presence and contained-value access",
+      "url": "https://en.cppreference.com/w/cpp/utility/optional.html"
+    },
+    {
+      "label": "auto type deduction",
+      "url": "https://en.cppreference.com/w/cpp/language/auto.html"
+    },
+    {
+      "label": "stream insertion",
+      "url": "https://en.cppreference.com/w/cpp/io/basic_ostream/operator_ltlt.html"
+    }
+  ],
+  "skills": [
+    "cpp",
+    "cpp-memory",
+    "cpp-stl",
+    "cpp-engineering"
+  ]
+}

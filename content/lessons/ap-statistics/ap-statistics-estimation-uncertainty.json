@@ -1,0 +1,245 @@
+{
+  "id": "ap-statistics-estimation-uncertainty",
+  "moduleId": "ap-statistics",
+  "title": "Estimation, uncertainty and intervals",
+  "estMinutes": 22,
+  "difficulty": "core",
+  "prereqs": [
+    "ap-statistics-sampling-simulation"
+  ],
+  "objectives": [
+    "Define estimator bias across repeated samples and derive the iid n-1 variance correction without equating unbiasedness with a correct individual estimate.",
+    "Compute and interpret a known-sigma normal-mean interval under its assumptions and distinguish stated confidence from actual coverage.",
+    "Apply estimation, uncertainty and intervals invariants safely and identify scope boundaries."
+  ],
+  "motivation": "An estimand is the population/model quantity of interest, such as μ=E[X]. An estimator is a rule applied to random data, such as the sample mean; an estimate is its realized output.",
+  "blocks": [
+    {
+      "type": "p",
+      "md": "An estimand is the population/model quantity of interest, such as μ=E[X]. An estimator is a rule applied to random data, such as the sample mean; an estimate is its realized output. Bias is $E[\\hat\\theta]-\\theta$ under a specified sampling distribution. One observed estimate above truth does not prove positive bias; the expectation is over possible samples. Selection, missingness and time-varying populations can change the sampling model and the estimand itself."
+    },
+    {
+      "type": "p",
+      "md": "For iid observations with finite mean μ, linearity gives E[X̄]=μ. With finite variance σ², independence gives Var(X̄)=σ²/n. Unbiased means centered correctly over repeated sampling, not exact in each sample. It does not mean smallest variance, best tail behavior or best decision. For a finite second moment, $E[(\\hat\\theta-\\theta)^2]=\\operatorname{Var}(\\hat\\theta)+\\operatorname{Bias}(\\hat\\theta)^2$: expand the deviation around E[θ̂] and the cross-term has expectation 0."
+    },
+    {
+      "type": "p",
+      "md": "Let S=Σ(X_i-X̄)². The identity S=Σ(X_i-μ)²-n(X̄-μ)² follows by expanding the centered squares and using Σ(X_i-X̄)=0. For iid observations with finite variance, E[S]=nσ²-n*(σ²/n)=(n-1)σ². Thus s²=S/(n-1) is unbiased for σ² when n≥2, whereas S/n has expectation ((n-1)/n)σ². This denominator correction does not repair nonrepresentative sampling, dependence or infinite variance, and sqrt(s²) is not automatically unbiased for σ."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "from fractions import Fraction\nfrom itertools import product\n# Population is {-1,1}, equally likely: true mean=0 and variance=1.\nmeans, divided_by_n, divided_by_n_minus_1 = [], [], []\nfor sample in product((-1,1), repeat=2):\n    mean = Fraction(sum(sample), len(sample))\n    squares = sum((Fraction(x)-mean)**2 for x in sample)\n    means.append(mean)\n    divided_by_n.append(squares / len(sample))\n    divided_by_n_minus_1.append(squares / (len(sample)-1))\nprint(sum(means) / len(means))\nprint(sum(divided_by_n) / len(divided_by_n))\nprint(sum(divided_by_n_minus_1) / len(divided_by_n_minus_1))",
+      "caption": "Expected output: 0, then 1/2, then 1. The four equally likely two-draw samples are (-1,-1),(-1,1),(1,-1),(1,1). Their sample means average to the true mean 0. Dividing centered squares by n underestimates population variance on average; dividing by n-1 has the correct average. Individual estimates still vary."
+    },
+    {
+      "type": "p",
+      "md": "A confidence interval is a random interval-valued rule before data are observed. A nominal 95% method is intended to include the fixed true parameter in 95% of repeated samples under its stated conditions. Once a particular sample is observed, its interval either contains that fixed value or does not; the frequentist statement is not a new 95% probability assigned to the parameter. Nor does a mean interval contain 95% of individual future observations. A prediction interval targets a different uncertainty question."
+    },
+    {
+      "type": "p",
+      "md": "For iid NORMAL observations with KNOWN population standard deviation σ>0, X̄ is normal with mean μ and standard deviation σ/√n. Therefore $(\\bar X-\\mu)/(\\sigma/\\sqrt n)$ is standard normal. Choosing its central 1-α probability gives $\\bar X\\pm z_{1-\\alpha/2}\\sigma/\\sqrt n$. The following helper only performs this arithmetic. Its numeric inputs cannot verify normality, independence, or that σ really is known. It does not estimate σ from a sample and quietly treat that estimate as known."
+    },
+    {
+      "type": "steps",
+      "title": "Name the assumptions along with the endpoints",
+      "items": [
+        "Synthetic normal model: n=100 independent observations, known population σ=2, realized sample mean 10, confidence level 0.95.",
+        "Standard error is 2/sqrt(100)=0.2. Standard-normal 97.5th percentile is about 1.959964.",
+        "Half-width is about 0.391993. Endpoints are about [9.608007,10.391993]. The confidence level belongs to this repeated-sample method under the normal-known-σ model."
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "from math import isfinite, sqrt\nfrom statistics import NormalDist\n\ndef known_sigma_mean_interval(sample_mean, sigma, n, confidence=0.95):\n    # iid NORMAL observations, KNOWN population sigma: assumptions, not validated here.\n    for value in (sample_mean, sigma, confidence):\n        if type(value) not in (int,float) or abs(value) > 1000000 or not isfinite(value):\n            raise ValueError(\"expected bounded finite real parameters, excluding bool\")\n    if sigma <= 0 or not 0.5 <= confidence <= 0.999:\n        raise ValueError(\"expected positive sigma and confidence in [0.5,0.999]\")\n    if type(n) is not int or not 1 <= n <= 1000000:\n        raise ValueError(\"expected integer n in [1,1000000]\")\n    z = NormalDist().inv_cdf((1+confidence)/2)\n    half_width = z * sigma / sqrt(n)\n    return sample_mean-half_width, sample_mean+half_width\n\nlow, high = known_sigma_mean_interval(10, 2, 100)\nprint(f\"{low:.6f} {high:.6f}\")\nprint(f\"{(high-low):.6f}\")",
+      "caption": "Expected output: 9.608007 10.391993, then 0.783986. Numeric argument bounds are teaching-interface limits, not statistical proof. A narrower interval from larger n is useful only if the same estimand and valid sampling/model assumptions remain in force."
+    },
+    {
+      "type": "p",
+      "md": "When population σ is unknown, iid normal observations give the t interval X̄±t_(n-1,1-α/2)s/√n. The n-1 degrees of freedom and t critical value account for estimated scale. This lesson states the method but does not implement a t quantile; use a verified table/library rather than relabeling the normal critical value as t. Outside exact normal sampling, large-sample approximations need justified finite moments and sampling conditions. An arbitrary sample-size slogan does not guarantee adequate tail coverage."
+    },
+    {
+      "type": "p",
+      "md": "A method labeled 95% can have poor actual coverage when its approximation is used outside its domain. The next block enumerates all samples of TWO iid Bernoulli(1/2) trials. It deliberately uses the poor small-sample plug-in normal/Wald interval p̂±1.96√(p̂(1-p̂)/n), clipped to [0,1]. For all-zero and all-one samples its radius is 0, missing the true p=1/2. Only mixed samples cover p; their total probability is 1/2, not 0.95. Clipping endpoints does not fix coverage."
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "from fractions import Fraction\nfrom itertools import product\nfrom math import sqrt\n# Deliberately unsuitable small-sample Wald approximation, NOT recommended.\ncovered = 0\nfor sample in product((0,1), repeat=2):\n    p_hat = sum(sample) / len(sample)\n    radius = 1.96 * sqrt(p_hat*(1-p_hat)/len(sample))\n    low, high = max(0, p_hat-radius), min(1, p_hat+radius)\n    covered += low <= 0.5 <= high\nprint(Fraction(covered, 4))",
+      "caption": "Expected output: 1/2. This is an exact finite enumeration of this specific bad small-sample approximation at p=1/2, not a general recommendation to use Wald intervals. Alternative binomial interval methods require their own coverage analysis and are not implemented here."
+    },
+    {
+      "type": "p",
+      "md": "Independent transfer: enumerate iid samples of size 3 from the finite population {-1,1}; verify the sample mean is unbiased and compare the two variance denominators. Then change confidence from 0.95 to 0.99 in the normal-known-σ example and explain why the interval widens. For each result state the population, sampling rule, estimand, assumptions and what repeated coverage does and does not mean. Do not fix an interval by selecting a favorable confidence level after seeing the result."
+    },
+    {
+      "type": "p",
+      "md": "References: [Penn State bias](https://online.stat.psu.edu/stat509/lesson/4/4.3), [NIST mean confidence limits](https://www.itl.nist.gov/div898/handbook/eda/section3/eda352.htm), [NIST confidence interpretation and known-σ normal interval](https://www.itl.nist.gov/div898/handbook/prc/section1/prc14.htm), and [Python NormalDist](https://docs.python.org/3.12/library/statistics.html). Finite synthetic enumerations are given in full; no guaranteed interval for arbitrary financial observations is asserted."
+    },
+    {
+      "type": "interactive",
+      "component": "ConfidenceIntervalLab",
+      "params": {},
+      "caption": "Experiment: inspect interval coverage across repeated samples."
+    },
+    {
+      "type": "ref",
+      "items": [
+        {
+          "label": "Penn State bias",
+          "url": "https://online.stat.psu.edu/stat509/lesson/4/4.3"
+        },
+        {
+          "label": "NIST mean confidence limits",
+          "url": "https://www.itl.nist.gov/div898/handbook/eda/section3/eda352.htm"
+        },
+        {
+          "label": "NIST confidence interpretation and known-σ normal interval",
+          "url": "https://www.itl.nist.gov/div898/handbook/prc/section1/prc14.htm"
+        },
+        {
+          "label": "Python NormalDist",
+          "url": "https://docs.python.org/3.12/library/statistics.html"
+        }
+      ]
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "An estimated average return has a narrow 95% mean interval. What would you check before treating it as reliable evidence?",
+    "hints": [
+      "Interprets repeated coverage, not guaranteed profit.",
+      "Checks assumptions, time order and selection.",
+      "Separates a mean from future individual outcomes."
+    ],
+    "solution": "Check sampling/selection and time order, the fixed estimand, dependence, tails/finite moments, estimated versus known scale, multiplicity, costs and regime changes. A mean interval is not a guarantee of a profitable next observation or an approved trade."
+  },
+  "independentExercise": {
+    "prompt": "Write a small test case that deliberately breaks the contract boundary in \"Estimation, uncertainty and intervals\" and verify how your implementation rejects or handles it.",
+    "hints": [
+      "Test zero, negative, empty, duplicate, and boundary values.",
+      "Confirm both time/memory complexity and numerical precision remain within spec."
+    ],
+    "solution": "from math import isfinite, sqrt\nfrom statistics import NormalDist\n\ndef known_sigma_mean_interval(sample_mean, sigma, n, confidence=0.95):\n    # iid NORMAL observations, KNOWN population sigma: assumptions, not validated here.\n    for value in (sample_mean, sigma, confidence):\n        if type(value) not in (int,float) or abs(value) > 1000000 or not isfinite(value):\n            raise ValueError(\"expected bounded finite real parameters, excluding bool\")\n    if sigma <= 0 or not 0.5 <= confidence <= 0.999:\n        raise ValueError(\"expected positive sigma and confidence in [0.5,0.999]\")\n    if type(n) is not int or not 1 <= n <= 1000000:\n        raise ValueError(\"expected integer n in [1,1000000]\")\n    z = NormalDist().inv_cdf((1+confidence)/2)\n    half_width = z * sigma / sqrt(n)\n    return sample_mean-half_width, sample_mean+half_width\n\nlow, high = known_sigma_mean_interval(10, 2, 100)\nprint(f\"{low:.6f} {high:.6f}\")\nprint(f\"{(high-low):.6f}\")"
+  },
+  "commonMistakes": [
+    "Bias belongs to an estimator and a sampling model; it cannot usually be inferred from a single realized estimate. (The expectation averages the random estimator under its sampling distribution.)",
+    "The correction concerns the expectation of the variance estimator, not universal data quality or unbiasedness of every transformed statistic. (Estimating the mean changes the expected centered-square sum.)",
+    "Confidence is a property of the repeated procedure and sampling model, not an unconditional promise about a single output. (The random rule is evaluated across samples while the parameter is fixed.)"
+  ],
+  "realWorldApplication": "Used directly across production quantitative research, execution systems, and validation pipelines.",
+  "quantFinanceApplication": "Applies rigorous engineering contracts to quantitative modeling and live trading infrastructure.",
+  "summary": [
+    "Bias and confidence describe repeated sampling under a model.",
+    "Unbiased is not exact, confidence is not a probability attached to an observed fixed parameter, and a labeled interval can under-cover when its assumptions fail.",
+    "Define estimator bias across repeated samples and derive the iid n-1 variance correction without equating unbiasedness with a correct individual estimate."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "What is estimator bias under the stated sampling model?",
+      "objective": 0,
+      "options": [
+        "The error in whichever sample was most recently observed",
+        "E[estimate rule]-target parameter",
+        "Always the square root of sample variance",
+        "A guarantee that every result is wrong in the same direction"
+      ],
+      "answerIndex": 1,
+      "explanation": "Bias belongs to an estimator and a sampling model; it cannot usually be inferred from a single realized estimate. (The expectation averages the random estimator under its sampling distribution.)"
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "Why use n-1 for iid centered sample variance with a finite population variance?",
+      "objective": 1,
+      "options": [
+        "It guarantees valid uncertainty for any dependent time series",
+        "It proves the sample is representative",
+        "E[sum of centered squares]=(n-1)σ²",
+        "It makes the sample standard deviation unbiased automatically"
+      ],
+      "answerIndex": 2,
+      "explanation": "The correction concerns the expectation of the variance estimator, not universal data quality or unbiasedness of every transformed statistic. (Estimating the mean changes the expected centered-square sum.)"
+    },
+    {
+      "id": "q3",
+      "type": "mcq",
+      "prompt": "What does 95% frequentist confidence describe?",
+      "objective": 2,
+      "options": [
+        "Repeated-sample coverage of the interval method under its assumptions",
+        "A guarantee that this observed interval contains truth",
+        "The percentage of future observations inside a mean interval",
+        "Proof that the data are independent and normal"
+      ],
+      "answerIndex": 0,
+      "explanation": "Confidence is a property of the repeated procedure and sampling model, not an unconditional promise about a single output. (The random rule is evaluated across samples while the parameter is fixed.)"
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "May the known-sigma normal-mean helper silently replace sigma with a sample standard deviation and claim the same exact finite-sample method?",
+      "objective": 0,
+      "options": [
+        "Yes, every estimate is equivalent to a known parameter",
+        "Yes, because the sample standard deviation uses n-1 and is therefore a known parameter",
+        "Yes, whenever the sample standard deviation numerically equals the claimed sigma",
+        "No; estimated scale requires a justified different method"
+      ],
+      "answerIndex": 3,
+      "explanation": "A known population parameter and a data-derived estimate are different assumptions, even if they happen to have the same numeric value. (Under iid normal sampling the t method accounts for this estimated scale.)"
+    },
+    {
+      "id": "q5",
+      "type": "numeric",
+      "prompt": "The four equally likely n=2 Bernoulli(1/2) samples in the worked Wald counterexample include two covering intervals. What percentage of intervals cover the true p?",
+      "objective": 1,
+      "answer": 50,
+      "tolerance": 0.000001,
+      "explanation": "Coverage is 2/4=1/2=50%, not the nominal 95%. Zero estimated radius in the boundary samples is not proof of zero population uncertainty."
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "What core invariant governs Estimation, uncertainty and intervals?",
+      "back": "Bias belongs to an estimator and a sampling model; it cannot usually be inferred from a single realized estimate. (The expectation averages the random estimator under its sampling distribution.)"
+    },
+    {
+      "type": "definition",
+      "front": "In Estimation, uncertainty and intervals, how do you verify: Compute and interpret a known-sigma normal-mean interval under its assumptions and distinguish stated confidence from actual coverage.?",
+      "back": "The correction concerns the expectation of the variance estimator, not universal data quality or unbiasedness of every transformed statistic. (Estimating the mean changes the expected centered-square sum.)"
+    },
+    {
+      "type": "error-identification",
+      "front": "What failure mode happens if the contract in Estimation, uncertainty and intervals is violated?",
+      "back": "Confidence is a property of the repeated procedure and sampling model, not an unconditional promise about a single output. (The random rule is evaluated across samples while the parameter is fixed.)"
+    }
+  ],
+  "references": [
+    {
+      "label": "Penn State bias",
+      "url": "https://online.stat.psu.edu/stat509/lesson/4/4.3"
+    },
+    {
+      "label": "NIST mean confidence limits",
+      "url": "https://www.itl.nist.gov/div898/handbook/eda/section3/eda352.htm"
+    },
+    {
+      "label": "NIST confidence interpretation and known-σ normal interval",
+      "url": "https://www.itl.nist.gov/div898/handbook/prc/section1/prc14.htm"
+    },
+    {
+      "label": "Python NormalDist",
+      "url": "https://docs.python.org/3.12/library/statistics.html"
+    }
+  ],
+  "skills": [
+    "probability",
+    "distributions",
+    "statistics",
+    "quant-modelling"
+  ]
+}

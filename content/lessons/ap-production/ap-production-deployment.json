@@ -1,0 +1,222 @@
+{
+  "id": "ap-production-deployment",
+  "moduleId": "ap-production",
+  "title": "Builds, deployment and rollback",
+  "estMinutes": 22,
+  "difficulty": "specialist",
+  "prereqs": [
+    "ap-production-incident-recovery"
+  ],
+  "objectives": [
+    "Apply a bounded pure canary error-count gate with explicit eligible populations, minimum evidence and strict excess-error threshold without claiming significance or automatic deployment authority.",
+    "Check declared read/write schema rollback compatibility and explain immutable artifacts, staged rollout, migration/backup evidence and irreversible data limits.",
+    "Apply builds, deployment and rollback invariants safely and identify scope boundaries."
+  ],
+  "motivation": "A release binds reviewed source/build artifact digest, dependency/config/schema versions, migration plan, test evidence, environment, owner/authority, observation and rollback/restore. Build once and promote the same verified artifact rather than rebuilding unrecorded variations.",
+  "blocks": [
+    {
+      "type": "p",
+      "md": "A release binds reviewed source/build artifact digest, dependency/config/schema versions, migration plan, test evidence, environment, owner/authority, observation and rollback/restore. Build once and promote the same verified artifact rather than rebuilding unrecorded variations. A hash identifies bytes, not trusted build provenance or correctness. This lesson deploys nothing and purchases no service. A local gate can only evaluate supplied evidence, not grant authority or replace actual mobile/app/runtime/production tests."
+    },
+    {
+      "type": "p",
+      "md": "Google SRE defines canarying as partial, time-limited deployment/evaluation against a control. Predefine population, traffic assignment, window, user-impact metrics, minimum evidence, stop/reset/escalation and observation duration. Unequal or contaminated traffic can bias comparisons; errors alone miss latency/data/security regressions. Low traffic or rare failures may require longer/more targeted tests, not automatic promotion because no error was seen."
+    },
+    {
+      "type": "steps",
+      "title": "Error gate and schema rollback are different checks",
+      "items": [
+        "Own control 1 bad/1000, canary 10/1000 has excess 9/1000=.009, above allowed 1/200=.005, so stop-investigate. Canary 0/10 has insufficient events for minimum 100, so hold, not success.",
+        "Canary 2/1000 versus 1/1000 has excess .001 and is eligible-for-next-reviewed-step ONLY. This descriptive threshold is not a hypothesis test, confidence bound or live rollout permission.",
+        "Database schema 2 cannot safely roll back to v1 declared read/write support {1}. A bridge artifact supporting both {1,2} passes that one compatibility check. Caller declarations must be backed by actual mixed-version read/write tests; no data migration or deployment happens here."
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "code": "from fractions import Fraction\ndef canary_gate(control,canary,min_events,max_excess):\n    # Own fixed eligible counts:(bad,total),same observation window/population definition.\n    for row in (control,canary):\n        if type(row) is not tuple or len(row)!=2 or any(type(x) is not int for x in row) or not 0<=row[0]<=row[1]<=1000000:raise ValueError('invalid canary counts')\n    if type(min_events) is not int or not 1<=min_events<=1000000 or type(max_excess) is not Fraction or not 0<=max_excess<=1:raise ValueError('invalid canary policy')\n    if min(control[1],canary[1])<min_events:return 'hold-insufficient-evidence'\n    difference=Fraction(canary[0],canary[1])-Fraction(control[0],control[1])\n    return 'stop-investigate' if difference>max_excess else 'eligible-for-next-reviewed-step'\n\ndef rollback_compatibility(artifact,database_schema):\n    # Toy explicit read ANDwrite schema support,not a migration/restore implementation.\n    if type(artifact) is not tuple or len(artifact)!=3:raise ValueError('invalid artifact compatibility record')\n    version,readable,writable=artifact\n    if type(version) is not str or version not in ('v1','bridge','v2'):raise ValueError('unknown artifact')\n    if any(type(values) is not frozenset or not values or any(type(x) is not int or x not in (1,2) for x in values) for values in (readable,writable)):raise ValueError('invalid schema support')\n    if type(database_schema) is not int or database_schema not in (1,2):raise ValueError('unknown database schema')\n    return database_schema in readable and database_schema in writable\n\nprint(canary_gate((1,1000),(10,1000),100,Fraction(1,200)))\nprint(canary_gate((1,1000),(0,10),100,Fraction(1,200)))\nprint(canary_gate((1,1000),(2,1000),100,Fraction(1,200)))\nprint(rollback_compatibility(('v1',frozenset({1}),frozenset({1})),2))\nprint(rollback_compatibility(('bridge',frozenset({1,2}),frozenset({1,2})),2))",
+      "caption": "Expected stop-investigate; hold-insufficient-evidence; eligible-for-next-reviewed-step; False; True. Complete pure Fraction counts/gate and declared read/write schema check. Strict excess>threshold; equal threshold passes only this descriptive rule. No CI/test significance, traffic routing, artifact authentication, migration, rollback/restore execution or full release approval."
+    },
+    {
+      "type": "p",
+      "md": "A binary rollback does not reverse database writes or recover dropped columns. Google's release guidance describes a bridge version that tolerates the new schema before enabling new features. Expand/migrate/contract introduces new structure, backfills/verifies, changes compatible readers/writers, then removes old structure only after consumers have moved and recovery implications are understood. Dual-write consistency and new data not representable in old schema need explicit reconciliation; the pattern is not automatically zero downtime or fully reversible."
+    },
+    {
+      "type": "p",
+      "md": "Preserve known-good artifact/configuration and verify it can read AND write the current schema/data without corruption. Define traffic drain, queued requests, in-flight unknown outcomes, compatibility/feature flags and postrollback checks. Destructive/irreversible migrations may require forward fix or a tested restore with explicit data-loss/recovery-point consequences; do not blindly deploy an old binary. Restore authorization/data loss cannot be inferred from a generic request to make an app work."
+    },
+    {
+      "type": "p",
+      "md": "Tests should bind actual artifact/revision/environment: unit/property/reference, contract/integration, migration/mixed-version, security/dependency, resource/performance, renderer/mobile/a11y/user flows and recovery. A source curriculum archive or green classroom gate is not deployed production evidence. Canary only after appropriate predeployment tests, with limited authorized exposure and monitoring; not a replacement for those tests. Stop on unexplained regressions and retain evidence instead of removing behavior to pass checks."
+    },
+    {
+      "type": "p",
+      "md": "Google SRE release/canary guidance describes practices and tradeoffs, not a universal recipe or approval for this user's accounts. Liquibase describes expand/migrate/contract; actual engine/transaction/locking/backfill behavior depends on database and migration tools. This own descriptive count gate and declared schema sets are deliberately narrow, no framework or platform is installed."
+    },
+    {
+      "type": "p",
+      "md": "Independent transfer: enumerate small canary/control counts, compare exact rational differences and test empty/minimum/equality boundaries. Construct v1/bridge/v2 read/write compatibility tables and reject read-only support when writes are needed. Design a schema-drop scenario where binary rollback is unsafe, and state forward-fix/restore choices with data-loss/authority gaps. Record outstanding actual app/production tests rather than invent a deployed success."
+    },
+    {
+      "type": "p",
+      "md": "Sources: [Google SRE canarying](https://sre.google/workbook/canarying-releases/), [reliable releases/rollback and bridge schema](https://cloud.google.com/blog/products/gcp/reliable-releases-and-rollbacks-cre-life-lessons), [Liquibase expand/contract](https://www.liquibase.com/technical-glossary/expand-contract-pattern), [incident mitigation context](https://sre.google/workbook/incident-response/). Own gate thresholds and compatibility records are synthetic, not current vendor policy or deployment commands."
+    },
+    {
+      "type": "ref",
+      "items": [
+        {
+          "label": "Google SRE canarying",
+          "url": "https://sre.google/workbook/canarying-releases/"
+        },
+        {
+          "label": "reliable releases/rollback and bridge schema",
+          "url": "https://cloud.google.com/blog/products/gcp/reliable-releases-and-rollbacks-cre-life-lessons"
+        },
+        {
+          "label": "Liquibase expand/contract",
+          "url": "https://www.liquibase.com/technical-glossary/expand-contract-pattern"
+        },
+        {
+          "label": "incident mitigation context",
+          "url": "https://sre.google/workbook/incident-response/"
+        }
+      ]
+    }
+  ],
+  "guidedExercise": {
+    "prompt": "What must be known before rolling back after a destructive database migration?",
+    "hints": [
+      "Names schema/data/write compatibility.",
+      "Distinguishes binary rollback and restore/forward fix.",
+      "Requires real evidence/authority."
+    ],
+    "solution": "Current schema/data and old artifact read/write compatibility, irreversible/lost data, new writes, queues/unknown effects, known-good artifact/config, forward-fix versus tested restore/recovery-point/time/data-loss and explicit operational authority. Need actual environment checks, not pure set declarations or old binary label."
+  },
+  "independentExercise": {
+    "prompt": "Write a small test case that deliberately breaks the contract boundary in \"Builds, deployment and rollback\" and verify how your implementation rejects or handles it.",
+    "hints": [
+      "Test zero, negative, empty, duplicate, and boundary values.",
+      "Confirm both time/memory complexity and numerical precision remain within spec."
+    ],
+    "solution": "from fractions import Fraction\ndef canary_gate(control,canary,min_events,max_excess):\n    # Own fixed eligible counts:(bad,total),same observation window/population definition.\n    for row in (control,canary):\n        if type(row) is not tuple or len(row)!=2 or any(type(x) is not int for x in row) or not 0<=row[0]<=row[1]<=1000000:raise ValueError('invalid canary counts')\n    if type(min_events) is not int or not 1<=min_events<=1000000 or type(max_excess) is not Fraction or not 0<=max_excess<=1:raise ValueError('invalid canary policy')\n    if min(control[1],canary[1])<min_events:return 'hold-insufficient-evidence'\n    difference=Fraction(canary[0],canary[1])-Fraction(control[0],control[1])\n    return 'stop-investigate' if difference>max_excess else 'eligible-for-next-reviewed-step'\n\ndef rollback_compatibility(artifact,database_schema):\n    # Toy explicit read ANDwrite schema support,not a migration/restore implementation.\n    if type(artifact) is not tuple or len(artifact)!=3:raise ValueError('invalid artifact compatibility record')\n    version,readable,writable=artifact\n    if type(version) is not str or version not in ('v1','bridge','v2'):raise ValueError('unknown artifact')\n    if any(type(values) is not frozenset or not values or any(type(x) is not int or x not in (1,2) for x in values) for values in (readable,writable)):raise ValueError('invalid schema support')\n    if type(database_schema) is not int or database_schema not in (1,2):raise ValueError('unknown database schema')\n    return database_schema in readable and database_schema in writable\n\nprint(canary_gate((1,1000),(10,1000),100,Fraction(1,200)))\nprint(canary_gate((1,1000),(0,10),100,Fraction(1,200)))\nprint(canary_gate((1,1000),(2,1000),100,Fraction(1,200)))\nprint(rollback_compatibility(('v1',frozenset({1}),frozenset({1})),2))\nprint(rollback_compatibility(('bridge',frozenset({1,2}),frozenset({1,2})),2))"
+  },
+  "commonMistakes": [
+    "Minimum evidence and outcome ratio differ. (No-error small sample is not proof.)",
+    "Compatibility is more than successful read parsing. (Mixed-version write semantics need real tests.)",
+    "10-1=9, so excess .009."
+  ],
+  "realWorldApplication": "Used directly across production quantitative research, execution systems, and validation pipelines.",
+  "quantFinanceApplication": "Applies rigorous engineering contracts to quantitative modeling and live trading infrastructure.",
+  "summary": [
+    "A release needs bound artifact/config/schema/evidence and authorized staged operations.",
+    "A small error-only canary gate is descriptive evidence, not automatic approval.",
+    "Binary rollback depends on current read/write data/schema compatibility and cannot undo irreversible migrations or restore lost data by itself."
+  ],
+  "quiz": [
+    {
+      "id": "q1",
+      "type": "mcq",
+      "prompt": "A canary has 0 errors in 10 events but minimum 100 is required. What happens?",
+      "objective": 0,
+      "options": [
+        "Promote because zero is perfect",
+        "Hold for insufficient evidence",
+        "Claim statistical certainty",
+        "Deploy every environment"
+      ],
+      "answerIndex": 1,
+      "explanation": "Minimum evidence and outcome ratio differ. (No-error small sample is not proof.)"
+    },
+    {
+      "id": "q2",
+      "type": "mcq",
+      "prompt": "Old binary reads schema 2 but cannot write it safely. Can this declared compatibility check pass?",
+      "objective": 1,
+      "options": [
+        "Yes, reads are enough",
+        "Yes, if its name is known-good",
+        "No, both read/write required",
+        "Always after a restart"
+      ],
+      "answerIndex": 2,
+      "explanation": "Compatibility is more than successful read parsing. (Mixed-version write semantics need real tests.)"
+    },
+    {
+      "id": "q3",
+      "type": "numeric",
+      "prompt": "Canary 10/1000 minus control 1/1000 has excess numerator over 1000 what?",
+      "objective": 2,
+      "answer": 9,
+      "tolerance": 0.000001,
+      "explanation": "10-1=9, so excess .009."
+    },
+    {
+      "id": "q4",
+      "type": "mcq",
+      "prompt": "eligible-for-next-reviewed-step means what?",
+      "objective": 0,
+      "options": [
+        "One descriptive gate passed",
+        "Production is fully approved",
+        "A 99.9% future guarantee",
+        "Migration already executed"
+      ],
+      "answerIndex": 0,
+      "explanation": "Avoid turning a gate label into a broader claim. (Other evidence and authority remain required.)"
+    },
+    {
+      "id": "q5",
+      "type": "mcq",
+      "prompt": "Why can dropping an old column make rollback unsafe?",
+      "objective": 1,
+      "options": [
+        "Rolling back the binary automatically restores the dropped column and its data",
+        "Old clients magically adapt",
+        "No database ever supports migrations",
+        "Old code/data assumptions may no longer hold"
+      ],
+      "answerIndex": 3,
+      "explanation": "Schema/data reversibility needs explicit evidence. (Binary rollback does not recreate lost data.)"
+    }
+  ],
+  "flashcards": [
+    {
+      "type": "concept",
+      "front": "What core invariant governs Builds, deployment and rollback?",
+      "back": "Minimum evidence and outcome ratio differ. (No-error small sample is not proof.)"
+    },
+    {
+      "type": "definition",
+      "front": "In Builds, deployment and rollback, how do you verify: Check declared read/write schema rollback compatibility and explain immutable artifacts, staged rollout, migration/backup evidence and irreversible data limits.?",
+      "back": "Compatibility is more than successful read parsing. (Mixed-version write semantics need real tests.)"
+    },
+    {
+      "type": "error-identification",
+      "front": "What failure mode happens if the contract in Builds, deployment and rollback is violated?",
+      "back": "10-1=9, so excess .009."
+    }
+  ],
+  "references": [
+    {
+      "label": "Google SRE canarying",
+      "url": "https://sre.google/workbook/canarying-releases/"
+    },
+    {
+      "label": "reliable releases/rollback and bridge schema",
+      "url": "https://cloud.google.com/blog/products/gcp/reliable-releases-and-rollbacks-cre-life-lessons"
+    },
+    {
+      "label": "Liquibase expand/contract",
+      "url": "https://www.liquibase.com/technical-glossary/expand-contract-pattern"
+    },
+    {
+      "label": "incident mitigation context",
+      "url": "https://sre.google/workbook/incident-response/"
+    }
+  ],
+  "skills": [
+    "production-engineering",
+    "distributed-systems",
+    "software-engineering"
+  ]
+}

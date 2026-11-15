@@ -3,7 +3,7 @@ import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { getCurrentUser } from '@/lib/auth';
 import { getCompany, getMap, listAssessments, listProblems } from '@/lib/content';
-import { AppShell, PublicHeader } from '@/components/app-shell';
+import { AppShell, PublicHeader, PublicFooter } from '@/components/app-shell';
 import {
   ArrowRight, BookOpen, Briefcase, Check, ChevronRight, ClipboardCheck, ClipboardList,
   Code2, ExternalLink, Info, Layers, Route, ScrollText,
@@ -365,7 +365,7 @@ export default async function CompanyPage({ params }: { params: Promise<{ slug: 
   );
 
   if (!user) {
-    return <div className="min-h-screen flex flex-col"><PublicHeader user={null} />{body}</div>;
+    return <div className="min-h-screen flex flex-col"><PublicHeader user={null} /><main className="flex-1">{body}</main><PublicFooter /></div>;
   }
   return <AppShell user={{ name: user.name, email: user.email, role: user.role }} isAdmin={user.role === 'admin'}>{body}</AppShell>;
 }
