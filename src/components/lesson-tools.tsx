@@ -50,13 +50,25 @@ export function ExerciseCard({ lessonId, kind, title, prompt, hints, solution, i
           </div>
         )}
         <div className="mt-3">
-          <button onClick={() => setShowSolution(s => !s)} className="text-[13px] text-accent hover:underline inline-flex items-center gap-1">
-            {showSolution ? <><EyeOff className="h-3.5 w-3.5" /> Hide worked solution</> : <><Eye className="h-3.5 w-3.5" /> Show worked solution</>}
-          </button>
-          {showSolution && (
-            <div className="mt-2 rounded-lg bg-surface-2/60 border px-3 py-2.5 text-[15px] prose-qf">
-              <QMath text={solution} />
-            </div>
+          {!showSolution && !done && (
+            <button
+              onClick={() => { setShowSolution(true); markDone(); }}
+              className="text-[13px] text-accent hover:underline inline-flex items-center gap-1"
+            >
+              <Eye className="h-3.5 w-3.5" /> Record attempt &amp; reveal worked solution
+            </button>
+          )}
+          {(showSolution || done) && (
+            <>
+              <button onClick={() => setShowSolution(s => !s)} className="text-[13px] text-accent hover:underline inline-flex items-center gap-1">
+                {showSolution ? <><EyeOff className="h-3.5 w-3.5" /> Hide worked solution</> : <><Eye className="h-3.5 w-3.5" /> Show worked solution</>}
+              </button>
+              {showSolution && (
+                <div className="mt-2 rounded-lg bg-surface-2/60 border px-3 py-2.5 text-[15px] prose-qf">
+                  <QMath text={solution} />
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>

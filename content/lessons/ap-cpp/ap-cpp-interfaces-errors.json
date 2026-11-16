@@ -2,7 +2,7 @@
   "id": "ap-cpp-interfaces-errors",
   "moduleId": "ap-cpp",
   "title": "Interfaces, error handling and contracts",
-  "estMinutes": 69,
+  "estMinutes": 23,
   "difficulty": "advanced",
   "prereqs": [
     "ap-cpp-value-reference"
@@ -88,53 +88,7 @@
       "type": "code",
       "lang": "cpp",
       "code": "#include <iostream>\n#include <stdexcept>\n#include <utility>\n\nstruct Ledger {\n    int cents = 0; // invariant: 0 <= cents <= 100\n    void basic(bool fail) {\n        cents = 0; // valid, but discards the old value\n        if (fail) throw std::runtime_error(\"injected\");\n        cents = 20;\n    }\n    void strong(bool fail) {\n        int candidate = 20;\n        if (fail) throw std::runtime_error(\"injected\");\n        cents = candidate; // nonthrowing commit for this scalar\n    }\n    void reset() noexcept { cents = 0; }\n};\nstruct Guard {\n    int& live;\n    explicit Guard(int& n) : live(n) { ++live; }\n    ~Guard() noexcept { --live; }\n};\nint main() {\n    int cases = 0;\n    for (int old = 0; old <= 100; ++old) {\n        Ledger a{old}, b{old};\n        try { a.basic(true); } catch (const std::runtime_error&) {}\n        try { b.strong(true); } catch (const std::runtime_error&) {}\n        if (a.cents != 0 || b.cents != old) return 1;\n        a.basic(false); b.strong(false);\n        if (a.cents != 20 || b.cents != 20) return 2;\n        a.reset();\n        if (a.cents != 0) return 3;\n        ++cases;\n    }\n    int live = 0;\n    try { Guard g(live); throw std::runtime_error(\"unwind\"); }\n    catch (const std::runtime_error&) {}\n    if (live != 0) return 4;\n    static_assert(noexcept(std::declval<Ledger&>().reset()));\n    static_assert(!noexcept(std::declval<Ledger&>().strong(false)));\n    std::cout << cases << \" guarantee cases; live=\" << live << '\\n';\n}",
-      "caption": "Complete standalone C++20 teaching program. Local GCC11.4 and GCC12.3 C++20 compile/run verified; app runner remains a separate gate. Expected local stdout:\n101 guarantee cases; live=0\n"
-    },
-    {
-      "type": "p",
-      "md": "Guided transfer: replace the scalar candidate with a two-field quantity/notional state. Define both fields' invariant, inject a failure after each preparation step, and compare every live field before/after failure. Hints: (1) compute into locals, (2) do not write the first live field before validating the second, (3) keep the final commit nonthrowing. Solution outline: validate both input ranges, prepare both representable integers, then assign the scalar pair only after all possible exceptions. This is one-thread local state, not atomic observation by another thread.\n\nIndependent transfer: write a bounded vector update that offers the strong guarantee without assuming vector element operations or allocators are harmless. State copy/allocation/swap conditions, add injected preparation failure, success and unchanged-state tests, and show one implementation that offers only basic safety. Hints: (1) build a separate candidate, (2) justify your exact commit operation and allocator conditions, (3) track all externally visible side effects. Review rubric: sound invariant, failure at each stage, no leaked resource, precise guarantee boundary. No automatic code-submission pass is claimed by the concept questions."
-    },
-    {
-      "type": "p",
-      "md": "References: [exception safety guarantees and unwinding](https://en.cppreference.com/cpp/language/exceptions), [noexcept boundary and termination](https://en.cppreference.com/cpp/language/noexcept_spec), [destruction during unwinding](https://en.cppreference.com/cpp/language/destructor), and [Core Guidelines error-handling and invariants](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines.html). These sources establish language mechanisms and design guidance. The scalar ledger invariant, failure injection points and scoped commit proof are authored examples, not durable transaction guarantees."
-    },
-    {
-      "type": "p",
-      "md": "Choose what the interface means before choosing syntax\n\nstd::span<T> is a C++20 nonowning contiguous sequence view, carrying extent without extending storage lifetime. std::string_view (C++17) is a nonowning character view, not necessarily null-terminated. Neither makes referenced storage immutable through other aliases or safe against concurrent modification. std::optional<T> (C++17) means value or absence with no built-in reason; a present zero is still a value. std::expected<T,E> is C++23 value-or-error with a distinguished error type, not part of the C++20 baseline. A domain where absence is normal may suit optional; malformed input needing a reason suits a result with a typed error."
-    },
-    {
-      "type": "p",
-      "md": "A complete borrowed parse boundary\n\nparse_cents synchronously consumes a string_view without storing it. It accepts an optional leading plus, then one or more decimal digits representing a nonnegative int. It rejects whitespace, minus, trailing characters, empty input and a lone plus. from_chars uses the view end pointer and does not require a zero terminator. The first-digit check rejects negative signs before conversion; a successful parse must consume the entire view. from_chars reports integer overflow as result_out_of_range. The fixtures explicitly require int to represent 2147483647, checked at compile time rather than assumed universally. The string backing the view must remain valid for the call."
-    },
-    {
-      "type": "p",
-      "md": "std::error_code has a category as well as a number\n\nAn error_code carries an integer and an error_category. Equal numeric values from unrelated categories need not mean the same thing. std::make_error_code(std::errc::invalid_argument) constructs the portable generic-category representation; compare with std::errc conditions when asking the portable meaning instead of comparing raw platform integers or English message text. Our ParseError wraps this code, so callers can retain a typed parse-error boundary. Zero-valued error codes conventionally mean success, but this API stores only a failure inside ParseError and uses the result alternative to distinguish success, including parsed zero. It never returns a default value while silently dropping an error."
-    },
-    {
-      "type": "p",
-      "md": "C++23 expected and the C++20 fallback are not interchangeable libraries\n\nWith __cpp_lib_expected >= 202202L, Result is expected<int,ParseError>; return int for success and unexpected(ParseError{...}) for failure. has_value checks before value access; error() is only used on the error branch. value() can throw bad_expected_access on failure. Dereferencing a failed result does not provide the checked value() behavior. C++23 monadic operations such as and_then require their own later feature macro value, 202211L; they are not used here. A C++23 compiler mode alone does not prove the standard library provides expected."
-    },
-    {
-      "type": "p",
-      "md": "Fallback semantics and measured availability\n\nWithout that feature macro the complete program uses variant<int,ParseError> with explicit success/error access helpers. This is a narrow C++20 fallback, not a backported implementation of all expected operations, layout or exception guarantees. General variant can become valueless_by_exception; the chosen alternatives and construction paths here do not exercise throwing alternative replacement. Do not hide the distinction behind an unqualified claim that expected ran. The local C++20 output must say native_expected=0; a supported C++23 run must say 1. Both should return identical parse outcomes on the same corpus. The earlier span lesson and string_view lifetime lesson remain prerequisites in learning order, not evidence that every borrowed API is safe."
-    },
-    {
-      "type": "p",
-      "md": "Optional absence is not parse failure\n\nfirst_positive takes a valid span synchronously and returns a copied int in optional. Empty input or no positive element yields nullopt, not a malformed-message error. Returning optional<int> avoids returning a dangling reference into the span, but does not validate an invalid span supplied by a caller. Test zero distinctly from absence, successful boundary values, exact end consumption and oversized digit strings. Error precedence matters: this implementation checks the initial digit before conversion, then reports conversion range errors before trailing-data errors. These policies are part of the API, not universal parsing rules."
-    },
-    {
-      "type": "code",
-      "lang": "cpp",
-      "code": "#include <charconv>\n#include <iostream>\n#include <limits>\n#include <optional>\n#include <span>\n#include <string_view>\n#include <system_error>\n#include <variant>\n#if __has_include(<expected>)\n#include <expected>\n#endif\n#if defined(__cpp_lib_expected) && __cpp_lib_expected >= 202202L\n#define QF_NATIVE_EXPECTED 1\n#else\n#define QF_NATIVE_EXPECTED 0\n#endif\nstruct ParseError { std::error_code code; };\n#if QF_NATIVE_EXPECTED\nusing Result = std::expected<int, ParseError>;\nResult bad(std::errc ec) { return std::unexpected(ParseError{std::make_error_code(ec)}); }\nbool ok(const Result& r) { return r.has_value(); }\nint value(const Result& r) { return r.value(); }\nstd::error_code error(const Result& r) { return r.error().code; }\n#else\nusing Result = std::variant<int, ParseError>;\nResult bad(std::errc ec) { return ParseError{std::make_error_code(ec)}; }\nbool ok(const Result& r) { return std::holds_alternative<int>(r); }\nint value(const Result& r) { return std::get<int>(r); }\nstd::error_code error(const Result& r) { return std::get<ParseError>(r).code; }\n#endif\n// Exact decimal nonnegative integer, optional leading +, no whitespace.\nResult parse_cents(std::string_view s) {\n    if (s.empty()) return bad(std::errc::invalid_argument);\n    if (s.front() == '+') s.remove_prefix(1);\n    if (s.empty() || s.front() < '0' || s.front() > '9')\n        return bad(std::errc::invalid_argument);\n    int n = 0;\n    const auto r = std::from_chars(s.data(), s.data() + s.size(), n);\n    if (r.ec != std::errc{}) return bad(r.ec);\n    if (r.ptr != s.data() + s.size()) return bad(std::errc::invalid_argument);\n    return n;\n}\nstd::optional<int> first_positive(std::span<const int> xs) {\n    for (int x : xs) if (x > 0) return x;\n    return std::nullopt;\n}\nint main() {\n    const char* good[] = {\"0\", \"+0\", \"7\", \"0012\", \"2147483647\"};\n    const int wanted[] = {0, 0, 7, 12, 2147483647};\n    // This lesson's fixtures deliberately require int to represent this bound.\n    static_assert(std::numeric_limits<int>::max() >= 2147483647);\n    int checked = 0;\n    for (int i = 0; i < 5; ++i) {\n        const auto r = parse_cents(good[i]);\n        if (!ok(r) || value(r) != wanted[i]) return 1;\n        ++checked;\n    }\n    for (const char* s : {\"\", \"+\", \"-1\", \" 1\", \"1x\", \"+-1\"}) {\n        const auto r = parse_cents(s);\n        if (ok(r) || error(r) != std::errc::invalid_argument) return 2;\n        ++checked;\n    }\n    const auto huge = parse_cents(\"999999999999999999999999999999999999999999\");\n    if (ok(huge) || error(huge) != std::errc::result_out_of_range) return 3;\n    const int xs[] = {0, -2, 7};\n    if (first_positive(xs) != 7 || first_positive(std::span<const int>{})) return 4;\n    const auto a = std::make_error_code(std::errc::invalid_argument);\n    if (a.category() != std::generic_category()) return 5;\n    std::cout << checked + 1 << \" parse cases; first=\" << *first_positive(xs) << '\\n';\n    std::cout << \"native_expected=\" << QF_NATIVE_EXPECTED << '\\n';\n}",
-      "caption": "Complete standalone C++20 teaching program. Local GCC11.4 and GCC12.3 C++20 compile/run verified; app runner remains a separate gate. The native expected branch was also compiled/run with GCC12.3/libstdc++12 C++23 (__cpp_lib_expected>=202202L); C++20 uses variant. The same 20113-case independent parse corpus passed both. In that native run the last line is native_expected=1; the fallback output below is for C++20. Expected local stdout:\n12 parse cases; first=7\nnative_expected=0\n"
-    },
-    {
-      "type": "p",
-      "md": "Guided transfer: parse the view \"12x\" and explain why a successful prefix conversion is not success for this whole-field API. Hints: (1) inspect from_chars.ptr, (2) compare it with the end of the view, (3) return invalid_argument if trailing data remains. Solution: reject because the pointer stops at x, even though the numeric prefix fits.\n\nIndependent transfer: implement a quantity field bounded to 0..1000 with distinct syntax, range and business-limit errors. Keep backing storage alive, test leading plus, zero, 1000, 1001, very long digits and trailing characters. Hints: (1) define error precedence first, (2) do not confuse missing optional field with present malformed field, (3) run identical outcome checks under fallback and native expected. Review rubric: ownership/lifetime contract, full consumption, separate error reason, no unchecked failed access. The native branch is a separate toolchain gate, not established by a fallback pass."
-    },
-    {
-      "type": "p",
-      "md": "References: [span lifetime and extent](https://en.cppreference.com/cpp/container/span), [string_view ownership and lifetime](https://en.cppreference.com/cpp/string/basic_string_view), [optional presence](https://en.cppreference.com/cpp/utility/optional), [from_chars parsing and result pointer](https://en.cppreference.com/cpp/utility/from_chars), [error_code category semantics](https://en.cppreference.com/w/cpp/error/error_code.html), [expected and its feature macro](https://en.cppreference.com/cpp/utility/expected), [library feature-test macros](https://en.cppreference.com/cpp/utility/feature_test), and [variant fallback access](https://en.cppreference.com/cpp/utility/variant). The exact parse grammar, error precedence and chosen fallback wrapper are authored contracts. Native C++23 availability and local execution are reported separately from these mechanism references."
+      "caption": "Complete standalone C++20 teaching program. Local GCC11.4 and GCC12.3 C++20 compile/run verified; app runner remains a separate gate. Expected local stdout:\n101 guarantee cases; live=0"
     },
     {
       "type": "ref",
@@ -180,8 +134,8 @@
     "Reject negatives first and maintain 0<=total<=M; then M-total is defined and the guard is equivalent to a safe next sum. (The preguard ensures the next sum remains representable.)",
     "M-total=3. Amount 4 must fail before evaluating an out-of-range toy sum."
   ],
-  "realWorldApplication": "Used directly across production quantitative research, execution systems, and validation pipelines.",
-  "quantFinanceApplication": "Applies rigorous engineering contracts to quantitative modeling and live trading infrastructure.",
+  "realWorldApplication": "In practice, engineering teams apply interfaces, error handling and contracts within Level 10. Ownership, Sanitizers and Contracts when building reliable cpp and cpp memory workflows — specifically to specify C++ input/output units, bounds, ownership/lifetimes and mutation guarantees, then implement checked nonnegative cents accumulation before arithmetic.",
+  "quantFinanceApplication": "Desk workflows in Level 10. Ownership, Sanitizers and Contracts rely on interfaces, error handling and contracts across cpp, cpp memory, cpp stl, keeping numerical estimates, risk bounds, and low-latency paths predictable.",
   "summary": [
     "A checked interface states units/range/ownership/lifetime and preserves failure as failure.",
     "A typed result and a throwing adapter can share one guarded computation; valid zero, local no-mutation behavior and durable external atomicity are different claims.",
@@ -194,7 +148,7 @@
       "prompt": "What does span<const long long> establish by itself?",
       "objective": 0,
       "options": [
-        "It owns and authenticates all account data",
+        "It owns and authenticates all account data under standard assumptions",
         "It grants read-only element access through that view",
         "It prevents every other alias from changing storage",
         "It checks any arbitrary pointer/extent pair is live"

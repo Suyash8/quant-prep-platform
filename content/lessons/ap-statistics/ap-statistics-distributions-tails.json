@@ -2,7 +2,7 @@
   "id": "ap-statistics-distributions-tails",
   "moduleId": "ap-statistics",
   "title": "Useful distributions and tail behaviour",
-  "estMinutes": 65,
+  "estMinutes": 20,
   "difficulty": "core",
   "prereqs": [
     "ap-statistics-random-variables"
@@ -83,50 +83,11 @@
     },
     {
       "type": "p",
-      "md": "Foundation extension for qfp-coupon-collector-mod, corrected source 73d6975: n=1..1000000 coupon types; each draw is iid uniform on those types, with replacement. Count draws through the first time all types have appeared. Output the rational expectation modulo prime M=1000000007 as P*inverse(Q) mod M, not a decimal approximation. expected_draws(n) returns a LIST of output lines for the source adapter. This expectation does not promise a completion deadline."
+      "md": "Foundation extension for Coupon Collector Expectation, corrected source 73d6975: n=1..1000000 coupon types; each draw is iid uniform on those types, with replacement. Count draws through the first time all types have appeared. Output the rational expectation modulo prime M=1000000007 as P*inverse(Q) mod M, not a decimal approximation. expected_draws(n) returns a LIST of output lines for the source adapter. This expectation does not promise a completion deadline."
     },
     {
       "type": "p",
       "md": "After j distinct types have appeared, the next draw is new with probability p=(n-j)/n. Repeats leave the stage unchanged. Let W be the number of draws through the next success, including that success. Its distribution is P(W=t)=(1-p)^(t-1)*p for t>=1, so this is the positive-support geometric convention. A first-step mean equation gives E[W]=1+(1-p)*E[W], hence E[W]=1/p. Finiteness also follows from the geometric tail sum sum_(t>=0)(1-p)^t=1/p for p>0. Do not confuse failures-before-success, whose mean is (1-p)/p."
-    },
-    {
-      "type": "steps",
-      "title": "Three coupon types: late discoveries dominate the waiting",
-      "items": [
-        "For n=3, with j=0,1,2 types already seen, success probabilities are 1,2/3,1/3. Waiting means are 1,3/2,3. The total time is the sum of these stages on each sample path.",
-        "Linearity of expectation gives E[T]=1+3/2+3=11/2. In general sum_(j=0)^(n-1) n/(n-j)=n*sum_(i=1)^n 1/i=n*H_n. Independence of stages is not required just to add their expectations. The iid uniform-draw mechanism supplied each stage probability.",
-        "Modulo M, inverse(2)=500000004, so (11*500000004)%M=500000009. For n=1, the very first draw completes collection, giving expectation and output 1. The approximation n*log(n) is not an exact modular answer and is particularly wrong as a replacement at n=1."
-      ]
-    },
-    {
-      "type": "p",
-      "md": "Modular arithmetic bridge: a residue is a remainder class. For prime M, every nonzero residue x has a unique multiplicative inverse, the residue u with x*u congruent to 1. For example, modulo 7 the inverse of 3 is 5 because 3*5=15 leaves remainder 1. This is not integer division 1//3. We use % to keep residues in 0..M-1. The notation H_n names the finite harmonic sum 1+1/2+...+1/n; it is not an extra distribution assumption. You can understand this extension without taking the algorithms-module binomial section first."
-    },
-    {
-      "type": "p",
-      "md": "A modular rational is not real division rounded, and the residue is not a time measured in draws. Every denominator i in H_n has 1<=i<=1000000<M. Because M is prime, each is invertible. Thus evaluating n*sum inverse(i) gives the same field element as reducing the exact rational P/Q and multiplying by inverse(Q). The denominator of the finite sum divides a product of 1..n, so it cannot acquire a factor M. This argument would fail if a required denominator were zero modulo M or if a composite modulus introduced a nonunit."
-    },
-    {
-      "type": "p",
-      "md": "Computing each inverse by modular exponentiation takes O(n log M). To get O(n) modular operations, initialize inv[1]=1. For i>=2 write M=q*i+r, with q=M//i and r=M%i. Since i<M and M is prime, 1<=r<i. Modulo M, r=-q*i; multiply by inverses of r and i to get inv[i]=-q*inv[r] mod M. inv[r] is already computed because r<i. Therefore an ascending loop works. The recurrence is specific to this prime/range setting; invertibility of i alone under an arbitrary composite modulus does not guarantee invertibility of r."
-    },
-    {
-      "type": "code",
-      "lang": "python",
-      "code": "MOD = 1000000007\n\ndef expected_draws(n):\n    if type(n) is not int or not 1 <= n <= 1000000:\n        raise ValueError('invalid coupon bounds')\n    inverses = [0] * (n + 1)\n    inverses[1] = 1\n    harmonic = 1\n    for i in range(2, n + 1):\n        inverses[i] = -(MOD // i) * inverses[MOD % i] % MOD\n        harmonic = (harmonic + inverses[i]) % MOD\n    return [str(n * harmonic % MOD)]\nprint(expected_draws(1))\nprint(expected_draws(2))\nprint(expected_draws(3))",
-      "caption": "Expected ['1'], ['3'], ['500000009']. Complete Python 3.12. Initializes n=1 safely; validates the corrected n upper bound. A running harmonic residue avoids huge rational numerators/denominators. O(n) modular operations and O(n) inverse entries. This is an educational implementation, not an unmeasured external judge memory/time claim."
-    },
-    {
-      "type": "p",
-      "md": "For C++, vector<int> inv(n+1) uses roughly 4*(n+1) bytes of element storage when int is 32 bits, about 4 MB at n=1e6, excluding allocator/program overhead. Promote (M/i)*inv[M%i] to long long before multiplying. A conservative product bound is M*(M-1)<2^63-1. Keep the rolling harmonic sum reduced each iteration. Python list/int objects use more memory than the C++ element bound; do not claim a 4 MB Python total. The local upper-bound harness records runtime/RSS without claiming to meet an unspecified remote limit."
-    },
-    {
-      "type": "p",
-      "md": "Independent transfer: solve expected remaining draws by the conditional-state equation E_j=1+(j/n)*E_j+((n-j)/n)*E_(j+1), with E_n=0. This gives E_j=n/(n-j)+E_(j+1), a backward exact-Fraction oracle for small n. Compare its result mapped into the prime field. Independently compare every precomputed inverse with modular exponentiation for a substantial prefix, and test i*inv[i]%M=1. Include n=1,2,3 and the maximum n; reject zero/out-of-range values. Repeated simulation is not proof of an exact residue."
-    },
-    {
-      "type": "p",
-      "md": "Sources: [Tufts coupon collector waiting stages and linearity](https://www.cs.tufts.edu/comp/250P/classpages/coupon.html), [prime modular inverse recurrence and range assumptions](https://cp-algorithms.com/algebra/module-inverse.html). The explicit geometric convention, first-step proof, field-denominator argument and implementation bounds above make the assumptions inspectable. No claim about a real collection campaign or professional forecasting is made. [MIT coupon-collection lecture](https://ocw.mit.edu/courses/6-856j-randomized-algorithms-fall-2002/2e00cd3ccdd9e9e9aa3f4b8305a6abef_n4.pdf) independently supports geometric phases, linearity and the harmonic expectation."
     },
     {
       "type": "interactive",
@@ -179,7 +140,7 @@
     "The distribution follows from the stated fixed-n independent Bernoulli mechanism, not simply from seeing successes and failures. (Both the independent-trials and common-p assumptions are required.)",
     "Notation and API parameters can differ. Resolve whether the second parameter means variance or standard deviation before generating values. (The parameter contract asks for the positive square root.)"
   ],
-  "realWorldApplication": "Used directly across production quantitative research, execution systems, and validation pipelines.",
+  "realWorldApplication": "In practice, engineering teams apply useful distributions and tail behaviour within Statistical Reasoning and Leakage Control when building reliable probability and distributions workflows — specifically to choose a distribution by support, mechanism and parameter meaning, then compute a bounded count probability under explicit assumptions.",
   "quantFinanceApplication": "Directly prepares you for judged problem: coupon-collector-mod.",
   "summary": [
     "Choose distributions from mechanisms/support, and check whether population moments exist.",

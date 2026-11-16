@@ -7,22 +7,41 @@ import { buildCurriculumGraph, type LessonNode } from '@/lib/curriculum-graph';
 export type { LessonNode } from '@/lib/curriculum-graph';
 
 const CONTENT_DIR = path.join(process.cwd(), 'content');
-
-// In dev, content files change under the running server; bypass the caches so
-
-
-// edits are picked up without a manual recompile. Production keeps the caches.
-
-
 const DEV = process.env.NODE_ENV !== 'production';
 
-// ---------- cached loaders ----------
-
+// ---------- cached loaders (F3: metadata index avoids 90 MB directory scans) ----------
 
 let mapCache: CurriculumMap | null = null;
 let registryCache: Registry | null = null;
 const lessonCache = new Map<string, Lesson>();
+const problemCache = new Map<string, Problem>();
+const assessmentCache = new Map<string, Assessment>();
+const projectCache = new Map<string, Project>();
+const companyCache = new Map<string, Company>();
 let graphCache: ReturnType<typeof buildCurriculumGraph> | null = null;
+let lessonLocCache: Map<string, { moduleId: string; phaseId: string }> | null = null;
+let indexCache: ContentIndex | null = null;
+
+interface ContentIndex {
+  problems: { slug: string; title: string; difficulty: string; category: string; tags: string[]; estMinutes: number }[];
+  assessments: { id: string; title: string; kind: string; timeLimitMinutes: number; questionCount: number }[];
+  projects: { slug: string; title: string; order: number; difficulty: string; language: string }[];
+  companies: { slug: string; name: string; category: string }[];
+  labCount: number;
+}
+
+function readContentIndex(): ContentIndex | null {
+  if (!DEV && indexCache) return indexCache;
+  const p = path.join(CONTENT_DIR, 'index.json');
+  if (!fs.existsSync(p)) return null;
+  try {
+    const parsed = JSON.parse(fs.readFileSync(p, 'utf8')) as ContentIndex;
+    indexCache = parsed;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
 
 export interface CurriculumMap {
   version: string;
@@ -31,7 +50,7 @@ export interface CurriculumMap {
     id: string; order: number; title: string; summary: string; color: string;
     modules: {
       id: string; title: string; difficulty: string; tracks: string[]; summary: string;
-      lessons: { id: string; title: string; estMinutes: number; skills: string[] }[];
+      lessons: { id: string; title: string; estMinutes: number; skills: string[]; aliases?: string[] }[];
     }[];
   }[];
   tracks: Record<string, { title: string; employers: string; focus: string }>;
@@ -46,6 +65,7 @@ export interface Lesson {
   commonMistakes: string[];
   realWorldApplication?: string;
   quantFinanceApplication?: string;
+  provenance?: { sourceUrl?: string; contractHash?: string; verifiedAt?: string; notes?: string[] };
   summary: string[];
   quiz: QuizQuestion[];
   flashcards: { type: string; front: string; back: string }[];
@@ -65,23 +85,41 @@ export interface Registry {
 
 export function getMap(): CurriculumMap {
   if (mapCache === null || DEV) {
-    const parsed: CurriculumMap = JSON.parse(fs.readFileSync(path.join(CONTENT_DIR, 'map', 'curriculum.json'), 'utf8'));
-    mapCache = parsed;
+    mapCache = JSON.parse(fs.readFileSync(path.join(CONTENT_DIR, 'map', 'curriculum.json'), 'utf8')) as CurriculumMap;
+    lessonLocCache = null;
   }
   return mapCache;
+}
+
+function getLessonLocMap(): Map<string, { moduleId: string; phaseId: string }> {
+  if (lessonLocCache && !DEV) return lessonLocCache;
+  const map = getMap();
+  const m = new Map<string, { moduleId: string; phaseId: string }>();
+  for (const ph of map.phases) {
+    for (const mod of ph.modules) {
+      for (const l of mod.lessons) {
+        m.set(l.id, { moduleId: mod.id, phaseId: ph.id });
+        for (const alias of l.aliases ?? []) {
+          m.set(alias, { moduleId: mod.id, phaseId: ph.id });
+        }
+      }
+    }
+  }
+  lessonLocCache = m;
+  return m;
+}
+
+export function getPhaseOfLesson(lessonId: string): string | null {
+  return getLessonLocMap().get(lessonId)?.phaseId ?? null;
 }
 
 export function getRegistry(): Registry {
   if (fs.existsSync(path.join(CONTENT_DIR, 'registry.json'))) {
     if (registryCache === null || DEV) {
-      const parsed: Registry = JSON.parse(fs.readFileSync(path.join(CONTENT_DIR, 'registry.json'), 'utf8'));
-      registryCache = parsed;
+      registryCache = JSON.parse(fs.readFileSync(path.join(CONTENT_DIR, 'registry.json'), 'utf8')) as Registry;
     }
     return registryCache;
   }
-  // fallback: build on the fly
-
-
   const map = getMap();
   const lessons: Registry['lessons'] = [];
   for (const ph of map.phases) {
@@ -89,7 +127,10 @@ export function getRegistry(): Registry {
       for (const l of m.lessons) {
         const p = path.join(CONTENT_DIR, 'lessons', m.id, `${l.id}.json`);
         if (fs.existsSync(p)) {
-          lessons.push({ id: l.id, moduleId: m.id, phaseId: ph.id, title: l.title, estMinutes: l.estMinutes, difficulty: (l as { difficulty?: string }).difficulty ?? 'core', skills: l.skills, prereqs: [], hasQuiz: true });
+          lessons.push({
+            id: l.id, moduleId: m.id, phaseId: ph.id, title: l.title, estMinutes: l.estMinutes,
+            difficulty: (l as { difficulty?: string }).difficulty ?? 'core', skills: l.skills, prereqs: [], hasQuiz: true,
+          });
         }
       }
     }
@@ -111,21 +152,14 @@ export function getLesson(moduleId: string, id: string): Lesson | null {
   return L;
 }
 
-export function getLessonById(id: string): { lesson: Lesson; moduleId: string } | null {
-  const map = getMap();
-  for (const ph of map.phases) {
-    for (const m of ph.modules) {
-      if (m.lessons.some(l => l.id === id)) {
-        const L = getLesson(m.id, id);
-        if (L) return { lesson: L, moduleId: m.id };
-      }
-    }
-  }
-  return null;
+export function getLessonById(id: string): { lesson: Lesson; moduleId: string; phaseId: string } | null {
+  const loc = getLessonLocMap().get(id);
+  if (!loc) return null;
+  const L = getLesson(loc.moduleId, id);
+  return L ? { lesson: L, moduleId: loc.moduleId, phaseId: loc.phaseId } : null;
 }
 
 // ---------- problems ----------
-
 
 export interface Problem {
   lessons?: string[];
@@ -139,15 +173,16 @@ export interface Problem {
 }
 
 export function listProblems(): { slug: string; title: string; difficulty: string; category: string; tags: string[]; estMinutes: number }[] {
+  const idx = readContentIndex();
+  if (idx?.problems) return idx.problems;
   const dir = path.join(CONTENT_DIR, 'problems');
   if (!fs.existsSync(dir)) return [];
-  return fs.readdirSync(dir).filter(f => f.endsWith('.json')).map(f => {
+  return fs.readdirSync(dir).filter((f) => f.endsWith('.json')).map((f) => {
     const P = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')) as Problem;
     return { slug: P.slug, title: P.title, difficulty: P.difficulty, category: P.category, tags: P.tags, estMinutes: P.estMinutes };
   }).sort((a, b) => a.title.localeCompare(b.title));
 }
 
-const problemCache = new Map<string, Problem>();
 export function getProblem(slug: string): Problem | null {
   const cleanSlug = slug.replace(/^qfp-/, '');
   if (!DEV && problemCache.has(cleanSlug)) return problemCache.get(cleanSlug)!;
@@ -160,32 +195,35 @@ export function getProblem(slug: string): Problem | null {
 
 // ---------- assessments ----------
 
-
 export interface Assessment {
   id: string; title: string; kind: 'diagnostic' | 'assessment' | 'interview' | 'screening';
   timeLimitMinutes: number; description: string; areas?: string[];
-  sections: { title: string; questions: QuizQuestion[] }[];
+  sections: { title: string; covers?: string[]; questions: QuizQuestion[] }[];
   passMarkPercent?: number;
   scoreBands?: { minPercent: number; maxPercent: number; title: string; text: string; lessonIds?: string[] }[];
 }
 
 export function listAssessments(): { id: string; title: string; kind: string; timeLimitMinutes: number; questionCount: number }[] {
+  const idx = readContentIndex();
+  if (idx?.assessments) return idx.assessments;
   const dir = path.join(CONTENT_DIR, 'assessments');
   if (!fs.existsSync(dir)) return [];
-  return fs.readdirSync(dir).filter(f => f.endsWith('.json')).map(f => {
+  return fs.readdirSync(dir).filter((f) => f.endsWith('.json')).map((f) => {
     const A = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')) as Assessment;
     return { id: A.id, title: A.title, kind: A.kind, timeLimitMinutes: A.timeLimitMinutes, questionCount: A.sections.reduce((n, s) => n + s.questions.length, 0) };
   });
 }
 
 export function getAssessment(id: string): Assessment | null {
+  if (!DEV && assessmentCache.has(id)) return assessmentCache.get(id)!;
   const p = path.join(CONTENT_DIR, 'assessments', `${id}.json`);
   if (!fs.existsSync(p)) return null;
-  return JSON.parse(fs.readFileSync(p, 'utf8')) as Assessment;
+  const a = JSON.parse(fs.readFileSync(p, 'utf8')) as Assessment;
+  assessmentCache.set(id, a);
+  return a;
 }
 
 // ---------- projects ----------
-
 
 export interface Project {
   slug: string; order: number; title: string; language: string; difficulty: string;
@@ -199,22 +237,26 @@ export interface Project {
 }
 
 export function listProjects(): { slug: string; title: string; order: number; difficulty: string; language: string }[] {
+  const idx = readContentIndex();
+  if (idx?.projects) return idx.projects;
   const dir = path.join(CONTENT_DIR, 'projects');
   if (!fs.existsSync(dir)) return [];
-  return fs.readdirSync(dir).filter(f => f.endsWith('.json')).map(f => {
+  return fs.readdirSync(dir).filter((f) => f.endsWith('.json')).map((f) => {
     const P = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')) as Project;
     return { slug: P.slug, title: P.title, order: P.order, difficulty: P.difficulty, language: P.language };
   }).sort((a, b) => a.order - b.order);
 }
 
 export function getProject(slug: string): Project | null {
+  if (!DEV && projectCache.has(slug)) return projectCache.get(slug)!;
   const p = path.join(CONTENT_DIR, 'projects', `${slug}.json`);
   if (!fs.existsSync(p)) return null;
-  return JSON.parse(fs.readFileSync(p, 'utf8')) as Project;
+  const proj = JSON.parse(fs.readFileSync(p, 'utf8')) as Project;
+  projectCache.set(slug, proj);
+  return proj;
 }
 
 // ---------- companies ----------
-
 
 export interface Company {
   slug: string; name: string; category: string;
@@ -225,18 +267,23 @@ export interface Company {
 }
 
 export function listCompanies(): { slug: string; name: string; category: string }[] {
+  const idx = readContentIndex();
+  if (idx?.companies) return idx.companies;
   const dir = path.join(CONTENT_DIR, 'companies');
   if (!fs.existsSync(dir)) return [];
-  return fs.readdirSync(dir).filter(f => f.endsWith('.json') && !f.startsWith('_')).map(f => {
+  return fs.readdirSync(dir).filter((f) => f.endsWith('.json') && !f.startsWith('_')).map((f) => {
     const C = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')) as Company;
     return { slug: C.slug, name: C.name, category: C.category };
   }).sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export function getCompany(slug: string): Company | null {
+  if (!DEV && companyCache.has(slug)) return companyCache.get(slug)!;
   const p = path.join(CONTENT_DIR, 'companies', `${slug}.json`);
   if (!fs.existsSync(p)) return null;
-  return JSON.parse(fs.readFileSync(p, 'utf8')) as Company;
+  const comp = JSON.parse(fs.readFileSync(p, 'utf8')) as Company;
+  companyCache.set(slug, comp);
+  return comp;
 }
 
 export function getMatrix(): { generatedAt: string; tiers: string[]; rows: { skill: string; assetManagers: string; banks: string; propTrading: string; hedgeFunds: string; marketData: string; note: string }[] } | null {
@@ -246,7 +293,6 @@ export function getMatrix(): { generatedAt: string; tiers: string[]; rows: { ski
 }
 
 // ---------- prerequisite graph / curriculum helpers ----------
-
 
 export function getCurriculumGraph(): { nodes: LessonNode[]; byId: Map<string, LessonNode>; order: string[] } {
   if (graphCache === null || DEV) {
@@ -259,11 +305,8 @@ export function isUnlocked(lessonId: string, done: Set<string>): boolean {
   const { byId } = getCurriculumGraph();
   const node = byId.get(lessonId);
   if (!node) return false;
-  return node.prereqs.every(p => done.has(p));
+  return node.prereqs.every((p) => done.has(p));
 }
-
-// Phase color tokens for the design system
-
 
 export const PHASE_COLORS: Record<string, string> = {
   orientation: '#64748b', math: '#1d4ed8', cs: '#0f766e', python: '#15803d',
@@ -272,9 +315,10 @@ export const PHASE_COLORS: Record<string, string> = {
 };
 
 let labCountCache: number | null = null;
-/** Distinct interactive labs actually embedded in published lessons. */
 export function countLabs(): number {
-  if (labCountCache !== null) return labCountCache;
+  const idx = readContentIndex();
+  if (idx?.labCount) return idx.labCount;
+  if (labCountCache !== null && !DEV) return labCountCache;
   const names = new Set<string>();
   for (const l of getRegistry().lessons) {
     const lesson = getLesson(l.moduleId, l.id);

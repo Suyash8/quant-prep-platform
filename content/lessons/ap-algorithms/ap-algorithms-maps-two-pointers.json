@@ -2,7 +2,7 @@
   "id": "ap-algorithms-maps-two-pointers",
   "moduleId": "ap-algorithms",
   "title": "Maps, sets and two-pointer scans",
-  "estMinutes": 95,
+  "estMinutes": 19,
   "difficulty": "core",
   "prereqs": [
     "ap-algorithms-search-sort"
@@ -88,78 +88,6 @@
       "md": "Independent transfer\n\nCompare with sum(word.startswith(prefix) for word in words), including repeats, whole words, missing deep branches and extensions beyond a word. Exercise 100000 twenty-letter words with many distinct prefixes and all-identical words, plus 100000 queries. Explain sibling-label lookup separately from node indexes. This does not claim Unicode, empty-prefix, erase, autocomplete or remote judge memory acceptance."
     },
     {
-      "type": "code",
-      "lang": "python",
-      "code": "MOD = 1000000007\n\ndef prefix_counts(words, prefixes):\n    from array import array\n    code = 'i' if array('i').itemsize >= 4 else 'l'\n    (head, sibling, passed) = (array(code, [-1]), array(code, [-1]), array(code, [0]))\n    label = array('B', [0])\n    for word in words:\n        node = 0\n        for char in word:\n            key = ord(char) - ord('a')\n            child = head[node]\n            while child != -1 and label[child] != key:\n                child = sibling[child]\n            if child == -1:\n                child = len(head)\n                head.append(-1)\n                sibling.append(head[node])\n                passed.append(0)\n                label.append(key)\n                head[node] = child\n            node = child\n            passed[node] += 1\n    out = []\n    for prefix in prefixes:\n        node = 0\n        for char in prefix:\n            key = ord(char) - ord('a')\n            child = head[node]\n            while child != -1 and label[child] != key:\n                child = sibling[child]\n            node = child\n            if node == -1:\n                break\n        out.append(str(passed[node] if node != -1 else 0))\n    return out\n\nprint(prefix_counts(['spy', 'spyder', 'spy', 'aapl', 'amzn'], ['sp', 'spy', 'a', 'z']))\nprint(prefix_counts(['a', 'ab', 'a'], ['a', 'ab', 'abc']))",
-      "caption": "Expected ['3', '3', '2', '0'], then ['3', '1', '0']. The compact sparse trie preserves multiplicity."
-    },
-    {
-      "type": "p",
-      "md": "Mechanism references: [trie prefix counters with duplicate insertion](https://algorung.com/dsa/tries/implement-trie-ll) and [Python array type widths/itemsize](https://docs.python.org/3.12/library/array.html). The tutorial uses a different layout and also covers terminal counters/deletion. Our first-child/next-sibling representation, fixed-alphabet scan bound and prefix-only output adapter are specified and proved above. Exact public task contract hash c2f48102d37bd220cc5a1fe20f2264ed357c73aceb09eac3e0c534a7dfd3a2f3. This is main teaching, not current app, memory-limit or judge sign-off."
-    },
-    {
-      "type": "p",
-      "md": "Equivalence needs a canonical key\n\nTwo lowercase tickers belong to the same family exactly when their sorted character strings match. Sorting forgets order but preserves each letter multiplicity, so equal keys are necessary and sufficient for anagrams. A set of letters would be wrong: ab and aab have the same set but different counts. The map value must be a list of occurrences, not a set, because duplicate tickers are retained."
-    },
-    {
-      "type": "p",
-      "md": "Two different sorts define the output\n\nFirst sort members of every family alphabetically. Then sort the families by decreasing occurrence count and, on a tie, by their first member. Distinct families cannot have the same first ticker, since that ticker determines its canonical family. For [ab,ba,aab,ab,b], family [ab,ab,ba] comes first, followed by [aab] then [b]. The count includes repeated ab."
-    },
-    {
-      "type": "p",
-      "md": "Empty case, proof and cost\n\nn=0 emits one line 0 with no group lines. Otherwise every occurrence is appended exactly once under its unique key and emitted exactly once. For n<=100000 and ticker length L<=20, key construction costs O(n L log L), with additional comparison sorting of members/groups. Character comparison itself can cost O(L), not an abstract zero-cost key. The function sorts new lists and does not mutate the supplied tickers. Test duplicates, singleton groups, tie order and same-letter-set/different-count counterexamples."
-    },
-    {
-      "type": "code",
-      "lang": "python",
-      "code": "from collections import OrderedDict, deque\nfrom bisect import bisect_left\nimport heapq\n\ndef group_tickers(tickers):\n    families = {}\n    for ticker in tickers:\n        key = ''.join(sorted(ticker))\n        families.setdefault(key, []).append(ticker)\n    groups = [sorted(group) for group in families.values()]\n    groups.sort(key=lambda group: (-len(group), group[0]))\n    return [str(len(groups))] + [' '.join(group) for group in groups]\n\nprint(*group_tickers(['ab', 'ba', 'aab', 'ab', 'b']), sep='\\n')\nprint(*group_tickers([]))",
-      "caption": "Expected stdout:\n3\nab ab ba\naab\nb\n0\n\nPrevalidated inputs follow the captured public contract. This completes the named Python function using its original supplied main/parser. It does not claim independent parser, C++, app-runner or judge qualification."
-    },
-    {
-      "type": "p",
-      "md": "Language background: [sorting](https://docs.python.org/3/howto/sorting.html) and [Python strings, lists and mappings](https://docs.python.org/3.12/library/stdtypes.html). The canonical-key equivalence proof, occurrence retention, two-stage order and output framing are derived task choices, not guarantees supplied by a container reference. Public task hash a27b593bb5ca02f88b5983a13ae26934ffe4b47762e63045db34deb0955d5be2. Earlier bounded examples retain their own policies; this is not app or judge qualification."
-    },
-    {
-      "type": "p",
-      "md": "State is a prefix multiset\n\nBefore processing position j, seen[x] counts exactly the earlier positions i<j with value x. Every earlier complement T-a[j] forms a unique valid pair ending at j. Add that count to pairs, then insert a[j]. This order enforces distinct indexes without special cases. Each pair has exactly one later endpoint, so no pair is lost or counted twice.\n\nDuplicates are the point, not an exception\n\nFor T=4 and [2,2,2], contributions are 0,1,2 and the answer is 3. Inserting first would count each current 2 paired with itself. A boolean seen set would miss multiplicities. Negative values and negative targets are allowed; no monotone-window or positive-only assumption is available. This counts pairs of positions, not distinct value combinations."
-    },
-    {
-      "type": "p",
-      "md": "Bounds, output and transfer\n\nn<=100000. All equal values with target twice that value give n*(n-1)/2, up to 4999950000, exceeding signed32-bit range. Python integers retain it exactly. Expected hash work is O(n), O(u) state for u distinct values, and one returned decimal output line. This is expected hashing cost, not guaranteed constant time against arbitrary adversarial keys. Compare with the independent i<j double loop on small signed fixtures."
-    },
-    {
-      "type": "code",
-      "lang": "python",
-      "code": "from collections import OrderedDict, deque\nfrom bisect import bisect_left\nimport heapq\n\ndef count_pairs(T, a):\n    seen = {}\n    pairs = 0\n    for value in a:\n        pairs += seen.get(T - value, 0)\n        seen[value] = seen.get(value, 0) + 1\n    return [str(pairs)]\n\nprint(*count_pairs(4, [2, 2, 2]))\nprint(*count_pairs(0, [-1, 1, -1, 1]))",
-      "caption": "Expected stdout:\n3\n4\n\nPrevalidated inputs follow the captured public contract. This completes the named Python function using its original supplied main/parser. It does not claim independent parser, C++, app-runner or judge qualification."
-    },
-    {
-      "type": "p",
-      "md": "Language background: [Python integers and mappings](https://docs.python.org/3.12/library/stdtypes.html). The query-before-insert prefix invariant and one-later-endpoint counting proof are derived here; the library page does not establish this pair-count algorithm. Public task hash 739f70658bc253f63512b49cf0e5cb99b34541f1b41809c89d433de75e95f0ab. Earlier bounded examples retain their own policies; this is not app or judge qualification."
-    },
-    {
-      "type": "p",
-      "md": "A lookup map alone does not encode recency\n\nThe cache has a value per key and an order from least recently used to most recently used. GET hit returns the value and moves that key to the MRU end. GET miss returns MISS and leaves all state unchanged. PUT writes/updates the value and makes that key MRU. A plain insertion-ordered dict does not automatically move an existing key when its value is reassigned."
-    },
-    {
-      "type": "p",
-      "md": "OrderedDict implements the needed transitions\n\nUse OrderedDict with LRU at the left and MRU at the right. On a GET hit, read before move_to_end(key). On PUT, assign then move_to_end(key), and if len(cache)>capacity remove popitem(last=False). An existing-key update never grows the key count, so cannot cause an eviction by itself. The parser supplies PUT values as strings; int(operation[2]) is the explicit declared integer parse before storing."
-    },
-    {
-      "type": "p",
-      "md": "Trace, invariant and cost\n\nWith capacity 2: PUT A 1, PUT B 2, GET A makes order B,A; PUT C 3 evicts B; GET B is MISS; PUT A 4 changes A and makes it MRU; GET A prints 4. After every operation, key count<=capacity and recency order contains each live key exactly once. Expected hash/endpoint work is O(1) per operation under normal key assumptions, O(capacity) state and O(number of GETs) output for up to 100000 operations. A vector search/shift would be linear. This is a single-threaded simulation, not a concurrent or distributed cache."
-    },
-    {
-      "type": "code",
-      "lang": "python",
-      "code": "from collections import OrderedDict, deque\nfrom bisect import bisect_left\nimport heapq\n\ndef run_cache(capacity, ops):\n    cache = OrderedDict()\n    lines = []\n    for operation in ops:\n        (kind, key) = operation[:2]\n        if kind == 'GET':\n            if key not in cache:\n                lines.append('MISS')\n            else:\n                lines.append(str(cache[key]))\n                cache.move_to_end(key)\n        else:\n            value = int(operation[2])\n            cache[key] = value\n            cache.move_to_end(key)\n            if len(cache) > capacity:\n                cache.popitem(last=False)\n    return lines\n\nops = [['PUT', 'A', '1'], ['PUT', 'B', '2'], ['GET', 'A'], ['PUT', 'C', '3'], ['GET', 'B'], ['PUT', 'A', '4'], ['GET', 'A']]\nprint(*run_cache(2, ops), sep='\\n')",
-      "caption": "Expected stdout:\n1\nMISS\n4\n\nPrevalidated inputs follow the captured public contract. This completes the named Python function using its original supplied main/parser. It does not claim independent parser, C++, app-runner or judge qualification."
-    },
-    {
-      "type": "p",
-      "md": "Mechanism reference: [OrderedDict.move_to_end and popitem](https://docs.python.org/3.12/library/collections.html). The GET/PUT refresh, miss behavior, integer parse and output adapter are declared by this sequential cache task. The container page does not provide a concurrency protocol for the simulation. Public task hash eeed9e422fd2dd804fc80c9e82901f4c8f692aa8e43028a0a94e9d103132df8f. Earlier bounded examples retain their own policies; this is not app or judge qualification."
-    },
-    {
       "type": "interactive",
       "component": "HashTableVisual",
       "params": {},
@@ -201,7 +129,7 @@
     "hints": [
       "Multiplicity induction.",
       "Sparse transition.",
-      "Memory/bounds qualifications."
+      "Memory/bounds verifications."
     ],
     "solution": "Insertion increments exactly the prefixes of that occurrence; a query reads the final count or 0 if a transition is missing. Unique sibling labels bound each scan to 26 checks. Four arrays avoid 26 references per node; check integer itemsize and include allocated capacity, input and output in the memory bound."
   },
@@ -210,8 +138,8 @@
     "A convenient counting API does not establish the business output ordering. State and test both primary and tie keys. (Explicit sort keys implement count-descending/symbol-ascending order.)",
     "Sortedness justifies discarding the too-small left value. Without it, the same move can discard a valid pair. (Using this same left with any remaining partner still gives too small a sum.)"
   ],
-  "realWorldApplication": "Used directly across production quantitative research, execution systems, and validation pipelines.",
-  "quantFinanceApplication": "Directly prepares you for judged problems: trie-prefix-count, anagram-groups, two-sum-count, lru-cache, word-frequency.",
+  "realWorldApplication": "In practice, engineering teams apply maps, sets and two-pointer scans within Algorithmic Invariants and Counterexamples when building reliable dsa and algorithms workflows — specifically to maintain a prefix frequency invariant and produce a deterministic count/tie-ordered report; and Prove pointer movement under a sorted or nonnegative input precondition instead of applying a pattern blindly.",
+  "quantFinanceApplication": "Core interview preparation inside Algorithmic Invariants and Counterexamples: builds the patterns behind coding problems including Symbol Prefix Counter, Anagram Groups, Order Pairs Summing to a Block Size, LRU Cache Simulation.",
   "summary": [
     "Maps need a prefix-count and tie-order contract.",
     "Two-pointer movement must discard only impossible candidates, and sliding-window logic needs its monotonicity assumptions.",
@@ -327,5 +255,11 @@
     "dsa",
     "algorithms",
     "complexity"
+  ],
+  "provenance": [
+    "Mechanism references: [trie prefix counters with duplicate insertion](https://algorung.com/dsa/tries/implement-trie-ll) and [Python array type widths/itemsize](https://docs.python.org/3.12/library/array.html). The tutorial uses a different layout and also covers terminal counters/deletion. Our first-child/next-sibling representation, fixed-alphabet scan bound and prefix-only output adapter are specified and proved above. Exact public task contract hash c2f48102d37bd220cc5a1fe20f2264ed357c73aceb09eac3e0c534a7dfd3a2f3. This is main teaching, not current app, memory-limit or judge sign-off.",
+    "Language background: [sorting](https://docs.python.org/3/howto/sorting.html) and [Python strings, lists and mappings](https://docs.python.org/3.12/library/stdtypes.html). The canonical-key equivalence proof, occurrence retention, two-stage order and output framing are derived task choices, not guarantees supplied by a container reference. Public task hash a27b593bb5ca02f88b5983a13ae26934ffe4b47762e63045db34deb0955d5be2. Earlier bounded examples retain their own policies; this is not app or judge qualification.",
+    "Language background: [Python integers and mappings](https://docs.python.org/3.12/library/stdtypes.html). The query-before-insert prefix invariant and one-later-endpoint counting proof are derived here; the library page does not establish this pair-count algorithm. Public task hash 739f70658bc253f63512b49cf0e5cb99b34541f1b41809c89d433de75e95f0ab. Earlier bounded examples retain their own policies; this is not app or judge qualification.",
+    "Mechanism reference: [OrderedDict.move_to_end and popitem](https://docs.python.org/3.12/library/collections.html). The GET/PUT refresh, miss behavior, integer parse and output adapter are declared by this sequential cache task. The container page does not provide a concurrency protocol for the simulation. Public task hash eeed9e422fd2dd804fc80c9e82901f4c8f692aa8e43028a0a94e9d103132df8f. Earlier bounded examples retain their own policies; this is not app or judge qualification."
   ]
 }

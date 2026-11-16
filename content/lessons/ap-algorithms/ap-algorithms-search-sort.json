@@ -2,7 +2,7 @@
   "id": "ap-algorithms-search-sort",
   "moduleId": "ap-algorithms",
   "title": "Sorting, binary search and invariants",
-  "estMinutes": 120,
+  "estMinutes": 19,
   "difficulty": "core",
   "prereqs": [
     "ap-algorithms-complexity"
@@ -93,98 +93,6 @@
       "caption": "Expected ['4', '-1', '0', '6'], then ['0', '-1']. Distinct rotated input is a source guarantee, not checked once per lookup."
     },
     {
-      "type": "p",
-      "md": "Algorithm background: [Princeton rotated distinct-key search](https://algs4.cs.princeton.edu/14analysis/RotatedSortedArray.java.html) discusses logarithmic rotated search and why duplicates can defeat the guarantee. Its Java examples return membership booleans; our original-index string outputs and exact loop branches are the captured task contract derived above. Exact public task contract hash 56245e6b56162434487d7faa49ab1237b1e296f56bd6a709147d99ea4a02e54d. This is main teaching, not current app or judge sign-off."
-    },
-    {
-      "type": "p",
-      "md": "Marginal pricing and rate units\n\nThe task has 1 to 50 tiers, increasing positive boundaries at most 10^12, rates from 0 to 10,000, and up to 90,000 query volumes from 0 to 10^12. Tier j covers (a[j-1], a[j]], with the final upper bound infinite.\n\nRates are hundredths of a basis point: 100 means 1 bp; 10000 means 100 bp, or 1 percent. The fee is floor(sum(rate*part)/1000000). Each volume slice gets its own rate. Applying the final tier's rate to all volume is a different pricing rule. build(bounds, rates) runs once; fee(model, volume) returns an integer."
-    },
-    {
-      "type": "p",
-      "md": "Keep an exact prefix numerator\n\nSet P[0]=0. For each finite tier j, set P[j+1]=P[j]+(bounds[j]-lower)*rates[j], where lower is zero or the previous boundary. P[k] is the exact unrounded numerator for every tier before k.\n\nStore boundaries, rates, and prefixes together as immutable tuples. Never floor each tier separately: discarded fractions can combine into a whole unit. Add exact numerators first and divide once by 1000000."
-    },
-    {
-      "type": "p",
-      "md": "Boundary search proof\n\nk=bisect_left(bounds, V) finds the first finite boundary at least V, or len(bounds) for the final tier. All preceding finite tiers are full. The active width is V minus zero when k=0, otherwise V-bounds[k-1]. Add width*rates[k] to P[k].\n\nAt an exact boundary, left search uses the preceding tier at its full width. Right search could also work with the next tier at zero width and the matching prefix, but mixing these index conventions breaks the formula. V=0 and an empty boundary list both work. Sorted boundaries are a source guarantee; never sort them independently of their rates."
-    },
-    {
-      "type": "p",
-      "md": "Trace, one-floor counterexample, and bounds\n\nFor boundaries [1000000,5000000], rates [10000,8000,5000], and V=7000000, the weighted numerator is 10000*1000000 + 8000*4000000 + 5000*2000000 = 52000000000. Divide by 1000000 to get 52000. Applying the last rate to all volume would wrongly give 35000.\n\nTwo tier contributions with numerator 600000 each sum to 1200000: flooring the total gives 1, but flooring each gives 0. Total numerator is at most 10^16 because disjoint tier widths sum to V; it is not 50 times that bound. Use promoted 64-bit multiplication in a fixed-width language."
-    },
-    {
-      "type": "p",
-      "md": "Cost and independent transfer\n\nBuild takes O(t), each query O(log t), model storage O(t), and returned output O(q). A separate oracle loops over all tiers, clips each overlap with [0,V], sums exact products, then floors once.\n\nTest boundaries and their neighbors, zero, the final unbounded tier, one tier, zero rates, nonmonotone rates, 50 tiers and 90,000 queries. Rates need not decrease. This is an algorithm for a supplied synthetic schedule, not a claim about current exchange prices or a payment action."
-    },
-    {
-      "type": "code",
-      "lang": "python",
-      "code": "MOD = 1000000007\n\ndef build(bounds, rates):\n    cumulative = [0]\n    previous = 0\n    for (bound, rate) in zip(bounds, rates):\n        cumulative.append(cumulative[-1] + (bound - previous) * rate)\n        previous = bound\n    return (tuple(bounds), tuple(rates), tuple(cumulative))\n\ndef fee(model, volume):\n    from bisect import bisect_left\n    (bounds, rates, cumulative) = model\n    tier = bisect_left(bounds, volume)\n    lower = 0 if tier == 0 else bounds[tier - 1]\n    numerator = cumulative[tier] + (volume - lower) * rates[tier]\n    return numerator // 1000000\n\nmodel = build([1000000, 5000000], [10000, 8000, 5000])\nprint([fee(model, v) for v in [500000, 1000000, 7000000]])\nprint(fee(build([], [10000]), 0))",
-      "caption": "Expected [5000, 10000, 52000], then 0. Exact prefix numerator, left boundary search, and one final floor."
-    },
-    {
-      "type": "p",
-      "md": "Mechanism references: [Stripe graduated versus volume pricing](https://docs.stripe.com/subscriptions/pricing-models/tiered-pricing) for per-tier slices, and [bisect insertion boundary](https://docs.python.org/3/library/bisect.html) for left search. Our scaled rate units, no-fixed-charge fee, prefix numerator, floor-once rule and boundary formula are derived task choices, not Stripe billing defaults. Exact public task contract hash 63ca2f23dd0ee2580cf9a8917112c0f4864be00a37e4a817555492c128a1dc08. This is main teaching, not current app or judge sign-off."
-    },
-    {
-      "type": "p",
-      "md": "Reuse the proven boundary\n\nThe existing lower_bound returns an insertion position in 0..n. The practice task wants that position only when it is less than n; otherwise output -1. It does not require equality with the query: the first larger price qualifies too. The sorted array is immutable, duplicates are allowed, and each query starts a fresh lo=0, hi=n search.\n\nTrace the sentinel rather than indexing it\n\nFor [2,4,4,7], queries 4,5,8 give positions 1,3,4 and output lines 1,3,-1. Position 4 is not an array element. A query below all prices yields 0. Do not use bisect_right, which skips equal prices, or a membership wrapper, which rejects a larger qualifying rung."
-    },
-    {
-      "type": "p",
-      "md": "Cost and transfer\n\nEach interval shrinks geometrically: O(log n) comparisons per query, O(m log n) total, and O(m) returned output storage. n,m may each reach 200000. The function returns strings because the supplied main prints each returned line. Compare against a linear first-qualifying scan on small fixtures, then test the largest equal-value ladder. No sorting or per-query copying is needed."
-    },
-    {
-      "type": "code",
-      "lang": "python",
-      "code": "from collections import deque\nimport heapq\n\ndef first_at_least(prices, queries):\n    lines = []\n    for target in queries:\n        (lo, hi) = (0, len(prices))\n        while lo < hi:\n            mid = (lo + hi) // 2\n            if prices[mid] < target:\n                lo = mid + 1\n            else:\n                hi = mid\n        lines.append(str(lo if lo < len(prices) else -1))\n    return lines\n\nprint(*first_at_least([2, 4, 4, 7], [4, 5, 8, 1]), sep='\\n')",
-      "caption": "Expected stdout:\n1\n3\n-1\n0\n\nPrevalidated inputs follow the captured public contract. This completes the named Python function using its original supplied main/parser. It does not claim independent parser, C++, app-runner or judge qualification."
-    },
-    {
-      "type": "p",
-      "md": "References: [1](https://docs.python.org/3.12/library/bisect.html). Public task hash 033538b5959d80e35f7cf5cbc393d95d3869d3e27d54292e787c03884de02d23. These references establish language/container semantics; the exact task framing is the captured public contract. This extension preserves the earlier bounded examples and their policies rather than silently broadening those APIs.\n\nClosed union, not half-open scheduling\n\nThese halt windows are closed [s,e], with s<=e. Two windows sharing an endpoint overlap, so [1,4] and [4,6] merge. [1,4] and [5,6] do not overlap and remain separate, despite adjacent integer labels. This differs from the half-open interval-selection problem, where an event starting at the previous end is compatible."
-    },
-    {
-      "type": "p",
-      "md": "Sorted frontier invariant and proof\n\nProcess a sorted COPY of (start,end) pairs by increasing start. The output is a sorted sequence of disjoint merged windows representing exactly the processed union. If the next start exceeds the last merged end, it cannot overlap any earlier window, so append it. Otherwise extend only the last end to max(old_end,next_end). Using next_end directly would incorrectly shrink a containing interval. No earlier output can be affected because its end is strictly before the current frontier start."
-    },
-    {
-      "type": "p",
-      "md": "Trace, mutation and cost\n\n[(4,6),(1,4),(2,3),(8,8)] sorts to [(1,4),(2,3),(4,6),(8,8)] and becomes [(1,6),(8,8)]. Identical/nested intervals add no coverage, while a singleton [8,8] is legal. The helper creates fresh mutable pairs rather than changing caller rows. With n<=100000, sorting costs O(n log n), the scan O(n), and result/copy storage O(n). Test permutation invariance and compare covered closed endpoints/segments on small fixtures."
-    },
-    {
-      "type": "code",
-      "lang": "python",
-      "code": "from collections import OrderedDict, deque\nfrom bisect import bisect_left\nimport heapq\n\ndef merge_windows(windows):\n    merged = []\n    for (start, end) in sorted(windows):\n        if merged and start <= merged[-1][1]:\n            merged[-1][1] = max(merged[-1][1], end)\n        else:\n            merged.append([start, end])\n    return [str(len(merged))] + [f'{start} {end}' for (start, end) in merged]\n\nprint(*merge_windows([(4, 6), (1, 4), (2, 3), (8, 8)]), sep='\\n')",
-      "caption": "Expected stdout:\n2\n1 6\n8 8\n\nPrevalidated inputs follow the captured public contract. This completes the named Python function using its original supplied main/parser. It does not claim independent parser, C++, app-runner or judge qualification."
-    },
-    {
-      "type": "p",
-      "md": "Language background: [Python sorting](https://docs.python.org/3/howto/sorting.html) and [mutable sequence types](https://docs.python.org/3.12/library/stdtypes.html). The closed-interval frontier proof, touching/singleton policy and output adapter are specified and derived here, not established by a list reference page. Public task hash f7389d547dce08a74864980726f6ff7ab7722cba71febeb07dc0ca08931778d4. Earlier bounded examples retain their own policies; this is not app or judge qualification."
-    },
-    {
-      "type": "p",
-      "md": "Solve the meeting equation before dividing\n\nAgents i,j meet when x_i+v_i*tau=x_j+v_j*tau. Define distance=x_i-x_j and closing=v_j-v_i, so tau=distance/closing. Distinct starting positions exclude tau=0. A strictly positive meeting time requires distance and closing to have the same nonzero sign. Then tau<=t is exactly abs(distance)<=t*abs(closing). Equal velocities cannot collide from distinct positions."
-    },
-    {
-      "type": "p",
-      "md": "Exact cross products preserve endpoint semantics\n\nThe implementation tests distance*closing>0 and the cross-multiplied horizon bound, without floating division. Equality at tau=t counts; a meeting after t or in the past does not. For x=[0,10],v=[3,1], meeting time 5 counts at horizon 5 but not 4. Initial input order is arbitrary; the signed predicate works in either index order. Sorting is not required for the stated pairwise design."
-    },
-    {
-      "type": "p",
-      "md": "Bounds and transfer\n\nn<=2000 allows O(n^2) pair checks. Coordinate/velocity differences have magnitude<=2*10^9, and t<=10^9, so products used here remain within signed 64-bit range; Python integers are exact. Do not interpret a general claim about double precision as exact representation of every large integer. Test equal velocities, separating motion, negative coordinates, opposite directions and equality at the horizon against exact rational meeting times. This is a synthetic trajectory calculation, not a collision safety system."
-    },
-    {
-      "type": "code",
-      "lang": "python",
-      "code": "from collections import OrderedDict, deque\nfrom bisect import bisect_left\nimport heapq\nimport math\n\ndef collision_risk(x, v, t):\n    for i in range(len(x)):\n        for j in range(i):\n            distance = x[i] - x[j]\n            closing = v[j] - v[i]\n            if distance * closing > 0 and abs(distance) <= t * abs(closing):\n                return ['COLLIDE']\n    return ['SAFE']\n\nprint(*collision_risk([0, 10], [3, 1], 5))\nprint(*collision_risk([0, 10], [3, 1], 4))",
-      "caption": "Expected stdout:\nCOLLIDE\nSAFE\n\nPrevalidated inputs follow the captured public contract. This completes the named Python function using its original supplied main/parser. It does not claim independent parser, C++, app-runner or judge qualification."
-    },
-    {
-      "type": "p",
-      "md": "Language background: [Python exact integers](https://docs.python.org/3.12/library/stdtypes.html); [Fraction](https://docs.python.org/3.12/library/fractions.html) can support a separate rational oracle. The positive-time equation, sign predicate and horizon proof are derived here. Those language pages do not establish the physical model or this output adapter. Public task hash e629707ca48cd623a6b81811453cc8fc0377125e6ee910d221bc8b0fc2714cdd. Earlier bounded examples retain their own policies; this is not app, judge or collision-safety qualification."
-    },
-    {
       "type": "interactive",
       "component": "SortingVisual",
       "params": {},
@@ -235,8 +143,8 @@
     "Discard positions that cannot be the lower bound, and prove the unresolved interval decreases at every iteration. (Keeping mid can leave a one-element interval unchanged.)",
     "Separate outer-list ordering/ownership from the mutability of objects referenced by that list. (Creating a new outer list is not a deep copy of nested records.)"
   ],
-  "realWorldApplication": "Used directly across production quantitative research, execution systems, and validation pipelines.",
-  "quantFinanceApplication": "Directly prepares you for judged problems: rotated-array-search, tiered-fee, binary-search-price, interval-merge-trades, collision-risk.",
+  "realWorldApplication": "In practice, engineering teams apply sorting, binary search and invariants within Algorithmic Invariants and Counterexamples when building reliable dsa and algorithms workflows — specifically to maintain a half-open lower-bound search invariant including duplicates, empty input and no-match insertion positions; and Choose a sorted-copy or in-place stable sort while preserving full record identity and explicit tie ordering.",
+  "quantFinanceApplication": "Core interview preparation inside Algorithmic Invariants and Counterexamples: builds the patterns behind coding problems including Rotated Price Ladder Lookup, Tiered Fee Schedule, First Price at Least the Query, Merge Trading Halts.",
   "summary": [
     "Lower-bound returns an insertion position under a sorted-input invariant, not guaranteed equality.",
     "Preserve full records, explicit tie policy and caller mutation rules when sorting.",
@@ -283,7 +191,7 @@
       "objective": 2,
       "options": [
         "It returns a new list, but its record objects can still be shared",
-        "It mutates every record into a new immutable value",
+        "It mutates every record into a new immutable value across the specified interval",
         "It always returns None and changes the caller list order",
         "It invents authenticated source ordering for equal keys"
       ],
@@ -353,5 +261,12 @@
     "dsa",
     "algorithms",
     "complexity"
+  ],
+  "provenance": [
+    "Algorithm background: [Princeton rotated distinct-key search](https://algs4.cs.princeton.edu/14analysis/RotatedSortedArray.java.html) discusses logarithmic rotated search and why duplicates can defeat the guarantee. Its Java examples return membership booleans; our original-index string outputs and exact loop branches are the captured task contract derived above. Exact public task contract hash 56245e6b56162434487d7faa49ab1237b1e296f56bd6a709147d99ea4a02e54d. This is main teaching, not current app or judge sign-off.",
+    "Mechanism references: [Stripe graduated versus volume pricing](https://docs.stripe.com/subscriptions/pricing-models/tiered-pricing) for per-tier slices, and [bisect insertion boundary](https://docs.python.org/3/library/bisect.html) for left search. Our scaled rate units, no-fixed-charge fee, prefix numerator, floor-once rule and boundary formula are derived task choices, not Stripe billing defaults. Exact public task contract hash 63ca2f23dd0ee2580cf9a8917112c0f4864be00a37e4a817555492c128a1dc08. This is main teaching, not current app or judge sign-off.",
+    "References: [1](https://docs.python.org/3.12/library/bisect.html). Public task hash 033538b5959d80e35f7cf5cbc393d95d3869d3e27d54292e787c03884de02d23. These references establish language/container semantics; the exact task framing is the captured public contract. This extension preserves the earlier bounded examples and their policies rather than silently broadening those APIs.\n\nClosed union, not half-open scheduling\n\nThese halt windows are closed [s,e], with s<=e. Two windows sharing an endpoint overlap, so [1,4] and [4,6] merge. [1,4] and [5,6] do not overlap and remain separate, despite adjacent integer labels. This differs from the half-open interval-selection problem, where an event starting at the previous end is compatible.",
+    "Language background: [Python sorting](https://docs.python.org/3/howto/sorting.html) and [mutable sequence types](https://docs.python.org/3.12/library/stdtypes.html). The closed-interval frontier proof, touching/singleton policy and output adapter are specified and derived here, not established by a list reference page. Public task hash f7389d547dce08a74864980726f6ff7ab7722cba71febeb07dc0ca08931778d4. Earlier bounded examples retain their own policies; this is not app or judge qualification.",
+    "Language background: [Python exact integers](https://docs.python.org/3.12/library/stdtypes.html); [Fraction](https://docs.python.org/3.12/library/fractions.html) can support a separate rational oracle. The positive-time equation, sign predicate and horizon proof are derived here. Those language pages do not establish the physical model or this output adapter. Public task hash e629707ca48cd623a6b81811453cc8fc0377125e6ee910d221bc8b0fc2714cdd. Earlier bounded examples retain their own policies; this is not app, judge or collision-safety qualification."
   ]
 }

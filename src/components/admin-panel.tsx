@@ -3,8 +3,9 @@
 import * as React from 'react';
 import { toast } from 'sonner';
 import {
-  RefreshCw, Upload, FileJson, CheckCircle2, XCircle, AlertTriangle, ChevronDown,
+  RefreshCw, FileJson, CheckCircle2, XCircle, AlertTriangle, ChevronDown,
   BookOpen, Puzzle, ClipboardCheck, FolderKanban, Building2, Clock, Layers,
+  Mail, Flag,
 } from 'lucide-react';
 import type { ValidationReport } from '@/lib/admin-validate';
 
@@ -13,11 +14,30 @@ export type AdminStats = {
   assessments: number; projects: number; companies: number; estHours: number;
 };
 
+interface ContactMsg {
+  id: string; name: string; email: string; subject: string; message: string; status: string; createdAt: string;
+}
+
+interface ReportItem {
+  id: string; lessonId: string | null; problemSlug: string | null; reason: string; comment: string; status: string; createdAt: string;
+}
+
 export function AdminPanel({ report, stats }: { report: ValidationReport; stats: AdminStats }) {
   const [rep, setRep] = React.useState(report);
   const [busy, setBusy] = React.useState(false);
-  const [importResult, setImportResult] = React.useState<string | null>(null);
-  const [dragOver, setDragOver] = React.useState(false);
+  const [messages, setMessages] = React.useState<ContactMsg[]>([]);
+  const [reports, setReports] = React.useState<ReportItem[]>([]);
+
+  React.useEffect(() => {
+    fetch('/api/admin/contact')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { messages?: ContactMsg[] } | null) => { if (d?.messages) setMessages(d.messages); })
+      .catch(() => {});
+    fetch('/api/admin/reports')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { reports?: ReportItem[] } | null) => { if (d?.reports) setReports(d.reports); })
+      .catch(() => {});
+  }, []);
 
   async function revalidate() {
     setBusy(true);
@@ -30,23 +50,30 @@ export function AdminPanel({ report, stats }: { report: ValidationReport; stats:
     } finally { setBusy(false); }
   }
 
-  async function importJson(file: File) {
-    if (!file.name.endsWith('.json')) { toast.error('Only .json files are accepted.'); return; }
-    const text = await file.text();
-    const res = await fetch('/api/admin/import', {
-      method: 'POST',
+  async function setMessageStatus(id: string, status: 'new' | 'answered' | 'spam') {
+    const res = await fetch('/api/admin/contact', {
+      method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ filename: file.name, content: text }),
+      body: JSON.stringify({ id, status }),
     });
-    const data = await res.json();
-    if (!res.ok) { toast.error(data.error ?? 'Import failed.'); setImportResult(data.error ?? 'failed'); return; }
-    setImportResult(data.message);
-    toast.success(data.message);
-    revalidate();
+    if (res.ok) {
+      setMessages((ms) => ms.map((m) => (m.id === id ? { ...m, status } : m)));
+      toast.success(`Ticket marked ${status}.`);
+    }
   }
 
-  /* two primary tiles carry the accent, the long tail stays neutral so the
-     strip reads as hierarchy instead of seven equal shouts */
+  async function setReportStatus(id: string, status: 'open' | 'resolved' | 'dismissed') {
+    const res = await fetch('/api/admin/reports', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, status }),
+    });
+    if (res.ok) {
+      setReports((rs) => rs.map((r) => (r.id === id ? { ...r, status } : r)));
+      toast.success(`Report marked ${status}.`);
+    }
+  }
+
   const tiles = [
     { icon: BookOpen, label: 'Published lessons', value: stats.lessons, sub: `across ${stats.modules} modules`, cls: 'icon-tile-accent' },
     { icon: Puzzle, label: 'Judged problems', value: stats.problems, cls: 'icon-tile-accent' },
@@ -59,7 +86,6 @@ export function AdminPanel({ report, stats }: { report: ValidationReport; stats:
 
   return (
     <div className="space-y-6">
-      {/* stat tiles */}
       <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-3">
         {tiles.map((t, i) => (
           <div key={t.label} className="stat-tile anim-slide-up" style={{ animationDelay: `${i * 40}ms` }}>
@@ -73,16 +99,15 @@ export function AdminPanel({ report, stats }: { report: ValidationReport; stats:
         ))}
       </div>
 
-      {/* effort banner */}
       <div className="qf-card-flat p-4 flex items-center gap-4 !bg-surface-2/50">
         <span className="icon-tile icon-tile-sm icon-tile-accent"><Clock className="h-5 w-5" /></span>
         <p className="text-[15px] font-bold">
           ~{stats.estHours} hours of authored core content
-          <span className="block text-[13px] font-semibold text-muted mt-0.5">Lesson time only, exercises, drills, assessments and projects add more.</span>
+          <span className="block text-[13px] font-semibold text-muted mt-0.5">Git-backed JSON workflow — content edits pass CI validation and pack compilation.</span>
         </p>
       </div>
 
-      {/* validation */}
+      {/* Validation report */}
       <section className={`qf-card p-5 relative overflow-hidden ${rep.ok ? '' : '!border-danger/50'}`}>
         <div className={`absolute -right-10 -top-10 h-32 w-32 rounded-full ${rep.ok ? 'bg-accent-soft' : 'bg-danger-soft'}`} aria-hidden />
         <div className="relative">
@@ -103,7 +128,6 @@ export function AdminPanel({ report, stats }: { report: ValidationReport; stats:
             </button>
           </div>
 
-          {/* validator status (not a repeat of the hero counts above) */}
           <div className="mt-4 qf-card-flat px-4 py-3 flex flex-wrap items-center gap-x-3 gap-y-2">
             <span className={`chip tnum ${rep.errors.length === 0 ? 'chip-success' : 'chip-danger'}`}>
               {rep.errors.length === 0 ? <CheckCircle2 className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
@@ -136,68 +160,86 @@ export function AdminPanel({ report, stats }: { report: ValidationReport; stats:
         </div>
       </section>
 
-      <div className="grid gap-5 lg:grid-cols-2 items-stretch">
-        {/* import */}
+      <div className="grid gap-5 lg:grid-cols-2 items-start">
+        {/* Support contact inbox (D3) */}
         <section className="qf-card p-5 flex flex-col">
-          <div className="flex items-center gap-3">
-            <span className="icon-tile icon-tile-warning"><Upload className="h-6 w-6" /></span>
+          <div className="flex items-center gap-3 mb-4">
+            <span className="icon-tile icon-tile-info"><Mail className="h-5 w-5" /></span>
             <div>
-              <h2 className="font-black">Bulk content import</h2>
-              <p className="text-[13px] font-semibold text-muted">Drop a schema-valid JSON file to add content</p>
+              <h2 className="font-black">Support inbox ({messages.filter((m) => m.status === 'new').length} new)</h2>
+              <p className="text-[13px] font-semibold text-muted">Submissions from /contact</p>
             </div>
           </div>
-          <label
-            className={`mt-4 flex flex-1 flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed px-4 py-6 cursor-pointer transition-colors select-none ${
-              dragOver ? 'border-accent bg-accent-soft' : 'border-border-strong bg-surface-2/40 hover:bg-surface-2 hover:border-accent/60'
-            }`}
-            onDragOver={e => { e.preventDefault(); setDragOver(true); }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={e => {
-              e.preventDefault(); setDragOver(false);
-              const f = e.dataTransfer.files?.[0];
-              if (f) importJson(f);
-            }}
-          >
-            <Upload className={`h-7 w-7 ${dragOver ? 'text-accent' : 'text-faint'}`} />
-            <span className="text-[15px] font-extrabold">Drag a .json file here</span>
-            <span className="btn3d btn3d-ghost btn3d-sm" aria-hidden>Browse files</span>
-            <span className="text-[13px] font-semibold text-muted text-center max-w-xs">
-              Lesson, problem, assessment, project or company, validated before it lands in <code className="text-[0.9em] font-bold">content/</code>. Schema: content/README.md
-            </span>
-            <input type="file" accept=".json" className="sr-only" onChange={e => { const f = e.target.files?.[0]; if (f) importJson(f); }} />
-          </label>
-          {importResult && (
-            <p className="mt-3 text-[13px] font-bold font-mono rounded-xl bg-surface-2/70 border border-border px-3 py-2 break-all">{importResult}</p>
+          {messages.length === 0 ? (
+            <p className="text-[14px] font-semibold text-faint py-4">No contact submissions yet.</p>
+          ) : (
+            <ul className="space-y-3 max-h-96 overflow-y-auto thin-scroll">
+              {messages.map((m) => (
+                <li key={m.id} className="qf-card-flat p-3.5 text-[13px]">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-black">{m.subject}</span>
+                    <span className={`chip ${m.status === 'new' ? 'chip-warning' : 'chip-success'}`}>{m.status}</span>
+                  </div>
+                  <p className="text-muted font-semibold mt-0.5">{m.name} &lt;{m.email}&gt;</p>
+                  <p className="mt-2 text-foreground whitespace-pre-wrap">{m.message}</p>
+                  <div className="mt-2.5 flex gap-2">
+                    {m.status !== 'answered' && (
+                      <button type="button" onClick={() => setMessageStatus(m.id, 'answered')} className="btn3d btn3d-sm !py-1">Mark answered</button>
+                    )}
+                    {m.status !== 'spam' && (
+                      <button type="button" onClick={() => setMessageStatus(m.id, 'spam')} className="btn3d btn3d-ghost btn3d-sm !py-1">Mark spam</button>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
           )}
         </section>
 
-        {/* how content works: one container, divided rows, no nested cards */}
+        {/* Content issue reports (H12) */}
         <section className="qf-card p-5 flex flex-col">
-          <div className="flex items-center gap-3">
-            <span className="icon-tile icon-tile-info"><FileJson className="h-6 w-6" /></span>
+          <div className="flex items-center gap-3 mb-4">
+            <span className="icon-tile icon-tile-warning"><Flag className="h-5 w-5" /></span>
             <div>
-              <h2 className="font-black">How content works</h2>
-              <p className="text-[13px] font-semibold text-muted">File-based authoring, validated on import</p>
+              <h2 className="font-black">Content reports ({reports.filter((r) => r.status === 'open').length} open)</h2>
+              <p className="text-[13px] font-semibold text-muted">Learner flags from lessons &amp; problems</p>
             </div>
           </div>
-          <ul className="mt-4 flex-1 divide-y divide-border rounded-2xl border-2 border-border bg-surface-2/40">
-            {[
-              { icon: Layers, k: 'Curriculum structure', v: 'Phases and modules live in content/map, edit via PR, validated on save' },
-              { icon: BookOpen, k: 'Rich blocks', v: '10 lesson block types · 5 question types; interactive components registered in code' },
-              { icon: FileJson, k: 'Stable ids', v: 'JSON files are immutable once published; changes ship as new versions' },
-              { icon: CheckCircle2, k: 'Docs', v: 'Schema documentation lives in content/README.md' },
-            ].map(item => (
-              <li key={item.k} className="flex items-center gap-3 px-4 py-3">
-                <span className="icon-tile icon-tile-sm icon-tile-neutral"><item.icon className="h-4 w-4" /></span>
-                <div className="flex-1 min-w-0">
-                  <div className="text-[15px] font-extrabold">{item.k}</div>
-                  <div className="text-[13px] font-semibold text-muted mt-0.5">{item.v}</div>
-                </div>
-              </li>
-            ))}
-          </ul>
+          {reports.length === 0 ? (
+            <p className="text-[14px] font-semibold text-faint py-4">No content reports open.</p>
+          ) : (
+            <ul className="space-y-3 max-h-96 overflow-y-auto thin-scroll">
+              {reports.map((r) => (
+                <li key={r.id} className="qf-card-flat p-3.5 text-[13px]">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-black">{r.lessonId ?? r.problemSlug} · {r.reason}</span>
+                    <span className={`chip ${r.status === 'open' ? 'chip-warning' : 'chip-success'}`}>{r.status}</span>
+                  </div>
+                  {r.comment && <p className="mt-1.5 text-foreground">{r.comment}</p>}
+                  {r.status === 'open' && (
+                    <div className="mt-2.5 flex gap-2">
+                      <button type="button" onClick={() => setReportStatus(r.id, 'resolved')} className="btn3d btn3d-sm !py-1">Resolve</button>
+                      <button type="button" onClick={() => setReportStatus(r.id, 'dismissed')} className="btn3d btn3d-ghost btn3d-sm !py-1">Dismiss</button>
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
         </section>
       </div>
+
+      <section className="qf-card-flat p-5">
+        <div className="flex items-center gap-3">
+          <span className="icon-tile icon-tile-neutral"><FileJson className="h-5 w-5" /></span>
+          <div>
+            <h2 className="font-black">Git-based authoring workflow</h2>
+            <p className="text-[13px] font-semibold text-muted">
+              Content files live in <code className="font-mono font-bold">content/</code> and are validated via <code className="font-mono font-bold">npm run verify:content</code> before pack generation. Runtime filesystem uploads are disabled for immutability.
+            </p>
+          </div>
+        </div>
+      </section>
     </div>
   );
 }

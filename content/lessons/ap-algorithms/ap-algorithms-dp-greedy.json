@@ -2,7 +2,7 @@
   "id": "ap-algorithms-dp-greedy",
   "moduleId": "ap-algorithms",
   "title": "Dynamic programming and greedy counterexamples",
-  "estMinutes": 253,
+  "estMinutes": 19,
   "difficulty": "core",
   "prereqs": [
     "ap-algorithms-union-find"
@@ -95,250 +95,6 @@
       "md": "For exactly k fixed positions, first choose the k positions. Every remaining position must NOT be fixed. There are C(n,k) choices for that set, then D(n-k) derangements on the rest. Sets are disjoint because a permutation has one exact fixed set. Therefore count=C(n,k)*D(n-k). Choosing k positions then freely permuting the rest is wrong: it also counts additional fixed points. D(0)=1 is the one empty permutation, not zero. D(1)=0 because one object cannot avoid itself."
     },
     {
-      "type": "steps",
-      "title": "Derive D(m) by the cycle containing one distinguished label",
-      "items": [
-        "Take label 1. In a derangement it points to one of m-1 other labels j. If j points back to 1, remove the two-cycle. The remaining m-2 labels form a derangement: D(m-2) choices for each j.",
-        "Otherwise the cycle of 1 has length at least three. Remove 1 from that cycle by redirecting its predecessor to j. This gives a derangement of m-1 labels. Conversely, insert 1 immediately before j in such a derangement. These operations are inverses, so this case contributes D(m-1) for each j.",
-        "The cases are disjoint and cover every derangement, giving D(m)=(m-1)*(D(m-1)+D(m-2)) for m>=2. Thus D(2)=1, D(3)=2, D(4)=9. For n=4,k=2, choose the two fixed labels in 6 ways and swap the remaining pair: 6*1=6. For k=3, D(1)=0, so result is zero."
-      ]
-    },
-    {
-      "type": "p",
-      "md": "Combinatorics bridge: n! (factorial) is the product 1*2*...*n, with 0!=1. Choosing an unordered set of k positions gives C(n,k)=n!/[k!(n-k)!]: there are n! ordered arrangements, but the k selected positions and n-k unselected positions can each be reordered without changing that set. Modulo M means keeping the remainder class; x and y are congruent when M divides x-y. A modular inverse u of x satisfies x*u congruent to 1, not real-number 1/x. In the code pow(x,exponent,M) evaluates modular exponentiation by repeated squaring without constructing x**exponent first. Exponent notation in prose is not Python XOR syntax."
-    },
-    {
-      "type": "p",
-      "md": "Here M=1000000007 is prime and n<=100000<M. All factors 1..n are nonzero modulo M, so factorials are invertible. Fermat: for nonzero x, x^(M-1)=1 modulo M, hence x^(-1)=x^(M-2). Compute C(n,k)=fact[n]*inverse(fact[k])*inverse(fact[n-k]) modulo M. The code uses modular pow, not integer // on residues. If n>=M, factorial can be zero and this formula fails; that general case is outside the source contract. For many queries, precompute factorial and inverse-factorial arrays up to the largest n once."
-    },
-    {
-      "type": "code",
-      "lang": "python",
-      "code": "MOD = 1000000007\n\ndef count_permutations(n, k):\n    if any((type(x) is not int for x in (n, k))) or not 1 <= n <= 100000 or (not 0 <= k <= n):\n        raise ValueError('invalid permutation bounds')\n    factorial = [1] * (n + 1)\n    for i in range(1, n + 1):\n        factorial[i] = factorial[i - 1] * i % MOD\n    choose = factorial[n] * pow(factorial[k], MOD - 2, MOD) % MOD * pow(factorial[n - k], MOD - 2, MOD) % MOD\n    m = n - k\n    (d0, d1) = (1, 0)\n    for i in range(2, m + 1):\n        (d0, d1) = (d1, (i - 1) * (d0 + d1) % MOD)\n    derangements = d0 if m == 0 else d1\n    return [str(choose * derangements % MOD)]\nprint(count_permutations(4, 2))\nprint(count_permutations(4, 3))\nprint(count_permutations(1, 1))\nprint(count_permutations(1, 0))",
-      "caption": "Expected ['6'], ['0'], ['1'], ['0']. Complete Python 3.12 function. Source qfp-fixed-point-permutations at 73d6975 has n=1..100000, k=0..n. It returns a LIST of output lines for the supplied adapter, not a bare integer/string. One query costs O(n+log M) modular arithmetic operations and O(n) storage. Inputs exclude bool via exact int checks. The tuple update computes both right-hand sides from the old d0,d1, preserving the previous two derangement states."
-    },
-    {
-      "type": "p",
-      "md": "In C++, reduce after each multiplication and promote BEFORE multiplying, for example 1LL*left*right%M. Two residues give a product at most (M-1)^2, below 2^63-1, but chaining three unreduced residues is not safe. In the derangement step, (m-1)*(d0+d1) is less than 100000*2*M, also below 2^63-1 after promotion. Keep all returned residues in 0..M-1. These bounds explain 64-bit intermediates for modular arithmetic; they do not make the exact combinatorial count fit 64 bits."
-    },
-    {
-      "type": "p",
-      "md": "For qfp-bounded-walk-count at 73d6975, n=1..2000; -1000<=lo<=0<=hi<=1000; endpoint e is inside the band. Every prefix position must stay inside the INCLUSIVE band. Let f_t(x) count valid length-t paths ending at x. Base f_0(0)=1, every other state zero. For x in [lo,hi], f_(t+1)(x)=f_t(x-1)+f_t(x+1), with outside predecessors defined as zero. A path that leaves is killed, not reflected, clamped or allowed back later. This invariant follows by disjointly appending the last step to a valid predecessor."
-    },
-    {
-      "type": "steps",
-      "title": "A band changes the path set at each time, not only at the end",
-      "items": [
-        "With lo=-1, hi=1, initialize time 0 as [0,1,0] for positions [-1,0,1]. Time 1 is [1,0,1]; time 2 is [0,2,0]; time 3 is [2,0,2]; time 4 is [0,4,0]. Thus 4 valid paths finish at zero after 4 steps.",
-        "Without the band there are C(4,2)=6 return paths. The paths ++-- and --++ reach +/-2 and are killed even though they finish at zero. Filtering endpoints alone would incorrectly keep them.",
-        "Use array index j=x-lo, so start index is -lo and result index is e-lo. Out-of-array predecessor means zero, not a Python negative index wrapping to the other end. A singleton [0,0] kills every first move, so all n>=1 answers are zero. Odd n cannot end at zero; more generally n and e must have the same parity."
-      ]
-    },
-    {
-      "type": "code",
-      "lang": "python",
-      "code": "MOD = 1000000007\n\ndef count_walks(n, lo, hi, e):\n    if any((type(x) is not int for x in (n, lo, hi, e))) or not 1 <= n <= 2000 or (not -1000 <= lo <= 0 <= hi <= 1000) or (not lo <= e <= hi):\n        raise ValueError('invalid walk bounds')\n    width = hi - lo + 1\n    old = [0] * width\n    old[-lo] = 1\n    for _ in range(n):\n        new = [0] * width\n        for j in range(width):\n            new[j] = ((old[j - 1] if j else 0) + (old[j + 1] if j + 1 < width else 0)) % MOD\n        old = new\n    return [str(old[e - lo])]\nprint(count_walks(4, -1, 1, 0))\nprint(count_walks(2, 0, 0, 0))\nprint(count_walks(3, -1, 1, 0))",
-      "caption": "Expected ['4'], ['0'], ['0']. Complete Python 3.12 function returns LISTLINES for the supplied adapter. The implementation does not optimize away parity cases; the recurrence already handles them. Width w=hi-lo+1<=2001, work O(n*w) with at most 4002000 cell updates and O(w) rolling storage. This is an operation bound, not an external judge timing guarantee."
-    },
-    {
-      "type": "p",
-      "md": "The old array means one exact time t. Write every new time t+1 into a different zeroed array, then replace old after the full sweep. Updating old left-to-right mixes new t+1 values with old t values and changes the counted process. Reading old[-1] at the left boundary wraps in Python and invents a transition. Reducing each sum modulo M is valid because reduction commutes with addition. C++ can store each reduced state in int; the sum of two residues is <=2000000012, within signed 32-bit int, though a wider intermediate is a safe convention."
-    },
-    {
-      "type": "p",
-      "md": "Independent transfer: enumerate every permutation through n=7 and tabulate its exact fixed-point count, checking all k. Compare the modular binomial against math.comb and derangements against independent inclusion-exclusion. For walks, enumerate +/-1 sequences through n=8, reject as soon as any prefix exits, and tabulate every inside endpoint. Try asymmetric and singleton bands, wrong parity and boundaries. At max bounds, compare rolling recurrence with an independent sparse forward-distribution implementation. A second implementation of the same in-place bug is not independent evidence."
-    },
-    {
-      "type": "p",
-      "md": "Sources: [cycle/hat proof of the derangement recurrence](https://math.stackexchange.com/questions/203899/combinatorial-argument-to-prove-the-recurrence-relation-for-number-of-derangemen/203908), [prime modular inverse and its conditions](https://cp-algorithms.com/algebra/module-inverse.html). The finite-state walk recurrence and operation/overflow bounds above are derived here from the exact problem contract, not borrowed judge tests."
-    },
-    {
-      "type": "callout",
-      "variant": "info",
-      "title": "Key note",
-      "md": "The earlier core section teaches knapsack, minimum coins and a greedy counterexample, not alignment or a universal greedy rule. The preceding counting extensions add fixed-point permutations with modular binomials and prefix-surviving bounded walks. The following separate parts teach coin combination counting, LCS length, unit edit distance and half-open interval selection, then adapt minimum coins to its exact public interface. Later transfer parts teach nonempty maximum-subarray state, indexed subset counts and strict LIS length. Each is additional main teaching with its own contract; the earlier core alone does not establish those skills. Reconstruction, weighted scheduling and a universal greedy theorem remain outside scope. Take the parts separately rather than in one uninterrupted sitting."
-    },
-    {
-      "type": "p",
-      "md": "Not minimum coins\n\nCount combinations, not the smallest number of coins. Source: 1..100 distinct positive denominations, each<=20000, target 0..20000, modulo 1000000007. A solution is a multiplicity vector giving how many of each denomination; rearrangements are the SAME solution. count_ways(amount,coins) returns a list of one output line. This helper rejects duplicates under the source distinct-input contract rather than treating equal values as extra types."
-    },
-    {
-      "type": "p",
-      "md": "Disjoint recurrence\n\nW(i,s) counts ways to make exact s with the first i types. W(0,0)=1 and W(0,s>0)=0. For positive coin c_i, W(i,s)=W(i-1,s)+(W(i,s-c_i) if s>=c_i else 0). Partition by zero versus at-least-one copy of type i. Removing one current coin bijects the latter case to W(i,s-c_i). Thus the cases are exhaustive and do not overlap."
-    },
-    {
-      "type": "p",
-      "md": "Loop proof and trace\n\nBefore a coin pass, ways[s]=W(i-1,s). Ascending s makes ways[s-c] a CURRENT-type state, permitting unlimited reuse. Coin outermost fixes a canonical type order. Amount-first last-coin summation counts ordered sequences; descending amounts instead count 0/1 copies. For coins [1,2], target 3: start [1,0,0,0], after 1 [1,1,1,1], after 2 [1,1,2,2]. The two multisets are 1+1+1 and 1+2; ordered counting would also count 2+1. Processing duplicate value1 twice would create extra type buckets and overcount. Reject duplicates here; normalize only under a separately declared contract."
-    },
-    {
-      "type": "p",
-      "md": "Bounds and independent transfer\n\nO(n*A) modular additions and O(A) entries, at most 100*20001 cell visits. Reduction preserves addition. C++ sum of two residues is <=2000000012; use an appropriate wide intermediate. Independently enumerate multiplicity vectors on tiny inputs, including amount0, unreachable targets and shuffled types. Exercise maximum dimensions separately; operation bounds are not remote judge timing qualification."
-    },
-    {
-      "type": "code",
-      "lang": "python",
-      "code": "MOD = 1000000007\n\ndef count_ways(amount, coins):\n    if type(amount) is not int or not 0 <= amount <= 20000:\n        raise ValueError('invalid amount')\n    if not 1 <= len(coins) <= 100 or any((type(c) is not int or not 1 <= c <= 20000 for c in coins)):\n        raise ValueError('invalid denominations')\n    if len(set(coins)) != len(coins):\n        raise ValueError('denominations must be distinct')\n    ways = [0] * (amount + 1)\n    ways[0] = 1\n    for coin in coins:\n        for total in range(coin, amount + 1):\n            ways[total] = (ways[total] + ways[total - coin]) % MOD\n    return [str(ways[amount])]\n\nprint(count_ways(3, [1, 2]))\nprint(count_ways(0, [2, 5]))\nprint(count_ways(3, [2]))",
-      "caption": "Expected ['2'], ['1'], ['0']. Complete Python3.12 list-lines function with exact bounds and duplicate rejection."
-    },
-    {
-      "type": "p",
-      "md": "Mechanism reference: [Coin-first ascending-amount combination recurrence](https://arunank.com/dsa-book/kata-229.html). This reference normalizes duplicates with set(coins); the captured task instead requires distinct inputs and this helper explicitly rejects duplicates. Modulus, numeric bounds and list-line output are local contract choices. Exact public task contract hash 14a16030d08a05ad8ad0e1e260d9f30fbec26ee61755df8b54e5a9ebe1b22572. This is teaching/source fit, not current app or judge sign-off."
-    },
-    {
-      "type": "p",
-      "md": "Two prefixes\n\nSource arrays contain 1..1500 integer IDs each, absolute value<=1e9. A subsequence deletes entries without reordering; it need not be contiguous. Repeated IDs are separate occurrences. L(i,j) is the best common length in a[:i] and b[:j]. L(0,j)=L(i,0)=0. lcs(a,b) returns a one-line list. The task asks for length, not a unique alignment, substring or edit distance."
-    },
-    {
-      "type": "p",
-      "md": "Match/skip proof\n\nIf final values differ, a noncrossing alignment cannot use both final positions, so skip at least one: L(i,j)=max(L(i-1,j),L(i,j-1)). If final values agree, some optimum pairs them. If neither is used, appending the pair improves it; otherwise move the final matched occurrence of that symbol to these final positions without losing length/order. Thus L(i,j)=1+L(i-1,j-1). This is existence of some optimum, not every optimum."
-    },
-    {
-      "type": "p",
-      "md": "Trace and dependencies\n\nFor a=[1,2,1], b=[2,1,2], rows are [0,0,0,0], [0,0,1,1], [0,1,1,2], [0,1,2,2]. Answer 2, with alternatives [1,2] or [2,1]. At a mismatch take max, not sum or unconditional diagonal. Substring DP has a different state. Increasing i,j exposes top/diagonal in old row and left in new row. Do not alias the rows. Input swapping can minimize width because length is symmetric."
-    },
-    {
-      "type": "p",
-      "md": "Bounds and independent transfer\n\nO(n*m) updates, at most 2250000, and O(min(n,m)) row entries. No recursion required. Rolling lengths do not preserve parent history for alignment reconstruction. Enumerate all subsequences of a tiny sequence, test occurrence in the other and maximize length. Include repeated/disjoint/equal/reversed cases and maximum 1500 arrays. A second copy of the recurrence is not the only oracle."
-    },
-    {
-      "type": "code",
-      "lang": "python",
-      "code": "MOD = 1000000007\n\ndef lcs(a, b):\n    if not 1 <= len(a) <= 1500 or not 1 <= len(b) <= 1500:\n        raise ValueError('invalid sequence lengths')\n    if any((type(x) is not int or abs(x) > 10 ** 9 for seq in (a, b) for x in seq)):\n        raise ValueError('invalid sequence value')\n    if len(b) > len(a):\n        (a, b) = (b, a)\n    old = [0] * (len(b) + 1)\n    for x in a:\n        new = [0] * (len(b) + 1)\n        for (j, y) in enumerate(b, 1):\n            new[j] = old[j - 1] + 1 if x == y else max(old[j], new[j - 1])\n        old = new\n    return [str(old[-1])]\n\nprint(lcs([1, 2, 1], [2, 1, 2]))\nprint(lcs([7, 7], [7]))\nprint(lcs([1], [2]))",
-      "caption": "Expected ['2'], ['1'], ['0']. Complete Python3.12 length-only list-lines function. Empty prefixes are internal bases, not broadened public inputs."
-    },
-    {
-      "type": "p",
-      "md": "Mechanism reference: [MIT two-sequence LCS recurrence](https://ocw.mit.edu/courses/6-006-introduction-to-algorithms-spring-2020/28461a74f81101874a13d9679a40584d_MIT6_006S20_lec16.pdf). MIT presents equivalent suffix states; this lesson uses prefixes and rolling length rows. Integer-ID bounds and the list-line interface come from the captured task. Exact public task contract hash c4a4b8836d067dea4058bd0b013803b19315a15be3f65a29eec2bd9122162531. This is teaching/source fit, not current app or judge sign-off."
-    },
-    {
-      "type": "p",
-      "md": "Different from LCS\n\nSource strings have 1..1000 lowercase ASCII letters. Insert/delete/substitute cost 1; equal-character match costs 0. Adjacent transposition is NOT an operation. D(i,j) is the minimum edits from a[:i] to b[:j]. D(i,0)=i deletions; D(0,j)=j insertions. edit_distance(a,b) returns a one-line list. This extension supplies the missing main algorithm rather than relabelling LCS prerequisites."
-    },
-    {
-      "type": "p",
-      "md": "Final-column proof\n\nEvery order-preserving edit alignment ends by deleting a last character (D(i-1,j)+1), inserting a last target character (D(i,j-1)+1), or pairing/substituting (D(i-1,j-1)+(a[i-1]!=b[j-1])). Conversely append each operation to an optimal smaller alignment to obtain a feasible candidate. Standard unit edit scripts admit such an alignment without increased cost. Therefore take the MINIMUM of these three cases, not maximum or sum."
-    },
-    {
-      "type": "p",
-      "md": "Trace and boundaries\n\ncat to cut costs 1 substitution. ab to ba costs 2, not one forbidden swap. a to b costs 1 here, whereas len(a)+len(b)-2*LCS gives 2: that identity is for insertion/deletion-only costs. Initialize old[j]=j; row i starts new[0]=i, then fill ascending j from top,left,diagonal. Zero LCS bases would give false cheap insertions. Symmetric unit costs permit swapping inputs to minimize row width."
-    },
-    {
-      "type": "p",
-      "md": "Work and independent transfer\n\nO(n*m) updates <=1000000, O(min(n,m)) entries. Distance<=max(n,m)<=1000. Rolling lengths do not reconstruct an edit script. For tiny {a,b} strings, BFS over strings using all insert/delete/substitute neighbors independently finds the fewest operations. Bound intermediate lengths by max source/target length for these unit costs. Test equal, disjoint, repeated, transposition and maximum 1000 cases."
-    },
-    {
-      "type": "code",
-      "lang": "python",
-      "code": "MOD = 1000000007\n\ndef edit_distance(a, b):\n    if any((type(s) is not str or not 1 <= len(s) <= 1000 or any((not 'a' <= ch <= 'z' for ch in s)) for s in (a, b))):\n        raise ValueError('invalid strings')\n    if len(b) > len(a):\n        (a, b) = (b, a)\n    old = list(range(len(b) + 1))\n    for (i, x) in enumerate(a, 1):\n        new = [i] + [0] * len(b)\n        for (j, y) in enumerate(b, 1):\n            new[j] = min(old[j] + 1, new[j - 1] + 1, old[j - 1] + (x != y))\n        old = new\n    return [str(old[-1])]\n\nprint(edit_distance('cat', 'cut'))\nprint(edit_distance('ab', 'ba'))\nprint(edit_distance('a', 'b'))",
-      "caption": "Expected ['1'], ['2'], ['1']. Complete Python3.12 list-lines unit edit distance; no swaps, weights or script reconstruction."
-    },
-    {
-      "type": "p",
-      "md": "Mechanism reference: [Wagner-Fischer prefix recurrence](https://en.wikipedia.org/wiki/Wagner%E2%80%93Fischer_algorithm). The reference supports unit insertion/deletion/substitution distance, not swaps. Lowercase ASCII bounds and list-line framing come from the captured task. Exact public task contract hash 631ffb5c0373236dbf38c89ede10df4d3ef79951a1288810f87ae4b55ac85cfa. This is teaching/source fit, not current app or judge sign-off."
-    },
-    {
-      "type": "p",
-      "md": "Cardinality and half-open endpoints\n\nSource: 1..100000 intervals [s,e), 0<=s<e<=1e9. Select the most pairwise nonoverlapping intervals. start_next=end_previous is compatible because the earlier end is excluded. max_meetings(intervals) returns a list with one count. No weighted reward or selected IDs are requested. Sort a copy, preserving caller order.\n\nExchange proof\n\nAmong intervals compatible with a chosen prefix, let g finish earliest. An optimal completion has first interval o. Replace o by g: finish(g)<=finish(o), so all later optimal starts remain compatible. Count is unchanged. Thus some optimum starts with g. Induct on the compatible remaining suffix. Earliest start, shortest duration and fewest conflicts do not have this proof."
-    },
-    {
-      "type": "p",
-      "md": "Worked choice\n\nFor [(0,6),(1,2),(2,3),(3,4)], earliest start may pick only (0,6). Earliest finish picks the three short touching intervals. Test start>=last_end, not strict>. Equal-finish ties can use start as a deterministic secondary key; the proof needs only no-later finish. Positive duration excludes empty-interval complications.\n\nCost and transfer\n\nO(n log n) sort plus scan, O(n) copy/sort storage. Count<=100000; timestamps are not summed. Brute-force tiny subsets and check pairwise half-open compatibility, including ties, nesting, duplicates and disjoint intervals. Test max 100000 separately. Weighted rewards invalidate this count-only exchange proof."
-    },
-    {
-      "type": "code",
-      "lang": "python",
-      "code": "MOD = 1000000007\n\ndef valid_intervals(intervals):\n    if not 1 <= len(intervals) <= 100000:\n        raise ValueError('invalid interval count')\n    if any((type(s) is not int or type(e) is not int or (not 0 <= s < e <= 10 ** 9) for (s, e) in intervals)):\n        raise ValueError('invalid half-open interval')\n\ndef max_meetings(intervals):\n    valid_intervals(intervals)\n    chosen = 0\n    last_end = None\n    for (start, end) in sorted(intervals, key=lambda item: (item[1], item[0])):\n        if last_end is None or start >= last_end:\n            chosen += 1\n            last_end = end\n    return [str(chosen)]\n\nprint(max_meetings([(0, 6), (1, 2), (2, 3), (3, 4)]))\nprint(max_meetings([(1, 2), (2, 3)]))",
-      "caption": "Expected ['3'], ['2']. Complete list-lines Python3.12 implementation with validator and source half-open convention."
-    },
-    {
-      "type": "p",
-      "md": "Mechanism reference: [Earliest-finish interval scheduling exchange proof](https://www.cs.princeton.edu/~wayne/kleinberg-tardos/pearson/04GreedyAlgorithms.pdf). The half-open compatibility, source bounds and list-line output are explicit task choices. Exact public task contract hash df720c16a84d00b2510c273d5a3610b2c8b80deb7164af8034d320b4719853b3. This is teaching/source fit, not current app or judge sign-off."
-    },
-    {
-      "type": "p",
-      "md": "Minimum-coin public bridge\n\nThe earlier minimum_coins section supplies the recurrence and greedy counterexample, but its return shape differs. Here min_coins(coins,amount) returns exactly one string in a list. The captured public contract allows 1..20 positive denominations, each <=10000, not necessarily distinct; amount is 0..10000. Zero amount returns [\"0\"]; impossible returns [\"-1\"]. Do not import the combination-count helper's duplicate rejection: duplicates do not change a minimum and are allowed here."
-    },
-    {
-      "type": "p",
-      "md": "Remove-one-coin proof and sentinel\n\nFor x>0, an optimum ends in some positive coin c<=x. Removing it leaves an optimum for x-c; otherwise a better remainder would improve the whole. Conversely each reachable remainder plus c is feasible. Thus dp[x]=min(dp[x-c]+1), with dp[0]=0. Initialize other states to A+1. Any reachable count is <=A because each coin contributes at least 1. An unreachable predecessor gives A+2, which cannot improve the sentinel. Ascending amounts settle all predecessors x-c<x. Repeated values repeat an identical minimum candidate and cannot alter the answer."
-    },
-    {
-      "type": "p",
-      "md": "Trace and precise transfer\n\nFor coins [2,2] and A=3: dp[0]=0, dp[1]=4, dp[2]=1, dp[3]=4. Return [\"-1\"], not [\"4\"]. With coins [1,5,11] and A=15, greedy uses five coins while DP finds three 5s. A=0 stays 0 even if every coin is larger. Work is O(n*A), at most 200000 relaxations, and storage is O(A). This helper trusts the source's positive denominations; it does not define zero/negative denomination behavior. Independently BFS exact sums 0..A with one coin per edge and compare shortest levels, including duplicates, unreachable targets and maximum dimensions. No reconstruction is needed because output asks only for the count."
-    },
-    {
-      "type": "code",
-      "lang": "python",
-      "code": "MOD = 1000000007\n\ndef min_coins(coins, amount):\n    \"\"\"Source allows repeated denominations; they do not create new choices.\"\"\"\n    unreachable = amount + 1\n    dp = [0] + [unreachable] * amount\n    for total in range(1, amount + 1):\n        for coin in coins:\n            if coin <= total:\n                dp[total] = min(dp[total], dp[total - coin] + 1)\n    return [str(dp[amount] if dp[amount] <= amount else -1)]\n\nprint(min_coins([2, 2], 3))\nprint(min_coins([9], 0))\nprint(min_coins([1, 5, 11], 15))",
-      "caption": "Expected ['-1'], ['0'], ['3']. Exact supplied function name,argument order,and one-string-list output."
-    },
-    {
-      "type": "p",
-      "md": "Mechanism reference: [CMU minimum-coin recurrence, base and unreachable states, section 5.1](http://www.cs.cmu.edu/~15210/notes/06-dp1.pdf). CMU uses infinity for unreachable states. The exact A+1 sentinel, duplicate policy and list-line interface are derived here for the captured task, not claims about the source implementation. Exact public task contract hash 75e9a736d506d44cc5c12bb046218f62252c212039bfa8c99f328ce66146cade. This is teaching/source fit, not current app or judge sign-off."
-    },
-    {
-      "type": "p",
-      "md": "Choose a state that preserves contiguity\n\nLet ending_j be the maximum sum of a NONEMPTY subarray ending at position j. A candidate either consists of a[j] alone or extends a nonempty subarray ending at j-1. Therefore ending_j=max(a[j],ending_(j-1)+a[j]). Let best_j=max(best_(j-1),ending_j). Every nonempty interval has one ending position, so the final best is the global optimum.\n\nInitialization is part of the contract\n\nInitialize ending=best=a[0], since n>=1. Starting best=0 would admit an empty interval and incorrectly return 0 for all-negative input. For [-5,-2,-7], ending values are -5,-2,-7 and best is -2. For [4,-6,3,5,-2], endings are 4,-2,3,8,6 and best is 8 from [3,5]. A negative day may remain inside an optimal interval; sorting would destroy contiguity."
-    },
-    {
-      "type": "p",
-      "md": "Arithmetic and transfer\n\nn<=100000 and abs(a_i)<=1000000000 give sums within signed 64-bit range; Python integers are exact. The iterator implementation scans once with O(1) numeric state beyond the input/output, without slicing copies. It returns only the optimal value, not boundaries or a tie-broken interval. Test one value, all negative, all zero, a best prefix/suffix and a best interior streak against exhaustive nonempty interval sums."
-    },
-    {
-      "type": "code",
-      "lang": "python",
-      "code": "from collections import OrderedDict, deque\nfrom bisect import bisect_left\nimport heapq\n\ndef max_subarray(a):\n    values = iter(a)\n    ending = best = next(values)\n    for value in values:\n        ending = max(value, ending + value)\n        best = max(best, ending)\n    return [str(best)]\n\nprint(*max_subarray([-5, -2, -7]))\nprint(*max_subarray([4, -6, 3, 5, -2]))",
-      "caption": "Expected stdout:\n-2\n8\n\nPrevalidated inputs follow the captured public contract. This completes the named Python function using its original supplied main/parser. It does not claim independent parser, C++, app-runner or judge qualification."
-    },
-    {
-      "type": "p",
-      "md": "Algorithm references: [Nonempty maximum-subarray algorithm](https://cp-algorithms.com/others/maximum_average_segment.html). The reference gives maximum-subarray mechanisms; the exact best-ending form and nonempty initialization are derived above. Public task hash 608cfce8a53fb28fc8233802a434079672e4494086a3f979282bdeb1b68a85d8. Exact numeric bounds and adapter framing follow that captured contract. This is teaching/source fit, not current runtime qualification."
-    },
-    {
-      "type": "p",
-      "md": "Counting indexed choices needs addition, not maximum\n\nLet F(i,s) count subsets of the first i positions with total exactly s, modulo 1000000007. There is one empty subset, so F(0,0)=1 and F(0,s>0)=0. Split subsets by whether position i is omitted or included: F(i,s)=F(i-1,s)+F(i-1,s-a_i), where the second term exists only for s>=a_i. Unlike knapsack value optimization, this recurrence adds counts rather than taking a maximum."
-    },
-    {
-      "type": "p",
-      "md": "Downward scan protects 0/1 use\n\nStore one row ways and scan sums from target down to a_i. Because a_i>0, dependency ways[s-a_i] has not yet been updated for this item, so each index is used at most once. An upward scan would permit unbounded reuse, like a different coin problem. Repeated numerical values are still separate positions: for [2,2,2] and target 4, the three pairs of indexes count separately. Do not deduplicate a."
-    },
-    {
-      "type": "p",
-      "md": "Trace, modulo and limits\n\nFor [1,2,2], target 3, the first 1 gives ways[1]=1; the first 2 adds one way to 2 and one to 3; the second 2 adds another way to 3, so answer 2. target is positive in the public contract, but ways[0]=1 is essential to create subsets starting with an item. Reduce each addition modulo the stated prime. n<=200,target<=20000 give O(n*target) updates and O(target) state. Small oracle: enumerate every index mask, not combinations of distinct values."
-    },
-    {
-      "type": "code",
-      "lang": "python",
-      "code": "from collections import OrderedDict, deque\nfrom bisect import bisect_left\nimport heapq\n\ndef count_subsets(target, a):\n    modulus = 1000000007\n    ways = [0] * (target + 1)\n    ways[0] = 1\n    for value in a:\n        for total in range(target, value - 1, -1):\n            ways[total] = (ways[total] + ways[total - value]) % modulus\n    return [str(ways[target])]\n\nprint(*count_subsets(4, [2, 2, 2]))\nprint(*count_subsets(3, [1, 2, 2]))",
-      "caption": "Expected stdout:\n3\n2\n\nPrevalidated inputs follow the captured public contract. This completes the named Python function using its original supplied main/parser. It does not claim independent parser, C++, app-runner or judge qualification."
-    },
-    {
-      "type": "p",
-      "md": "Algorithm references: [0/1 previous-layer dependency](https://cp-algorithms.com/dynamic_programming/knapsack.html). The reference establishes descending iteration for 0/1 dependencies. The additive indexed-subset recurrence is derived here, not the source's maximum-value objective. Public task hash 90395d728ec2f794969db098e726429e7b6b77bc981e2389b32e0ed9fa290b16. Exact numeric bounds and adapter framing follow that captured contract. This is teaching/source fit, not current runtime qualification."
-    },
-    {
-      "type": "p",
-      "md": "Compress many subsequences by dominance\n\nAfter a processed prefix, tails[length-1] is the smallest achievable final value of a strictly increasing subsequence of that length. A smaller tail is never worse for future extension: every larger future value that extends a higher tail also extends the smaller one. Therefore keep only the minimum tail for each length. tails is strictly increasing, since removing the final element of a longer increasing subsequence leaves a shorter subsequence with a smaller last value."
-    },
-    {
-      "type": "p",
-      "md": "One lower-bound update, with an existence proof\n\nFor new x, find the first position p with tails[p]>=x using bisect_left. If p==len(tails), append x; otherwise replace tails[p] with x. For p>0, tails[p-1]<x, so a length-p subsequence exists that x extends to length p+1. No longer length can be created because the minimal tail of the next shorter required length is already >=x. Replacing a tail does not discard attainable longer subsequences; their recorded values remain valid from earlier prefixes. Equal x replaces, never extends, preserving STRICT increase."
-    },
-    {
-      "type": "p",
-      "md": "Trace and what tails is not\n\nFor [3,1,2,2,5,4], frontiers are [3],[1],[1,2],[1,2],[1,2,5],[1,2,4], answer 3. The final tails array need not itself be an original subsequence: [3,5,6,1] leaves [1,5,6] although 1 arrived last. This function returns only the length, not a witness. It uses O(n log n) comparisons and O(n) frontier storage for n<=200000; sorting the input would answer a different question. Compare with an independent quadratic ending-index DP on small signed arrays."
-    },
-    {
-      "type": "code",
-      "lang": "python",
-      "code": "from collections import OrderedDict, deque\nfrom bisect import bisect_left\nimport heapq\n\ndef lis_length(a):\n    tails = []\n    for value in a:\n        at = bisect_left(tails, value)\n        if at == len(tails):\n            tails.append(value)\n        else:\n            tails[at] = value\n    return [str(len(tails))]\n\nprint(*lis_length([3, 1, 2, 2, 5, 4]))\nprint(*lis_length([4, 4, 4]))",
-      "caption": "Expected stdout:\n3\n1\n\nPrevalidated inputs follow the captured public contract. This completes the named Python function using its original supplied main/parser. It does not claim independent parser, C++, app-runner or judge qualification."
-    },
-    {
-      "type": "p",
-      "md": "Algorithm references: [Minimum-tail strict-LIS invariant and lower-bound partition](https://cp-algorithms.com/dynamic_programming/longest_increasing_subsequence.html), [Python bisect_left partition](https://docs.python.org/3.12/library/bisect.html). The algorithm reference supports the minimum-tail invariant; Python documentation specifies bisect_left. Tails is not claimed to reconstruct a witness. Public task hash f9f2ff28d2c1b4b9f735fa09db4c265c38ce93aa18e62c63db720ca7330ddf90. Exact numeric bounds and adapter framing follow that captured contract. This is teaching/source fit, not current runtime qualification."
-    },
-    {
       "type": "ref",
       "items": [
         {
@@ -383,8 +139,8 @@
     "An explicit unreachable state prevents failure from looking like a valid zero-cost/count result. (Unreachable is distinct from a valid numeric answer.)",
     "Separate feasibility from optimality. The worked coin system is a specific counterexample, not an argument against every greedy algorithm. (One legal counterexample is enough to disprove universal optimality.)"
   ],
-  "realWorldApplication": "Used directly across production quantitative research, execution systems, and validation pipelines.",
-  "quantFinanceApplication": "Directly prepares you for judged problems: fixed-point-permutations, bounded-walk-count, coin-ways-count, lcs-length, edit-distance, interval-scheduling, coin-change-min, max-subarray-sum, subset-sum-count, longest-increasing-subsequence, knapsack-01.",
+  "realWorldApplication": "In practice, engineering teams apply dynamic programming and greedy counterexamples within Algorithmic Invariants and Counterexamples when building reliable dsa and algorithms workflows — specifically to define states, base cases and dependency order for bounded-item knapsack and unbounded minimum-coin dynamic programs; and Use a concrete counterexample to reject an unjustified local greedy rule rather than assume every fast choice is optimal; and Partition permutations by exactly k fixed positions and derive the derangement recurrence with correct empty/one-element bases; and Compute binomial factors under a prime modulus with invertible factorials only when n is below that modulus.",
+  "quantFinanceApplication": "Core interview preparation inside Algorithmic Invariants and Counterexamples: builds the patterns behind coding problems including Permutations With Exactly K Fixed Points, Bounded Walk Count, Ways To Make Change, Longest Common Subsequence.",
   "summary": [
     "Define DP states, base cases and dependency order; reject unjustified greedy rules with counterexamples.",
     "Counting extensions derive exact fixed-point permutations with modular binomials and prefix-surviving bounded walks with separate time layers.",
@@ -433,7 +189,7 @@
       "objective": 2,
       "options": [
         "For coins 1, 3, 4 and amount 6 it uses three coins while 3+3 uses two",
-        "No greedy algorithm can ever be correct for any problem",
+        "No greedy algorithm can ever be correct for any problem across the specified interval",
         "A unit coin makes the amount unreachable",
         "All dynamic programs require exponential tables"
       ],
@@ -503,5 +259,15 @@
     "dsa",
     "algorithms",
     "complexity"
+  ],
+  "provenance": [
+    "Mechanism reference: [Coin-first ascending-amount combination recurrence](https://arunank.com/dsa-book/kata-229.html). This reference normalizes duplicates with set(coins); the captured task instead requires distinct inputs and this helper explicitly rejects duplicates. Modulus, numeric bounds and list-line output are local contract choices. Exact public task contract hash 14a16030d08a05ad8ad0e1e260d9f30fbec26ee61755df8b54e5a9ebe1b22572. This is teaching/source fit, not current app or judge sign-off.",
+    "Mechanism reference: [MIT two-sequence LCS recurrence](https://ocw.mit.edu/courses/6-006-introduction-to-algorithms-spring-2020/28461a74f81101874a13d9679a40584d_MIT6_006S20_lec16.pdf). MIT presents equivalent suffix states; this lesson uses prefixes and rolling length rows. Integer-ID bounds and the list-line interface come from the captured task. Exact public task contract hash c4a4b8836d067dea4058bd0b013803b19315a15be3f65a29eec2bd9122162531. This is teaching/source fit, not current app or judge sign-off.",
+    "Mechanism reference: [Wagner-Fischer prefix recurrence](https://en.wikipedia.org/wiki/Wagner%E2%80%93Fischer_algorithm). The reference supports unit insertion/deletion/substitution distance, not swaps. Lowercase ASCII bounds and list-line framing come from the captured task. Exact public task contract hash 631ffb5c0373236dbf38c89ede10df4d3ef79951a1288810f87ae4b55ac85cfa. This is teaching/source fit, not current app or judge sign-off.",
+    "Mechanism reference: [Earliest-finish interval scheduling exchange proof](https://www.cs.princeton.edu/~wayne/kleinberg-tardos/pearson/04GreedyAlgorithms.pdf). The half-open compatibility, source bounds and list-line output are explicit task choices. Exact public task contract hash df720c16a84d00b2510c273d5a3610b2c8b80deb7164af8034d320b4719853b3. This is teaching/source fit, not current app or judge sign-off.",
+    "Mechanism reference: [CMU minimum-coin recurrence, base and unreachable states, section 5.1](http://www.cs.cmu.edu/~15210/notes/06-dp1.pdf). CMU uses infinity for unreachable states. The exact A+1 sentinel, duplicate policy and list-line interface are derived here for the captured task, not claims about the source implementation. Exact public task contract hash 75e9a736d506d44cc5c12bb046218f62252c212039bfa8c99f328ce66146cade. This is teaching/source fit, not current app or judge sign-off.",
+    "Algorithm references: [Nonempty maximum-subarray algorithm](https://cp-algorithms.com/others/maximum_average_segment.html). The reference gives maximum-subarray mechanisms; the exact best-ending form and nonempty initialization are derived above. Public task hash 608cfce8a53fb28fc8233802a434079672e4494086a3f979282bdeb1b68a85d8. Exact numeric bounds and adapter framing follow that captured contract. This is teaching/source fit, not current runtime qualification.",
+    "Algorithm references: [0/1 previous-layer dependency](https://cp-algorithms.com/dynamic_programming/knapsack.html). The reference establishes descending iteration for 0/1 dependencies. The additive indexed-subset recurrence is derived here, not the source's maximum-value objective. Public task hash 90395d728ec2f794969db098e726429e7b6b77bc981e2389b32e0ed9fa290b16. Exact numeric bounds and adapter framing follow that captured contract. This is teaching/source fit, not current runtime qualification.",
+    "Algorithm references: [Minimum-tail strict-LIS invariant and lower-bound partition](https://cp-algorithms.com/dynamic_programming/longest_increasing_subsequence.html), [Python bisect_left partition](https://docs.python.org/3.12/library/bisect.html). The algorithm reference supports the minimum-tail invariant; Python documentation specifies bisect_left. Tails is not claimed to reconstruct a witness. Public task hash f9f2ff28d2c1b4b9f735fa09db4c265c38ce93aa18e62c63db720ca7330ddf90. Exact numeric bounds and adapter framing follow that captured contract. This is teaching/source fit, not current runtime qualification."
   ]
 }

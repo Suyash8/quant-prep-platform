@@ -25,6 +25,7 @@ export function ContactForm({ defaultName = '', defaultEmail = '', defaultSubjec
   }, [defaultName, defaultEmail]);
   const [subject, setSubject] = React.useState(defaultSubject);
   const [message, setMessage] = React.useState('');
+  const [website, setWebsite] = React.useState('');
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [sentId, setSentId] = React.useState<string | null>(null);
@@ -37,7 +38,7 @@ export function ContactForm({ defaultName = '', defaultEmail = '', defaultSubjec
       const res = await fetch('/api/contact', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, email, subject, message }),
+        body: JSON.stringify({ name, email, subject, message, website }),
       });
       const data = (await res.json().catch(() => ({}))) as { ok?: boolean; id?: string; error?: string };
       if (!res.ok || !data.ok) {
@@ -141,6 +142,11 @@ export function ContactForm({ defaultName = '', defaultEmail = '', defaultSubjec
           {error}
         </p>
       )}
+
+      <div className="sr-only" aria-hidden="true">
+        <label htmlFor="contact-website">Leave empty</label>
+        <input id="contact-website" tabIndex={-1} autoComplete="off" value={website} onChange={(e) => setWebsite(e.target.value)} />
+      </div>
 
       <div className="pt-1 flex justify-end">
         <button type="submit" disabled={busy} className="btn3d">

@@ -5,7 +5,8 @@ import { recordProblemAttempt } from '@/lib/client/local-state';
 import { getDraft, saveDraft } from '@/lib/client/idb';
 import { useBackGuard } from '@/hooks/use-back-guard';
 import { useCodeReadiness } from '@/hooks/use-code-readiness';
-import { CheckCircle2, FileCode2, History, Loader2, Play, RotateCcw, Send, Terminal, XCircle } from 'lucide-react';
+import { CheckCircle2, FileCode2, GripHorizontal, History, Loader2, Play, RotateCcw, Send, Terminal, XCircle } from 'lucide-react';
+import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { toast } from 'sonner';
 import { MonacoCodeEditor } from '@/components/monaco-code-editor';
 
@@ -161,7 +162,7 @@ export function CodeWorkspace({ slug, stubs, examples, timeLimitMs }: WorkspaceP
       const v = (data as SubmitResult).verdict;
       if (v === 'passed') {
         // v3: mirror the solve locally so the dashboard and problem list update instantly
-        recordProblemAttempt(slug, 'passed');
+        recordProblemAttempt(slug, 'passed', xp);
         toast.success(`All tests passed (${(data as SubmitResult).passed}/${(data as SubmitResult).total}).`);
       }
       else if (v === 'compile_error') toast.error('Compilation failed, check the compiler output.');
@@ -206,10 +207,12 @@ export function CodeWorkspace({ slug, stubs, examples, timeLimitMs }: WorkspaceP
 
   return (
     <div className="flex min-w-0 flex-col">
-      <div className="flex min-h-0 flex-col items-stretch bg-surface-2/40">
-        {/* Editor panel */}
-        <div className="flex min-h-0 flex-1 flex-col p-2.5 sm:p-3 lg:p-4">
-          <div className="flex flex-auto min-h-[300px] flex-col overflow-hidden rounded-2xl border-2 shadow-lg" style={{ background: PANEL_BG, borderColor: PANEL_BORDER }}>
+      <div className="flex min-h-[720px] flex-col items-stretch bg-surface-2/40">
+        <PanelGroup direction="vertical" className="flex-1">
+          <Panel defaultSize={58} minSize={35} className="flex min-h-0 flex-col">
+            {/* Editor panel */}
+            <div className="flex min-h-0 flex-1 flex-col p-2.5 sm:p-3 lg:p-4 pb-1.5">
+              <div className="flex flex-auto min-h-[260px] flex-col overflow-hidden rounded-2xl border-2 shadow-lg" style={{ background: PANEL_BG, borderColor: PANEL_BORDER }}>
             <div className="flex flex-wrap items-center gap-2 border-b-2 px-3 py-2" style={{ background: PANEL_HEADER_BG, borderColor: PANEL_DIVIDER }}>
               <span className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 font-mono text-[12px] font-semibold text-slate-300" style={{ background: PANEL_BG, borderColor: PANEL_BORDER }}>
                 <FileCode2 className="h-3.5 w-3.5 text-accent" />
@@ -269,20 +272,29 @@ export function CodeWorkspace({ slug, stubs, examples, timeLimitMs }: WorkspaceP
                 </pre>
               </div>
             )}
-            <MonacoCodeEditor
-              value={code}
-              language={monacoLang}
-              onChange={setCode}
-              onRunShortcut={doRun}
-              onSubmitShortcut={doSubmit}
-              height={editorHeight}
-            />
+            <div role="region" aria-label={`Code editor for ${fileLabel}`} className="flex-1 min-h-0">
+              <MonacoCodeEditor
+                value={code}
+                language={monacoLang}
+                onChange={setCode}
+                onRunShortcut={doRun}
+                onSubmitShortcut={doSubmit}
+                height={editorHeight}
+              />
+            </div>
           </div>
         </div>
-
+          </Panel>
+          <PanelResizeHandle
+            className="mx-4 my-0.5 flex h-2.5 items-center justify-center rounded-full bg-surface-3/70 text-faint hover:bg-accent-soft hover:text-accent transition-colors cursor-row-resize"
+            aria-label="Resize editor and console panels"
+          >
+            <GripHorizontal className="h-3.5 w-3.5" />
+          </PanelResizeHandle>
+          <Panel defaultSize={42} minSize={24} className="flex min-h-0 flex-col">
         {/* Console panel */}
-        <div className="flex min-h-0 w-full flex-col p-2.5 sm:p-3 lg:p-4 lg:pt-0">
-          <div className="flex flex-auto min-h-[340px] flex-col overflow-hidden rounded-2xl border-2 shadow-lg" style={{ background: PANEL_BG, borderColor: PANEL_BORDER }}>
+        <div className="flex min-h-0 w-full flex-1 flex-col p-2.5 sm:p-3 lg:p-4 pt-1.5">
+          <div className="flex flex-auto min-h-[240px] flex-col overflow-hidden rounded-2xl border-2 shadow-lg" style={{ background: PANEL_BG, borderColor: PANEL_BORDER }}>
             <div className="flex items-center gap-2 border-b-2 px-3 py-2" style={{ background: PANEL_HEADER_BG, borderColor: PANEL_DIVIDER }}>
               <Terminal className="h-4 w-4 shrink-0 text-accent" strokeWidth={2.5} />
               <span className="font-mono text-[13px] font-bold text-slate-300">Console</span>
@@ -470,6 +482,8 @@ export function CodeWorkspace({ slug, stubs, examples, timeLimitMs }: WorkspaceP
             </div>
           </div>
         </div>
+          </Panel>
+        </PanelGroup>
       </div>
     </div>
   );

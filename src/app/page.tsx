@@ -3,16 +3,16 @@ import { AuthAwareLink } from '@/components/auth-aware-link';
 import { countLabs, getMap, getRegistry, listProblems, listProjects } from '@/lib/content';
 import { mathText } from '@/lib/math-text';
 import { Mascot } from '@/components/brand/mascot';
-import { Ring } from '@/components/page-kit';
+import { TryLessonWidget } from '@/components/try-lesson-widget';
 import { resolvePhaseColor, phaseIcon } from '@/lib/phase-styles';
 import {
   Accordion, AccordionContent, AccordionItem, AccordionTrigger,
 } from '@/components/ui/accordion';
 import {
   ArrowRight, BookOpenCheck, BrainCircuit, CheckCircle2, ChevronDown, Code2,
-  Compass, FileCode2, FlaskConical, GraduationCap, Landmark, Layers, LineChart,
-  Lock, ListChecks, ShieldCheck, Sigma, Swords, Timer, Trophy, Undo2, Zap, Flame,
-  Play, SquarePen, Gauge,
+  Compass, FileCode2, FlaskConical, Landmark, Layers, LineChart,
+  Lock, ListChecks, ShieldCheck, Sigma, Swords, Timer, Undo2, Zap,
+  Play, Gauge,
 } from 'lucide-react';
 
 const FAQ = [
@@ -87,8 +87,8 @@ export default function LandingPage() {
     { icon: Timer, tone: 'warning', title: 'Mental math drills', desc: 'Timed arithmetic practice with speed and accuracy tracking, so the easy stuff stops slowing you down later.', chip: '8 modes', chipIcon: Zap },
     { icon: Undo2, tone: 'info', title: 'Flashcards that come back', desc: 'Every lesson generates cards, scheduled by SM-2, the same algorithm Anki uses. Miss a quiz question and it joins the queue too.', chip: 'SM-2', chipIcon: Undo2 },
     { icon: FlaskConical, tone: 'violet', title: 'Interactive labs', desc: `${labCount} labs you drive with sliders and checkboxes: geometric Brownian motion, queues, cache behaviour, Black-Scholes.`, chip: 'In the browser', chipIcon: FlaskConical },
-    { icon: FileCode2, tone: 'danger', title: 'Judged C++, Python & SQL IDE', desc: `Solve ${problems.length} interview-grade problems in a Monaco editor compiled against hidden test suites with strict CPU and memory limits.`, chip: `${problems.length} problems`, chipIcon: Code2 },
-    { icon: LineChart, tone: 'gold', title: 'Honest analytics', desc: 'Every metric on your dashboard is computed from what you actually did. Unfinished topics say so. We would rather be boring than fake.', chip: 'No inflated numbers', chipIcon: ShieldCheck },
+    { icon: FileCode2, tone: 'danger', title: 'Judged C++ & Python IDE', desc: `Solve ${problems.length} interview-grade problems in a Monaco editor compiled against hidden test suites with strict CPU and memory limits.`, chip: `${problems.length} problems`, chipIcon: Code2 },
+    { icon: LineChart, tone: 'gold', title: 'Transparent analytics', desc: 'Every metric on your dashboard reflects verified submissions, quiz attempts, and review retention — unfinished areas stay clearly marked.', chip: 'Verified metrics', chipIcon: ShieldCheck },
   ];
 
   const phases = map.phases;
@@ -124,63 +124,16 @@ export default function LandingPage() {
                 <Link href="/curriculum" className="btn3d btn3d-ghost btn3d-lg">See the curriculum</Link>
               </div>
               <div className="mt-7 flex flex-wrap items-center gap-2.5 anim-slide-up" style={{ animationDelay: '0.3s' }}>
-                <span className="chip"><BrainCircuit className="h-3.5 w-3.5" aria-hidden /> FSRS-4 spaced repetition</span>
+                <span className="chip"><BrainCircuit className="h-3.5 w-3.5" aria-hidden /> SM-2 spaced repetition</span>
                 <span className="chip"><Play className="h-3.5 w-3.5" aria-hidden /> Real C++ compiler</span>
                 <span className="chip"><ListChecks className="h-3.5 w-3.5" aria-hidden /> {publishedLessons} lessons</span>
               </div>
             </div>
 
-            {/* live product preview: stacked real components, not a stock image */}
-            <div className="relative min-w-0 anim-pop-in" style={{ animationDelay: '0.25s' }} aria-hidden>
-              <div className="qf-card p-6 rotate-1 hover:rotate-0 transition-transform duration-300">
-                <div className="flex items-center justify-between gap-2 min-w-0">
-                  <span className="text-[15px] font-black truncate min-w-0">Lesson 12 · Pre-algebra</span>
-                  <span className="flex items-center gap-2 shrink-0">
-                    <span className="hud-pill"><Flame className="h-3.5 w-3.5 text-flame anim-flame" /><span className="text-[13px] tnum">7</span></span>
-                    <span className="hud-pill"><Zap className="h-3.5 w-3.5 text-warning" /><span className="text-[13px] tnum">1,480</span></span>
-                  </span>
-                </div>
-                <div className="mt-3 flex items-center gap-3">
-                  <Ring value={62} size={44} thickness={5} tone="var(--accent)">
-                    <span className="text-[12px] font-black tnum">62%</span>
-                  </Ring>
-                  <div className="min-w-0">
-                    <p className="text-[15px] font-extrabold leading-snug">Solve for x in one step</p>
-                    <div className="mt-1.5 flex flex-wrap gap-1.5">
-                      <span className="chip">6 min</span>
-                      <span className="chip chip-warning">+20 XP</span>
-                    </div>
-                  </div>
-                </div>
-                <div className="mt-4 space-y-2">
-                  <span className="qf-answer-tile qf-selected">
-                    <span className="qf-answer-badge">A</span>
-                    <span className="min-w-0 flex-1 text-[15px]">x = 7, add 5 to both sides</span>
-                    <CheckCircle2 className="h-4 w-4 flex-none text-accent-deep dark:text-accent" />
-                  </span>
-                  <span className="qf-answer-tile opacity-90">
-                    <span className="qf-answer-badge">B</span>
-                    <span className="min-w-0 flex-1 text-[15px]">x = 2, subtract from both sides</span>
-                    <ChevronDown className="h-4 w-4 flex-none opacity-40" />
-                  </span>
-                </div>
-                <div className="mt-4 flex items-center gap-2">
-                  <span className="chip chip-info anim-pop-in" style={{ animationDelay: '0.9s' }}><Zap className="h-3.5 w-3.5" aria-hidden /> +20 XP</span>
-                  <span className="chip chip-gold"><Trophy className="h-3.5 w-3.5" aria-hidden /> 3 day streak</span>
-                  <span className="ml-auto tnum text-[13px] font-black text-faint">7 / 10 today</span>
-                </div>
-                {/* the practice layer lives inside the same mock, not a detached chip */}
-                <div className="mt-4 qf-card-flat p-3 bg-surface-2 flex items-center gap-3">
-                  <span className="icon-tile-sm icon-tile-accent"><Code2 aria-hidden /></span>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[13px] font-extrabold truncate">practice: two-sum (easy)</p>
-                    <div className="mt-1 prog-track h-1.5 w-32"><span className="prog-fill" style={{ width: '70%' }} /></div>
-                  </div>
-                  <span className="chip chip-success"><CheckCircle2 className="h-3.5 w-3.5" aria-hidden /> 7/10 tests</span>
-                </div>
-              </div>
-              {/* mascot tucked into the corner margin, fully inside the hero bounds */}
-              <Mascot pose="cheer" size={84} className="absolute -bottom-7 -left-7 z-[-1] drop-shadow-md anim-bob" aria-hidden />
+            {/* Interactive preview card: real sample questions directly in the hero */}
+            <div className="relative min-w-0 anim-pop-in" style={{ animationDelay: '0.25s' }}>
+              <TryLessonWidget publishedLessons={publishedLessons} />
+              <Mascot pose="cheer" size={84} className="hidden lg:block absolute -bottom-7 -left-7 z-[-1] drop-shadow-md anim-bob" aria-hidden />
             </div>
           </div>
 
@@ -287,7 +240,7 @@ export default function LandingPage() {
         <section className="border-y-2 border-border bg-surface-2/60">
           <div className="max-w-6xl mx-auto px-4 lg:px-6 py-16">
             <h2 className="text-2xl lg:text-3xl font-black tracking-tight">Built like the systems it teaches</h2>
-            <p className="mt-2 text-muted max-w-2xl font-semibold">Most course platforms are a video player bolted to a payment form. This one is an engineering project, because that is the honest way to teach engineering.</p>
+            <p className="mt-2 text-muted max-w-2xl font-semibold">Most course platforms are a video player bolted to a payment form. QuantFoundry is built like an engineering lab, because quantitative engineering is learned by building.</p>
             <div className="mt-8 grid sm:grid-cols-2 lg:grid-cols-3 gap-4 items-stretch">
               {features.map((f, i) => (
                 <div key={f.title} className="qf-card-flat p-5 anim-slide-up" style={{ animationDelay: `${i * 60}ms` }}>

@@ -34,7 +34,10 @@ const NAV = [
 
 /* ---------------- gamification HUD state (local-first, v3) ---------------- */
 
-import { getState, subscribe, xpSummary, hydrate, getQueueLength, scheduleFlush } from '@/lib/client/local-state';
+import {
+  getState, subscribe, xpSummary, hydrate, getQueueLength, scheduleFlush,
+  wipeLocalLearningData, getLastSyncedAt, retryFlushNow,
+} from '@/lib/client/local-state';
 import { broadcast } from '@/lib/client/broadcast';
 
 interface HudData {
@@ -87,26 +90,83 @@ function useHud(enabled: boolean, refreshKey?: string) {
 export function OfflinePill() {
   const [online, setOnline] = React.useState(true);
   const [pending, setPending] = React.useState(0);
+  const [open, setOpen] = React.useState(false);
+  const [retrying, setRetrying] = React.useState(false);
+  const [lastSync, setLastSync] = React.useState<string | null>(null);
+  const ref = React.useRef<HTMLDivElement>(null);
+
   React.useEffect(() => {
     const sync = () => {
       setOnline(navigator.onLine);
       setPending(getQueueLength());
+      setLastSync(getLastSyncedAt());
     };
     sync();
+    const unsub = subscribe(sync);
     const t = setInterval(sync, 4000);
     window.addEventListener('online', sync);
     window.addEventListener('offline', sync);
-    return () => { clearInterval(t); window.removeEventListener('online', sync); window.removeEventListener('offline', sync); };
+    const close = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', close);
+    return () => {
+      unsub();
+      clearInterval(t);
+      window.removeEventListener('online', sync);
+      window.removeEventListener('offline', sync);
+      document.removeEventListener('mousedown', close);
+    };
   }, []);
+
   if (online && pending === 0) return null;
+
   return (
-    <span
-      className={cn('hud-pill text-muted')}
-      title={online ? `${pending} change${pending === 1 ? '' : 's'} syncing` : 'Working locally on this device. Changes will sync automatically when reconnected.'}
-    >
-      {online ? <Zap className="h-4 w-4 text-accent" /> : <CloudOff className="h-4 w-4 text-muted" />}
-      {online && <span className="tnum hidden sm:inline">{pending}</span>}
-    </span>
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className={cn('hud-pill text-muted press cursor-pointer')}
+        aria-expanded={open}
+        title={online ? `${pending} queued change(s)` : 'Offline — saved locally'}
+      >
+        {online ? <Zap className="h-4 w-4 text-accent" /> : <CloudOff className="h-4 w-4 text-muted" />}
+        <span className="tnum text-[12px] font-bold hidden sm:inline">
+          {online ? `${pending} syncing` : pending > 0 ? `Offline · ${pending}` : 'Offline'}
+        </span>
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-2 w-64 qf-card p-3.5 z-50 text-[13px] anim-pop-in">
+          <p className="font-black text-foreground">
+            {online ? 'Syncing local progress' : 'You are offline'}
+          </p>
+          <p className="mt-1 text-muted font-semibold leading-snug">
+            {pending > 0
+              ? `${pending} queued item${pending === 1 ? '' : 's'} waiting to sync with your account.`
+              : 'All recent changes are saved on this device.'}
+          </p>
+          {lastSync && (
+            <p className="mt-1.5 text-[11px] font-bold text-faint">
+              Last synced {new Date(lastSync).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </p>
+          )}
+          <button
+            type="button"
+            disabled={!online || retrying}
+            onClick={async () => {
+              setRetrying(true);
+              await retryFlushNow().catch(() => {});
+              setPending(getQueueLength());
+              setLastSync(getLastSyncedAt());
+              setRetrying(false);
+            }}
+            className="btn3d btn3d-sm w-full mt-3 disabled:opacity-50"
+          >
+            {retrying ? 'Syncing…' : online ? 'Sync now' : 'Waiting for connection'}
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -127,6 +187,7 @@ function UserMenu({ name, isAdmin }: { name: string; isAdmin?: boolean }) {
     try {
       window.localStorage.removeItem('qf-chrome-user');
     } catch { /* ignore */ }
+    await wipeLocalLearningData();
     broadcast('auth-changed', null);
     window.dispatchEvent(new CustomEvent('qf:auth-refresh', { detail: null }));
     try {
@@ -175,7 +236,7 @@ function UserMenu({ name, isAdmin }: { name: string; isAdmin?: boolean }) {
 
 /* ---------------------------------- shell ---------------------------------- */
 
-export function AppShell({ user, children, isAdmin }: { user: { name: string; email: string; role: string }; children: React.ReactNode; isAdmin?: boolean }) {
+export function AppShell({ user, children, isAdmin, offlinePreview }: { user: { name: string; email: string; role: string; emailVerified?: boolean }; children: React.ReactNode; isAdmin?: boolean; offlinePreview?: boolean }) {
   const pathname = usePathname();
   const { theme, setTheme } = useTheme();
   const hud = useHud(true, pathname);
@@ -258,7 +319,19 @@ export function AppShell({ user, children, isAdmin }: { user: { name: string; em
         </div>
       </header>
 
-      <main id="content" className="flex-1 w-full pb-24 lg:pb-0">{children}</main>
+      <main id="content" className="flex-1 w-full pb-24 lg:pb-0">
+        {offlinePreview && (
+          <div className="border-b-2 border-border bg-surface-2/80 px-4 py-2 text-center text-[13px] font-bold text-muted">
+            Offline preview on this device. Sign in when connected to verify answers and sync progress.
+          </div>
+        )}
+        {!offlinePreview && user.email !== 'local' && user.emailVerified === false && (
+          <div className="border-b-2 border-warning/40 bg-warning-soft/70 px-4 py-2 text-center text-[13px] font-bold text-warning-strong dark:text-warning">
+            Check your inbox or visit <Link href="/settings" className="underline font-black">Settings</Link> to verify your email address for billing &amp; recovery.
+          </div>
+        )}
+        {children}
+      </main>
 
       {/* desktop footer */}
       <footer className="hidden lg:block border-t-2 border-border bg-surface mt-auto">

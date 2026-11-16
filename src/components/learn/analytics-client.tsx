@@ -179,7 +179,7 @@ export function AnalyticsClient() {
           <h1>Analytics</h1>
           <p className="page-sub">Your learning data at a glance</p>
         </div>
-        <span className="chip chip-info ml-auto hidden sm:inline-flex">no vanity metrics</span>
+        <span className="chip chip-info ml-auto hidden sm:inline-flex">verified activity</span>
       </header>
 
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">

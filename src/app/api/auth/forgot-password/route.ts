@@ -1,15 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { db } from '@/lib/db';
-import { createPasswordResetToken, rateLimit } from '@/lib/auth';
+import { createPasswordResetToken, rateLimitShared } from '@/lib/auth';
+import { clientIp } from '@/lib/client-ip';
+import { sendEmail } from '@/lib/email';
 
 const schema = z.object({
   email: z.string().trim().email('Enter a valid email address.'),
 });
 
 export async function POST(req: NextRequest) {
-  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'local';
-  if (!rateLimit(`forgot:${ip}`, 5, 0.05)) {
+  const ip = clientIp(req);
+  if (!(await rateLimitShared(`forgot:${ip}`, 5, 0.05))) {
     return NextResponse.json({ error: 'Too many requests. Wait a minute before trying again.' }, { status: 429 });
   }
 
@@ -27,26 +29,16 @@ export async function POST(req: NextRequest) {
   if (user) {
     const token = createPasswordResetToken(user);
     const resetPath = `/reset-password?token=${encodeURIComponent(token)}`;
-    const origin = process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin;
+    const origin = (process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin).replace(/\/$/, '');
     const resetUrl = `${origin}${resetPath}`;
 
-    const resendKey = process.env.RESEND_API_KEY;
-    if (resendKey) {
-      await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${resendKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          from: process.env.EMAIL_FROM || 'QuantFoundry <onboarding@resend.dev>',
-          to: [user.email],
-          subject: 'Reset your QuantFoundry password',
-          text: `Reset your QuantFoundry password (link expires in 30 minutes):\n\n${resetUrl}\n\nIf you did not request this, ignore this email.`,
-        }),
-      }).catch(err => console.error('[auth] forgot-password email failed:', err));
-    } else if (process.env.NODE_ENV !== 'production') {
-      console.info(`[auth] Local password reset link for ${user.email}: ${resetUrl}`);
+    await sendEmail({
+      to: user.email,
+      subject: 'Reset your QuantFoundry password',
+      text: `Reset your QuantFoundry password (link expires in 30 minutes):\n\n${resetUrl}\n\nIf you did not request this, ignore this email.`,
+    });
+
+    if (process.env.NODE_ENV !== 'production' && !process.env.RESEND_API_KEY) {
       devResetPath = resetPath;
     }
   }

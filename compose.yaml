@@ -1,0 +1,63 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: quantfoundry
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-quantfoundry_dev}
+      POSTGRES_DB: quantfoundry
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U quantfoundry"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  code-runner:
+    build:
+      context: ./mini-services/code-runner
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      QF_RUNNER_HOST: 0.0.0.0
+      QF_RUNNER_PORT: 3010
+      QF_PROBLEMS_DIR: /app/problems
+      CODE_RUNNER_AUTH_TOKEN: ${CODE_RUNNER_AUTH_TOKEN:-local-compose-runner-secret-change-in-prod-32c}
+    volumes:
+      - ./content/problems:/app/problems:ro
+    networks:
+      - internal
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      code-runner:
+        condition: service_started
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://quantfoundry:${POSTGRES_PASSWORD:-quantfoundry_dev}@postgres:5432/quantfoundry
+      SESSION_SECRET: ${SESSION_SECRET:-local-compose-session-secret-change-in-prod-32c}
+      CRON_SECRET: ${CRON_SECRET:-local-compose-cron-secret-24c}
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+      CODE_RUNNER_URL: http://code-runner:3010
+      CODE_RUNNER_AUTH_TOKEN: ${CODE_RUNNER_AUTH_TOKEN:-local-compose-runner-secret-change-in-prod-32c}
+    networks:
+      - internal
+      - default
+
+volumes:
+  pg_data:
+
+networks:
+  internal:
+    internal: true

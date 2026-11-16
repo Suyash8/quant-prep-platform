@@ -7,7 +7,7 @@ import katex from 'katex';
 import type { QuizQuestion } from '@/lib/content';
 import { gradeAnswer } from '@/lib/grading';
 import { scoreQuiz } from '@/lib/mastery';
-import { recordLessonResult, lessonProgressOf } from '@/lib/client/local-state';
+import { recordLessonAttempt, recordLessonResult, lessonProgressOf } from '@/lib/client/local-state';
 
 export interface SafeQuestion {
   id: string; type: 'mcq' | 'ms' | 'numeric' | 'short' | 'code-output';
@@ -52,15 +52,25 @@ export function Quiz({ endpoint, payload, questions, fullQuestions, onResult, on
     });
   }
 
-  const localMode = !!fullQuestions;
-  const allAnswered = (endpoint || localMode) ? questions.every(q => {
+  const targetEndpoint = endpoint ?? (typeof payload?.lessonId === 'string' ? '/api/progress/lesson' : undefined);
+  const hasLocalKeys = Boolean(
+    fullQuestions?.some(
+      (q) =>
+        q.answerIndex !== undefined ||
+        (q.answerIndices?.length ?? 0) > 0 ||
+        q.answer !== undefined ||
+        (q.keywords?.length ?? 0) > 0 ||
+        Boolean(q.modelAnswer),
+    ),
+  );
+  const localMode = !!fullQuestions && hasLocalKeys;
+  const allAnswered = (targetEndpoint || localMode) ? questions.every(q => {
     const a = answers[q.id];
     return a !== undefined && (Array.isArray(a) ? a.length > 0 : String(a).length > 0);
   }) : false;
 
   async function submit() {
     if (localMode && fullQuestions) {
-      // v3: graded locally, instantly, offline-capable. Progress syncs in the background.
       setBusy(true);
       try {
         const r = scoreQuiz(fullQuestions, answers, (q, a) => {
@@ -91,10 +101,16 @@ export function Quiz({ endpoint, payload, questions, fullQuestions, onResult, on
       }
       return;
     }
-    if (!endpoint) return;
+    if (!targetEndpoint) return;
+    const lessonId = typeof payload?.lessonId === 'string' ? payload.lessonId : '';
+    if (typeof navigator !== 'undefined' && !navigator.onLine && lessonId) {
+      recordLessonAttempt(lessonId, answers);
+      toast.info('Offline — answers saved and will be graded automatically when you reconnect.');
+      return;
+    }
     setBusy(true);
     try {
-      const res = await fetch(endpoint, {
+      const res = await fetch(targetEndpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...(payload ?? {}), answers }),
@@ -104,13 +120,26 @@ export function Quiz({ endpoint, payload, questions, fullQuestions, onResult, on
         toast.error(data.error ?? 'Submission failed.');
         return;
       }
+      if (lessonId) {
+        recordLessonAttempt(lessonId, answers, {
+          pct: data.pct ?? 0,
+          status: data.status ?? 'attempted',
+          xpAwarded: data.xpAwarded ?? 0,
+          exerciseDone: data.exerciseDone,
+        });
+      }
       setResult(data);
       setAttempt(a => a + 1);
       onResult?.(data.pct, data.status);
       if (data.pct >= 80) toast.success(`Scored ${data.pct}% - ${data.status === 'mastered' ? 'mastery retained' : data.status === 'passed' ? 'lesson passed' : 'well done'}.`);
       else toast.warning(`Scored ${data.pct}% - review the explanations below, then retry.`);
     } catch {
-      toast.error('Network error during submission.');
+      if (lessonId) {
+        recordLessonAttempt(lessonId, answers);
+        toast.info('Connection unavailable — answers queued locally to grade when back online.');
+      } else {
+        toast.error('Network error during submission.');
+      }
     } finally {
       setBusy(false);
     }

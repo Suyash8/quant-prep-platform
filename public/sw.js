@@ -236,7 +236,7 @@ async function runDownloadAll(force = false) {
       const manifest = await mRes.clone().json();
       await packCache.put('/packs/v3/manifest.json', mRes);
 
-      const stamp = `${manifest.version || '0'}@${manifest.builtAt || '0'}`;
+      const stamp = `${manifest.contentHash || manifest.version || '0'}@${manifest.builtAt || '0'}`;
       if (!force) {
         const metaRes = await packCache.match(META_KEY);
         const prevStamp = metaRes ? await metaRes.text() : null;

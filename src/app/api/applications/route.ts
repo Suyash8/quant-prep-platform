@@ -2,16 +2,19 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getCurrentUser } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { assertSameOrigin } from '@/lib/origin';
+
+const STATUS_ENUM = z.enum(['saved', 'applied', 'oa', 'interview', 'offer', 'rejected']);
 
 const upsertSchema = z.object({
-  company: z.string().min(1).max(80),
-  role: z.string().min(1).max(120),
-  status: z.string().min(1).max(20),
+  company: z.string().trim().min(1).max(80),
+  role: z.string().trim().min(1).max(120),
+  status: STATUS_ENUM,
   note: z.string().max(2000).optional(),
 });
 const patchSchema = z.object({
-  id: z.string().min(1),
-  status: z.string().max(20).optional(),
+  id: z.string().min(1).max(80),
+  status: STATUS_ENUM.optional(),
   note: z.string().max(2000).optional(),
   delete: z.boolean().optional(),
 });
@@ -27,6 +30,7 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  if (!assertSameOrigin(req)) return NextResponse.json({ error: 'Invalid origin.' }, { status: 403 });
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: 'Sign in first.' }, { status: 401 });
   const raw = await req.json().catch(() => null);

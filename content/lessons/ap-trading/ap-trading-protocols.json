@@ -2,7 +2,7 @@
   "id": "ap-trading-protocols",
   "moduleId": "ap-trading",
   "title": "Binary/text framing, FIX-style and ITCH-style records",
-  "estMinutes": 38,
+  "estMinutes": 22,
   "difficulty": "specialist",
   "prereqs": [
     "ap-markets-portfolio-accounting",
@@ -85,11 +85,7 @@
       "type": "code",
       "lang": "python",
       "code": "from collections import OrderedDict, deque\nfrom bisect import bisect_left\nimport heapq\nimport math\n\ndef parse_messages(messages):\n    lines = []\n    for message in messages:\n        if not message.endswith('|'):\n            lines.append('BAD_FORMAT')\n            continue\n        fields = message[:-1].split('|')\n        tags = []\n        values = {}\n        valid = True\n        for field in fields:\n            if field.count('=') != 1:\n                valid = False\n                break\n            (tag, value) = field.split('=')\n            if not 1 <= len(tag) <= 4 or not tag.isascii() or (not tag.isdigit()) or (not value) or (tag in values):\n                valid = False\n                break\n            tags.append(tag)\n            values[tag] = value\n        if not valid or not tags or tags[0] != '8' or (tags[-1] != '10') or (len(values['10']) != 3) or (not values['10'].isascii()) or (not values['10'].isdigit()):\n            lines.append('BAD_FORMAT')\n            continue\n        prefix = '|'.join(fields[:-1]) + '|'\n        checksum = sum((1 if char == '|' else ord(char) for char in prefix)) % 256\n        if f'{checksum:03d}' != values['10']:\n            lines.append('BAD_CHECKSUM')\n        else:\n            lines.append('OK ' + ' '.join((values.get(tag, '-') for tag in ['35', '55', '38', '44'])))\n    return lines\n\nprint(*parse_messages(['8=F|10=188|', '8=F|10=189|', '8=F||10=000|']), sep='\\n')",
-      "caption": "Expected stdout:\nOK - - - -\nBAD_CHECKSUM\nBAD_FORMAT\n\nPrevalidated inputs follow the captured public contract. This completes the named Python function using its original supplied main/parser. It does not claim independent parser, C++, app-runner or judge qualification."
-    },
-    {
-      "type": "p",
-      "md": "The checksum byte boundary and three-digit modulo-256 mechanism are documented in [this FIX API description](https://docs.deribit.com/fix-api/production/overview). The complete bar grammar, textual tag identity, BAD_FORMAT precedence and optional extraction fields are the explicit synthetic contract above, not full FIX session rules. Public task hash 537fbb3e4ceaaf423e67a28eea03cca3cf40f4c7788aa44020ec577379a6f5ec. No new parser, C++, runner or judge qualification is claimed."
+      "caption": "Expected stdout:\nOK - - - -\nBAD_CHECKSUM\nBAD_FORMAT"
     },
     {
       "type": "ref",
@@ -135,7 +131,7 @@
     "Preserve the exact narrow evidence rather than upgrading it to a full protocol pass. (Full session/application validation remains separate.)",
     "Characters 3, 5, =, 0 and the one-octet SOH delimiter total 5."
   ],
-  "realWorldApplication": "Used directly across production quantitative research, execution systems, and validation pipelines.",
+  "realWorldApplication": "In practice, engineering teams apply binary/text framing, fix-style and itch-style records within Market Data and Execution Systems when building reliable trading systems and low latency workflows — specifically to derive FIX-style length/checksum and binary record boundaries from versioned byte contracts without treating text splits or raw structs as protocol parsers.",
   "quantFinanceApplication": "Directly prepares you for judged problem: fix-tag-parser.",
   "summary": [
     "Parse a versioned octet contract before applying state.",
@@ -201,7 +197,7 @@
       "prompt": "Why does a 36-octet record still need type and field validation?",
       "objective": 1,
       "options": [
-        "Every 36-byte buffer is a valid Add A",
+        "Every 36-byte buffer is a valid Add A under standard assumptions",
         "A checksum automatically fixes unknown symbols",
         "Its native address reveals the exchange schema",
         "Wrong type, codes, units or session can still be invalid"
@@ -250,5 +246,8 @@
     "low-latency",
     "microstructure",
     "risk"
+  ],
+  "provenance": [
+    "The checksum byte boundary and three-digit modulo-256 mechanism are documented in [this FIX API description](https://docs.deribit.com/fix-api/production/overview). The complete bar grammar, textual tag identity, BAD_FORMAT precedence and optional extraction fields are the explicit synthetic contract above, not full FIX session rules. Public task hash 537fbb3e4ceaaf423e67a28eea03cca3cf40f4c7788aa44020ec577379a6f5ec. No new parser, C++, runner or judge qualification is claimed."
   ]
 }

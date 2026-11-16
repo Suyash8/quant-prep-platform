@@ -1,30 +1,32 @@
 FROM ubuntu:24.04
 
-# Prevent interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install dependencies: bubblewrap, python3, g++, curl, unzip, ca-certificates
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     bubblewrap \
     python3 \
-    python3-pip \
     g++ \
     curl \
     unzip \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Bun
-RUN curl -fsSL https://bun.sh/install | bash
-ENV PATH="/root/.bun/bin:${PATH}"
+# Pin Bun version for reproducible runner builds and install globally for non-root use
+ARG BUN_VERSION=1.2.15
+RUN curl -fsSL https://bun.sh/install | BUN_INSTALL=/usr/local bash -s "bun-v${BUN_VERSION}"
 
+RUN useradd -m -u 10001 runner
 WORKDIR /app
+COPY --chown=runner:runner index.ts .
 
-COPY index.ts .
+USER runner
 
 ENV QF_RUNNER_PORT=3010
 ENV QF_RUNNER_HOST=0.0.0.0
 
 EXPOSE 3010
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD curl -fsS http://127.0.0.1:3010/health || exit 1
 
 CMD ["bun", "index.ts"]

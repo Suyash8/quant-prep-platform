@@ -210,6 +210,7 @@ function ProblemRow({ p, delay }: { p: Row; delay: string }) {
   return (
     <Link
       href={`/practice/${p.slug}`}
+      prefetch={false}
       className={`row-card relative overflow-hidden group anim-slide-up ${solved ? '!bg-accent-soft/40' : ''} ${edge}`}
       style={{ animationDelay: delay }}
     >

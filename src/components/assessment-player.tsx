@@ -10,10 +10,7 @@ import {
 import { QMath, type SafeQuestion } from '@/components/quiz';
 import { Confetti } from '@/components/gamified/confetti';
 import { toast } from 'sonner';
-import type { QuizQuestion } from '@/lib/content';
-import { gradeAnswer } from '@/lib/grading';
-import { recordAssessmentResult } from '@/lib/client/local-state';
-import { getAssessmentPack } from '@/lib/client/packs';
+import { applyPlacementLocal, recordAssessmentAttempt, recordAssessmentResult } from '@/lib/client/local-state';
 
 export interface PlayerAssessment {
   id: string; title: string; kind: string;
@@ -27,10 +24,12 @@ export interface PlayerAssessment {
 
 interface PlayerResult {
   pct: number; correct: number; total: number;
-  sectionResults: { title: string; correct: number; total: number; pct: number }[];
+  sectionResults: { title: string; correct: number; total: number; pct: number; covers?: string[] }[];
   perQuestion: Record<string, { correct: boolean; explanation: string }>;
   areaTotals?: Record<string, { correct: number; total: number }>;
   xpAwarded?: number;
+  placedOutModules?: string[];
+  pendingSync?: boolean;
 }
 
 const RING_RADIUS = 62;
@@ -73,69 +72,60 @@ export function AssessmentPlayer({ assessment, compactIntro = false, subduedIntr
     return () => clearInterval(t);
   }, [started, result]);
 
-  // v3: full questions load from the content pack so grading runs locally,
-  // instantly, and offline. Falls back to the server route if the pack is gone.
-  const [fullQuestions, setFullQuestions] = React.useState<QuizQuestion[] | null>(null);
-  React.useEffect(() => {
-    getAssessmentPack(assessment.id)
-      .then(a => setFullQuestions(a.sections.flatMap(sec => sec.questions)))
-      .catch(() => setFullQuestions(null));
-  }, [assessment.id]);
-
   async function submit() {
     setBusy(true);
+    setElapsedS(elapsedNow());
     try {
-      const qs =
-        fullQuestions ??
-        (await getAssessmentPack(assessment.id)
-          .then((a) => a.sections.flatMap((sec) => sec.questions))
-          .catch(() => null));
-      if (qs) {
-        const perQuestion: Record<string, { correct: boolean; explanation: string }> = {};
-        const areaIndex = assessment.areaLabels ?? [];
-        const areaTotals: Record<string, { correct: number; total: number }> = {};
-        const sectionResults: { title: string; correct: number; total: number; pct: number }[] = [];
-        let allCorrect = 0, allTotal = 0;
-        assessment.sections.forEach((section, si) => {
-          let correct = 0;
-          for (const q of section.questions) {
-            const full = qs.find((x) => x.id === q.id);
-            const isCorrect = full && answers[q.id] !== undefined ? gradeAnswer(full, answers[q.id]) : false;
-            perQuestion[q.id] = { correct: isCorrect, explanation: full?.explanation ?? '' };
-            if (isCorrect) correct++;
-            const area = areaIndex[si] ?? section.title;
-            areaTotals[area] = areaTotals[area] ?? { correct: 0, total: 0 };
-            areaTotals[area].total++;
-            if (isCorrect) areaTotals[area].correct++;
-          }
-          sectionResults.push({ title: section.title, correct, total: section.questions.length, pct: section.questions.length ? Math.round((correct / section.questions.length) * 100) : 0 });
-          allCorrect += correct;
-          allTotal += section.questions.length;
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        recordAssessmentAttempt(assessment.id, answers);
+        setResult({
+          pct: 0,
+          correct: 0,
+          total,
+          sectionResults: [],
+          perQuestion: {},
+          pendingSync: true,
         });
-        const pct = allTotal ? Math.round((allCorrect / allTotal) * 100) : 0;
-        const xp = recordAssessmentResult(assessment.id, pct);
-        setResult({ pct, correct: allCorrect, total: allTotal, sectionResults, perQuestion, areaTotals, xpAwarded: xp });
-        if (xp > 0) toast.success(`Assessment complete, +${xp} XP`);
+        toast.info('Offline — assessment answers queued and will be graded when you reconnect.');
         return;
       }
-      setElapsedS(elapsedNow());
+
       const res = await fetch('/api/assessments/submit', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           assessmentId: assessment.id,
           answers,
           timeSpentS: elapsedNow(),
         }),
       });
-      const data = await res.json();
-      if (!res.ok) { toast.error(data.error ?? 'Submission failed.'); return; }
-      setResult(data as PlayerResult);
-      const xp = (data as PlayerResult).xpAwarded ?? 0;
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data.error ?? 'Submission failed.');
+        return;
+      }
+      const typed = data as PlayerResult;
+      recordAssessmentResult(assessment.id, typed.pct, typed.xpAwarded ?? 0);
+      setResult(typed);
+      const xp = typed.xpAwarded ?? 0;
       if (xp > 0) {
         toast.success(`Assessment complete, +${xp} XP`);
         window.dispatchEvent(new CustomEvent('qf:hud-refresh'));
       }
-    } catch { toast.error('Network error.'); } finally { setBusy(false); }
+    } catch {
+      recordAssessmentAttempt(assessment.id, answers);
+      setResult({
+        pct: 0,
+        correct: 0,
+        total,
+        sectionResults: [],
+        perQuestion: {},
+        pendingSync: true,
+      });
+      toast.info('Offline — answers saved and will be graded automatically when back online.');
+    } finally {
+      setBusy(false);
+    }
   }
 
   React.useEffect(() => { submitRef.current = submit; });
@@ -387,6 +377,27 @@ function AssessmentResult({ assessment, result, onRetake, timeSpentS }: {
   onRetake: () => void;
   timeSpentS: number;
 }) {
+  const [placing, setPlacing] = React.useState(false);
+  const [placedOutCount, setPlacedOutCount] = React.useState<number | null>(null);
+
+  if (result.pendingSync) {
+    return (
+      <div className="mx-auto max-w-2xl qf-card p-6 sm:p-8 text-center space-y-4">
+        <div className="mx-auto h-14 w-14 rounded-2xl bg-info-soft text-info flex items-center justify-center">
+          <Clock className="h-7 w-7" />
+        </div>
+        <h2 className="text-2xl font-black tracking-tight">Assessment saved offline</h2>
+        <p className="text-[15px] text-muted font-semibold max-w-md mx-auto">
+          Your {result.total} responses are safely stored on this device and will be server-scored and synced with explanations as soon as you reconnect.
+        </p>
+        <div className="pt-2 flex flex-wrap justify-center gap-3">
+          <Link href="/assessments" className="btn3d">Back to centre</Link>
+          <Link href="/dashboard" className="btn3d btn3d-ghost">Dashboard</Link>
+        </div>
+      </div>
+    );
+  }
+
   const isDiagnostic = assessment.id.startsWith('diag-');
   const passMark = assessment.passMarkPercent ?? 70;
   const passed = result.pct >= passMark;
@@ -395,6 +406,27 @@ function AssessmentResult({ assessment, result, onRetake, timeSpentS }: {
   const wrong = Math.max(result.total - result.correct, 0);
   const timeLabel = String(Math.floor(timeSpentS / 60)).padStart(2, '0') + ':' + String(timeSpentS % 60).padStart(2, '0');
   const xp = result.xpAwarded ?? 0;
+
+  async function applyPlacement() {
+    if (!result.placedOutModules || result.placedOutModules.length === 0) return;
+    setPlacing(true);
+    try {
+      const res = await fetch('/api/placement', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'diagnostic', moduleIds: result.placedOutModules }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { toast.error(data.error ?? 'Could not apply placement.'); return; }
+      if (Array.isArray(data.placedLessonIds)) applyPlacementLocal(data.placedLessonIds);
+      setPlacedOutCount(data.placedOutCount ?? data.placedLessonIds?.length ?? 0);
+      toast.success(`Placed out of ${data.placedOutCount ?? 0} lessons based on your diagnostic.`);
+    } catch {
+      toast.error('Network error while applying placement.');
+    } finally {
+      setPlacing(false);
+    }
+  }
 
   const bannerTitle = isDiagnostic
     ? 'Baseline complete'
@@ -460,6 +492,31 @@ function AssessmentResult({ assessment, result, onRetake, timeSpentS }: {
               <p className="mt-0.5 text-[13px] font-semibold text-muted">{bannerSub}</p>
             </div>
           </div>
+
+          {isDiagnostic && result.placedOutModules && result.placedOutModules.length > 0 && (
+            <div className="mx-auto mt-5 max-w-lg rounded-2xl border-2 border-accent/40 bg-accent-soft/60 p-4 text-left">
+              <p className="text-[14px] font-black text-accent-deep dark:text-accent">
+                Skip covered foundational modules ({result.placedOutModules.length})
+              </p>
+              <p className="mt-1 text-[13px] font-semibold text-muted">
+                You scored 80%+ in sections covering: {result.placedOutModules.join(', ').replace(/-/g, ' ')}.
+              </p>
+              {placedOutCount !== null ? (
+                <p className="mt-2.5 text-[13px] font-bold text-success">
+                  ✓ Marked {placedOutCount} lessons as placed out. Your curriculum is unlocked past them.
+                </p>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => void applyPlacement()}
+                  disabled={placing}
+                  className="btn3d btn3d-sm mt-3"
+                >
+                  {placing ? 'Unlocking…' : `Skip covered modules (${result.placedOutModules.length})`}
+                </button>
+              )}
+            </div>
+          )}
 
           {isDiagnostic && (
             <p className="mx-auto mt-4 max-w-xl text-[15px] leading-relaxed text-muted">

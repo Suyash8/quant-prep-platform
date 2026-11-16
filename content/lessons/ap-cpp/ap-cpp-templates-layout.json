@@ -2,7 +2,7 @@
   "id": "ap-cpp-templates-layout",
   "moduleId": "ap-cpp",
   "title": "Templates, layout and numeric representations",
-  "estMinutes": 85,
+  "estMinutes": 21,
   "difficulty": "advanced",
   "prereqs": [
     "ap-cpp-interfaces-errors"
@@ -85,75 +85,11 @@
       "type": "code",
       "lang": "python",
       "code": "from collections import OrderedDict, deque\nfrom bisect import bisect_left\nimport heapq\n\ndef classify(pairs):\n    return ['ODD' if (x & y).bit_count() % 2 else 'EVEN' for (x, y) in pairs]\n\nprint(*classify([(6, 3), (7, 3), (0, 9), (1 << 62, 1 << 62)]), sep='\\n')",
-      "caption": "Expected stdout:\nODD\nEVEN\nEVEN\nODD\n\nPrevalidated inputs follow the captured public contract. This completes the named Python function using its original supplied main/parser. It does not claim independent parser, C++, app-runner or judge qualification."
-    },
-    {
-      "type": "p",
-      "md": "Python integer documentation supports bitwise intersection and bit_count. The set-bit parity proof, nonnegative 63-bit bounds and one classification per pair are the explicit exercise contract above. Public task hash 52860f1c430d9b692354229d3c164b657ce1bd9f314737888a595f475d696d93. This is Python teaching fit, not new parser, C++, runner or judge qualification."
+      "caption": "Expected stdout:\nODD\nEVEN\nEVEN\nODD"
     },
     {
       "type": "p",
       "md": "Hide implementation, not the contract\n\nPIMPL means pointer to implementation. A public class contains an owning pointer to a forward-declared private Impl rather than exposing implementation fields in its class definition. Clients can compile calls from the interface declaration without seeing Impl. In a real library place that declaration in quote.h, define Impl and the forwarding functions in quote.cpp, and compile a separate client against the header. The standalone example shows those sections together so its lifetime and move behavior can be executed as one teaching unit. Separate-translation-unit verification must still test the real split; a single-file compile alone does not establish build isolation."
-    },
-    {
-      "type": "p",
-      "md": "Incomplete types determine where destruction is defined\n\nunique_ptr<Impl> can be declared while Impl is incomplete, but default deletion needs the complete type when the relevant destructor is instantiated. Declare Quote destruction in the interface and default it out of line after defining Impl. Move operations are likewise declared and defaulted out of line here. Copy is explicitly deleted rather than pretending ownership is shared or silently copying an incomplete implementation. A deep-copy value API would need its own defined copying behavior, allocation failures and tests. make_unique cleans up its allocation if Impl construction throws; the constructor rejects a negative amount before a Quote can be used."
-    },
-    {
-      "type": "p",
-      "md": "Moved-from state is part of the API\n\nAfter moving a unique_ptr the source no longer owns the implementation. The source Quote may be destroyed or assigned again. This design explicitly rejects cents() on an empty moved-from object with logic_error; do not dereference a null pointer and call it an unspecified but safe value. Move assignment releases the destination old implementation and transfers ownership. The source check here is observable behavior, not a property every PIMPL library promises. Self-move policies and thread sharing would need separate contracts. The loop tests 1001 initial values, move construction, moved-from rejection, move assignment and negative-construction rejection."
-    },
-    {
-      "type": "p",
-      "md": "ABI isolation has conditions and costs\n\nChanging private Impl fields can avoid recompiling clients under a supported stable public ABI. It does not make arbitrary compiler versions, standard-library ABIs, architectures, build flags or exported signatures compatible. Keep public class layout, interface and ABI policy stable, and verify linkage in the actual deployment matrix. PIMPL usually adds allocation, pointer indirection and reduced visibility for inlining, although optimizers and allocation strategies can change observed costs. The example records no nanosecond claim and does not assert sizeof(Quote)==sizeof(void*): unique_ptr layout is implementation-dependent. Consider a directly represented value when locality and simplicity matter more than implementation hiding."
-    },
-    {
-      "type": "code",
-      "lang": "cpp",
-      "code": "#include <iostream>\n#include <memory>\n#include <stdexcept>\n#include <utility>\n// Header section: users need only this declaration and <memory>.\nclass Quote {\n    class Impl;\n    std::unique_ptr<Impl> p_;\npublic:\n    explicit Quote(int cents);\n    ~Quote();\n    Quote(Quote&&) noexcept;\n    Quote& operator=(Quote&&) noexcept;\n    Quote(const Quote&) = delete;\n    Quote& operator=(const Quote&) = delete;\n    int cents() const; // moved-from objects reject this query\n};\n// Implementation section: in a real library, move to quote.cpp.\nclass Quote::Impl {\npublic:\n    int cents;\n    explicit Impl(int x) : cents(x) {\n        if (x < 0) throw std::invalid_argument(\"negative cents\");\n    }\n};\nQuote::Quote(int x) : p_(std::make_unique<Impl>(x)) {}\nQuote::~Quote() = default;\nQuote::Quote(Quote&&) noexcept = default;\nQuote& Quote::operator=(Quote&&) noexcept = default;\nint Quote::cents() const {\n    if (!p_) throw std::logic_error(\"moved-from quote\");\n    return p_->cents;\n}\nint main() {\n    int cases = 0;\n    for (int x = 0; x <= 1000; ++x) {\n        Quote a(x);\n        Quote b(std::move(a));\n        if (b.cents() != x) return 1;\n        try { (void)a.cents(); return 2; } catch (const std::logic_error&) {}\n        Quote c(0); c = std::move(b);\n        if (c.cents() != x) return 3;\n        ++cases;\n    }\n    try { Quote bad(-1); return 4; } catch (const std::invalid_argument&) {}\n    std::cout << cases << \" ownership transfers; negative rejected\\n\";\n}",
-      "caption": "Complete standalone C++20 teaching program. Local GCC11.4 and GCC12.3 C++20 compile/run verified; app runner remains a separate gate. Expected local stdout:\n1001 ownership transfers; negative rejected\n"
-    },
-    {
-      "type": "p",
-      "md": "Guided transfer: split the displayed source into quote.h, quote.cpp and main.cpp. Hints: (1) put only declarations and required public includes in the header, (2) keep the destructor definition beside complete Impl, (3) include the header from both translation units. Solution structure: header with include guard, quote.cpp with Impl and forwarded methods, client with tests and only the public header. Compile both with -c and link the objects.\n\nIndependent transfer: add a private Impl revision field without changing the public interface. Recompile the implementation object, relink the unchanged client object, and run the ownership tests. Hints: (1) record the old client object hash, (2) do not expose Impl size in an inline function, (3) keep the supported ABI/toolchain constant. Review rubric: client did not need the private definition, object reuse is demonstrated, ownership and moved-from behavior remain tested. This local experiment does not certify cross-platform ABI stability."
-    },
-    {
-      "type": "p",
-      "md": "References: [1](https://en.cppreference.com/cpp/language/pimpl), [2](https://en.cppreference.com/w/cpp/memory/unique_ptr.html), [3](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines.html). PIMPL and unique_ptr sources cover incomplete types, ownership and out-of-line special members; the Core Guidelines I.27 explains the ABI boundary and its costs."
-    },
-    {
-      "type": "p",
-      "md": "Separate three compile-time mechanisms\n\nA policy class supplies a selected behavior to a template; StaticAdjust<Cap10> and StaticAdjust<Identity> are different concrete types. Tag dispatch selects overloads by a type such as true_type versus false_type. The tag is a compile-time template argument, not a value read at runtime. CRTP, the curiously recurring template pattern, passes the derived class as a base template argument so the base can refer to a known derived interface. Here Twice<StaticAdjust<Policy>> calls the derived adjust member through a static_cast, sharing twice behavior without a virtual function. These mechanisms can be combined, but they solve different organization problems."
-    },
-    {
-      "type": "p",
-      "md": "Static downcasts need a real derived object\n\nA CRTP base must be a subobject of the stated derived type when a method performs its downcast. Constructing a stand-alone Twice<SomeOtherType> and calling twice would not become safe because the code compiles. This example makes the base constructor private and friends only the intended Derived, then makes the concrete class final. It uses only two reviewed policy types whose const call is nonthrowing and maps x in 0..100 to values in 0..100. The multiplication by two and tag conversion by 100 therefore fit int even on the minimum standard int range. A generic unrestricted policy or arbitrary int input would need stronger constraints and range/error contracts. noexcept in this example is justified only for the shown instantiations and bounded operations."
-    },
-    {
-      "type": "p",
-      "md": "Runtime selection is a different capability\n\nDynamicAdjust exposes a virtual adjust and a virtual destructor, allowing runtime_twice to use an implementation selected at runtime through the base interface. The example DynamicCap gives the same bounded result as Cap10. The virtual destructor matters if deletion later occurs through a base pointer; this example uses automatic objects and does not require heap allocation for virtual dispatch. Static template types are not one heterogeneous runtime collection without another wrapper. Do not replace a required runtime plugin boundary with CRTP unless selection and binary deployment requirements actually allow compile-time choice."
-    },
-    {
-      "type": "p",
-      "md": "A semantic comparison before a timing claim\n\nFor each x in 0..100 the program checks both implementations against the independently expressed min(x,10), then accumulates twice values to checksum 1910. It also checks both tag paths: 7 cents stays 7; 7 whole currency units becomes 700 cents. That is an executable equivalence and unit-selection demonstration, not a speed benchmark. In optimized code the compiler may devirtualize the visible DynamicCap, making its machine code resemble the static path. A virtual call does not necessarily perform an indirect call after optimization; a template does not guarantee successful inlining."
-    },
-    {
-      "type": "p",
-      "md": "Cost mechanisms and a fair experiment\n\nPotential static-dispatch benefits are visible callee bodies, inlining and specialization; costs include instantiation/code-size growth and recompilation. Potential virtual-dispatch costs include indirect control flow and less visible bodies; benefits include runtime substitution and a stable interface under an explicitly supported ABI. Neither language mechanism prescribes an exact vtable layout or cost. To time them, use equivalent data and semantics, representative runtime-selected implementations, warmup, many repetitions, observable checksums, identical optimization/LTO flags and a recorded compiler/CPU. Inspect generated code and report whether devirtualization occurred. Measure whole-loop throughput and, where required, tail latency rather than subtracting two noisy tiny call durations. Separately measure object layout/cache and code size instead of attributing every difference to the call instruction. Do not use volatile as a universal realistic-workload substitute. No always-faster claim or production speedup is earned by the checksum test."
-    },
-    {
-      "type": "code",
-      "lang": "cpp",
-      "code": "#include <iostream>\n#include <type_traits>\n\nstruct Identity {\n    int operator()(int x) const noexcept { return x; }\n};\nstruct Cap10 {\n    int operator()(int x) const noexcept { return x > 10 ? 10 : x; }\n};\ntemplate<class Derived> class Twice {\n    friend Derived;\n    Twice() = default; // only the intended derived can construct its base\n    Twice(const Twice&) = default;\n    Twice& operator=(const Twice&) = default;\nprotected:\n    ~Twice() = default; // prevent standalone sliced base objects\npublic:\n    int twice(int x) const noexcept {\n        // CRTP precondition: this really is a Derived base subobject.\n        return static_cast<const Derived&>(*this).adjust(x) * 2;\n    }\n};\ntemplate<class Policy> class StaticAdjust final : public Twice<StaticAdjust<Policy>> {\n    Policy policy_;\npublic:\n    int adjust(int x) const noexcept { return policy_(x); }\n};\nstruct DynamicAdjust {\n    virtual int adjust(int x) const noexcept = 0;\n    virtual ~DynamicAdjust() = default;\n};\nstruct DynamicCap final : DynamicAdjust {\n    int adjust(int x) const noexcept override { return x > 10 ? 10 : x; }\n};\nint runtime_twice(const DynamicAdjust& p, int x) noexcept { return 2 * p.adjust(x); }\n\n// Tags select implementations at compile time, not from a live market value.\nint units(int x, std::true_type) noexcept { return x; }\nint units(int x, std::false_type) noexcept { return x * 100; }\ntemplate<bool AlreadyCents> int to_cents(int x) noexcept {\n    return units(x, std::bool_constant<AlreadyCents>{});\n}\nint main() {\n    StaticAdjust<Cap10> capped;\n    StaticAdjust<Identity> identity;\n    DynamicCap dyn;\n    int checksum = 0;\n    for (int x = 0; x <= 100; ++x) {\n        const int wanted = x < 10 ? x : 10;\n        if (capped.twice(x) != 2 * wanted || identity.twice(x) != 2*x) return 1;\n        if (runtime_twice(dyn, x) != capped.twice(x)) return 2;\n        if (to_cents<true>(x) != x || to_cents<false>(x) != 100*x) return 3;\n        checksum += capped.twice(x);\n    }\n    std::cout << \"101 equivalent dispatch cases; checksum=\" << checksum << '\\n';\n    std::cout << to_cents<true>(7) << ' ' << to_cents<false>(7) << '\\n';\n}",
-      "caption": "Complete standalone C++20 teaching program. Local GCC11.4 and GCC12.3 C++20 compile/run verified; app runner remains a separate gate. Expected local stdout:\n101 equivalent dispatch cases; checksum=1910\n7 700\n"
-    },
-    {
-      "type": "p",
-      "md": "Guided transfer: add a Cap5 policy without changing Twice. Hints: (1) preserve the bounded nonnegative domain, (2) implement a const nonthrowing adjustment, (3) compare against an independent min(x,5) formula. Solution outline: a policy returning x>5?5:x and StaticAdjust<Cap5>, with expected twice values 0, 8, 10, 10 for inputs 0, 4, 5, 6.\n\nIndependent transfer: implement two runtime policies selected from an input flag and compare their outputs with the corresponding static specializations. Hints: (1) the choice must occur at runtime, (2) compare both branches before measuring, (3) inspect assembly and record LTO/devirtualization. Review rubric: semantic equality over the full declared domain, valid CRTP downcast construction, no overflow, and an honest measurement plan. A missing benchmark is not a failed semantic test, but a semantic pass is not evidence of faster execution."
-    },
-    {
-      "type": "p",
-      "md": "References: [1](https://en.cppreference.com/cpp/language/crtp), [2](https://en.cppreference.com/cpp/types/integral_constant), [3](https://en.cppreference.com/cpp/language/virtual), [4](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines.html). CRTP covers static downcasts and derived interfaces; integral_constant covers bool_constant/true_type/false_type tags; virtual covers runtime dispatch. Core Guidelines T.65 covers tag dispatch; the template policy example in this lesson is an authored bounded design, not a separate standard-library facility. These are mechanism references, not evidence of a measured speedup."
     },
     {
       "type": "ref",
@@ -199,7 +135,7 @@
     "Types and values answer different contract questions; reuse does not remove runtime bounds. (The runtime range guard is still required.)",
     "M-left=55. A right value 56 must be rejected before the sum."
   ],
-  "realWorldApplication": "Used directly across production quantitative research, execution systems, and validation pipelines.",
+  "realWorldApplication": "In practice, engineering teams apply templates, layout and numeric representations within Level 10. Ownership, Sanitizers and Contracts when building reliable cpp and cpp memory workflows — specifically to constrain a reusable C++20 unsigned-integral checked-add template, exclude bool deliberately and distinguish compile-time type requirements from runtime units/range checks.",
   "quantFinanceApplication": "Directly prepares you for judged problem: bit-count-parity.",
   "summary": [
     "Templates need type constraints, semantic laws and runtime bounds.",
@@ -313,5 +249,8 @@
     "cpp-memory",
     "cpp-stl",
     "cpp-engineering"
+  ],
+  "provenance": [
+    "Python integer documentation supports bitwise intersection and bit_count. The set-bit parity proof, nonnegative 63-bit bounds and one classification per pair are the explicit exercise contract above. Public task hash 52860f1c430d9b692354229d3c164b657ce1bd9f314737888a595f475d696d93. This is Python teaching fit, not new parser, C++, runner or judge qualification."
   ]
 }

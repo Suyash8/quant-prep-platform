@@ -7,37 +7,63 @@ on:
     branches: [main]
 
 jobs:
-  test:
+  verify:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: quantfoundry_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Setup Node.js 22
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'npm'
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v1
         with:
-          bun-version: latest
+          bun-version: '1.2.15'
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Lint
+      - name: Generate Prisma Client & deploy schema
+        run: npx prisma generate && npx prisma migrate deploy
+        env:
+          DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/quantfoundry_ci"
+
+      - name: Verify & lint content & pack isolation
+        run: node scripts/build-content-packs.cjs && npm run verify:content
+
+      - name: Run unit & security regression tests
+        run: npm test
+
+      - name: ESLint
         run: npm run lint
 
       - name: Type check
-        run: npx tsc --noEmit
+        run: npx next typegen && npx tsc --noEmit
 
-      - name: Run unit & content validation tests
-        run: npm test
-
-      - name: Build Next.js app
+      - name: Build standalone app
         run: npm run build
         env:
-          DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/quantfoundry_test"
-          SESSION_SECRET: "ci-test-session-secret-random-hex-string-for-building"
+          DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/quantfoundry_ci"
+          SESSION_SECRET: "ci-test-session-secret-32chars-minimum-hex-value"
+          CODE_RUNNER_URL: "http://127.0.0.1:4100"
+          CODE_RUNNER_AUTH_TOKEN: "ci-runner-auth-token-32chars-minimum-hex-value"
+          CRON_SECRET: "ci-cron-secret-32chars-minimum-hex-value"
+

@@ -7,25 +7,42 @@
 
 import * as React from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   ArrowRight, BookOpenCheck, Code2, Timer, Undo2, FolderKanban, BarChart3,
-  Hand, CircleDot, Zap, Play, CheckCircle2, Trophy, Sparkles, Star,
+  Hand, CircleDot, Zap, Play, CheckCircle2, Trophy, Sparkles, Star, Award, Shield, Flame,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import type { CurriculumMap } from '@/lib/content';
 import { buildCurriculumGraph, type RegistryEntry } from '@/lib/curriculum-graph';
 import { getMapPack, getProblemsIndex, getProjectsIndex } from '@/lib/client/packs';
 import {
-  getState, subscribe, hydrate, doneSet, xpSummary, dueCardKeys, weekMinutes,
+  getState, subscribe, hydrate, doneSet, xpSummary, dueCardKeys, weekMinutes, setDailyGoalXp,
 } from '@/lib/client/local-state';
 import { LearningPath } from '@/components/gamified/learning-path';
 
 export function DashboardClient({ name = 'Learner' }: { name?: string }) {
+  const router = useRouter();
   const [displayName, setDisplayName] = React.useState(name);
   const [map, setMap] = React.useState<CurriculumMap | null>(null);
   const [registryLessons, setRegistryLessons] = React.useState<RegistryEntry[]>([]);
   const [, setTick] = React.useState(0);
   const [problemCount, setProblemCount] = React.useState(0);
   const [projectCount, setProjectCount] = React.useState(12);
+  const [streakFreezes, setStreakFreezes] = React.useState<number>(0);
+  const [onboardingOpen, setOnboardingOpen] = React.useState(false);
+  const [onboardStep, setOnboardStep] = React.useState(1);
+  const [onboardTrack, setOnboardTrack] = React.useState<'A' | 'B' | 'C' | 'D' | 'E'>('B');
+  const [onboardGoal, setOnboardGoal] = React.useState(50);
+  const [onboardTz, setOnboardTz] = React.useState('UTC');
+  const [onboardSaving, setOnboardSaving] = React.useState(false);
+
+  React.useEffect(() => {
+    try {
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      if (tz) setOnboardTz(tz);
+    } catch { /* ignore */ }
+  }, []);
 
   React.useEffect(() => {
     let alive = true;
@@ -41,6 +58,14 @@ export function DashboardClient({ name = 'Learner' }: { name?: string }) {
     syncName();
     window.addEventListener('qf:auth-refresh', syncName);
     void hydrate();
+    fetch('/api/auth/me', { credentials: 'same-origin', cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!alive || !d?.user) return;
+        setStreakFreezes(d.user.streakFreezes ?? 0);
+        if (d.user.onboardingDone === false) setOnboardingOpen(true);
+      })
+      .catch(() => {});
     getMapPack().then(({ map: m, registry }) => {
       if (!alive) return;
       setMap(m as CurriculumMap);
@@ -51,6 +76,43 @@ export function DashboardClient({ name = 'Learner' }: { name?: string }) {
     const unsub = subscribe(() => setTick(t => t + 1));
     return () => { alive = false; unsub(); window.removeEventListener('qf:auth-refresh', syncName); };
   }, []);
+
+  async function completeOnboarding(goDiagnostic: boolean) {
+    setOnboardSaving(true);
+    setDailyGoalXp(onboardGoal);
+    try {
+      await fetch('/api/gamification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          dailyGoalXp: onboardGoal,
+          targetTrack: onboardTrack,
+          timezone: onboardTz,
+          onboardingDone: true,
+        }),
+      });
+    } catch { /* saved locally */ } finally {
+      setOnboardSaving(false);
+      setOnboardingOpen(false);
+      toast.success('Study plan configured!');
+      if (goDiagnostic) router.push('/diagnostic');
+    }
+  }
+
+  const s = getState();
+  const gam = xpSummary();
+
+  React.useEffect(() => {
+    if (!map) return;
+    try {
+      const prevRaw = window.localStorage.getItem('qf-last-level');
+      const prevLevel = prevRaw ? Number(prevRaw) : gam.level;
+      if (Number.isFinite(prevLevel) && gam.level > prevLevel) {
+        toast.success(`Level up! Welcome to Level ${gam.level}.`);
+      }
+      window.localStorage.setItem('qf-last-level', String(gam.level));
+    } catch { /* ignore */ }
+  }, [map, gam.level]);
 
   if (!map) {
     return (
@@ -63,9 +125,6 @@ export function DashboardClient({ name = 'Learner' }: { name?: string }) {
       </div>
     );
   }
-
-  const s = getState();
-  const gam = xpSummary();
   const graph = buildCurriculumGraph(map, registryLessons);
 
   const passedSet = doneSet();
@@ -100,6 +159,18 @@ export function DashboardClient({ name = 'Learner' }: { name?: string }) {
     .sort((a, b) => b[1].updatedAt.localeCompare(a[1].updatedAt))
     .slice(0, 5);
 
+  const diagnosticTaken = Boolean(s.assessments['diag-core']);
+  const phase0 = map.phases[0];
+  const phase0Done = phase0 ? phase0.modules.every(m => m.lessons.every(l => passedSet.has(l.id))) : false;
+  const achievements = [
+    { id: 'first-lesson', title: 'First Breakthrough', desc: 'Pass your first lesson (80%+)', unlocked: passed.length >= 1, icon: BookOpenCheck },
+    { id: 'first-code', title: 'First Green Judge', desc: 'Solve a coding problem cleanly', unlocked: solvedProblems.size >= 1, icon: Code2 },
+    { id: 'diag-done', title: 'Calibrated', desc: 'Complete the baseline diagnostic', unlocked: diagnosticTaken, icon: Shield },
+    { id: 'streak-3', title: 'On a Roll', desc: 'Reach a 3-day study streak', unlocked: gam.longestStreak >= 3, icon: Flame },
+    { id: 'level-5', title: 'Quant Apprentice', desc: 'Reach Level 5 (XP milestones)', unlocked: gam.level >= 5, icon: Star },
+    { id: 'phase-0', title: 'Foundation Cleared', desc: 'Complete Phase 0 prerequisites', unlocked: phase0Done, icon: Award },
+  ];
+
   return (
     <div>
       <div className="max-w-6xl mx-auto px-4 lg:px-6 py-8">
@@ -118,6 +189,12 @@ export function DashboardClient({ name = 'Learner' }: { name?: string }) {
             </p>
           </div>
           <div className="flex items-center gap-3">
+            {streakFreezes > 0 && (
+              <div className="hud-pill !py-1.5" title="Streak freezes protect your streak for 1 missed day">
+                <Shield className="h-4 w-4 text-info" />
+                <span className="text-sm tnum">{streakFreezes} freeze{streakFreezes === 1 ? '' : 's'}</span>
+              </div>
+            )}
             <div className="hud-pill !py-1.5" title="Current level">
               <Star className="h-5 w-5 text-violet" />
               <span className="text-base tnum">{gam.level}</span>
@@ -328,6 +405,35 @@ export function DashboardClient({ name = 'Learner' }: { name?: string }) {
           </div>
         </section>
 
+        {/* Achievements */}
+        <section className="mt-10" aria-label="Achievements">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-[15px] font-black uppercase tracking-[0.12em] text-faint flex items-center gap-1.5">
+              <Award className="h-4 w-4 text-warning" /> Milestones
+            </h2>
+            <span className="chip tnum">{achievements.filter(a => a.unlocked).length}/{achievements.length} unlocked</span>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            {achievements.map((a) => {
+              const Icon = a.icon;
+              return (
+                <div
+                  key={a.id}
+                  className={`qf-card-flat p-3.5 flex flex-col gap-2 ${a.unlocked ? 'border-accent/50 bg-accent-soft/25' : 'opacity-60'}`}
+                >
+                  <span className={`icon-tile icon-tile-sm ${a.unlocked ? 'icon-tile-accent' : 'icon-tile-neutral'}`}>
+                    <Icon className="h-4 w-4" />
+                  </span>
+                  <div>
+                    <p className="text-[13px] font-black leading-tight">{a.title}</p>
+                    <p className="mt-0.5 text-[11px] font-semibold text-muted leading-snug">{a.desc}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+
         {/* recent lessons (local) */}
         <section className="mt-10">
           <h2 className="text-[15px] font-black uppercase tracking-[0.12em] text-faint mb-3">Recent activity</h2>
@@ -353,6 +459,126 @@ export function DashboardClient({ name = 'Learner' }: { name?: string }) {
           </div>
         </section>
       </div>
+
+      {onboardingOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label="Personalize your study path">
+          <div className="qf-card max-w-lg w-full p-6 sm:p-7 space-y-5">
+            <div className="flex items-center justify-between">
+              <span className="chip chip-accent tnum">Step {onboardStep} of 4</span>
+              <button
+                type="button"
+                onClick={() => void completeOnboarding(false)}
+                className="text-[13px] font-bold text-faint hover:text-muted"
+              >
+                Skip setup
+              </button>
+            </div>
+
+            {onboardStep === 1 && (
+              <div className="space-y-3">
+                <h2 className="text-xl font-black tracking-tight">What role are you aiming for?</h2>
+                <p className="text-[14px] text-muted font-semibold">We tailor study recommendations and career track weighting around your target.</p>
+                <div className="grid gap-2">
+                  {[
+                    { id: 'A' as const, name: 'Track A · Portfolio & Risk Analytics' },
+                    { id: 'B' as const, name: 'Track B · Derivatives & Quant Developer (C++)' },
+                    { id: 'C' as const, name: 'Track C · Low-Latency HFT & Core Systems' },
+                    { id: 'D' as const, name: 'Track D · Quantitative Research & ML' },
+                    { id: 'E' as const, name: 'Track E · Trading Infrastructure & Data' },
+                  ].map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => setOnboardTrack(t.id)}
+                      className={`qf-answer-tile text-left ${onboardTrack === t.id ? 'qf-selected' : ''}`}
+                    >
+                      <span className="qf-answer-badge">{t.id}</span>
+                      <span className="font-bold text-[14px]">{t.name}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {onboardStep === 2 && (
+              <div className="space-y-3">
+                <h2 className="text-xl font-black tracking-tight">Pick a daily XP commitment</h2>
+                <p className="text-[14px] text-muted font-semibold">50 XP is roughly one lesson or two coding sessions per day.</p>
+                <div className="grid grid-cols-2 gap-2.5">
+                  {[
+                    { xp: 30, label: 'Casual · 15 min/day' },
+                    { xp: 50, label: 'Regular · 25 min/day' },
+                    { xp: 80, label: 'Serious · 45 min/day' },
+                    { xp: 120, label: 'Intense · 60+ min/day' },
+                  ].map((g) => (
+                    <button
+                      key={g.xp}
+                      type="button"
+                      onClick={() => setOnboardGoal(g.xp)}
+                      className={`qf-card-flat p-3.5 text-left ${onboardGoal === g.xp ? 'border-accent bg-accent-soft/40' : ''}`}
+                    >
+                      <p className="text-lg font-black tnum">{g.xp} XP</p>
+                      <p className="text-[12px] font-bold text-muted">{g.label}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {onboardStep === 3 && (
+              <div className="space-y-3">
+                <h2 className="text-xl font-black tracking-tight">Confirm your timezone</h2>
+                <p className="text-[14px] text-muted font-semibold">Your streak day boundaries and daily XP caps are computed in your local timezone.</p>
+                <input
+                  type="text"
+                  value={onboardTz}
+                  onChange={e => setOnboardTz(e.target.value)}
+                  className="qf-input w-full"
+                  aria-label="Study timezone"
+                />
+              </div>
+            )}
+
+            {onboardStep === 4 && (
+              <div className="space-y-3">
+                <h2 className="text-xl font-black tracking-tight">How would you like to begin?</h2>
+                <p className="text-[14px] text-muted font-semibold">Take the diagnostic to place out of fundamentals you already know, or start cleanly from Phase 0.</p>
+                <div className="grid gap-3 pt-1">
+                  <button
+                    type="button"
+                    disabled={onboardSaving}
+                    onClick={() => void completeOnboarding(true)}
+                    className="btn3d w-full"
+                  >
+                    Take 10-minute diagnostic (Recommended) <ArrowRight className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    disabled={onboardSaving}
+                    onClick={() => void completeOnboarding(false)}
+                    className="btn3d btn3d-ghost w-full"
+                  >
+                    Start from Phase 0 on Dashboard
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center justify-between pt-2 border-t border-border">
+              {onboardStep > 1 ? (
+                <button type="button" onClick={() => setOnboardStep(s => s - 1)} className="btn3d btn3d-ghost btn3d-sm">
+                  Back
+                </button>
+              ) : <span />}
+              {onboardStep < 4 && (
+                <button type="button" onClick={() => setOnboardStep(s => s + 1)} className="btn3d btn3d-sm">
+                  Continue <ArrowRight className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

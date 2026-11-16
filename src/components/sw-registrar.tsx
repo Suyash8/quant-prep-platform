@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import { toast } from 'sonner';
 import { broadcast } from '@/lib/client/broadcast';
 
 /**
@@ -14,6 +15,10 @@ export function ServiceWorkerRegistrar() {
 
     const isDev = process.env.NODE_ENV !== 'production';
     const swUrl = isDev ? '/sw.js?mode=dev' : '/sw.js';
+
+    try {
+      void navigator.storage?.persist?.().catch(() => {});
+    } catch { /* ignore */ }
 
     let triggered = false;
     const triggerBackgroundDownload = (reg: ServiceWorkerRegistration) => {
@@ -44,7 +49,14 @@ export function ServiceWorkerRegistrar() {
           const nw = reg.installing;
           if (!nw) return;
           nw.addEventListener('statechange', () => {
-            if (nw.state === 'activated') triggerBackgroundDownload(reg);
+            if (nw.state === 'activated') {
+              triggerBackgroundDownload(reg);
+              if (navigator.serviceWorker.controller && !isDev) {
+                toast.info('App updated with latest packs & fixes.', {
+                  action: { label: 'Refresh', onClick: () => window.location.reload() },
+                });
+              }
+            }
           });
         });
         return navigator.serviceWorker.ready;

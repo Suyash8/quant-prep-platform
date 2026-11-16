@@ -219,9 +219,14 @@ export function CompanyDetailClient({ initialSlug }: { initialSlug?: string }) {
 
       <div className="mt-4 qf-card-flat p-4 flex items-start gap-3 anim-slide-up">
         <span className="icon-tile icon-tile-sm icon-tile-neutral"><Info /></span>
-        <p className="text-[15px] text-muted italic leading-relaxed">
-          Full posting not imported, mapping inferred from track data.
-        </p>
+        <div className="text-[14px] text-muted leading-relaxed space-y-1">
+          <p className="font-semibold text-foreground">
+            Independent educational preparation profile{company.asOf ? ` · Last verified ${company.asOf}` : ''}.
+          </p>
+          <p>
+            QuantFoundry is not affiliated with, endorsed by, or officially connected with {company.name}. Role names, compensation expectations, and interview formats are summarized from public sources and change over time — always confirm active postings directly on the employer&apos;s career portal.
+          </p>
+        </div>
       </div>
 
       <section className="mt-8">

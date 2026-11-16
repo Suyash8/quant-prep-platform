@@ -2,7 +2,7 @@
   "id": "ap-algorithms-trees-graphs",
   "moduleId": "ap-algorithms",
   "title": "Trees, graphs and traversal",
-  "estMinutes": 170,
+  "estMinutes": 20,
   "difficulty": "core",
   "prereqs": [
     "ap-algorithms-heaps-topk"
@@ -88,156 +88,6 @@
       "md": "Coordinates and trace\n\nEncode (r,c) as r*C+c; decode with divmod(index,C). Check both row and column bounds before reading or encoding a neighbor. Flat index+1 can be in range yet wrap from the last column into the next row. For [\"....\",\".##.\",\"....\"], a boundary route uses 5 moves, matching the Manhattan lower bound here. Manhattan distance is not generally attainable with walls. [\".#\",\"#.\"] is unreachable."
     },
     {
-      "type": "p",
-      "md": "Complexity and transfer\n\nAt most 1000000 cells and four neighbor tests per reached cell give O(R*C) time and space. A bytearray stores visited flags; a deque stores encoded integers. DFS first arrival does not ensure minimum distance; weighted edges need a different method. Independently relax all edges on tiny grids and compare every wall pattern, then exercise million-cell grids. Blocked ends, single rows/columns, and open/blocked singletons all matter. Local evidence is not remote judge memory/time qualification."
-    },
-    {
-      "type": "code",
-      "lang": "python",
-      "code": "MOD = 1000000007\n\ndef shortest_steps(grid):\n    from collections import deque\n    (rows, columns) = (len(grid), len(grid[0]))\n    if grid[0][0] == '#' or grid[-1][-1] == '#':\n        return ['-1']\n    seen = bytearray(rows * columns)\n    seen[0] = 1\n    queue = deque([0])\n    distance = 0\n    while queue:\n        for _ in range(len(queue)):\n            encoded = queue.popleft()\n            if encoded == rows * columns - 1:\n                return [str(distance)]\n            (row, col) = divmod(encoded, columns)\n            for (dr, dc) in ((-1, 0), (1, 0), (0, -1), (0, 1)):\n                (nr, nc) = (row + dr, col + dc)\n                if 0 <= nr < rows and 0 <= nc < columns:\n                    nxt = nr * columns + nc\n                    if not seen[nxt] and grid[nr][nc] == '.':\n                        seen[nxt] = 1\n                        queue.append(nxt)\n        distance += 1\n    return ['-1']\n\nprint(shortest_steps(['....', '.##.', '....']))\nprint(shortest_steps(['.']))\nprint(shortest_steps(['#']))\nprint(shortest_steps(['.#', '#.']))",
-      "caption": "Expected ['5'], ['0'], ['-1'], ['-1']. Complete layer BFS and bounds checks."
-    },
-    {
-      "type": "p",
-      "md": "Mechanism reference: [background](https://cp-algorithms.com/graph/breadth-first-search.html). BFS discovery and shortest-layer mechanism; our coordinate bounds, blocked endpoints and list-line adapter are declared grid rules. Public task hash 57cff9547f9d403fd5d900fadf064cffd677d185c13a799a9f7638be6b06b3dd. Earlier bounded examples retain their own policies. This is teaching/source fit, not current app, judge or production qualification.\n\nProper tree contract\n\nThere are 1 to 200000 nodes. Node i is (value,left,right), the root is 0, and child=-1 means absent. Indexes form one proper binary tree, not an arbitrary graph or forest. Each |value|<=1e9. Return one string sum per depth, root first. A valid chain can have 200000 nodes, so avoid recursive Python DFS."
-    },
-    {
-      "type": "p",
-      "md": "Layer induction\n\nThe queue starts with [0]. At each outer entry it contains exactly the next depth. Snapshot len(queue), pop exactly that many nodes, add their values, and enqueue real children. New children are at the next depth and excluded from this snapshot. Append the total after the snapshot completes. This proves each line sums exactly one depth. The proper-tree guarantee prevents duplicate visits; this function does not validate shared children or cycles.\n\nSentinels, signed values and trace\n\nCheck child!=-1 before indexing: Python nodes[-1] would read the actual final node. Zero/negative values and zero sums are valid, not missing levels. For [(3,1,2),(9,-1,-1),(20,3,4),(15,-1,-1),(7,-1,-1)], sums are 3, 29, 22. Sum values, not IDs or child counts."
-    },
-    {
-      "type": "p",
-      "md": "Bounds and transfer\n\nTime is O(n), live queue storage O(width), and output O(height), all bounded by O(n). An absolute level total<=n*1e9<=2e14 requires 64-bit C++ accumulation; Python integers are exact. Independently traverse an explicit (node,depth) stack into dictionary totals. Compare chains, broad trees, negative and canceling values, and relabeled proper trees. Exercise the maximum chain and a near-complete tree, not only tiny balanced examples."
-    },
-    {
-      "type": "code",
-      "lang": "python",
-      "code": "MOD = 1000000007\n\ndef level_sums(nodes):\n    from collections import deque\n    queue = deque([0])\n    out = []\n    while queue:\n        total = 0\n        for _ in range(len(queue)):\n            (value, left, right) = nodes[queue.popleft()]\n            total += value\n            if left != -1:\n                queue.append(left)\n            if right != -1:\n                queue.append(right)\n        out.append(str(total))\n    return out\n\nprint(level_sums([(3, 1, 2), (9, -1, -1), (20, 3, 4), (15, -1, -1), (7, -1, -1)]))\nprint(level_sums([(-5, -1, -1)]))",
-      "caption": "Expected ['3', '29', '22'], then ['-5']. Explicit -1 guarding and layer sums."
-    },
-    {
-      "type": "p",
-      "md": "Mechanism reference: [background](https://cp-algorithms.com/graph/breadth-first-search.html). BFS layer mechanism; the signed-value aggregate, proper indexed tree, root 0 and absent-child -1 policy are our task rules. Public task hash b76a20346175cb7df76a4f56b063a9e8972924a5f7cb8d1e27ff55de0026c478. Earlier bounded examples retain their own policies. This is teaching/source fit, not current app, judge or production qualification."
-    },
-    {
-      "type": "p",
-      "md": "Static rooted indexing\n\nThere are 1 to 100000 nodes and queries; the root is 1. parents[i] is the manager of node i+2. Parent labels may be larger than child labels. Build the child lists completely, then traverse iteratively from 1 to assign depths; numeric-order depth calculation is invalid. The input is a proper tree rooted at 1. A node counts as its own ancestor. Return one string label per query.\n\nPower table proof\n\nSet the root parent to itself. up[k][v] means the ancestor 2^k steps above v, capped at the root. up[0] gives immediate parents; up[k][v]=up[k-1][up[k-1][v]] composes two half jumps. Build the complete previous level first. levels=max(1,n.bit_length()) ensures 2^levels>n-1, including singleton and power-of-two sizes. Induction proves the entries."
-    },
-    {
-      "type": "p",
-      "md": "Align then lift together\n\nLift the deeper node by the bits of the depth difference. Every common ancestor is no deeper than the shallower node, so alignment cannot pass the LCA. If the nodes meet, return that node. Otherwise the equal-depth nodes remain in different branches below their LCA. Try powers in descending order; move both only if the target ancestors differ. At equal depth, targets differ exactly when that jump remains strictly below the LCA; equal targets would reach or pass it. After all powers, no one-step jump can keep them different, so their shared parent is the LCA."
-    },
-    {
-      "type": "p",
-      "md": "Trace and scope\n\nRoot 1 has children 2 and 3; node 2 has children 4 and 5; node 3 has children 6 and 7. For query (4,6), the two-step targets are both 1, so skip that jump. The one-step targets 2 and 3 differ, so move both, then return their parent 1. Query (4,2) aligns 4 to 2 and returns 2; (5,5) returns 5.\n\nWith parents=[3,1], node 2 has manager 3, whose manager is 1: query (2,3) returns 3. The tree is static; manager changes invalidate depths and the table. This extension supersedes the earlier core LCA exclusion only for this contract."
-    },
-    {
-      "type": "p",
-      "md": "Cost and independent transfer\n\nBuild costs O(n log n), a query O(log n), and space O(n log n+q) including returned lines. n=100000 uses 17 levels, roughly 1700000 entries plus sentinel columns; Python references and objects mean this is not 1.7 MB. Iterative depth building handles a 100000-node chain. Compare with naive ancestor lists on randomly relabeled trees, including parent>child labels, same-node, root, ancestor and separate-branch cases. Exercise n=q=100000 with one reused table, not preprocessing per query."
-    },
-    {
-      "type": "code",
-      "lang": "python",
-      "code": "MOD = 1000000007\n\ndef lca_queries(n, parents, queries):\n    children = [[] for _ in range(n + 1)]\n    immediate = [1] * (n + 1)\n    for (child, parent) in enumerate(parents, 2):\n        immediate[child] = parent\n        children[parent].append(child)\n    depth = [0] * (n + 1)\n    pending = [1]\n    while pending:\n        node = pending.pop()\n        for child in children[node]:\n            depth[child] = depth[node] + 1\n            pending.append(child)\n    levels = max(1, n.bit_length())\n    up = [immediate]\n    for _ in range(1, levels):\n        prev = up[-1]\n        up.append([prev[prev[v]] for v in range(n + 1)])\n    out = []\n    for (u, v) in queries:\n        if depth[u] < depth[v]:\n            (u, v) = (v, u)\n        difference = depth[u] - depth[v]\n        for k in range(levels):\n            if difference >> k & 1:\n                u = up[k][u]\n        if u != v:\n            for k in range(levels - 1, -1, -1):\n                if up[k][u] != up[k][v]:\n                    (u, v) = (up[k][u], up[k][v])\n            u = up[0][u]\n        out.append(str(u))\n    return out\n\nprint(lca_queries(7, [1, 1, 2, 2, 3, 3], [(4, 5), (4, 6), (5, 5), (7, 1)]))\nprint(lca_queries(3, [3, 1], [(2, 3), (2, 1)]))",
-      "caption": "Expected ['2', '1', '5', '1'], then ['3', '1']. Independent of parent numbering and safe for a deep chain."
-    },
-    {
-      "type": "p",
-      "md": "Mechanism reference: [background](https://algorithm.tamnd.com/lca-binary-lifting/). Static binary-lifting table, depth alignment and unequal-ancestor jumps. The source uses zero-based undirected-edge input; our 1-based manager array, root 1 and output strings are separate task rules. Public task hash 92c59c9e4d677a8d702729d1d6fcd4517c9b5d60ecd9fe162cf45961acc6c1fb. Earlier bounded examples retain their own policies. This is teaching/source fit, not current app, judge or production qualification."
-    },
-    {
-      "type": "p",
-      "md": "Weighted proper tree\n\nThere are 1 to 200000 nodes, labeled from 1, and n-1 undirected edges with positive weights 1..1e9. diameter(n,edges) returns one string line containing the maximum path total weight, not the number of edges or the last BFS visit. A singleton returns 0. Root at 1 only to define subtrees; the answer is root-independent. This makes no general-graph longest-path claim."
-    },
-    {
-      "type": "p",
-      "md": "Downward state and exact decomposition\n\ndown[u] is the heaviest downward path starting at u, with 0 for stopping there. Child v contributes weight(u,v)+down[v]. Every simple path has a unique highest vertex u and uses at most two distinct child branches, or one branch ending at u. Its weight is at most the sum of the two largest contributions, taking missing branches as 0. Conversely, joining those paths through u is feasible and simple. The maximum over all u is exactly the diameter. Equal lengths from different children must both count."
-    },
-    {
-      "type": "p",
-      "md": "Iterative dependencies and trace\n\nRecord parents and preorder with an explicit stack; reverse preorder places each child before its parent. Scan children once, retain the largest and second-largest contributions, set down[u]=largest, and update the global best. Skip the parent edge. Proper-tree input makes this safe without general-graph visited logic.\n\nFor edges 1-2 of weight 3, 2-3 of weight 4, 2-4 of weight 6, and 4-5 of weight 1, down[4]=1. At node 2, branch contributions 4 and 7 combine to 11. The root downward path has weight 10, not the diameter; the best path can bend below the root."
-    },
-    {
-      "type": "p",
-      "md": "Bounds and independent transfer\n\nTime and storage are O(n), without sorting branches or a recursive stack. The answer<=(n-1)*1e9<=199999000000000 needs 64-bit C++ accumulation; Python integers remain exact. Generalize the unweighted source's +1 to the actual edge weight; do not use an unweighted BFS last-visit shortcut. Independently enumerate unique path sums from each tiny-tree source. Test equal branches, stars, chains, a singleton, and a below-root bend. Stress a 200000-node chain with 1e9 weights and a 200000-node star. Negative weights, path reconstruction, centers and remote judge limits remain outside scope."
-    },
-    {
-      "type": "code",
-      "lang": "python",
-      "code": "MOD = 1000000007\n\ndef diameter(n, edges):\n    adjacent = [[] for _ in range(n + 1)]\n    for (u, v, weight) in edges:\n        adjacent[u].append((v, weight))\n        adjacent[v].append((u, weight))\n    parent = [0] * (n + 1)\n    parent[1] = 1\n    (order, pending) = ([], [1])\n    while pending:\n        u = pending.pop()\n        order.append(u)\n        for (v, _) in adjacent[u]:\n            if v != parent[u]:\n                parent[v] = u\n                pending.append(v)\n    down = [0] * (n + 1)\n    best = 0\n    for u in reversed(order):\n        first = second = 0\n        for (v, weight) in adjacent[u]:\n            if v == parent[u]:\n                continue\n            branch = weight + down[v]\n            if branch > first:\n                (first, second) = (branch, first)\n            elif branch > second:\n                second = branch\n        down[u] = first\n        best = max(best, first + second)\n    return [str(best)]\n\nprint(diameter(5, [(1, 2, 3), (2, 3, 4), (2, 4, 6), (4, 5, 1)]))\nprint(diameter(1, []))\nprint(diameter(3, [(1, 2, 5), (1, 3, 5)]))",
-      "caption": "Expected ['11'], ['0'], ['10']. Weighted top-two-child DP."
-    },
-    {
-      "type": "p",
-      "md": "Mechanism reference: [background](https://book.micheletti.io/diameter.html). Highest-vertex decomposition and two distinct branches for unweighted diameter. Our positive-weight recurrence replaces unit increments by edge weights and proves that extension above; the source does not specify our weighted parser or output. Public task hash 5a05deeb1e9ff3f4934828a744a7ecede22e2a06c456141df8f89c06ca369b7e. Earlier bounded examples retain their own policies. This is teaching/source fit, not current app, judge or production qualification."
-    },
-    {
-      "type": "p",
-      "md": "Parent comparisons are not enough\n\nA strict BST requires every left-subtree value to be below its ancestor and every right-subtree value above it. Root 10, left child 5, left-right child 12 passes its local 5<12 comparison but violates root 10. Carry an OPEN interval(lower, upper) from all ancestors. Root has no bounds. A value must satisfy lower<value<upper whenever those bounds exist; duplicates are invalid."
-    },
-    {
-      "type": "p",
-      "md": "Bound propagation proves the subtree condition\n\nFor node value v, the left child inherits(lower, v), the right child(v, upper). Existing opposite-side bounds remain in force. Inductively this interval is the intersection of every ancestor constraint, so accepting every node implies all required subtree inequalities. A violating node supplies a concrete counterexample. None denotes an absent bound, not an artificial 32-bit sentinel that would reject a legal endpoint value."
-    },
-    {
-      "type": "p",
-      "md": "Iterate across a deep proper tree\n\nInput guarantees one proper binary tree rooted at 0 with -1 for no child. This validator checks ordering, not connectivity/cycle/index validity; inventing extra rejection rules would change scope. n may reach 100000 in a chain, so use an explicit stack rather than default recursive calls. O(n) visits and O(height) pending ancestor branches, bounded by O(n). Test equal values, integer endpoints, a deep ancestor violation and a valid chain."
-    },
-    {
-      "type": "code",
-      "lang": "python",
-      "code": "from collections import OrderedDict, deque\nfrom bisect import bisect_left\nimport heapq\n\ndef is_bst(nodes):\n    stack = [(0, None, None)]\n    while stack:\n        (at, lower, upper) = stack.pop()\n        (value, left, right) = nodes[at]\n        if lower is not None and value <= lower:\n            return ['INVALID']\n        if upper is not None and value >= upper:\n            return ['INVALID']\n        if right != -1:\n            stack.append((right, value, upper))\n        if left != -1:\n            stack.append((left, lower, value))\n    return ['VALID']\n\nprint(*is_bst([(10, 1, -1), (5, -1, 2), (12, -1, -1)]))\nprint(*is_bst([(0, 1, 2), (-2147483648, -1, -1), (2147483647, -1, -1)]))",
-      "caption": "Expected stdout:\nINVALID\nVALID\n\nPrevalidated inputs follow the captured public contract. This completes the named Python function using its original supplied main/parser. It does not claim independent parser, C++, app-runner or judge qualification."
-    },
-    {
-      "type": "p",
-      "md": "Mechanism reference: [background](https://algs4.cs.princeton.edu/32bst/). Strict whole-subtree BST ordering. The iterative inherited-open-bound validator, None sentinel and proper-tree precondition are specified and proved here, not a structural validation service. Public task hash 2115334fad00402be1b76f58a7ed025d0e83aa9ad05f77a5040fce66fdffa811. Earlier bounded examples retain their own policies. This is teaching/source fit, not current app, judge or production qualification."
-    },
-    {
-      "type": "p",
-      "md": "Orient prerequisites before choosing an algorithm\n\nA public pair (a, b) means b must precede a, so store directed edge b->a and increment indegree[a]. Remaining indegree counts prerequisite edges from unprocessed nodes. Nodes at 0 are exactly those currently available. Put all such nodes in a min-heap, not a FIFO queue; the required next choice is the smallest index among all currently ready nodes."
-    },
-    {
-      "type": "p",
-      "md": "Safety, deterministic ties and cycles\n\nPopping a ready node respects every prerequisite. Remove each outgoing edge by decrementing its destination count and push the destination when it reaches 0. At any step, every feasible next element must be ready. Choosing the smallest ready index therefore minimizes the first differing position of any valid completion, giving the prescribed lexicographic order. If the heap empties before n outputs, every remaining node has a remaining predecessor; following predecessors in a finite graph finds a cycle. Self-edge(a, a) never becomes ready."
-    },
-    {
-      "type": "p",
-      "md": "Trace, bounds and output\n\nFor n=4, pairs[(1, 2), (0, 2)], initially 2 and 3 are ready. Pop 2, releasing 0 and 1; the heap then gives 0, 1, 3, so output 2 0 1 3. A FIFO initialized with 2, 3 would instead choose 3 too early. The task supplies distinct pairs, n<=100000, m<=200000. Each edge is processed once, each node heap-inserted/popped once: O(m+n log n) time, O(n+m) state. Output one joined line or IMPOSSIBLE, not any arbitrary valid topological order."
-    },
-    {
-      "type": "code",
-      "lang": "python",
-      "code": "from collections import OrderedDict, deque\nfrom bisect import bisect_left\nimport heapq\n\ndef course_order(n, prereqs):\n    outgoing = [[] for _ in range(n)]\n    remaining = [0] * n\n    for (after, before) in prereqs:\n        outgoing[before].append(after)\n        remaining[after] += 1\n    available = [i for i in range(n) if remaining[i] == 0]\n    heapq.heapify(available)\n    result = []\n    while available:\n        node = heapq.heappop(available)\n        result.append(node)\n        for after in outgoing[node]:\n            remaining[after] -= 1\n            if remaining[after] == 0:\n                heapq.heappush(available, after)\n    return [' '.join(map(str, result))] if len(result) == n else ['IMPOSSIBLE']\n\nprint(*course_order(4, [(1, 2), (0, 2)]))\nprint(*course_order(1, [(0, 0)]))",
-      "caption": "Expected stdout:\n2 0 1 3\nIMPOSSIBLE\n\nPrevalidated inputs follow the captured public contract. This completes the named Python function using its original supplied main/parser. It does not claim independent parser, C++, app-runner or judge qualification."
-    },
-    {
-      "type": "p",
-      "md": "Mechanism reference: [background](https://networkx.org/documentation/stable/reference/algorithms/generated/networkx.algorithms.dag.lexicographical_topological_sort.html). Lexicographical topological ordering semantics. Our remaining-indegree/min-heap implementation and cycle proof are given above; the source API is not our (after,before) parser or IMPOSSIBLE output. Public task hash f99bbf11b28d79c6652ce3d896ec00430151ee248d6ad6510caf1caf43a4e568. Earlier bounded examples retain their own policies. This is teaching/source fit, not current app, judge or production qualification."
-    },
-    {
-      "type": "p",
-      "md": "Distance and count are different state\n\nFor each node keep the best known distance and the number of routes attaining it modulo 1000000007. Start source 0 at distance 0, count 1; unreachable distance is None, count 0. Store both directions of each undirected edge, retaining parallel edges separately because link sequences distinguish routes. BFS edge counts cannot replace weighted latency sums."
-    },
-    {
-      "type": "p",
-      "md": "Relaxation rules and a positive-weight count proof\n\nPop the smallest distance from a min-heap. A strictly shorter candidate replaces distance and resets count to ways[u]; an equal-distance candidate adds ways[u] without resetting. A longer candidate does nothing. All weights are strictly positive, so every predecessor on a shortest route to v has smaller distance than v. Thus its count contribution arrives before the current-distance pop for v, and its count is complete when propagated. Zero-weight links would invalidate this simple ordering proof; they are excluded, not silently supported."
-    },
-    {
-      "type": "p",
-      "md": "Lazy heap, trace and limits\n\nOn strict improvement push a new (distance, node) pair. Old pairs remain; skip a popped pair when cost!=dist[u], otherwise obsolete work can propagate incorrect duplicate counts. With two parallel 0--1 edges of weight 1 and edge 1--2 weight 2, counts are 1, 2, 2 at distances 0, 1, 3. Disconnected nodes print -1 0. n<=100000, m<=200000; positive shortest paths need no cycles, so signed 64-bit distances suffice here. Lazy heap work O((n+m) log(n+m)), state O(n+m), plus n output lines. Route counts can be huge before modulo, not floating probabilities."
-    },
-    {
-      "type": "code",
-      "lang": "python",
-      "code": "from collections import OrderedDict, deque\nfrom bisect import bisect_left\nimport heapq\n\ndef shortest_paths(n, edges):\n    graph = [[] for _ in range(n)]\n    for (u, v, weight) in edges:\n        graph[u].append((v, weight))\n        graph[v].append((u, weight))\n    dist = [None] * n\n    ways = [0] * n\n    (dist[0], ways[0]) = (0, 1)\n    pending = [(0, 0)]\n    modulus = 1000000007\n    while pending:\n        (cost, u) = heapq.heappop(pending)\n        if cost != dist[u]:\n            continue\n        for (v, weight) in graph[u]:\n            candidate = cost + weight\n            if dist[v] is None or candidate < dist[v]:\n                dist[v] = candidate\n                ways[v] = ways[u]\n                heapq.heappush(pending, (candidate, v))\n            elif candidate == dist[v]:\n                ways[v] = (ways[v] + ways[u]) % modulus\n    return ['-1 0' if d is None else f'{d} {ways[i]}' for (i, d) in enumerate(dist)]\n\nprint(*shortest_paths(4, [(0, 1, 1), (0, 1, 1), (1, 2, 2)]), sep='\\n')",
-      "caption": "Expected stdout:\n0 1\n1 2\n3 2\n-1 0\n\nPrevalidated inputs follow the captured public contract. This completes the named Python function using its original supplied main/parser. It does not claim independent parser, C++, app-runner or judge qualification."
-    },
-    {
-      "type": "p",
-      "md": "Mechanism reference: [background](https://cp-algorithms.com/graph/dijkstra_sparse.html). Lazy-heap shortest-distance relaxation and obsolete-entry check. The strict-positive-weight route-count dependency proof, parallel-link multiplicity and unreachable output are derived separately above, not a route-count API supplied by the reference. Public task hash 76aaae1a397c6f2198a3939d9884f0d20a2875f4a3d44daece519e3e5ee841d8. Earlier bounded examples retain their own policies. This is teaching/source fit, not current app, judge or production qualification."
-    },
-    {
       "type": "interactive",
       "component": "BSTVisual",
       "params": {},
@@ -288,8 +138,8 @@
     "Discovery-on-enqueue gives one queue insertion per vertex and preserves the first-discovery parent/distance invariant. (Its discovery state is already visible to later scanned edges.)",
     "Keep unreachable separate from a legitimate zero distance; otherwise downstream path/reconciliation logic becomes false. (No source path was discovered.)"
   ],
-  "realWorldApplication": "Used directly across production quantitative research, execution systems, and validation pipelines.",
-  "quantFinanceApplication": "Directly prepares you for judged problems: shortest-path-grid, level-order-sum, lowest-common-ancestor, tree-diameter, bst-validate, course-schedule, dijkstra-latency.",
+  "realWorldApplication": "In practice, engineering teams apply trees, graphs and traversal within Algorithmic Invariants and Counterexamples when building reliable dsa and algorithms workflows — specifically to track discovery and parent/distance state during BFS/stack traversal, including cycles and disconnected vertices; and Build adjacency with an explicit directed/undirected and identity contract rather than infer meaning from a diagram; and Prove first-discovery shortest distance for unit grid edges; and Handle blocked endpoints, singletons, row boundaries and unreachable results.",
+  "quantFinanceApplication": "Core interview preparation inside Algorithmic Invariants and Counterexamples: builds the patterns behind coding problems including Routing Grid Shortest Path, Order Tree Level Totals, Reporting Line Common Manager, Network Diameter.",
   "summary": [
     "Declare graph representation and direction.",
     "Mark discovery before enqueue/push, keep unreachable state explicit and prove any path tie rule.",
@@ -408,5 +258,14 @@
     "dsa",
     "algorithms",
     "complexity"
+  ],
+  "provenance": [
+    "Mechanism reference: [background](https://cp-algorithms.com/graph/breadth-first-search.html). BFS discovery and shortest-layer mechanism; our coordinate bounds, blocked endpoints and list-line adapter are declared grid rules. Public task hash 57cff9547f9d403fd5d900fadf064cffd677d185c13a799a9f7638be6b06b3dd. Earlier bounded examples retain their own policies. This is teaching/source fit, not current app, judge or production qualification.\n\nProper tree contract\n\nThere are 1 to 200000 nodes. Node i is (value,left,right), the root is 0, and child=-1 means absent. Indexes form one proper binary tree, not an arbitrary graph or forest. Each |value|<=1e9. Return one string sum per depth, root first. A valid chain can have 200000 nodes, so avoid recursive Python DFS.",
+    "Mechanism reference: [background](https://cp-algorithms.com/graph/breadth-first-search.html). BFS layer mechanism; the signed-value aggregate, proper indexed tree, root 0 and absent-child -1 policy are our task rules. Public task hash b76a20346175cb7df76a4f56b063a9e8972924a5f7cb8d1e27ff55de0026c478. Earlier bounded examples retain their own policies. This is teaching/source fit, not current app, judge or production qualification.",
+    "Mechanism reference: [background](https://algorithm.tamnd.com/lca-binary-lifting/). Static binary-lifting table, depth alignment and unequal-ancestor jumps. The source uses zero-based undirected-edge input; our 1-based manager array, root 1 and output strings are separate task rules. Public task hash 92c59c9e4d677a8d702729d1d6fcd4517c9b5d60ecd9fe162cf45961acc6c1fb. Earlier bounded examples retain their own policies. This is teaching/source fit, not current app, judge or production qualification.",
+    "Mechanism reference: [background](https://book.micheletti.io/diameter.html). Highest-vertex decomposition and two distinct branches for unweighted diameter. Our positive-weight recurrence replaces unit increments by edge weights and proves that extension above; the source does not specify our weighted parser or output. Public task hash 5a05deeb1e9ff3f4934828a744a7ecede22e2a06c456141df8f89c06ca369b7e. Earlier bounded examples retain their own policies. This is teaching/source fit, not current app, judge or production qualification.",
+    "Mechanism reference: [background](https://algs4.cs.princeton.edu/32bst/). Strict whole-subtree BST ordering. The iterative inherited-open-bound validator, None sentinel and proper-tree precondition are specified and proved here, not a structural validation service. Public task hash 2115334fad00402be1b76f58a7ed025d0e83aa9ad05f77a5040fce66fdffa811. Earlier bounded examples retain their own policies. This is teaching/source fit, not current app, judge or production qualification.",
+    "Mechanism reference: [background](https://networkx.org/documentation/stable/reference/algorithms/generated/networkx.algorithms.dag.lexicographical_topological_sort.html). Lexicographical topological ordering semantics. Our remaining-indegree/min-heap implementation and cycle proof are given above; the source API is not our (after,before) parser or IMPOSSIBLE output. Public task hash f99bbf11b28d79c6652ce3d896ec00430151ee248d6ad6510caf1caf43a4e568. Earlier bounded examples retain their own policies. This is teaching/source fit, not current app, judge or production qualification.",
+    "Mechanism reference: [background](https://cp-algorithms.com/graph/dijkstra_sparse.html). Lazy-heap shortest-distance relaxation and obsolete-entry check. The strict-positive-weight route-count dependency proof, parallel-link multiplicity and unreachable output are derived separately above, not a route-count API supplied by the reference. Public task hash 76aaae1a397c6f2198a3939d9884f0d20a2875f4a3d44daece519e3e5ee841d8. Earlier bounded examples retain their own policies. This is teaching/source fit, not current app, judge or production qualification."
   ]
 }

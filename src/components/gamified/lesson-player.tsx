@@ -7,14 +7,13 @@ import { AnimatePresence, motion } from 'framer-motion';
 import {
   X, Check, ChevronRight, Flame, Zap, Star, Clock, Target, Lightbulb,
   AlertTriangle, Building2, TrendingUp, GraduationCap, BookOpen, RotateCcw,
-  Home, Map as MapIcon, Lock, Sparkles, Trophy,
+  Map as MapIcon, Lock, Sparkles, Trophy, Flag,
 } from 'lucide-react';
 import type { PlayerCard } from '@/lib/lesson-cards';
 import { cardLabel } from '@/lib/lesson-cards';
 import type { QuizQuestion } from '@/lib/content';
 import { gradeAnswer } from '@/lib/grading';
-import { scoreQuiz } from '@/lib/mastery';
-import { recordLessonResult, recordExerciseDone, lessonProgressOf, xpSummary, subscribe, ensureLocalCards } from '@/lib/client/local-state';
+import { recordLessonAttempt, recordExerciseDone, lessonProgressOf, xpSummary, subscribe, ensureLocalCards } from '@/lib/client/local-state';
 import { getLessonPosition, saveLessonPosition } from '@/lib/client/idb';
 import { ClientMd, ClientMathFigure } from '@/components/gamified/client-md';
 import { ClientBlock } from '@/components/gamified/player-blocks';
@@ -33,11 +32,31 @@ interface FinishResult {
   perQuestion?: Record<string, { correct: boolean; explanation: string }>;
 }
 
+interface AnswerKeyEntry {
+  answerIndex?: number;
+  answerIndices?: number[];
+  answer?: string | number;
+  modelAnswer?: string;
+  explanation?: string;
+}
+
+interface FeedbackEntry {
+  correct: boolean;
+  explanation: string;
+  pendingOnline?: boolean;
+  needsLogin?: boolean;
+}
+
 interface PlayerState {
   idx: number;
   answers: Record<string, string | string[]>;
-  feedback: Record<string, { correct: boolean; explanation: string } | undefined>;
+  feedback: Record<string, FeedbackEntry | undefined>;
   exercises: { guided: boolean; independent: boolean };
+  wrongIds?: string[];
+  retryQueue?: string[];
+  retryIndex?: number;
+  retrying?: boolean;
+  retryDone?: boolean;
 }
 
 interface MiniHud { streakCount: number; xp: number }
@@ -53,7 +72,7 @@ interface IntroOutline {
 }
 
 export function LessonPlayer({
-  lessonId, title, moduleTitle, cards, fullQuiz, flashcards, nextHref, nextTitle,
+  lessonId, title, moduleTitle, cards, fullQuiz, flashcards, nextHref, nextTitle, quizAnswers,
 }: {
   lessonId: string;
   title: string;
@@ -63,6 +82,7 @@ export function LessonPlayer({
   flashcards: { type: string; front: string; back: string }[];
   nextHref?: string;
   nextTitle?: string;
+  quizAnswers?: Record<string, AnswerKeyEntry> | null;
 }) {
   const router = useRouter();
   const storageKey = `qf-player-${lessonId}`;
@@ -83,7 +103,12 @@ export function LessonPlayer({
   });
   const [result, setResult] = React.useState<FinishResult | null>(null);
   const [submitting, setSubmitting] = React.useState(false);
+  const [checking, setChecking] = React.useState(false);
   const [exitAsk, setExitAsk] = React.useState(false);
+  const [reportOpen, setReportOpen] = React.useState(false);
+  const [reportReason, setReportReason] = React.useState<'incorrect' | 'typo' | 'unclear' | 'broken_math' | 'other'>('unclear');
+  const [reportComment, setReportComment] = React.useState('');
+  const [reportBusy, setReportBusy] = React.useState(false);
   const [shakeKey, setShakeKey] = React.useState(0);
   const [hud, setHud] = React.useState<MiniHud | null>(null);
   const cardRef = React.useRef<HTMLDivElement>(null);
@@ -97,9 +122,14 @@ export function LessonPlayer({
   }, []);
 
   const finished = result !== null;
-  const card = cards[state.idx];
+  const retrying = Boolean(state.retrying && state.retryQueue && state.retryQueue.length > 0);
+  const retryQid = retrying ? state.retryQueue![state.retryIndex ?? 0] : undefined;
+  const retryCard = retrying && retryQid
+    ? cards.find((c): c is Extract<PlayerCard, { kind: 'quiz' }> => c.kind === 'quiz' && c.question.id === retryQid)
+    : undefined;
+  const card = retryCard ?? cards[state.idx];
   const total = cards.length;
-  const progressPct = finished ? 100 : Math.round(((state.idx + 1) / total) * 100);
+  const progressPct = finished ? 100 : retrying ? 96 : Math.round(((state.idx + 1) / total) * 100);
 
   // persist position for resume (localStorage + IndexedDB)
   React.useEffect(() => {
@@ -134,46 +164,219 @@ export function LessonPlayer({
   }
 
   function goNext() {
+    if (retrying && state.retryQueue) {
+      const nextRetry = (state.retryIndex ?? 0) + 1;
+      if (nextRetry < state.retryQueue.length) {
+        patch({ retryIndex: nextRetry });
+      } else {
+        patch({ retrying: false, retryDone: true });
+        void submitQuiz();
+      }
+      return;
+    }
     if (state.idx >= total - 1) return;
     patch({ idx: state.idx + 1 });
   }
 
   const quizCards = cards.filter(c => c.kind === 'quiz').length;
 
-  function checkAnswer(qid: string, answer: string | string[]): { correct: boolean; explanation: string } {
-    // v3: graded locally from the content pack. Instant, works offline,
-    // same grader the server uses (gradeAnswer), so results match.
-    const full = fullQuiz.find(q => q.id === qid);
-    const correct = full ? gradeAnswer(full, answer) : false;
-    const explanation = full?.explanation ?? '';
-    setState(s => ({ ...s, feedback: { ...s.feedback, [qid]: { correct, explanation } } }));
-    if (!correct) setShakeKey(k => k + 1);
-    return { correct, explanation };
+  async function checkAnswer(qid: string, answer: string | string[]) {
+    // Use locally unlocked answer key first if already passed, otherwise ask server (never ships keys upfront)
+    const unlocked = quizAnswers?.[qid];
+    if (unlocked) {
+      const base = fullQuiz.find(q => q.id === qid);
+      if (base) {
+        const merged = { ...base, ...unlocked } as QuizQuestion;
+        const correct = gradeAnswer(merged, answer);
+        const explanation = unlocked.explanation ?? base.explanation ?? '';
+        setState(s => ({
+          ...s,
+          feedback: { ...s.feedback, [qid]: { correct, explanation } },
+          wrongIds: !correct && !retrying ? Array.from(new Set([...(s.wrongIds ?? []), qid])) : s.wrongIds,
+        }));
+        if (!correct) setShakeKey(k => k + 1);
+        return;
+      }
+    }
+
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      setState(s => ({
+        ...s,
+        feedback: {
+          ...s.feedback,
+          [qid]: {
+            correct: true,
+            explanation: 'Offline mode: answer saved locally and will be graded automatically when you reconnect.',
+            pendingOnline: true,
+          },
+        },
+      }));
+      return;
+    }
+
+    setChecking(true);
+    try {
+      const res = await fetch('/api/progress/lesson/check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lessonId, questionId: qid, answer }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 401) {
+        setState(s => ({
+          ...s,
+          feedback: {
+            ...s.feedback,
+            [qid]: {
+              correct: true,
+              explanation: 'Sign in to check answers against the server and save progress.',
+              needsLogin: true,
+            },
+          },
+        }));
+        return;
+      }
+      if (!res.ok) {
+        toast.error(data.error ?? 'Could not check answer.');
+        return;
+      }
+      const correct = Boolean(data.correct);
+      const explanation = typeof data.explanation === 'string' ? data.explanation : '';
+      setState(s => ({
+        ...s,
+        feedback: { ...s.feedback, [qid]: { correct, explanation } },
+        wrongIds: !correct && !retrying ? Array.from(new Set([...(s.wrongIds ?? []), qid])) : s.wrongIds,
+      }));
+      if (!correct) setShakeKey(k => k + 1);
+    } catch {
+      setState(s => ({
+        ...s,
+        feedback: {
+          ...s.feedback,
+          [qid]: {
+            correct: true,
+            explanation: 'Connection unavailable: answer saved locally and will be graded when you reconnect.',
+            pendingOnline: true,
+          },
+        },
+      }));
+    } finally {
+      setChecking(false);
+    }
   }
 
-  function submitQuiz() {
-    // v3: scored locally, recorded locally, synced in the background.
-    setSubmitting(true);
-    try {
-      const r = scoreQuiz(fullQuiz, state.answers, (q, a) => {
-        const full = fullQuiz.find(x => x.id === q.id)!;
-        return gradeAnswer(full, a);
+  function startMistakeReviewOrSubmit() {
+    const wrong = state.wrongIds ?? [];
+    if (wrong.length > 0 && !state.retryDone) {
+      setState(s => {
+        const clearedFeedback = { ...s.feedback };
+        for (const id of wrong) delete clearedFeedback[id];
+        return {
+          ...s,
+          feedback: clearedFeedback,
+          retryQueue: [...wrong],
+          retryIndex: 0,
+          retrying: true,
+        };
       });
-      const perQuestion: Record<string, { correct: boolean; explanation: string }> = {};
-      for (const q of fullQuiz) {
-        const a = state.answers[q.id];
-        perQuestion[q.id] = { correct: a !== undefined ? gradeAnswer(q, a) : false, explanation: q.explanation };
+      return;
+    }
+    void submitQuiz();
+  }
+
+  async function submitQuiz() {
+    setSubmitting(true);
+    const exDone = state.exercises.guided || state.exercises.independent;
+    try {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        const rec = recordLessonAttempt(lessonId, state.answers);
+        ensureLocalCards(lessonId, flashcards);
+        setResult({
+          pct: 0,
+          total: fullQuiz.length,
+          status: 'pending_sync',
+          xpAwarded: rec.xp,
+        });
+        try { window.localStorage.removeItem(storageKey); } catch { /* ignore */ }
+        return;
       }
-      const rec = recordLessonResult(lessonId, r.pct, lessonProgressOf(lessonId));
+
+      const res = await fetch('/api/progress/lesson', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lessonId, answers: state.answers, exerciseDone: exDone }),
+      });
+      const data = await res.json().catch(() => ({}));
+
+      if (res.status === 401) {
+        setResult({
+          pct: 0,
+          total: fullQuiz.length,
+          status: 'guest_preview',
+          xpAwarded: 0,
+        });
+        return;
+      }
+      if (!res.ok) {
+        toast.error(data.error ?? 'Could not submit lesson.');
+        return;
+      }
+
+      const rec = recordLessonAttempt(lessonId, state.answers, {
+        pct: data.pct ?? 0,
+        status: data.status ?? 'attempted',
+        xpAwarded: data.xpAwarded ?? 0,
+        exerciseDone: Boolean(data.exerciseDone),
+      });
       ensureLocalCards(lessonId, flashcards);
-      const data: FinishResult = {
-        pct: r.pct, correct: r.correct, total: r.total,
-        status: rec.status, xpAwarded: rec.xp, perQuestion,
-      };
-      setResult(data);
+      setResult({
+        pct: data.pct ?? 0,
+        correct: data.correct,
+        total: data.total ?? fullQuiz.length,
+        status: data.status ?? rec.status,
+        xpAwarded: data.xpAwarded ?? rec.xp,
+        streakCount: data.streakCount ?? null,
+        perQuestion: data.perQuestion,
+      });
+      try { window.localStorage.removeItem(storageKey); } catch { /* ignore */ }
+    } catch {
+      const rec = recordLessonAttempt(lessonId, state.answers);
+      ensureLocalCards(lessonId, flashcards);
+      setResult({
+        pct: 0,
+        total: fullQuiz.length,
+        status: 'pending_sync',
+        xpAwarded: rec.xp,
+      });
       try { window.localStorage.removeItem(storageKey); } catch { /* ignore */ }
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function submitReport(e: React.FormEvent) {
+    e.preventDefault();
+    setReportBusy(true);
+    try {
+      const res = await fetch('/api/reports', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          lessonId,
+          cardIndex: state.idx,
+          reason: reportReason,
+          comment: reportComment,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { toast.error(data.error ?? 'Could not submit report.'); return; }
+      toast.success('Thanks — report logged for review.');
+      setReportOpen(false);
+      setReportComment('');
+    } catch {
+      toast.error('Offline — try submitting the report when online.');
+    } finally {
+      setReportBusy(false);
     }
   }
 
@@ -186,20 +389,37 @@ export function LessonPlayer({
     }
   }
 
-  // keyboard: Enter continues
-
-
+  // keyboard shortcuts: Enter continues, Escape toggles exit prompt, 1-4 picks MCQ options, ArrowLeft goes back
   React.useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key !== 'Enter' || finished || exitAsk) return;
+      if (finished) return;
       const active = document.activeElement;
-      if (active && (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT')) return;
-      const btn = document.getElementById('player-primary') as HTMLButtonElement | null;
-      if (btn && !btn.disabled) btn.click();
+      const typing = active && (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT' || active.tagName === 'SELECT');
+      if (e.key === 'Escape') {
+        if (reportOpen) { setReportOpen(false); return; }
+        setExitAsk(x => !x);
+        return;
+      }
+      if (exitAsk || reportOpen || typing) return;
+      if (e.key === 'Enter') {
+        const btn = document.getElementById('player-primary') as HTMLButtonElement | null;
+        if (btn && !btn.disabled) btn.click();
+        return;
+      }
+      if (e.key === 'ArrowLeft' && !retrying && state.idx > 0 && !(card.kind === 'quiz' && state.feedback[card.question.id])) {
+        setState(s => ({ ...s, idx: Math.max(0, s.idx - 1) }));
+        return;
+      }
+      if (/^[1-4]$/.test(e.key) && card.kind === 'quiz' && card.question.type === 'mcq' && !state.feedback[card.question.id]) {
+        const optIdx = Number(e.key) - 1;
+        if (card.question.options && optIdx < card.question.options.length) {
+          setState(s => ({ ...s, answers: { ...s.answers, [card.question.id]: String(optIdx) } }));
+        }
+      }
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [finished, exitAsk]);
+  }, [finished, exitAsk, reportOpen, retrying, state.idx, card, state.feedback]);
 
   if (finished && result) {
     return (
@@ -229,22 +449,46 @@ export function LessonPlayer({
     flashcards: flashcards.length,
   };
 
+  const wrongCount = state.wrongIds?.length ?? 0;
+  const isLastRetry = retrying && (state.retryIndex ?? 0) >= (state.retryQueue?.length ?? 1) - 1;
+
   const primaryAction = (() => {
     if (isQuiz) {
-      if (!hasFeedback) return { label: 'CHECK', disabled: !answered, onClick: () => checkAnswer(card.question.id, state.answers[card.question.id]!) };
-      return { label: 'CONTINUE', disabled: false, onClick: goNext };
+      if (!hasFeedback) {
+        return {
+          label: checking ? 'CHECKING…' : 'CHECK',
+          disabled: !answered || checking,
+          onClick: () => void checkAnswer(card.question.id, state.answers[card.question.id]!),
+        };
+      }
+      return {
+        label: retrying && isLastRetry ? 'FINISH LESSON' : 'CONTINUE',
+        disabled: submitting,
+        onClick: goNext,
+      };
     }
     if (card.kind === 'summary') {
-      return { label: quizCards > 0 ? 'FINISH LESSON' : 'COMPLETE', disabled: submitting, onClick: submitQuiz };
+      if (wrongCount > 0 && !state.retryDone) {
+        return {
+          label: `REVIEW ${wrongCount} MISTAKE${wrongCount === 1 ? '' : 'S'}`,
+          disabled: submitting,
+          onClick: startMistakeReviewOrSubmit,
+        };
+      }
+      return {
+        label: quizCards > 0 ? 'FINISH LESSON' : 'COMPLETE',
+        disabled: submitting,
+        onClick: () => void submitQuiz(),
+      };
     }
     return { label: state.idx === 0 ? "LET'S GO" : 'CONTINUE', disabled: false, onClick: goNext };
   })();
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-background" role="dialog" aria-label={`Lesson player: ${title}`}>
+    <div className="fixed inset-0 z-50 flex flex-col bg-background" role="dialog" aria-modal="true" aria-label={`Lesson player: ${title}`}>
       {/* progress header */}
       <header className="border-b-2 border-border bg-surface">
-        <div className="max-w-3xl mx-auto px-4 py-3 flex items-center gap-3">
+        <div className="max-w-3xl mx-auto px-4 py-3 flex items-center gap-2 sm:gap-3">
           <button
             onClick={() => setExitAsk(true)}
             className="press h-10 w-10 shrink-0 rounded-xl border-2 border-border flex items-center justify-center text-muted hover:bg-surface-2"
@@ -255,39 +499,54 @@ export function LessonPlayer({
           <div className="flex-1 h-5 gauge-track" role="progressbar" aria-valuenow={progressPct} aria-valuemin={0} aria-valuemax={100}>
             <div className="gauge-fill bg-accent xp-stripes !rounded-full min-w-2" style={{ width: `${progressPct}%`, minWidth: progressPct > 0 ? '18px' : undefined }} />
           </div>
-          {/* one hud-pill group: streak, xp and the card counter share the same pill style */}
-          <span className="flex items-center gap-1.5 shrink-0">
+          {/* one hud-pill group: streak, xp, card counter, and report */}
+          <span className="flex items-center gap-1 sm:gap-1.5 shrink-0">
             {hud && (
-              <span className="hidden sm:inline-flex hud-pill !py-1" title="Day streak">
+              <span className="inline-flex hud-pill !py-1 !px-2 sm:!px-2.5" title="Day streak">
                 <Flame className="h-4 w-4 text-flame anim-flame" />
                 <span className="tnum">{hud.streakCount}</span>
               </span>
             )}
             {hud && (
-              <span className="hidden sm:inline-flex hud-pill !py-1" title="Total XP">
+              <span className="inline-flex hud-pill !py-1 !px-2 sm:!px-2.5" title="Total XP">
                 <Zap className="h-4 w-4 text-warning" />
                 <span className="tnum">{hud.xp.toLocaleString()}</span>
               </span>
             )}
-            <span className="hud-pill !py-1 tnum" title={`Card ${state.idx + 1} of ${total}`}>{state.idx + 1}/{total}</span>
+            <span className="hud-pill !py-1 !px-2 sm:!px-2.5 tnum" title={retrying ? `Mistake ${(state.retryIndex ?? 0) + 1} of ${state.retryQueue?.length}` : `Card ${state.idx + 1} of ${total}`}>
+              {retrying ? `↻${(state.retryIndex ?? 0) + 1}/${state.retryQueue?.length}` : `${state.idx + 1}/${total}`}
+            </span>
+            <button
+              type="button"
+              onClick={() => setReportOpen(true)}
+              className="press h-9 w-9 rounded-xl border-2 border-border flex items-center justify-center text-faint hover:text-muted hover:bg-surface-2"
+              aria-label="Report an issue with this card"
+              title="Report an issue"
+            >
+              <Flag className="h-4 w-4" />
+            </button>
           </span>
         </div>
       </header>
 
       {/* card stage */}
-      <div ref={cardRef} className="flex-1 overflow-y-auto thin-scroll">
+      <main ref={cardRef} className="flex-1 overflow-y-auto thin-scroll">
         <div className="max-w-3xl mx-auto px-4 py-6 pb-12">
           <AnimatePresence mode="wait">
             <motion.div
-              key={state.idx}
+              key={retrying ? `retry-${state.retryIndex}` : state.idx}
               initial={{ opacity: 0, x: 48 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -48 }}
               transition={{ duration: 0.22, ease: 'easeOut' }}
             >
               <p className="text-[12px] font-extrabold uppercase tracking-[0.14em] text-accent-deep dark:text-accent mb-1.5 flex items-center gap-1.5">
-                <Sparkles className="h-3.5 w-3.5" /> {cardLabel(card)}
-                {card.kind === 'quiz' && <span className="text-faint">· {card.index + 1} of {card.total}</span>}
+                <Sparkles className="h-3.5 w-3.5" /> {retrying ? `Mistake review` : cardLabel(card)}
+                {retrying ? (
+                  <span className="text-faint">· {(state.retryIndex ?? 0) + 1} of {state.retryQueue?.length}</span>
+                ) : (
+                  card.kind === 'quiz' && <span className="text-faint">· {card.index + 1} of {card.total}</span>
+                )}
               </p>
               <div key={`c${shakeKey}`} className={cn(shakeKey > 0 && hasFeedback && !state.feedback[isQuiz ? card.question.id : '']?.correct && 'anim-shake')}>
                 <CardBody
@@ -301,7 +560,7 @@ export function LessonPlayer({
             </motion.div>
           </AnimatePresence>
         </div>
-      </div>
+      </main>
 
       {/* feedback banner + action bar */}
       <div className="border-t bg-surface">
@@ -311,38 +570,49 @@ export function LessonPlayer({
               initial={{ y: 40, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               transition={{ type: 'spring', stiffness: 380, damping: 30 }}
-              className={cn(
-                'max-w-3xl mx-auto px-4 pt-4',
-              )}
+              className="max-w-3xl mx-auto px-4 pt-4"
             >
-              <div className={cn(
-                'rounded-2xl border-2 p-4 flex gap-3 items-start',
-                state.feedback[card.question.id]?.correct
-                  ? 'border-transparent bg-accent-soft'
-                  : 'border-transparent bg-danger-soft',
-              )}>
-                <span className={cn(
-                  'h-9 w-9 shrink-0 rounded-full flex items-center justify-center anim-bounce-in',
-                  state.feedback[card.question.id]?.correct ? 'bg-accent text-white' : 'bg-danger text-white',
-                )}>
-                  {state.feedback[card.question.id]?.correct ? <Check className="h-5 w-5" /> : <X className="h-5 w-5" />}
-                </span>
-                <div className="text-[15px]">
-                  <p className={cn('font-extrabold', state.feedback[card.question.id]?.correct ? 'text-accent-deep dark:text-accent' : 'text-danger-strong dark:text-danger')}>
-                    {state.feedback[card.question.id]?.correct ? 'Correct!' : 'Not quite'}
-                  </p>
-                  <p className="mt-0.5 leading-relaxed text-muted"><ClientMd text={state.feedback[card.question.id]?.explanation ?? ''} /></p>
-                </div>
-              </div>
+              {(() => {
+                const fb = state.feedback[card.question.id]!;
+                const positive = fb.correct;
+                const neutral = fb.pendingOnline || fb.needsLogin;
+                return (
+                  <div className={cn(
+                    'rounded-2xl border-2 p-4 flex gap-3 items-start',
+                    neutral ? 'border-info/40 bg-info-soft' : positive ? 'border-transparent bg-accent-soft' : 'border-transparent bg-danger-soft',
+                  )}>
+                    <span className={cn(
+                      'h-9 w-9 shrink-0 rounded-full flex items-center justify-center anim-bounce-in',
+                      neutral ? 'bg-info text-white' : positive ? 'bg-accent text-white' : 'bg-danger text-white',
+                    )}>
+                      {positive ? <Check className="h-5 w-5" /> : <X className="h-5 w-5" />}
+                    </span>
+                    <div className="text-[15px] flex-1">
+                      <p className={cn(
+                        'font-extrabold',
+                        neutral ? 'text-info-strong dark:text-info' : positive ? 'text-accent-deep dark:text-accent' : 'text-danger-strong dark:text-danger',
+                      )}>
+                        {fb.needsLogin ? 'Sign in to check answers' : fb.pendingOnline ? 'Saved offline' : positive ? 'Correct!' : 'Not quite'}
+                      </p>
+                      <p className="mt-0.5 leading-relaxed text-muted"><ClientMd text={fb.explanation} /></p>
+                      {fb.needsLogin && (
+                        <Link href="/login" className="mt-2 inline-flex text-[13px] font-bold text-accent hover:underline">
+                          Sign in →
+                        </Link>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
             </motion.div>
           </AnimatePresence>
         )}
-        <div className="max-w-3xl mx-auto px-4 py-4">
-          <div className="qf-card-flat px-4 sm:px-5 py-3.5 flex items-center gap-3">
-            {state.idx > 0 && !hasFeedback && (
+        <div className="max-w-3xl mx-auto px-4 pt-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+          <div className="qf-card-flat px-3 sm:px-5 py-3.5 flex items-center gap-2 sm:gap-3">
+            {!retrying && state.idx > 0 && !hasFeedback && (
               <button
                 onClick={() => patch({ idx: state.idx - 1 })}
-                className="btn3d btn3d-ghost btn3d-sm hidden sm:inline-flex"
+                className="btn3d btn3d-ghost btn3d-sm inline-flex shrink-0"
               >
                 Back
               </button>
@@ -356,13 +626,14 @@ export function LessonPlayer({
               {submitting ? 'Scoring…' : primaryAction.label}
               {!isQuiz && <ChevronRight className="h-6 w-6" />}
             </button>
-            {/* secondary escape lives in the bar instead of floating the primary alone */}
+            {/* secondary escape lives in the bar on all screen sizes */}
             <button
               onClick={() => setExitAsk(true)}
-              className="btn3d btn3d-ghost btn3d-sm shrink-0 hidden sm:inline-flex"
+              className="btn3d btn3d-ghost btn3d-sm shrink-0 inline-flex"
               title="Save your place and exit"
             >
-              Save &amp; exit
+              <span className="sm:hidden">Exit</span>
+              <span className="hidden sm:inline">Save &amp; exit</span>
             </button>
           </div>
         </div>
@@ -389,13 +660,72 @@ export function LessonPlayer({
               <div className="mt-5 grid grid-cols-2 gap-3">
                 <button onClick={() => setExitAsk(false)} className="btn3d btn3d-ghost">Keep learning</button>
                 <button
-                  onClick={() => router.push('/dashboard')}
+                  onClick={() => {
+                    if (typeof window !== 'undefined' && window.history.length > 1) router.back();
+                    else router.push('/dashboard');
+                  }}
                   className="btn3d btn3d-danger"
                 >
                   Leave
                 </button>
               </div>
             </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* content issue report modal */}
+      <AnimatePresence>
+        {reportOpen && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[60] bg-black/50 flex items-center justify-center p-4"
+            onClick={() => setReportOpen(false)}
+          >
+            <motion.form
+              initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+              onSubmit={submitReport}
+              onClick={e => e.stopPropagation()}
+              className="qf-card p-6 max-w-md w-full space-y-4"
+            >
+              <div>
+                <h2 className="text-lg font-extrabold">Report an issue</h2>
+                <p className="mt-1 text-[13px] font-semibold text-muted">{moduleTitle} · Card {state.idx + 1}</p>
+              </div>
+              <div>
+                <label htmlFor="report-reason" className="block text-[13px] font-bold mb-1">Issue type</label>
+                <select
+                  id="report-reason"
+                  value={reportReason}
+                  onChange={e => setReportReason(e.target.value as typeof reportReason)}
+                  className="qf-select w-full"
+                >
+                  <option value="incorrect">Incorrect math or answer</option>
+                  <option value="broken_math">Broken formula or formatting</option>
+                  <option value="unclear">Unclear explanation</option>
+                  <option value="typo">Typo or grammar</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+              <div>
+                <label htmlFor="report-comment" className="block text-[13px] font-bold mb-1">Details (optional)</label>
+                <textarea
+                  id="report-comment"
+                  rows={3}
+                  maxLength={2000}
+                  value={reportComment}
+                  onChange={e => setReportComment(e.target.value)}
+                  placeholder="Tell us what looks wrong on this card…"
+                  className="qf-textarea w-full"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <button type="button" onClick={() => setReportOpen(false)} className="btn3d btn3d-ghost">Cancel</button>
+                <button type="submit" disabled={reportBusy} className="btn3d">
+                  {reportBusy ? 'Sending…' : 'Send report'}
+                </button>
+              </div>
+            </motion.form>
           </motion.div>
         )}
       </AnimatePresence>
@@ -419,7 +749,7 @@ function CardBody({
       return <IntroCard card={card} outline={outline} />;
     case 'concept':
       return (
-        <div>
+        <div className="max-w-[68ch] mx-auto">
           {card.title && <h2 className="text-xl font-extrabold tracking-tight mb-3">{stripMd(card.title)}</h2>}
           {card.blocks.map((b, i) => <ClientBlock key={i} block={b} />)}
         </div>
@@ -749,18 +1079,20 @@ function FinishScreen({ result, quizCards, nextHref, nextTitle, referenceHref, t
 }) {
   const passed = result.status === 'passed' || result.status === 'mastered';
   const master = result.status === 'mastered';
+  const pendingSync = result.status === 'pending_sync';
+  const guestPreview = result.status === 'guest_preview';
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-background">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-background" aria-label={`Lesson complete: ${title}`}>
       {passed && <Confetti />}
       <div className="max-w-lg mx-auto px-4 py-10 text-center">
         <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring', stiffness: 260, damping: 18, delay: 0.1 }}
-          className={cn('mx-auto h-24 w-24 rounded-full flex items-center justify-center', passed ? 'bg-accent' : 'bg-warning')}>
+          className={cn('mx-auto h-24 w-24 rounded-full flex items-center justify-center', passed ? 'bg-accent' : pendingSync || guestPreview ? 'bg-info' : 'bg-warning')}>
           {passed ? <Trophy className="h-12 w-12 text-white" /> : <RotateCcw className="h-11 w-11 text-white" />}
         </motion.div>
 
         <motion.h1 initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
           className="mt-6 text-3xl font-black tracking-tight">
-          {master ? 'Mastered!' : passed ? 'Lesson passed!' : 'Keep going'}
+          {master ? 'Mastered!' : passed ? 'Lesson passed!' : pendingSync ? 'Saved offline!' : guestPreview ? 'Lesson finished!' : 'Keep going'}
         </motion.h1>
         <motion.p initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
           className="mt-2 text-[15px] text-muted font-semibold">
@@ -768,20 +1100,26 @@ function FinishScreen({ result, quizCards, nextHref, nextTitle, referenceHref, t
             ? 'You retained this material across a later check, the strongest signal there is.'
             : passed
               ? 'Solid work. This unlocks the next lessons in your path.'
-              : 'Below the 80% pass mark. Skim the explanations in reference view and run it again.'}
+              : pendingSync
+                ? 'Your answers are queued on this device and will be graded automatically when you reconnect.'
+                : guestPreview
+                  ? 'Sign in or create a free account to grade your answers, unlock later lessons, and save your streak.'
+                  : 'Below the 80% pass mark. Skim the explanations in reference view and run it again.'}
         </motion.p>
 
         {/* score ring */}
-        <motion.div initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.35 }}
-          className="mt-8 mx-auto relative h-40 w-40">
-            <ScoreRing pct={result.pct} />
-          <div className="absolute inset-0 flex flex-col items-center justify-center">
-            <span className="text-4xl font-black tnum">{result.pct}%</span>
-            {result.correct !== undefined && (
-              <span className="text-[13px] font-bold text-muted">{result.correct}/{result.total} correct</span>
-            )}
-          </div>
-        </motion.div>
+        {!pendingSync && !guestPreview && (
+          <motion.div initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.35 }}
+            className="mt-8 mx-auto relative h-40 w-40">
+              <ScoreRing pct={result.pct} />
+            <div className="absolute inset-0 flex flex-col items-center justify-center">
+              <span className="text-4xl font-black tnum">{result.pct}%</span>
+              {result.correct !== undefined && (
+                <span className="text-[13px] font-bold text-muted">{result.correct}/{result.total} correct</span>
+              )}
+            </div>
+          </motion.div>
+        )}
 
         {/* stat chips */}
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}
@@ -793,19 +1131,24 @@ function FinishScreen({ result, quizCards, nextHref, nextTitle, referenceHref, t
           </div>
           <div className="rounded-2xl border-2 border-border bg-surface p-3">
             <Flame className={cn('h-5 w-5 mx-auto text-flame', result.streakCount ? 'anim-flame' : 'opacity-40')} />
-            <p className="mt-1 text-xl font-black tnum">{result.streakCount ?? ', '}</p>
+            <p className="mt-1 text-xl font-black tnum">{result.streakCount ?? '—'}</p>
             <p className="text-[12px] font-bold text-muted">DAY STREAK</p>
           </div>
           <div className="rounded-2xl border-2 border-border bg-surface p-3">
             <Star className={cn('h-5 w-5 mx-auto text-violet', master && 'anim-wiggle')} />
-            <p className="mt-1 text-xl font-black">{master ? 'MASTERED' : passed ? 'PASSED' : 'RETRY'}</p>
+            <p className="mt-1 text-xl font-black">{master ? 'MASTERED' : passed ? 'PASSED' : pendingSync ? 'QUEUED' : guestPreview ? 'PREVIEW' : 'RETRY'}</p>
             <p className="text-[12px] font-bold text-muted">STATUS</p>
           </div>
         </motion.div>
 
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.65 }}
           className="mt-8 space-y-3">
-          {nextHref && (
+          {guestPreview && (
+            <Link href="/register" className="btn3d w-full text-base">
+              Create free account to save &amp; grade <ChevronRight className="h-5 w-5" />
+            </Link>
+          )}
+          {nextHref && !guestPreview && (
             <Link href={nextHref} className="btn3d w-full text-base">
               Next lesson {nextTitle ? `· ${trunc(nextTitle, 28)}` : ''} <ChevronRight className="h-5 w-5" />
             </Link>

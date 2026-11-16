@@ -1,14 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { getCurrentUser, rateLimit } from '@/lib/auth';
+import { getCurrentUser, rateLimitShared } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { awardXp, XP_TABLE } from '@/lib/gamification';
+import { dayKey } from '@/lib/gamification-core';
+import { assertSameOrigin } from '@/lib/origin';
 
 const schema = z.object({
-  mode: z.string().min(1).max(30),
+  mode: z.enum(['addition', 'multiplication', 'mixed', 'percentages', 'fractions', 'squares', 'division', 'subtraction']),
   level: z.number().int().min(1).max(10),
-  correct: z.number().int().min(0).max(1000),
-  total: z.number().int().min(1).max(1000),
+  correct: z.number().int().min(0).max(500),
+  total: z.number().int().min(1).max(500),
   avgMs: z.number().min(0).max(600000),
   durationS: z.number().int().min(0).max(7200),
 });
@@ -25,9 +27,12 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  if (!assertSameOrigin(req)) {
+    return NextResponse.json({ error: 'Invalid origin.' }, { status: 403 });
+  }
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: 'Sign in first.' }, { status: 401 });
-  if (!rateLimit(`drill:${user.id}`, 10, 0.2)) {
+  if (!(await rateLimitShared(`drill:${user.id}`, 10, 0.2))) {
     return NextResponse.json({ error: 'Too many sessions logged, slow down.' }, { status: 429 });
   }
   const parsed = schema.safeParse(await req.json().catch(() => null));
@@ -36,15 +41,19 @@ export async function POST(req: NextRequest) {
   const d = parsed.data;
   if (d.correct > d.total) return NextResponse.json({ error: 'Invalid counts.' }, { status: 400 });
 
-  await db.drillSession.create({
+  // Server-side plausibility guard (A1): cannot answer large batches in zero seconds
+  const minPlausibleSeconds = Math.floor(d.total * 0.25);
+  if (d.total >= 10 && d.durationS > 0 && d.durationS < minPlausibleSeconds) {
+    return NextResponse.json({ error: 'Drill session duration implausible.' }, { status: 400 });
+  }
+
+  const today = dayKey(new Date(), user.timezone || 'UTC');
+  const sessionRow = await db.drillSession.create({
     data: { userId: user.id, mode: d.mode, level: d.level, correct: d.correct, total: d.total, avgMs: d.avgMs, durationS: d.durationS },
   });
   await db.learningSession.create({
-    data: { userId: user.id, kind: 'drills', seconds: d.durationS, day: new Date().toISOString().slice(0, 10) },
+    data: { userId: user.id, kind: 'drills', seconds: d.durationS, day: today },
   });
-
-  // Gamification: drills pay a session fee + a little per correct answer.
-
 
   let xpAwarded = 0;
   if (d.total >= 5) {
@@ -52,7 +61,14 @@ export async function POST(req: NextRequest) {
       XP_TABLE.drillSession + d.correct * XP_TABLE.drillPerCorrect,
       XP_TABLE.drillSession + XP_TABLE.drillCap,
     );
-    const award = await awardXp(user.id, amount, 'drill', `${d.mode} L${d.level}: ${d.correct}/${d.total}`).catch(() => null);
+    const award = await awardXp(
+      user.id,
+      amount,
+      'drill',
+      `${d.mode} L${d.level}: ${d.correct}/${d.total}`,
+      undefined,
+      sessionRow.id,
+    ).catch(() => null);
     xpAwarded = award?.amount ?? 0;
   }
 

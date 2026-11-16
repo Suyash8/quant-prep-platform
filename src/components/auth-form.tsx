@@ -10,15 +10,18 @@ import {
 import { toast } from 'sonner';
 import { Mascot } from '@/components/brand/mascot';
 import { broadcast } from '@/lib/client/broadcast';
+import { bindOwner } from '@/lib/client/local-state';
 
 export function AuthForm({ mode, stats }: { mode: 'login' | 'register'; stats?: { lessons: number; labs: number; problems: number } }) {
   const router = useRouter();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [acceptedTerms, setAcceptedTerms] = useState(true);
   const [showPw, setShowPw] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [infoMsg, setInfoMsg] = useState<string | null>(null);
   const [touched, setTouched] = useState<{ email: boolean; password: boolean }>({ email: false, password: false });
 
   const lessons = stats?.lessons ?? 0;
@@ -41,17 +44,32 @@ export function AuthForm({ mode, stats }: { mode: 'login' | 'register'; stats?: 
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (mode === 'register' && !acceptedTerms) {
+      setError('Please accept the Terms of Service and Privacy Policy to continue.');
+      return;
+    }
     setBusy(true);
     setError(null);
+    setInfoMsg(null);
+    const timezone = typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : 'UTC';
     try {
       const res = await fetch(`/api/auth/${mode}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(mode === 'register' ? { name, email, password } : { email, password }),
+        body: JSON.stringify(
+          mode === 'register'
+            ? { name, email, password, timezone, acceptedTerms }
+            : { email, password },
+        ),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setError(data.error ?? 'Something went wrong.');
+        setBusy(false);
+        return;
+      }
+      if (data.pendingVerification) {
+        setInfoMsg(data.message ?? 'Check your email to verify or sign in to your account.');
         setBusy(false);
         return;
       }
@@ -60,7 +78,10 @@ export function AuthForm({ mode, stats }: { mode: 'login' | 'register'; stats?: 
         name: data.name ?? name ?? email.split('@')[0],
         email: data.email ?? email,
         role: data.role ?? 'learner',
+        plan: data.plan ?? 'free',
+        emailVerified: Boolean(data.emailVerified),
       };
+      if (cachedUser.id) bindOwner(cachedUser.id);
       try {
         window.localStorage.setItem('qf-chrome-user', JSON.stringify(cachedUser));
       } catch { /* ignore */ }
@@ -83,7 +104,7 @@ export function AuthForm({ mode, stats }: { mode: 'login' | 'register'; stats?: 
         { icon: BookOpenCheck, text: `${lessons} lessons sequenced by a real prerequisite graph` },
         { icon: Code2, text: 'Code graded by actual compilers, not multiple choice' },
         { icon: Undo2, text: 'Spaced repetition that keeps what you learn' },
-        { icon: ShieldCheck, text: 'No job promises, just honest, measurable progress' },
+        { icon: ShieldCheck, text: 'Verified progress built from real tests and quizzes' },
       ]
     : [
         { icon: Flame, text: 'Your streak is counting the days without you' },
@@ -107,7 +128,7 @@ export function AuthForm({ mode, stats }: { mode: 'login' | 'register'; stats?: 
       <span className="pointer-events-none absolute right-[10%] top-[16%] text-3xl font-black text-info/20 anim-float-slow" aria-hidden>σ</span>
       <span className="pointer-events-none absolute left-[12%] bottom-[14%] text-3xl font-black text-accent/15 anim-float-slow" aria-hidden>Δ</span>
 
-      <div className="flex-1 flex items-center justify-center px-4 py-10 relative">
+      <main className="flex-1 flex items-center justify-center px-4 py-10 relative">
       <div className="w-full max-w-4xl relative grid lg:grid-cols-[1fr_400px] gap-8 items-stretch">
         {/* the pitch panel, fills the left half with real content */}
         <aside className="hidden lg:block">
@@ -282,6 +303,23 @@ export function AuthForm({ mode, stats }: { mode: 'login' | 'register'; stats?: 
             {error && (
               <p role="alert" className="text-[15px] font-bold text-danger bg-danger-soft rounded-xl px-3 py-2 anim-shake">{error}</p>
             )}
+            {infoMsg && (
+              <p role="status" className="text-[15px] font-bold text-accent-deep bg-accent-soft rounded-xl px-3 py-2">{infoMsg}</p>
+            )}
+            {mode === 'register' && (
+              <label className="flex items-start gap-2.5 text-[13px] font-semibold text-muted cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={acceptedTerms}
+                  onChange={(e) => setAcceptedTerms(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 accent-accent rounded"
+                  required
+                />
+                <span>
+                  I accept the <Link href="/terms" className="underline text-foreground">Terms of Service</Link> and <Link href="/privacy" className="underline text-foreground">Privacy Policy</Link>.
+                </span>
+              </label>
+            )}
             <button type="submit" disabled={busy} className="btn3d w-full !py-3.5 text-base">
               {busy ? 'Working…' : mode === 'register' ? 'Create account' : 'Sign in'}
             </button>
@@ -311,7 +349,7 @@ export function AuthForm({ mode, stats }: { mode: 'login' | 'register'; stats?: 
           </p>
         </div>
       </div>
-      </div>
+      </main>
 
       {/* anchored footer bar instead of links floating mid-page */}
       <footer className="relative border-t-2 border-border/70 py-4 mt-auto">

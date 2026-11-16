@@ -196,7 +196,7 @@ export function CurriculumClient({
                                     <span className="chip shrink-0" title="Authored, publishing progressively">planned</span>
                                   )}
                                   {isPub && (unlocked || done.has(l.id)) ? (
-                                    <Link href={`/learn/${l.id}`} className="flex-1 hover:text-accent transition-colors">
+                                    <Link href={`/learn/${l.id}`} prefetch={false} className="flex-1 hover:text-accent transition-colors">
                                       {l.title}
                                       <span className="ml-2 text-[12px] text-faint tnum">{l.estMinutes}m</span>
                                     </Link>

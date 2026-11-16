@@ -17,7 +17,7 @@
 import { computeStatus, sm2 } from '@/lib/mastery';
 import { XP_TABLE, DAILY_GOAL_XP, levelForXp, nextStreak, dayKey } from '@/lib/gamification-core';
 import { getLessonPack } from '@/lib/client/packs';
-import { kvGet, kvSet } from '@/lib/client/idb';
+import { kvGet, kvSet, kvClearAll } from '@/lib/client/idb';
 import { broadcast, onBroadcast } from '@/lib/client/broadcast';
 
 /* ---------------- types ---------------- */
@@ -127,13 +127,11 @@ export interface LocalState {
 }
 
 export type SyncEvent =
-  | { id: string; kind: 'lesson_result'; at: string; lessonId: string; pct: number }
+  | { id: string; kind: 'lesson_attempt'; at: string; lessonId: string; contentHash?: string; answers: Record<string, unknown> }
+  | { id: string; kind: 'assessment_attempt'; at: string; assessmentId: string; answers: Record<string, unknown> }
   | { id: string; kind: 'exercise_done'; at: string; lessonId: string }
-  | { id: string; kind: 'retrieval_done'; at: string; lessonId: string }
   | { id: string; kind: 'reviews'; at: string; reviews: { cardKey: string; grade: number }[] }
-  | { id: string; kind: 'drill_session'; at: string; correct: number; answered: number }
-  | { id: string; kind: 'problem_attempt'; at: string; slug: string; status: 'passed' | 'attempted' }
-  | { id: string; kind: 'assessment_result'; at: string; assessmentId: string; pct: number };
+  | { id: string; kind: 'drill_session'; at: string; mode?: string; level?: number; correct: number; answered: number; durationS?: number };
 
 interface ServerSnapshot {
   xp?: number;
@@ -340,7 +338,7 @@ function push(e: SyncEvent) {
 }
 
 const STATUS_RANK: Record<string, number> = {
-  not_started: 0, in_progress: 1, attempted: 2, needs_revision: 3, passed: 4, mastered: 5,
+  not_started: 0, in_progress: 1, attempted: 2, needs_revision: 3, placed_out: 4, passed: 5, mastered: 6,
 };
 const rankOf = (s: string | undefined) => STATUS_RANK[s ?? ''] ?? 0;
 
@@ -374,20 +372,86 @@ function addLessonMinutes(lessonId: string) {
 
 /* ---------------- snapshot merge (server <-> local) ---------------- */
 
+const OWNER_KEY = 'qf3-owner';
+const LAST_SYNC_KEY = 'qf3-last-sync';
+
+/**
+ * Wipe all local learning state, queues, player caches, and IndexedDB stores.
+ * Called automatically when switching users or signing out (A7).
+ */
+export async function wipeLocalLearningData(): Promise<void> {
+  state = null;
+  queue = [];
+  apiQueue = [];
+  lastHydrate = 0;
+  if (typeof window !== 'undefined') {
+    try {
+      const toRemove: string[] = [];
+      for (let i = 0; i < window.localStorage.length; i++) {
+        const k = window.localStorage.key(i);
+        if (!k) continue;
+        if (
+          k.startsWith('qf3-') ||
+          k.startsWith('qf3:') ||
+          k.startsWith('qf-player-') ||
+          k.startsWith('qf-code-') ||
+          k.startsWith('qf-draft-')
+        ) {
+          toRemove.push(k);
+        }
+      }
+      for (const k of toRemove) window.localStorage.removeItem(k);
+    } catch { /* ignore */ }
+  }
+  await kvClearAll().catch(() => {});
+  notify();
+  broadcast('state-changed');
+}
+
+/** Bind local storage strictly to the active signed-in userId; wipes prior user data if different (A7). */
+export function bindOwner(userId: string): void {
+  if (typeof window === 'undefined' || !userId) return;
+  try {
+    const prev = window.localStorage.getItem(OWNER_KEY);
+    if (prev && prev !== userId) {
+      void wipeLocalLearningData().then(() => {
+        try { window.localStorage.setItem(OWNER_KEY, userId); } catch {}
+      });
+      return;
+    }
+    window.localStorage.setItem(OWNER_KEY, userId);
+  } catch { /* ignore */ }
+}
+
+export function getLastSyncedAt(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    return window.localStorage.getItem(LAST_SYNC_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export async function retryFlushNow(): Promise<void> {
+  syncDisabled = false;
+  await flush();
+}
+
 function applySnapshot(snap: ServerSnapshot) {
   const s = S();
   rollToday(s);
 
-  s.xp = Math.max(s.xp, snap.xp ?? 0);
-  s.streakCount = Math.max(s.streakCount, snap.streakCount ?? 0);
-  s.longestStreak = Math.max(s.longestStreak, snap.longestStreak ?? 0);
-  if ((snap.lastStudyDate ?? '') > (s.lastStudyDate ?? '')) s.lastStudyDate = snap.lastStudyDate ?? null;
+  // Server snapshot is authoritative (A9): replace scalar & per-entity records cleanly.
+  if (typeof snap.xp === 'number') s.xp = snap.xp;
+  if (typeof snap.streakCount === 'number') s.streakCount = snap.streakCount;
+  if (typeof snap.longestStreak === 'number') s.longestStreak = snap.longestStreak;
+  if (snap.lastStudyDate !== undefined) s.lastStudyDate = snap.lastStudyDate;
   if (snap.dailyGoalXp) s.dailyGoalXp = snap.dailyGoalXp;
 
-  for (const [id, r] of Object.entries(snap.lessons ?? {})) {
-    const cur = s.lessons[id];
-    if (!cur) {
-      s.lessons[id] = {
+  if (snap.lessons) {
+    const nextLessons: Record<string, LessonProgressLocal> = {};
+    for (const [id, r] of Object.entries(snap.lessons)) {
+      nextLessons[id] = {
         kcBestPct: r.kcBestPct ?? 0,
         kcAttempts: r.kcAttempts ?? 0,
         exerciseDone: !!r.exerciseDone,
@@ -395,49 +459,56 @@ function applySnapshot(snap: ServerSnapshot) {
         status: r.status ?? 'not_started',
         updatedAt: nowIso(),
       };
-      continue;
     }
-    s.lessons[id] = {
-      kcBestPct: Math.max(cur.kcBestPct, r.kcBestPct ?? 0),
-      kcAttempts: Math.max(cur.kcAttempts, r.kcAttempts ?? 0),
-      exerciseDone: cur.exerciseDone || !!r.exerciseDone,
-      retrievalDone: cur.retrievalDone || !!r.retrievalDone,
-      status: rankOf(r.status) > rankOf(cur.status) ? (r.status as string) : cur.status,
-      updatedAt: nowIso(),
-    };
+    // Preserve any un-flushed offline lesson attempts/exercises optimistically
+    for (const ev of queue) {
+      if (ev.kind === 'lesson_attempt' && !nextLessons[ev.lessonId]) {
+        nextLessons[ev.lessonId] = s.lessons[ev.lessonId] ?? {
+          kcBestPct: 0, kcAttempts: 1, exerciseDone: false, retrievalDone: false, status: 'attempted', updatedAt: nowIso(),
+        };
+      }
+    }
+    s.lessons = nextLessons;
   }
 
-  for (const [key, c] of Object.entries(snap.cards ?? {})) {
-    if (s.retiredCards[key]) continue; // retired locally: keep it hidden
-    const cur = s.cards[key];
-    if (!cur || (c.updatedAt ?? '') >= cur.updatedAt) {
+  if (snap.cards) {
+    for (const [key, c] of Object.entries(snap.cards)) {
+      if (s.retiredCards[key]) continue;
       s.cards[key] = {
-        ease: c.ease ?? cur?.ease ?? 2.5,
-        intervalDays: c.intervalDays ?? cur?.intervalDays ?? 0,
-        repetitions: Math.max(c.repetitions ?? 0, cur?.repetitions ?? 0),
-        lapses: Math.max(c.lapses ?? 0, cur?.lapses ?? 0),
-        dueAt: c.dueAt ?? cur?.dueAt ?? nowIso(),
-        lastGrade: c.lastGrade ?? cur?.lastGrade ?? 0,
-        updatedAt: c.updatedAt ?? cur?.updatedAt ?? nowIso(),
+        ease: c.ease ?? 2.5,
+        intervalDays: c.intervalDays ?? 0,
+        repetitions: c.repetitions ?? 0,
+        lapses: c.lapses ?? 0,
+        dueAt: c.dueAt ?? nowIso(),
+        lastGrade: c.lastGrade ?? 0,
+        updatedAt: c.updatedAt ?? nowIso(),
       };
     }
   }
 
-  for (const [slug, p] of Object.entries(snap.problems ?? {})) {
-    const cur = s.problems[slug];
-    if (!cur || rankOf(p.status) > rankOf(cur.status)) s.problems[slug] = { status: p.status ?? 'attempted' };
+  if (snap.problems) {
+    const nextProblems: Record<string, { status: string }> = {};
+    for (const [slug, p] of Object.entries(snap.problems)) {
+      nextProblems[slug] = { status: p.status ?? 'attempted' };
+    }
+    s.problems = nextProblems;
   }
 
-  for (const [id, a] of Object.entries(snap.assessments ?? {})) {
-    const best = Math.max(s.assessments[id]?.bestPct ?? 0, a.bestPct ?? 0);
-    s.assessments[id] = { bestPct: best };
+  if (snap.assessments) {
+    const nextAssess: Record<string, { bestPct: number }> = {};
+    for (const [id, a] of Object.entries(snap.assessments)) {
+      nextAssess[id] = { bestPct: a.bestPct ?? 0 };
+    }
+    s.assessments = nextAssess;
   }
 
-  s.drills = {
-    sessions: Math.max(s.drills.sessions, snap.drills?.sessions ?? 0),
-    totalCorrect: Math.max(s.drills.totalCorrect, snap.drills?.totalCorrect ?? 0),
-    totalAnswered: Math.max(s.drills.totalAnswered, snap.drills?.totalAnswered ?? 0),
-  };
+  if (snap.drills) {
+    s.drills = {
+      sessions: snap.drills.sessions ?? 0,
+      totalCorrect: snap.drills.totalCorrect ?? 0,
+      totalAnswered: snap.drills.totalAnswered ?? 0,
+    };
+  }
 }
 
 /* ---------------- sync engine ---------------- */
@@ -509,10 +580,15 @@ async function flush(): Promise<void> {
     });
     if (res.status === 401) { syncDisabled = true; return; }
     if (!res.ok) throw new Error(`sync ${res.status}`);
-    const data = (await res.json()) as { snapshot?: ServerSnapshot; accepted?: string[]; duplicates?: string[]; failed?: string[]; rejected?: { id: string | null; reason: string }[] };
-    // Remove only events the server explicitly acknowledged (accepted or duplicate).
-    // Anything else, including failed events, stays queued and retries with back-off.
-    const acked = new Set([...(data.accepted ?? []), ...(data.duplicates ?? [])]);
+    const data = (await res.json()) as {
+      snapshot?: ServerSnapshot;
+      acked?: string[];
+      accepted?: string[];
+      duplicates?: string[];
+      failed?: string[];
+      rejected?: { id: string | null; reason: string }[];
+    };
+    const acked = new Set([...(data.acked ?? []), ...(data.accepted ?? []), ...(data.duplicates ?? [])]);
     const failedIds = new Set(data.failed ?? []);
     for (const id of failedIds) syncAttempts.set(id, (syncAttempts.get(id) ?? 0) + 1);
     // Schema-invalid events can never succeed: move them out of the retry queue into a
@@ -535,6 +611,7 @@ async function flush(): Promise<void> {
       }
     } catch { /* storage unavailable */ }
     persistQueue();
+    try { localStorage.setItem(LAST_SYNC_KEY, new Date().toISOString()); } catch {}
     if (data.snapshot) applySnapshot(data.snapshot);
     done();
     if (queue.length > 0) scheduleFlush(failedIds.size > 0 ? Math.min(15000 * Math.max(...[...failedIds].map(id => syncAttempts.get(id) ?? 1)), 600000) : 400); // back off after failures
@@ -589,7 +666,7 @@ export function doneSet(): Set<string> {
   const s = S();
   const out = new Set<string>();
   for (const [id, l] of Object.entries(s.lessons)) {
-    if (l.status === 'passed' || l.status === 'mastered') out.add(id);
+    if (l.status === 'passed' || l.status === 'mastered' || l.status === 'placed_out') out.add(id);
   }
   return out;
 }
@@ -638,6 +715,56 @@ export function weekMinutes(): number {
 
 /* ---------------- write API (all instant, all offline) ---------------- */
 
+/**
+ * Update local UI mirror from a server-graded lesson result (online), OR queue raw answers
+ * as evidence for offline reconciliation (`lesson_attempt`, never trusting client pct).
+ */
+export function recordLessonAttempt(
+  lessonId: string,
+  answers: Record<string, unknown>,
+  serverResult?: { pct: number; status: string; xpAwarded?: number; exerciseDone?: boolean },
+  contentHash?: string,
+): { status: string; xp: number } {
+  const s = S();
+  const p = s.lessons[lessonId];
+  if (serverResult) {
+    const wasClear = p ? ['passed', 'mastered'].includes(p.status) : false;
+    s.lessons[lessonId] = {
+      kcBestPct: Math.max(p?.kcBestPct ?? 0, serverResult.pct),
+      kcAttempts: (p?.kcAttempts ?? 0) + 1,
+      exerciseDone: serverResult.exerciseDone ?? p?.exerciseDone ?? false,
+      retrievalDone: serverResult.status === 'mastered' || p?.retrievalDone || false,
+      status: serverResult.status,
+      updatedAt: nowIso(),
+    };
+    const xp = serverResult.xpAwarded ?? 0;
+    if (xp > 0) {
+      award(xp);
+      rollToday(s);
+      if (!wasClear && ['passed', 'mastered'].includes(serverResult.status)) s.today.lessonsPassed += 1;
+    }
+    addLessonMinutes(lessonId);
+    done();
+    return { status: serverResult.status, xp };
+  }
+
+  // Offline provisional mirror: queues raw answers evidence for authoritative server grading on reconnect
+  s.lessons[lessonId] = {
+    kcBestPct: p?.kcBestPct ?? 0,
+    kcAttempts: (p?.kcAttempts ?? 0) + 1,
+    exerciseDone: p?.exerciseDone ?? false,
+    retrievalDone: p?.retrievalDone ?? false,
+    status: p && ['passed', 'mastered'].includes(p.status) ? p.status : 'attempted',
+    updatedAt: nowIso(),
+  };
+  push({ id: eid(), kind: 'lesson_attempt', at: nowIso(), lessonId, contentHash, answers });
+  addLessonMinutes(lessonId);
+  done();
+  scheduleFlush();
+  return { status: s.lessons[lessonId].status, xp: 0 };
+}
+
+/** Local mirror update from verified score only (does not emit client-scored sync events). */
 export function recordLessonResult(
   lessonId: string,
   pct: number,
@@ -655,7 +782,6 @@ export function recordLessonResult(
     },
     { pct },
   );
-  const wasClear = p ? ['passed', 'mastered'].includes(p.status) : false;
   s.lessons[lessonId] = {
     kcBestPct: next.kcBestPct,
     kcAttempts: next.kcAttempts,
@@ -664,53 +790,26 @@ export function recordLessonResult(
     status: next.status,
     updatedAt: nowIso(),
   };
-
-  let xp = 0;
-  if (pct >= 80) {
-    xp = wasClear ? 5 : XP_TABLE.lessonPass;
-    award(xp);
-    rollToday(s);
-    if (!wasClear) s.today.lessonsPassed += 1;
-  }
-
-  push({ id: eid(), kind: 'lesson_result', at: nowIso(), lessonId, pct });
-  addLessonMinutes(lessonId);
   done();
-  scheduleFlush();
-  return { status: next.status, xp };
+  return { status: next.status, xp: 0 };
 }
 
-export function recordExerciseDone(lessonId: string, alreadyDone: boolean): number {
+export function recordExerciseDone(lessonId: string, _alreadyDone: boolean): number {
   const s = S();
   const p = s.lessons[lessonId];
-  const next = computeStatus(
-    {
-      kcBestPct: p?.kcBestPct ?? 0,
-      kcAttempts: p?.kcAttempts ?? 0,
-      exerciseDone: true,
-      retrievalDone: p?.retrievalDone ?? false,
-      status: p?.status ?? 'not_started',
-    },
-    { pct: p?.kcBestPct ?? 0, exerciseDone: true },
-  );
   s.lessons[lessonId] = {
-    kcBestPct: next.kcBestPct,
-    kcAttempts: next.kcAttempts,
+    kcBestPct: p?.kcBestPct ?? 0,
+    kcAttempts: p?.kcAttempts ?? 0,
     exerciseDone: true,
     retrievalDone: p?.retrievalDone ?? false,
-    status: next.status,
+    status: p?.status && p.status !== 'not_started' ? p.status : 'in_progress',
     updatedAt: nowIso(),
   };
-
-  let xp = 0;
-  if (!alreadyDone) {
-    xp = XP_TABLE.exercise;
-    award(xp);
-  }
+  // A5: study checklist pays 0 XP
   push({ id: eid(), kind: 'exercise_done', at: nowIso(), lessonId });
   done();
   scheduleFlush();
-  return xp;
+  return 0;
 }
 
 /** create the lesson's revision cards (server mirrors this on lesson_result) */
@@ -759,16 +858,6 @@ export function recordReviews(reviews: { cardKey: string; grade: number }[]): vo
     };
     applied.push(r);
     reviewed++;
-
-    // reviewing a card of a passed lesson completes retrieval: passed -> mastered
-    const lessonId = r.cardKey.includes(':') ? r.cardKey.slice(0, r.cardKey.lastIndexOf(':')) : '';
-    const lp = lessonId ? s.lessons[lessonId] : undefined;
-    if (lp && ['passed', 'mastered'].includes(lp.status) && !lp.retrievalDone) {
-      lp.retrievalDone = true;
-      lp.status = 'mastered';
-      lp.updatedAt = nowIso();
-      push({ id: eid(), kind: 'retrieval_done', at: nowIso(), lessonId });
-    }
   }
   if (reviewed === 0) return;
 
@@ -809,7 +898,17 @@ export function recordDrillSession(
   const xp = Math.min(XP_TABLE.drillSession + correct * XP_TABLE.drillPerCorrect, XP_TABLE.drillCap + XP_TABLE.drillSession);
   award(xp);
 
-  push({ id: eid(), kind: 'drill_session', at: nowIso(), correct, answered });
+  const durationS = elapsedMs && elapsedMs > 0 ? Math.max(1, Math.round(elapsedMs / 1000)) : 30;
+  push({
+    id: eid(),
+    kind: 'drill_session',
+    at: nowIso(),
+    mode: kind,
+    level: meta?.level ?? 1,
+    correct,
+    answered,
+    durationS,
+  });
   if (elapsedMs && elapsedMs > 0) addMinutes(elapsedMs / 60000);
   done();
   scheduleFlush();
@@ -945,32 +1044,50 @@ export function patchApplicationLocal(patch: { id: string; status?: string; note
   }
 }
 
-export function recordProblemAttempt(slug: string, status: 'passed' | 'attempted'): void {
+export function recordProblemAttempt(slug: string, status: 'passed' | 'attempted', xpAwarded = 0): void {
   const s = S();
   const prev = s.problems[slug];
   const newlyPassed = status === 'passed' && prev?.status !== 'passed';
   if (!prev || rankOf(status) > rankOf(prev.status)) s.problems[slug] = { status };
   if (newlyPassed) {
-    award(XP_TABLE.problemPass);
+    if (xpAwarded > 0) award(xpAwarded);
     rollToday(s);
     s.today.practice += 1;
   }
-  push({ id: eid(), kind: 'problem_attempt', at: nowIso(), slug, status });
+  done();
+}
+
+export function recordAssessmentAttempt(assessmentId: string, answers: Record<string, unknown>): void {
+  push({ id: eid(), kind: 'assessment_attempt', at: nowIso(), assessmentId, answers });
   done();
   scheduleFlush();
 }
 
-export function recordAssessmentResult(assessmentId: string, pct: number): number {
+export function recordAssessmentResult(assessmentId: string, pct: number, xpAwarded = 0): number {
   const s = S();
   const prevBest = s.assessments[assessmentId]?.bestPct ?? 0;
-  let xp = 0;
   if (pct > prevBest) {
     s.assessments[assessmentId] = { bestPct: pct };
-    xp = Math.min(Math.round((pct / 10) * XP_TABLE.assessmentPer10pct), XP_TABLE.assessmentCap);
-    award(xp);
+    if (xpAwarded > 0) award(xpAwarded);
   }
-  push({ id: eid(), kind: 'assessment_result', at: nowIso(), assessmentId, pct });
   done();
-  scheduleFlush();
-  return xp;
+  return xpAwarded;
+}
+
+export function applyPlacementLocal(lessonIds: string[]): void {
+  const s = S();
+  for (const id of lessonIds) {
+    const prev = s.lessons[id];
+    if (!prev || !['passed', 'mastered'].includes(prev.status)) {
+      s.lessons[id] = {
+        kcBestPct: prev?.kcBestPct ?? 0,
+        kcAttempts: prev?.kcAttempts ?? 0,
+        exerciseDone: prev?.exerciseDone ?? false,
+        retrievalDone: prev?.retrievalDone ?? false,
+        status: 'placed_out',
+        updatedAt: nowIso(),
+      };
+    }
+  }
+  done();
 }

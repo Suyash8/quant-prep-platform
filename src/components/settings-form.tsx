@@ -11,13 +11,16 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SyncErrorNotice } from '@/components/sync-error-notice';
-import { setDailyGoalXp, xpSummary, subscribe } from '@/lib/client/local-state';
+import { setDailyGoalXp, xpSummary, subscribe, wipeLocalLearningData } from '@/lib/client/local-state';
 import { broadcast } from '@/lib/client/broadcast';
 
 interface SettingsUser {
   name: string;
   email: string;
   role: string;
+  plan?: string;
+  timezone?: string;
+  emailVerified?: boolean;
   memberSince?: string | Date;
 }
 
@@ -46,7 +49,15 @@ export function SettingsForm({ user }: { user?: SettingsUser }) {
 
   // Delete account state
   const [deleteConfirm, setDeleteConfirm] = React.useState(false);
+  const [deletePassword, setDeletePassword] = React.useState('');
+  const [deleteTyped, setDeleteTyped] = React.useState('');
   const [deleteBusy, setDeleteBusy] = React.useState(false);
+
+  // Timezone, email verify & active sessions state
+  const [timezone, setTimezone] = React.useState('UTC');
+  const [verifyBusy, setVerifyBusy] = React.useState(false);
+  const [sessions, setSessions] = React.useState<{ id: string; current: boolean; userAgent: string; lastUsedAt: string }[]>([]);
+  const [sessionsBusy, setSessionsBusy] = React.useState(false);
 
   // Gamification state
   const [gamed, setGamed] = React.useState<{ xp: number; level: number; streakCount: number; longestStreak: number; dailyGoalXp: number; todayXp: number } | null>(null);
@@ -88,8 +99,15 @@ export function SettingsForm({ user }: { user?: SettingsUser }) {
             if (d?.user) {
               setActiveUser(d.user);
               setName(d.user.name ?? '');
+              if (d.user.timezone) setTimezone(d.user.timezone);
               try { window.localStorage.setItem('qf-chrome-user', JSON.stringify(d.user)); } catch {}
             }
+          })
+          .catch(() => {});
+        fetch('/api/settings/sessions')
+          .then((r) => (r.ok ? r.json() : null))
+          .then((d: { sessions?: { id: string; current: boolean; userAgent: string; lastUsedAt: string }[] } | null) => {
+            if (d?.sessions) setSessions(d.sessions);
           })
           .catch(() => {});
       }
@@ -140,13 +158,13 @@ export function SettingsForm({ user }: { user?: SettingsUser }) {
     }
   }
 
-  async function saveName() {
+  async function saveProfile(patch: { name?: string; timezone?: string }) {
     setBusy(true);
     try {
       const res = await fetch('/api/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name }),
+        body: JSON.stringify(patch),
       });
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
@@ -154,7 +172,7 @@ export function SettingsForm({ user }: { user?: SettingsUser }) {
         return;
       }
       if (activeUser) {
-        const nextUser = { ...activeUser, name };
+        const nextUser = { ...activeUser, ...patch };
         setActiveUser(nextUser);
         try { window.localStorage.setItem('qf-chrome-user', JSON.stringify(nextUser)); } catch {}
         window.dispatchEvent(new CustomEvent('qf:auth-refresh'));
@@ -163,9 +181,34 @@ export function SettingsForm({ user }: { user?: SettingsUser }) {
       toast.success('Profile saved.');
       router.refresh();
     } catch {
-      toast.error('Connect to the internet to update your account name.');
+      toast.error('Connect to the internet to update your account profile.');
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function resendVerification() {
+    setVerifyBusy(true);
+    try {
+      const res = await fetch('/api/auth/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) { toast.error(d.error ?? 'Could not send verification email.'); return; }
+      toast.success(d.devVerifyPath ? `Verification link logged in dev server (${d.devVerifyPath})` : 'Verification email sent.');
+    } finally {
+      setVerifyBusy(false);
+    }
+  }
+
+  async function revokeOthers() {
+    setSessionsBusy(true);
+    try {
+      const res = await fetch('/api/settings/sessions', { method: 'DELETE' });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) { toast.error(d.error ?? 'Could not revoke sessions.'); return; }
+      setSessions((s) => s.filter((x) => x.current));
+      toast.success(`Signed out ${d.revoked ?? 0} other session(s).`);
+    } finally {
+      setSessionsBusy(false);
     }
   }
 
@@ -210,15 +253,25 @@ export function SettingsForm({ user }: { user?: SettingsUser }) {
       setDeleteConfirm(true);
       return;
     }
+    if (deleteTyped !== 'DELETE' || !deletePassword) {
+      toast.error('Enter your password and type DELETE to confirm.');
+      return;
+    }
 
     setDeleteBusy(true);
     try {
-      const res = await fetch('/api/settings', { method: 'DELETE' });
+      const res = await fetch('/api/settings', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentPassword: deletePassword, confirm: 'DELETE' }),
+      });
+      const d = await res.json().catch(() => ({}));
       if (!res.ok) {
-        toast.error('Could not delete account. Please try again.');
+        toast.error(d.error || 'Could not delete account. Please try again.');
         return;
       }
       try { window.localStorage.removeItem('qf-chrome-user'); } catch {}
+      await wipeLocalLearningData();
       window.dispatchEvent(new CustomEvent('qf:auth-refresh'));
       broadcast('auth-changed', null);
       toast.success('Your account and all associated data have been deleted.');
@@ -235,6 +288,7 @@ export function SettingsForm({ user }: { user?: SettingsUser }) {
       body: JSON.stringify({ confirmCurrent: true }),
     }).catch(() => {});
     try { window.localStorage.removeItem('qf-chrome-user'); } catch {}
+    await wipeLocalLearningData();
     window.dispatchEvent(new CustomEvent('qf:auth-refresh'));
     broadcast('auth-changed', null);
     router.push('/login');
@@ -335,17 +389,17 @@ export function SettingsForm({ user }: { user?: SettingsUser }) {
             <p className="text-[13px] font-semibold text-muted">How your identity appears across the platform</p>
           </div>
         </div>
-        <label className="block mt-4">
+        <label htmlFor="settings-display-name" className="block mt-4">
           <span className="text-[13px] font-extrabold text-muted uppercase tracking-wide">Display name</span>
           <div className="flex flex-wrap sm:flex-nowrap gap-2 mt-1.5">
             <input
+              id="settings-display-name"
               value={name}
               onChange={e => setName(e.target.value)}
               className="qf-input min-w-0 flex-1"
-              aria-label="Display name"
             />
             <button
-              onClick={saveName}
+              onClick={() => saveProfile({ name })}
               disabled={busy || name === (activeUser?.name ?? '')}
               className="btn3d btn3d-sm shrink-0"
             >
@@ -353,10 +407,41 @@ export function SettingsForm({ user }: { user?: SettingsUser }) {
             </button>
           </div>
         </label>
+        <label htmlFor="settings-timezone" className="block mt-3">
+          <span className="text-[13px] font-extrabold text-muted uppercase tracking-wide">Study timezone (streak rollover)</span>
+          <div className="flex flex-wrap sm:flex-nowrap gap-2 mt-1.5">
+            <select
+              id="settings-timezone"
+              value={timezone}
+              onChange={(e) => setTimezone(e.target.value)}
+              className="qf-select min-w-0 flex-1"
+            >
+              {['UTC', 'America/New_York', 'America/Chicago', 'America/Los_Angeles', 'Europe/London', 'Europe/Paris', 'Asia/Kolkata', 'Asia/Singapore', 'Asia/Tokyo', 'Australia/Sydney'].map((tz) => (
+                <option key={tz} value={tz}>{tz}</option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => saveProfile({ timezone })}
+              disabled={busy || timezone === (activeUser?.timezone ?? 'UTC')}
+              className="btn3d btn3d-ghost btn3d-sm shrink-0"
+            >
+              Save TZ
+            </button>
+          </div>
+        </label>
         <dl className="mt-4 space-y-2 text-[15px] font-semibold flex-1">
           <div className="flex items-center justify-between gap-3 rounded-xl bg-surface-2/60 px-3 py-2">
             <dt className="text-muted">Email</dt>
-            <dd className="truncate">{activeUser?.email ?? '—'}</dd>
+            <dd className="truncate flex items-center gap-2">
+              <span className="truncate">{activeUser?.email ?? '—'}</span>
+              {activeUser?.emailVerified === false && (
+                <button type="button" onClick={resendVerification} disabled={verifyBusy} className="chip chip-warning cursor-pointer">
+                  {verifyBusy ? 'Sending…' : 'Verify'}
+                </button>
+              )}
+              {activeUser?.emailVerified === true && <span className="chip chip-success">verified</span>}
+            </dd>
           </div>
           <div className="flex items-center justify-between gap-3 rounded-xl bg-surface-2/60 px-3 py-2">
             <dt className="text-muted">Role</dt>
@@ -417,8 +502,9 @@ export function SettingsForm({ user }: { user?: SettingsUser }) {
         </div>
         <form onSubmit={changePassword} className="mt-4 space-y-3">
           <div>
-            <label className="text-[12px] font-extrabold text-muted uppercase tracking-wide block mb-1">Current Password</label>
+            <label htmlFor="settings-current-pw" className="text-[12px] font-extrabold text-muted uppercase tracking-wide block mb-1">Current Password</label>
             <input
+              id="settings-current-pw"
               type="password"
               value={currentPassword}
               onChange={e => setCurrentPassword(e.target.value)}
@@ -428,8 +514,9 @@ export function SettingsForm({ user }: { user?: SettingsUser }) {
             />
           </div>
           <div>
-            <label className="text-[12px] font-extrabold text-muted uppercase tracking-wide block mb-1">New Password (min 8 chars)</label>
+            <label htmlFor="settings-new-pw" className="text-[12px] font-extrabold text-muted uppercase tracking-wide block mb-1">New Password (min 8 chars)</label>
             <input
+              id="settings-new-pw"
               type="password"
               value={newPassword}
               onChange={e => setNewPassword(e.target.value)}
@@ -440,8 +527,9 @@ export function SettingsForm({ user }: { user?: SettingsUser }) {
             />
           </div>
           <div>
-            <label className="text-[12px] font-extrabold text-muted uppercase tracking-wide block mb-1">Confirm New Password</label>
+            <label htmlFor="settings-confirm-pw" className="text-[12px] font-extrabold text-muted uppercase tracking-wide block mb-1">Confirm New Password</label>
             <input
+              id="settings-confirm-pw"
               type="password"
               value={confirmPassword}
               onChange={e => setConfirmPassword(e.target.value)}
@@ -512,21 +600,43 @@ export function SettingsForm({ user }: { user?: SettingsUser }) {
         <div className="flex items-center gap-3">
           <span className="icon-tile icon-tile-neutral h-11 w-11"><LogOut className="h-6 w-6" /></span>
           <div>
-            <h2 className="font-black">Active session</h2>
+            <h2 className="font-black">Active sessions</h2>
             <p className="text-[13px] font-semibold text-muted">Signed in as {activeUser?.email ?? 'local session'}</p>
           </div>
         </div>
-        <div className="mt-4 flex-1">
+        <div className="mt-4 flex-1 space-y-2">
           <p className="text-[14px] font-semibold text-muted">
-            Logging out ends your authenticated session on this browser. Your progress and streaks remain saved.
+            Logging out clears cached progress on this browser and signs out this session.
           </p>
+          {sessions.length > 0 && (
+            <ul className="space-y-1.5 text-[12px] font-semibold text-muted max-h-28 overflow-y-auto thin-scroll">
+              {sessions.slice(0, 5).map((s) => (
+                <li key={s.id} className="flex items-center justify-between gap-2 rounded-lg bg-surface-2/60 px-2.5 py-1.5">
+                  <span className="truncate">{s.current ? 'This device · ' : ''}{s.userAgent.slice(0, 42)}</span>
+                  <span className="tnum text-faint shrink-0">{new Date(s.lastUsedAt).toLocaleDateString()}</span>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
-        <button
-          onClick={logout}
-          className="btn3d btn3d-sm btn3d-ghost mt-4 w-full"
-        >
-          <LogOut className="h-4 w-4" /> Sign out
-        </button>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {sessions.length > 1 && (
+            <button
+              type="button"
+              onClick={revokeOthers}
+              disabled={sessionsBusy}
+              className="btn3d btn3d-sm btn3d-ghost flex-1"
+            >
+              {sessionsBusy ? 'Signing out…' : 'Sign out other devices'}
+            </button>
+          )}
+          <button
+            onClick={logout}
+            className="btn3d btn3d-sm btn3d-ghost flex-1"
+          >
+            <LogOut className="h-4 w-4" /> Sign out
+          </button>
+        </div>
       </section>
 
       {/* Danger Zone: Account Deletion */}
@@ -535,39 +645,68 @@ export function SettingsForm({ user }: { user?: SettingsUser }) {
           <span className="icon-tile icon-tile-danger h-11 w-11"><Trash2 className="h-6 w-6 text-danger" /></span>
           <div>
             <h2 className="font-black text-danger">Danger zone</h2>
-            <p className="text-[13px] font-semibold text-muted">Permanent account removal</p>
+            <p className="text-[13px] font-semibold text-muted">Permanent account removal &amp; subscription cancellation</p>
           </div>
         </div>
-        <div className="mt-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 rounded-xl border border-danger/20 bg-danger/5 p-4">
-          <div>
-            <p className="font-bold text-[14px]">Delete account and all learning data</p>
-            <p className="text-[13px] text-muted">
-              Once deleted, your profile, test submissions, streaks, and mastery progress cannot be recovered.
-            </p>
-          </div>
-          {deleteConfirm ? (
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setDeleteConfirm(false)}
-                className="btn3d btn3d-sm btn3d-ghost"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={deleteAccount}
-                disabled={deleteBusy}
-                className="btn3d btn3d-sm !bg-danger !text-white !border-danger"
-              >
-                {deleteBusy ? 'Deleting…' : 'Yes, delete permanently'}
-              </button>
+        <div className="mt-4 flex flex-col gap-4 rounded-xl border border-danger/20 bg-danger/5 p-4">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div>
+              <p className="font-bold text-[14px]">Delete account and all learning data</p>
+              <p className="text-[13px] text-muted">
+                Cancels any active Pro subscription and permanently deletes all progress, attempts, and support history.
+              </p>
             </div>
-          ) : (
-            <button
-              onClick={() => setDeleteConfirm(true)}
-              className="btn3d btn3d-sm !border-danger/50 !text-danger hover:!bg-danger-soft shrink-0"
-            >
-              <Trash2 className="h-4 w-4" /> Delete account
-            </button>
+            {!deleteConfirm && (
+              <button
+                onClick={() => setDeleteConfirm(true)}
+                className="btn3d btn3d-sm !border-danger/50 !text-danger hover:!bg-danger-soft shrink-0"
+              >
+                <Trash2 className="h-4 w-4" /> Delete account
+              </button>
+            )}
+          </div>
+          {deleteConfirm && (
+            <div className="grid sm:grid-cols-2 gap-3 pt-2 border-t border-danger/20">
+              <div>
+                <label htmlFor="delete-account-pw" className="block text-[12px] font-extrabold text-muted uppercase mb-1">Current password</label>
+                <input
+                  id="delete-account-pw"
+                  type="password"
+                  value={deletePassword}
+                  onChange={(e) => setDeletePassword(e.target.value)}
+                  className="qf-input w-full"
+                  placeholder="••••••••"
+                />
+              </div>
+              <div>
+                <label htmlFor="delete-account-confirm" className="block text-[12px] font-extrabold text-muted uppercase mb-1">Type DELETE to confirm</label>
+                <input
+                  id="delete-account-confirm"
+                  type="text"
+                  value={deleteTyped}
+                  onChange={(e) => setDeleteTyped(e.target.value)}
+                  className="qf-input w-full"
+                  placeholder="DELETE"
+                />
+              </div>
+              <div className="sm:col-span-2 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setDeleteConfirm(false); setDeletePassword(''); setDeleteTyped(''); }}
+                  className="btn3d btn3d-sm btn3d-ghost"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={deleteAccount}
+                  disabled={deleteBusy || deleteTyped !== 'DELETE' || !deletePassword}
+                  className="btn3d btn3d-sm !bg-danger !text-white !border-danger disabled:opacity-50"
+                >
+                  {deleteBusy ? 'Deleting…' : 'Yes, permanently delete'}
+                </button>
+              </div>
+            </div>
           )}
         </div>
       </section>

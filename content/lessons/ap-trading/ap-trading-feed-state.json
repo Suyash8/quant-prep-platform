@@ -2,7 +2,7 @@
   "id": "ap-trading-feed-state",
   "moduleId": "ap-trading",
   "title": "Sequence gaps, duplicates and feed state",
-  "estMinutes": 38,
+  "estMinutes": 22,
   "difficulty": "specialist",
   "prereqs": [
     "ap-trading-protocols"
@@ -83,11 +83,7 @@
       "type": "code",
       "lang": "python",
       "code": "from collections import OrderedDict, deque\nfrom bisect import bisect_left\nimport heapq\nimport math\n\ndef decode_packets(packets):\n    expected = 1\n    live = {}\n    shares = 0\n    lines = []\n    for text in packets:\n        if len(text) % 2 or len(text) < 10:\n            lines.append('ERR LENGTH -')\n            continue\n        data = bytes.fromhex(text)\n        sequence = int.from_bytes(data[:4], 'big')\n        if sequence < expected:\n            lines.append(f'DUP {sequence}')\n            continue\n        if sequence > expected:\n            lines.append(f'GAP {expected} {sequence - 1}')\n        expected = sequence + 1\n        kind = data[4:5]\n        if kind not in [b'A', b'X', b'E']:\n            lines.append(f'ERR TYPE {sequence}')\n            continue\n        if len(data) != (22 if kind == b'A' else 17):\n            lines.append(f'ERR LENGTH {sequence}')\n            continue\n        if kind == b'A' and data[13:14] not in [b'B', b'S']:\n            lines.append(f'ERR TYPE {sequence}')\n            continue\n        identifier = int.from_bytes(data[5:13], 'big')\n        offset = 14 if kind == b'A' else 13\n        quantity = int.from_bytes(data[offset:offset + 4], 'big')\n        if kind == b'A':\n            if identifier in live:\n                lines.append(f'ERR DUPID {sequence}')\n            else:\n                live[identifier] = quantity\n        elif identifier not in live:\n            lines.append(f'ERR UNKNOWN {sequence}')\n        elif quantity > live[identifier]:\n            lines.append(f'ERR OVERFLOW {sequence}')\n        else:\n            live[identifier] -= quantity\n            if live[identifier] == 0:\n                del live[identifier]\n            if kind == b'E':\n                shares += quantity\n    return lines + [f'BOOK {len(live)}', f'SHARES {shares}']\n\nprint(*decode_packets(['00000001410000000000000007420000006400003ab1', '0000000245000000000000000700000028', '000000045800000000000000070000003c', '0000000345000000000000000700000001']), sep='\\n')",
-      "caption": "Expected stdout:\nGAP 3 3\nDUP 3\nBOOK 0\nSHARES 40\n\nPrevalidated inputs follow the captured public contract. This completes the named Python function using its original supplied main/parser. It does not claim independent parser, C++, app-runner or judge qualification."
-    },
-    {
-      "type": "p",
-      "md": "The exact synthetic layout, skip-forward sequence consumption, error priority and atomic business-rejection rules come from the explicit captured task contract above, not the Python bytes API. Public task hash b2b39d18fe40e14c6da270bef623b75085e14d113cef3851e4863048c86fc61b. This extension preserves earlier examples and their distinct fail-closed policy. No real ITCH/MoldUDP64 compatibility or independent parser/C++/runner/judge qualification is claimed."
+      "caption": "Expected stdout:\nGAP 3 3\nDUP 3\nBOOK 0\nSHARES 40"
     },
     {
       "type": "ref",
@@ -129,7 +125,7 @@
     "Duplicate identity and content agreement are separate checks in this bounded policy. (Same identity with different content cannot be silently applied.)",
     "Positions 7 and 8 are carried; next expected is 9 if both validate/apply contiguously."
   ],
-  "realWorldApplication": "Used directly across production quantitative research, execution systems, and validation pipelines.",
+  "realWorldApplication": "In practice, engineering teams apply sequence gaps, duplicates and feed state within Market Data and Execution Systems when building reliable trading systems and low latency workflows — specifically to derive per-message sequence positions from session-bound packet headers and distinguish heartbeats/end markers from data counts before applying state.",
   "quantFinanceApplication": "Directly prepares you for judged problem: itch-binary-decode.",
   "summary": [
     "Sequence positions belong to a specific message stream/session, not packet count.",
@@ -240,5 +236,8 @@
     "low-latency",
     "microstructure",
     "risk"
+  ],
+  "provenance": [
+    "The exact synthetic layout, skip-forward sequence consumption, error priority and atomic business-rejection rules come from the explicit captured task contract above, not the Python bytes API. Public task hash b2b39d18fe40e14c6da270bef623b75085e14d113cef3851e4863048c86fc61b. This extension preserves earlier examples and their distinct fail-closed policy. No real ITCH/MoldUDP64 compatibility or independent parser/C++/runner/judge qualification is claimed."
   ]
 }

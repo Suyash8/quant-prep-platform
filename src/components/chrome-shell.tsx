@@ -4,13 +4,18 @@ import * as React from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { AppShell, PublicHeader, PublicFooter } from '@/components/app-shell';
 import { onBroadcast } from '@/lib/client/broadcast';
+import { bindOwner } from '@/lib/client/local-state';
 import { prefetchAllIndexes } from '@/lib/client/packs';
+import { CommandPalette } from '@/components/command-palette';
 
 export interface ChromeUser {
   id: string;
   name: string;
   email: string;
   role: string;
+  plan?: string;
+  emailVerified?: boolean;
+  onboardingDone?: boolean;
 }
 
 const USER_CACHE_KEY = 'qf-chrome-user';
@@ -97,29 +102,41 @@ export function ChromeShell({ children }: { children: React.ReactNode }) {
   const [user, setUser] = React.useState<ChromeUser | null>(null);
   const [hydrated, setHydrated] = React.useState(false);
   const [verifiedOnline, setVerifiedOnline] = React.useState(false);
+  const [networkOffline, setNetworkOffline] = React.useState(false);
 
   const syncFromServer = React.useCallback(async () => {
-    if (typeof window === 'undefined' || !navigator.onLine) return;
+    if (typeof window === 'undefined' || !navigator.onLine) {
+      setNetworkOffline(true);
+      setVerifiedOnline(true);
+      return;
+    }
     if (isAuthPage(window.location.pathname) && !readCachedUser()) {
       setVerifiedOnline(true);
       return;
     }
     try {
       const res = await fetch('/api/auth/me', { credentials: 'same-origin', cache: 'no-store' });
+      setNetworkOffline(false);
       if (res.status === 401) {
         writeCachedUser(null);
         setUser(null);
         setVerifiedOnline(true);
         return;
       }
-      if (!res.ok) return;
+      if (!res.ok) {
+        setVerifiedOnline(true);
+        return;
+      }
       const data = (await res.json()) as { user?: ChromeUser | null };
       const u = data.user ?? null;
+      if (u?.id) bindOwner(u.id);
       writeCachedUser(u);
       setUser(u);
       setVerifiedOnline(true);
     } catch {
-      /* offline or network transient: keep local cached user */
+      /* offline or network unreachable: fall into offline preview instead of spinning forever */
+      setNetworkOffline(true);
+      setVerifiedOnline(true);
     }
   }, []);
 
@@ -161,10 +178,10 @@ export function ChromeShell({ children }: { children: React.ReactNode }) {
   // Redirect online unauthenticated visits away from protected routes (skip offline so cached mode works cleanly)
   React.useEffect(() => {
     if (!hydrated || !verifiedOnline) return;
-    if (isProtectedPath(pathname) && !user && navigator.onLine) {
+    if (isProtectedPath(pathname) && !user && navigator.onLine && !networkOffline) {
       router.replace(`/login?next=${encodeURIComponent(pathname)}`);
     }
-  }, [hydrated, verifiedOnline, pathname, user, router]);
+  }, [hydrated, verifiedOnline, networkOffline, pathname, user, router]);
 
   // Idle prefetch of core routes & content pack indexes for instant zero-stall navigation
   React.useEffect(() => {
@@ -204,7 +221,8 @@ export function ChromeShell({ children }: { children: React.ReactNode }) {
 
   // 3. Protected routes: wait briefly on blank storage while online before redirecting
   if (isProtectedPath(pathname) && !user) {
-    if (!hydrated || (typeof navigator !== 'undefined' && navigator.onLine && !verifiedOnline)) {
+    const isOffline = (typeof navigator !== 'undefined' && !navigator.onLine) || networkOffline;
+    if (!hydrated || (!isOffline && !verifiedOnline)) {
       return (
         <div className="min-h-screen flex flex-col bg-background">
           <div className="h-16 border-b-2 border-border bg-surface" />
@@ -215,10 +233,11 @@ export function ChromeShell({ children }: { children: React.ReactNode }) {
         </div>
       );
     }
-    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    if (isOffline) {
       return (
-        <AppShell user={{ name: 'Learner', email: 'local', role: 'learner' }} isAdmin={false}>
+        <AppShell user={{ name: 'Offline guest', email: 'local', role: 'learner' }} isAdmin={false} offlinePreview>
           {children}
+          <CommandPalette />
         </AppShell>
       );
     }
@@ -232,6 +251,7 @@ export function ChromeShell({ children }: { children: React.ReactNode }) {
         <PublicHeader user={user ? { name: user.name } : null} />
         {children}
         <PublicFooter />
+        <CommandPalette />
       </div>
     );
   }
@@ -241,6 +261,7 @@ export function ChromeShell({ children }: { children: React.ReactNode }) {
     return (
       <AppShell user={user} isAdmin={user.role === 'admin'}>
         {children}
+        <CommandPalette />
       </AppShell>
     );
   }
@@ -251,6 +272,7 @@ export function ChromeShell({ children }: { children: React.ReactNode }) {
       <PublicHeader user={null} />
       <main className="flex-1">{children}</main>
       <PublicFooter />
+      <CommandPalette />
     </div>
   );
 }

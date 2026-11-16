@@ -163,7 +163,7 @@
     "solution": "```cpp\n#include <iostream>\n#include <memory>\n#include <utility>\n\nstruct Order { int id; };\n\nstd::unique_ptr<Order> load_order() {\n    return std::make_unique<Order>();\n}\n\nvoid risk_stage(std::unique_ptr<Order> o) {   // sink: takes ownership\n    std::cout << \"risk owns order \" << o->id << '\\n';\n}                                             // o destroyed here\n\nint main() {\n    auto o = load_order();\n    std::cout << \"main owns order\\n\";\n    risk_stage(std::move(o));                 // hand-off\n    std::cout << \"main still owns it? \" << std::boolalpha << (o != nullptr) << '\\n';\n}\n```\n\nOutput:\n\n```\nmain owns order\nrisk owns order\nmain still owns it? false\n```\n\nload_order's return value is moved into main's o (elided). The std::move hands ownership into the sink parameter, which is destroyed at the end of risk_stage - destroying the Order. Back in main, o is in the moved-from state: null, safe to assign or reset, never to dereference."
   },
   "independentExercise": {
-    "prompt": "This function leaks on its error path:\n\n```cpp\nvoid stage(int id) {\n    int* ctx = new int(id);\n    if (id % 2 == 0) throw std::runtime_error(\"even id\");\n    delete ctx;\n}\n```\n\n(a) Rewrite it with std::unique_ptr so no path leaks. (b) State the exact moved-from rules for unique_ptr: which operations are safe and which are not. (c) The team wants to keep the raw pointer around for logging after the unique_ptr goes out of scope - explain why `release()` is the wrong tool and what would happen.",
+    "prompt": "This function leaks on its error path:\n\n```cpp\nvoid stage(int id) {\n int* ctx = new int(id);\n if (id % 2 == 0) throw std::runtime_error(\"even id\");\n delete ctx;\n}\n```\n\n(a) Rewrite it with std::unique_ptr so no path leaks. (b) State the exact moved-from rules for unique_ptr: which operations are safe and which are not. (c) The team wants to keep the raw pointer around for logging after the unique_ptr goes out of scope - explain why `release()` is the wrong tool and what would happen.",
     "hints": [
       "(a) Only the acquisition line changes; delete disappears.",
       "(b) 'Valid but null', classify assign, reset, dereference, delete.",
@@ -245,7 +245,7 @@
       "type": "mcq",
       "prompt": "With the default deleter, how does sizeof(std::unique_ptr<T>) compare to sizeof(T*)?",
       "options": [
-        "Larger by the size of a control block pointer",
+        "Larger by the size of a control block pointer under standard assumptions",
         "The same size, zero-overhead: a raw pointer plus a stateless deleter",
         "It depends on T's alignment in all cases",
         "Twice as large, it also stores a reference count"

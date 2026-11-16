@@ -64,7 +64,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="min-h-screen flex flex-col">
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           <ChromeShell>{children}</ChromeShell>
-          <Toaster position="bottom-right" richColors closeButton />
+          <Toaster position="top-center" richColors closeButton />
           <ServiceWorkerRegistrar />
         </ThemeProvider>
       </body>

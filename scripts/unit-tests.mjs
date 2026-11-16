@@ -13,56 +13,35 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-// ---------- mastery engine ----------
-// (replicated here in plain JS to avoid TS imports in node --test)
-const PASS_THRESHOLD = 80;
+// ---------- mastery engine (transpiled directly from src/lib/mastery.ts) ----------
+import ts from 'typescript';
+import vm from 'node:vm';
 
-function computeStatus(prev, next) {
-  const kcBestPct = Math.max(prev.kcBestPct, next.pct);
-  const kcAttempts = prev.kcAttempts + 1;
-  const exerciseDone = next.exerciseDone ?? prev.exerciseDone;
-  const passed = kcBestPct >= PASS_THRESHOLD && exerciseDone;
-  let status;
-  if (prev.status === 'mastered' || (passed && prev.retrievalDone)) status = 'mastered';
-  else if (passed) status = 'passed';
-  else if (kcAttempts >= 2 && kcBestPct < PASS_THRESHOLD) status = 'needs_revision';
-  else if (kcAttempts >= 1) status = 'attempted';
-  else status = 'in_progress';
-  return { status, kcBestPct, kcAttempts };
+function loadTsModule(relPath) {
+  const src = readFileSync(path.join(ROOT, relPath), 'utf8');
+  const js = ts.transpileModule(src, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+  const mod = { exports: {} };
+  vm.runInNewContext(js, { module: mod, exports: mod.exports, process, URL, Intl, Date, Math, Set, Map, JSON });
+  return mod.exports;
 }
 
-function sm2(state, grade) {
-  let { ease, intervalDays, repetitions, lapses } = state;
-  if (grade < 3) {
-    repetitions = 0;
-    intervalDays = grade === 0 ? 0 : 0.5;
-    lapses += 1;
-    ease = Math.max(1.3, ease - 0.2);
-  } else {
-    ease = Math.max(1.3, ease + (0.1 - (5 - grade) * (0.08 + (5 - grade) * 0.02)));
-    repetitions += 1;
-    if (repetitions === 1) intervalDays = 1;
-    else if (repetitions === 2) intervalDays = 6;
-    else intervalDays = Math.round(intervalDays * ease * 100) / 100;
-    if (intervalDays > 365) intervalDays = 365;
-  }
-  const dueAt = new Date(Date.now() + Math.max(intervalDays, 0) * 86400000);
-  return { ease, intervalDays, repetitions, lapses, dueAt };
-}
+const actualMastery = loadTsModule('src/lib/mastery.ts');
+const { PASS_THRESHOLD, computeStatus, sm2, hasEarnedSpacedMastery } = actualMastery;
 
-test('mastery: high score without exercise stays attempted, not passed', () => {
-  const r = computeStatus({ kcBestPct: 0, kcAttempts: 0, exerciseDone: false, retrievalDone: false, status: 'not_started' }, { pct: 100 });
-  assert.equal(r.status, 'attempted');
-});
-
-test('mastery: 80% + exercise = passed', () => {
-  const r = computeStatus({ kcBestPct: 0, kcAttempts: 0, exerciseDone: true, retrievalDone: false, status: 'not_started' }, { pct: 80 });
+test('mastery: quiz score >= 80 passes even without exercise checkbox (A5)', () => {
+  const r = computeStatus({ kcBestPct: 0, kcAttempts: 0, exerciseDone: false, retrievalDone: false, status: 'not_started' }, { pct: 80 });
   assert.equal(r.status, 'passed');
 });
 
-test('mastery: 79% + exercise is not passed', () => {
+test('mastery: 79% is not passed', () => {
   const r = computeStatus({ kcBestPct: 0, kcAttempts: 0, exerciseDone: true, retrievalDone: false, status: 'not_started' }, { pct: 79 });
   assert.equal(r.status, 'attempted');
+});
+
+test('mastery: hasEarnedSpacedMastery requires >= 2 reps and >= 3d interval', () => {
+  assert.equal(hasEarnedSpacedMastery([{ repetitions: 1, intervalDays: 6 }]), false);
+  assert.equal(hasEarnedSpacedMastery([{ repetitions: 2, intervalDays: 1 }]), false);
+  assert.equal(hasEarnedSpacedMastery([{ repetitions: 2, intervalDays: 3 }]), true);
 });
 
 test('mastery: two failures trigger needs_revision', () => {
@@ -475,12 +454,7 @@ test('lesson-cards: all real lessons produce sane decks (10-40 cards)', () => {
 
 
 // Execute the actual TypeScript grader, not a duplicated implementation.
-import ts from 'typescript';
-import vm from 'node:vm';
-const gradingSource = readFileSync(path.join(ROOT, 'src/lib/grading.ts'), 'utf8');
-const gradingJs = ts.transpileModule(gradingSource, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText;
-const actualGrading = {};
-vm.runInNewContext(gradingJs, { exports: actualGrading });
+const actualGrading = loadTsModule('src/lib/grading.ts');
 
 test('actual grader: alternative groups accept synonyms and inflection', () => {
   const q = { type: 'short', keywords: ['latency|delay', 'quote|order|price', 'stale|old|outdated'] };
@@ -530,4 +504,67 @@ test('actual grader: every authored lesson model answer passes its own rubric', 
     }
   };
   walk(path.join(ROOT, 'content/lessons'));
+});
+
+// ---------- Security, Entitlements & Hardening Regressions (L1) ----------
+
+test('entitlements: free tier restricts lessons > ph1, non-starter problems, and non-diagnostic assessments', () => {
+  const ent = loadTsModule('src/lib/entitlements.ts');
+  assert.equal(ent.can({ plan: 'free' }, 'lesson', { phaseId: 'ph0' }), true);
+  assert.equal(ent.can({ plan: 'free' }, 'lesson', { phaseId: 'ph1' }), true);
+  assert.equal(ent.can({ plan: 'free' }, 'lesson', { phaseId: 'ph2' }), false);
+  assert.equal(ent.can({ plan: 'free' }, 'problem', { slug: 'min-stack' }), true);
+  assert.equal(ent.can({ plan: 'free' }, 'problem', { slug: 'order-matching-engine' }), false);
+  assert.equal(ent.can({ plan: 'free' }, 'assessment', { assessmentId: 'diag-core' }), true);
+  assert.equal(ent.can({ plan: 'free' }, 'assessment', { assessmentId: 'assess-cpp-knowledge' }), false);
+  assert.equal(ent.can({ plan: 'pro' }, 'lesson', { phaseId: 'ph10' }), true);
+  assert.equal(ent.can({ plan: 'pro' }, 'problem', { slug: 'order-matching-engine' }), true);
+  assert.equal(ent.can({ plan: 'pro' }, 'project_write'), true);
+  assert.equal(ent.can({ plan: 'free' }, 'project_write'), false);
+});
+
+test('gamification-core: timezone dayKey respects IANA zones and caps daily XP budget', () => {
+  const gam = loadTsModule('src/lib/gamification-core.ts');
+  // 2026-06-01T01:30:00Z is still May 31 in America/New_York and June 1 in Asia/Tokyo
+  const instant = new Date('2026-06-01T01:30:00.000Z');
+  assert.equal(gam.dayKey(instant, 'UTC'), '2026-06-01');
+  assert.equal(gam.dayKey(instant, 'America/New_York'), '2026-05-31');
+  assert.equal(gam.dayKey(instant, 'Asia/Tokyo'), '2026-06-01');
+  assert.equal(gam.DAILY_GOAL_XP, 50);
+  assert.ok(gam.DAILY_TOTAL_CAP <= 400);
+});
+
+test('origin helper: rejects cross-site origins while permitting same-host', () => {
+  const { assertSameOrigin } = loadTsModule('src/lib/origin.ts');
+  const fakeReq = (origin, host) => ({ headers: new Map([['origin', origin], ['host', host]]) });
+  assert.equal(assertSameOrigin(fakeReq('https://quantfoundry.dev', 'quantfoundry.dev')), true);
+  assert.equal(assertSameOrigin(fakeReq('https://evil.example', 'quantfoundry.dev')), false);
+  assert.equal(assertSameOrigin({ headers: new Map() }), true);
+});
+
+test('security regressions: removed first-user admin & Caddyfile, sync rejects forged score events, stripe webhook returns 500 on failure', () => {
+  assert.equal(existsSync(path.join(ROOT, 'Caddyfile')), false, 'Open Caddyfile proxy must not exist');
+  assert.equal(existsSync(path.join(ROOT, 'src/app/api/admin/import/route.ts')), false, 'Unsafe admin/import must not exist');
+  const regSrc = readFileSync(path.join(ROOT, 'src/app/api/auth/register/route.ts'), 'utf8');
+  assert.equal(/role:\s*['"]admin['"]/.test(regSrc), false, 'Register route must never grant admin');
+  const syncSrc = readFileSync(path.join(ROOT, 'src/app/api/sync/route.ts'), 'utf8');
+  assert.equal(/lesson_result/.test(syncSrc), false, 'Client-trusted lesson_result event must not exist in /api/sync');
+  assert.equal(/problem_attempt/.test(syncSrc), false, 'Client-trusted problem_attempt event must not exist in /api/sync');
+  const webhookSrc = readFileSync(path.join(ROOT, 'src/app/api/webhooks/stripe/route.ts'), 'utf8');
+  assert.match(webhookSrc, /status:\s*500/, 'Stripe webhook must return 500 on transient error');
+});
+
+test('packs isolation: built public/packs/v3 contains zero secret answer keys or solutions', () => {
+  const firstLesson = readdirSync(path.join(ROOT, 'public/packs/v3/lessons')).find((f) => f.endsWith('.json'));
+  assert.ok(firstLesson, 'built lesson pack should exist');
+  const packLesson = JSON.parse(readFileSync(path.join(ROOT, 'public/packs/v3/lessons', firstLesson), 'utf8'));
+  assert.equal('provenance' in packLesson, false);
+  for (const q of packLesson.quiz ?? []) {
+    for (const k of ['answerIndex', 'answerIndices', 'answer', 'modelAnswer', 'keywords', 'explanation']) {
+      assert.equal(k in q, false, `public pack leaked ${k}`);
+    }
+  }
+  const packProblem = JSON.parse(readFileSync(path.join(ROOT, 'public/packs/v3/problems/min-stack.json'), 'utf8'));
+  assert.equal('solutions' in packProblem, false);
+  assert.equal('editorial' in packProblem, false);
 });

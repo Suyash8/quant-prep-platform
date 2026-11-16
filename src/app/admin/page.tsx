@@ -22,8 +22,7 @@ export default async function AdminPage() {
             </span>
             <h1 className="mt-4 text-xl font-black tracking-tight">Administrators only</h1>
             <p className="mt-2 text-[15px] font-semibold text-muted max-w-sm mx-auto">
-              This panel manages curriculum content and requires the admin role. The first registered account
-              becomes the admin, ask that account to grant access.
+              This panel manages platform operations and requires the admin role. Ask an operator to grant access via the admin CLI.
             </p>
             <Link href="/dashboard" className="btn3d btn3d-sm mt-5">
               Back to learning

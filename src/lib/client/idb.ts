@@ -118,3 +118,23 @@ export async function kvGet<T>(key: string): Promise<T | null> {
 export async function kvSet<T>(key: string, value: T): Promise<void> {
   await withStore('kv', 'readwrite', (s) => s.put(value, key));
 }
+
+export async function kvClearAll(): Promise<void> {
+  const db = await openDb();
+  if (!db) return;
+  await Promise.all(
+    ['drafts', 'positions', 'kv'].map(
+      (name) =>
+        new Promise<void>((resolve) => {
+          try {
+            const tx = db.transaction(name, 'readwrite');
+            tx.objectStore(name).clear();
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => resolve();
+          } catch {
+            resolve();
+          }
+        }),
+    ),
+  );
+}

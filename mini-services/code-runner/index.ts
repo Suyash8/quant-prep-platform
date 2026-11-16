@@ -17,13 +17,27 @@
  * gVisor/Docker sandbox and keep the same HTTP contract (see README).
  */
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, rmSync, realpathSync, existsSync, mkdirSync, readdirSync, lstatSync } from 'node:fs';
+import { timingSafeEqual } from 'node:crypto';
+import { mkdtempSync, writeFileSync, readFileSync, rmSync, realpathSync, existsSync, mkdirSync, readdirSync, lstatSync } from 'node:fs';
 import { tmpdir, totalmem } from 'node:os';
 import path from 'node:path';
 
 const PORT = Number(process.env.QF_RUNNER_PORT) || 3010;   // NOT the generic PORT variable: the web app passes its own PORT to a runner it spawns
 const HOST = process.env.QF_RUNNER_HOST || '127.0.0.1';
-const AUTH_TOKEN = process.env.CODE_RUNNER_AUTH_TOKEN;
+const AUTH_TOKEN = (process.env.CODE_RUNNER_AUTH_TOKEN || '').trim();
+const PROBLEMS_DIR = process.env.QF_PROBLEMS_DIR || '';
+const IS_LOOPBACK = HOST === '127.0.0.1' || HOST === '::1' || HOST === 'localhost';
+if (!IS_LOOPBACK && AUTH_TOKEN.length < 32) {
+  console.error('[code-runner] REFUSING TO START: non-loopback host requires CODE_RUNNER_AUTH_TOKEN >= 32 characters.');
+  process.exit(1);
+}
+function checkToken(header: string | null): boolean {
+  if (!AUTH_TOKEN) return true;
+  if (!header || !header.startsWith('Bearer ')) return false;
+  const candidate = Buffer.from(header.slice(7));
+  const expected = Buffer.from(AUTH_TOKEN);
+  return candidate.length === expected.length && timingSafeEqual(candidate, expected);
+}
 const MAX_CONCURRENT = 2;
 const MAX_CODE_BYTES = 128 * 1024;
 const MAX_OUTPUT_BYTES = 4 * 1024 * 1024;   // KILL threshold for stdout while judging: large test expected outputs reach 1.22 MB, so a 256 KiB cap failed correct solutions (output_limit). A runaway printer is still killed.
@@ -187,9 +201,10 @@ async function runProgram(dir: string, kind: 'cpp' | 'python', stdin: string, wa
 
 interface TestSpec { input: string; expected: string; hidden?: boolean }
 interface SubmitBody {
+  slug?: string;
   language: 'cpp17' | 'cpp20' | 'python' | 'sql';
   code: string;
-  tests: TestSpec[];
+  tests?: TestSpec[];
   timeLimitMs?: number;
   memoryLimitMb?: number;
 }
@@ -220,11 +235,8 @@ Bun.serve({
   hostname: HOST,
   async fetch(req) {
     const url = new URL(req.url);
-    if (AUTH_TOKEN) {
-      const auth = req.headers.get('authorization');
-      if (auth !== `Bearer ${AUTH_TOKEN}`) {
-        return Response.json({ error: 'unauthorized' }, { status: 401 });
-      }
+    if (!checkToken(req.headers.get('authorization'))) {
+      return Response.json({ error: 'unauthorized' }, { status: 401 });
     }
     if (req.method === 'GET' && url.pathname === '/health') {
       return Response.json({ ok: true, active, admission: { memBudgetMb: MEM_BUDGET_MB, reservedMb, queued: waiters.length, maxQueue: MAX_QUEUE, maxConcurrent: MAX_CONCURRENT, maxBodyBytes: MAX_BODY_BYTES }, sandbox: { requested: SANDBOX_REQUESTED, active: SANDBOX_ACTIVE, detail: SANDBOX_PROBE }, toolchain: { ...TOOLCHAIN, baseline: 'Python >= 3.12 and g++ >= 12.4', pythonMeetsBaseline: BASELINE.python, gppMeetsBaseline: BASELINE.gpp } });
@@ -266,8 +278,17 @@ Bun.serve({
               verdict: r.timedOut ? 'timeout' : r.killedByLimit ? 'output_limit' : r.exitCode === 0 ? 'ok' : 'runtime_error',
             };
           }
-          // /submit — judge against tests
-          const tests = (body as SubmitBody).tests ?? [];
+          // /submit — judge against tests (from request or QF_PROBLEMS_DIR by slug)
+          let tests = (body as SubmitBody).tests;
+          if ((!Array.isArray(tests) || tests.length === 0) && (body as SubmitBody).slug && PROBLEMS_DIR) {
+            const safeSlug = String((body as SubmitBody).slug).replace(/[^a-zA-Z0-9_-]/g, '');
+            const pPath = path.join(PROBLEMS_DIR, `${safeSlug}.json`);
+            if (existsSync(pPath)) {
+              const parsedProb = JSON.parse(readFileSync(pPath, 'utf8')) as { tests?: TestSpec[] };
+              tests = parsedProb.tests;
+            }
+          }
+          tests = tests ?? [];
           if (!Array.isArray(tests) || tests.length === 0) return Response.json({ error: 'no tests' }, { status: 400 });
           const results: Record<string, unknown>[] = [];
           let passed = 0;

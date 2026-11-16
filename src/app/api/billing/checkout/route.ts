@@ -1,17 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { getCurrentUser, rateLimit } from '@/lib/auth';
+import { createHash } from 'crypto';
+import { getCurrentUser, rateLimitShared } from '@/lib/auth';
+import { assertSameOrigin } from '@/lib/origin';
 
 const schema = z.object({
   interval: z.enum(['monthly', 'annual']).default('annual'),
 });
 
 export async function POST(req: NextRequest) {
+  if (!assertSameOrigin(req)) {
+    return NextResponse.json({ error: 'Invalid origin.' }, { status: 403 });
+  }
   const user = await getCurrentUser();
   if (!user) {
     return NextResponse.json({ error: 'Sign in first to manage your plan.' }, { status: 401 });
   }
-  if (!rateLimit(`checkout:${user.id}`, 6, 0.1)) {
+  if (!user.emailVerifiedAt) {
+    return NextResponse.json(
+      { error: 'Please verify your email address in Settings before upgrading.' },
+      { status: 403 },
+    );
+  }
+  if (!(await rateLimitShared(`checkout:${user.id}`, 6, 0.1))) {
     return NextResponse.json({ error: 'Too many requests. Please wait a moment.' }, { status: 429 });
   }
 
@@ -51,11 +62,19 @@ export async function POST(req: NextRequest) {
     form.set('customer', user.stripeCustomerId);
   }
 
+  const idemBucket = Math.floor(Date.now() / 30000);
+  const idemKey = createHash('sha256')
+    .update(`${user.id}:${parsed.data.interval}:${idemBucket}`)
+    .digest('hex')
+    .slice(0, 32);
+
   const stripeRes = await fetch('https://api.stripe.com/v1/checkout/sessions', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${secretKey}`,
       'Content-Type': 'application/x-www-form-urlencoded',
+      'Stripe-Version': '2024-11-20.acacia',
+      'Idempotency-Key': idemKey,
     },
     body: form.toString(),
   });

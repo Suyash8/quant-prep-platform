@@ -1,18 +1,30 @@
 import 'server-only';
-import { randomBytes, scryptSync, timingSafeEqual, createHmac, createHash } from 'crypto';
+import { randomBytes, scrypt, scryptSync, timingSafeEqual, createHmac, createHash } from 'crypto';
+import { promisify } from 'util';
 import { cookies } from 'next/headers';
 import { db } from '@/lib/db';
 
+const scryptAsync = promisify(scrypt);
 const SESSION_COOKIE = 'qf_session';
 const SESSION_DAYS = 30;
 
-// ---------- password hashing (scrypt, no external deps) ----------
+// Fixed precomputed salt+hash used to equalize login timing when an email is not found
+const DUMMY_PASSWORD_HASH =
+  '0123456789abcdef0123456789abcdef:' +
+  scryptSync('quantfoundry-timing-dummy-secret', '0123456789abcdef0123456789abcdef', 64).toString('hex');
 
+// ---------- password hashing (scrypt, async non-blocking + sync helper for CLI/tests) ----------
 
 export function hashPassword(password: string): string {
   const salt = randomBytes(16).toString('hex');
   const hash = scryptSync(password, salt, 64).toString('hex');
   return `${salt}:${hash}`;
+}
+
+export async function hashPasswordAsync(password: string): Promise<string> {
+  const salt = randomBytes(16).toString('hex');
+  const derived = (await scryptAsync(password, salt, 64)) as Buffer;
+  return `${salt}:${derived.toString('hex')}`;
 }
 
 export function verifyPassword(password: string, stored: string): boolean {
@@ -23,13 +35,21 @@ export function verifyPassword(password: string, stored: string): boolean {
   return candidate.length === expected.length && timingSafeEqual(candidate, expected);
 }
 
-// ---------- sessions ----------
+export async function verifyPasswordAsync(password: string, stored: string | null | undefined): Promise<boolean> {
+  const target = stored && stored.includes(':') ? stored : DUMMY_PASSWORD_HASH;
+  const [salt, hash] = target.split(':');
+  if (!salt || !hash) return false;
+  const candidate = (await scryptAsync(password, salt, 64)) as Buffer;
+  const expected = Buffer.from(hash, 'hex');
+  const matched = candidate.length === expected.length && timingSafeEqual(candidate, expected);
+  return Boolean(stored && matched);
+}
 
+// ---------- sessions ----------
 
 function sessionSecret(): string {
   const secret = process.env.SESSION_SECRET;
   if (secret) return secret;
-  // Never sign cookies with a public constant in production: fail loudly instead.
   if (process.env.NODE_ENV === 'production') {
     throw new Error('SESSION_SECRET must be set in production');
   }
@@ -41,7 +61,6 @@ function signSession(id: string): string {
 }
 
 export function sessionIdToCookie(id: string): string {
-  // sign with a per-deployment secret so cookie tampering fails
   return `${id}.${signSession(id)}`;
 }
 
@@ -54,10 +73,12 @@ function cookieToSessionId(v: string): string | null {
   return a.length === b.length && timingSafeEqual(a, b) ? id : null;
 }
 
-export async function createSession(userId: string): Promise<void> {
+export async function createSession(userId: string, userAgent?: string | null): Promise<string> {
   const id = randomBytes(24).toString('hex');
   const expiresAt = new Date(Date.now() + SESSION_DAYS * 86400_000);
-  await db.session.create({ data: { id, userId, expiresAt } });
+  await db.session.create({
+    data: { id, userId, expiresAt, userAgent: userAgent ? userAgent.slice(0, 240) : null, lastUsedAt: new Date() },
+  });
   // Opportunistic background pruning of expired sessions
   db.session.deleteMany({ where: { expiresAt: { lt: new Date() } } }).catch(() => {});
   const jar = await cookies();
@@ -68,6 +89,7 @@ export async function createSession(userId: string): Promise<void> {
     path: '/',
     expires: expiresAt,
   });
+  return id;
 }
 
 export async function destroySession(): Promise<void> {
@@ -80,21 +102,37 @@ export async function destroySession(): Promise<void> {
   jar.delete(SESSION_COOKIE);
 }
 
-/** Non-secret, one-way tag of a session id. Lets the client name WHICH session a sign-out is for without ever seeing the httpOnly cookie. */
-export const sessionTag = (id: string) => createHash('sha256').update('qf-sess-tag:' + id).digest('hex').slice(0, 16);
-export async function currentSessionTag(): Promise<string | null> {
-  const raw = (await cookies()).get(SESSION_COOKIE)?.value; const id = raw ? cookieToSessionId(raw) : null; return id ? sessionTag(id) : null;
+export async function currentSessionId(): Promise<string | null> {
+  const raw = (await cookies()).get(SESSION_COOKIE)?.value;
+  return raw ? cookieToSessionId(raw) : null;
 }
-/** Sign-out that can only end the session the learner meant. A late (queued/offline) sign-out must never end a session created by a LATER sign-in.
- *  `tag` names the session: only that session is ended. `confirmCurrent` is an explicit, user-confirmed "end whatever session this browser holds right now".
- *  Neither given: nothing is ended (fail safe). There is deliberately no client-clock fallback.
- *  Conditional paths send no cookie-delete header, since a late response could otherwise clear a newer login's cookie; the session row is gone, so a stale cookie is inert. */
+
+export async function revokeOtherSessions(userId: string, keepSessionId?: string | null): Promise<number> {
+  const res = await db.session.deleteMany({
+    where: keepSessionId ? { userId, id: { not: keepSessionId } } : { userId },
+  });
+  return res.count;
+}
+
+/** Non-secret, one-way tag of a session id. */
+export const sessionTag = (id: string) =>
+  createHash('sha256').update('qf-sess-tag:' + id).digest('hex').slice(0, 16);
+
+export async function currentSessionTag(): Promise<string | null> {
+  const id = await currentSessionId();
+  return id ? sessionTag(id) : null;
+}
+
 export async function destroySessionFor(opts: { tag?: string; confirmCurrent?: boolean }): Promise<'ended' | 'skipped' | 'none'> {
-  const jar = await cookies(); const raw = jar.get(SESSION_COOKIE)?.value; const id = raw ? cookieToSessionId(raw) : null;
+  const id = await currentSessionId();
   if (!id) return 'none';
-  if (opts.tag !== undefined) { if (sessionTag(id) !== opts.tag) return 'skipped'; }
-  else if (opts.confirmCurrent !== true) return 'skipped';
-  await db.session.deleteMany({ where: { id } }); return 'ended';
+  if (opts.tag !== undefined) {
+    if (sessionTag(id) !== opts.tag) return 'skipped';
+  } else if (opts.confirmCurrent !== true) {
+    return 'skipped';
+  }
+  await db.session.deleteMany({ where: { id } });
+  return 'ended';
 }
 
 export async function getCurrentUser() {
@@ -105,6 +143,10 @@ export async function getCurrentUser() {
   if (!id) return null;
   const session = await db.session.findUnique({ where: { id }, include: { user: true } });
   if (!session || session.expiresAt < new Date()) return null;
+  // Opportunistic sliding touch (throttled to at most once every 10 min)
+  if (Date.now() - session.lastUsedAt.getTime() > 10 * 60_000) {
+    db.session.update({ where: { id }, data: { lastUsedAt: new Date() } }).catch(() => {});
+  }
   return session.user;
 }
 
@@ -114,19 +156,15 @@ export async function requireUser() {
   return user;
 }
 
-// ---------- bounded rate limiter with automatic TTL eviction ----------
+// ---------- bounded in-memory + shared DB token-bucket rate limiter ----------
 
 const MAX_RATE_LIMIT_BUCKETS = 5000;
 const buckets = new Map<string, { tokens: number; last: number }>();
 
 function pruneBuckets(now: number) {
   for (const [k, v] of buckets.entries()) {
-    // If inactive for > 15 minutes, remove it
-    if (now - v.last > 15 * 60 * 1000) {
-      buckets.delete(k);
-    }
+    if (now - v.last > 15 * 60 * 1000) buckets.delete(k);
   }
-  // Hard cap safeguard if under a massive distributed scan
   if (buckets.size > MAX_RATE_LIMIT_BUCKETS) {
     const toDelete = buckets.size - MAX_RATE_LIMIT_BUCKETS;
     let count = 0;
@@ -154,14 +192,44 @@ export function rateLimit(key: string, capacity = 10, refillPerSec = 0.2): boole
   return true;
 }
 
-// ---------- password reset tokens (stateless HMAC, single-use via passwordHash binding) ----------
+/** Multi-instance token bucket via Postgres RateLimitBucket, with graceful local fallback. */
+export async function rateLimitShared(key: string, capacity = 10, refillPerSec = 0.2): Promise<boolean> {
+  try {
+    const allowed = await db.$transaction(async (tx) => {
+      const now = new Date();
+      const row = await tx.rateLimitBucket.findUnique({ where: { key } });
+      const prevTokens = row ? row.tokens : capacity;
+      const elapsedSec = row ? Math.max(0, (now.getTime() - row.updatedAt.getTime()) / 1000) : 0;
+      const refilled = Math.min(capacity, prevTokens + elapsedSec * refillPerSec);
+      if (refilled < 1) {
+        await tx.rateLimitBucket.upsert({
+          where: { key },
+          create: { key, tokens: refilled, updatedAt: now },
+          update: { tokens: refilled, updatedAt: now },
+        });
+        return false;
+      }
+      await tx.rateLimitBucket.upsert({
+        where: { key },
+        create: { key, tokens: refilled - 1, updatedAt: now },
+        update: { tokens: refilled - 1, updatedAt: now },
+      });
+      return true;
+    });
+    return allowed;
+  } catch {
+    return rateLimit(key, capacity, refillPerSec);
+  }
+}
 
-const RESET_TTL_MS = 30 * 60 * 1000; // 30 minutes
+// ---------- password reset & email verification HMAC tokens ----------
+
+const RESET_TTL_MS = 30 * 60 * 1000;
+const VERIFY_TTL_MS = 24 * 60 * 60 * 1000;
 
 export function createPasswordResetToken(user: { id: string; email: string; passwordHash: string }): string {
   const exp = Date.now() + RESET_TTL_MS;
   const payload = Buffer.from(JSON.stringify({ uid: user.id, email: user.email, exp }), 'utf8').toString('base64url');
-  // Signing with secret + current passwordHash guarantees single-use: changing password invalidates the token immediately.
   const sig = createHmac('sha256', `${sessionSecret()}:${user.passwordHash}`).update(payload).digest('hex').slice(0, 32);
   return `${payload}.${sig}`;
 }
@@ -179,7 +247,7 @@ export function decodeResetTokenUserId(token: string): string | null {
 
 export function verifyPasswordResetToken(
   token: string,
-  user: { id: string; email: string; passwordHash: string }
+  user: { id: string; email: string; passwordHash: string },
 ): boolean {
   const [payload, sig] = token.split('.');
   if (!payload || !sig) return false;
@@ -193,5 +261,28 @@ export function verifyPasswordResetToken(
     return a.length === b.length && timingSafeEqual(a, b);
   } catch {
     return false;
+  }
+}
+
+export function createEmailVerifyToken(user: { id: string; email: string }): string {
+  const exp = Date.now() + VERIFY_TTL_MS;
+  const payload = Buffer.from(JSON.stringify({ uid: user.id, email: user.email, exp }), 'utf8').toString('base64url');
+  const sig = createHmac('sha256', `verify:${sessionSecret()}`).update(payload).digest('hex').slice(0, 32);
+  return `${payload}.${sig}`;
+}
+
+export function verifyEmailVerifyToken(token: string): { uid: string; email: string } | null {
+  const [payload, sig] = token.split('.');
+  if (!payload || !sig) return null;
+  try {
+    const data = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as { uid?: unknown; email?: unknown; exp?: unknown };
+    if (typeof data.uid !== 'string' || typeof data.email !== 'string') return null;
+    if (typeof data.exp !== 'number' || Date.now() > data.exp) return null;
+    const expect = createHmac('sha256', `verify:${sessionSecret()}`).update(payload).digest('hex').slice(0, 32);
+    const a = Buffer.from(sig);
+    const b = Buffer.from(expect);
+    return a.length === b.length && timingSafeEqual(a, b) ? { uid: data.uid, email: data.email } : null;
+  } catch {
+    return null;
   }
 }
