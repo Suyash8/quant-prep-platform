@@ -91,9 +91,9 @@ export function PracticeProblemClient() {
     return subscribe(sync);
   }, [slug]);
 
-  // Load editorial/solutions when solved or already revealed on server
+  // Load editorial/solutions only if solved locally (avoids spurious 403s on initial load)
   React.useEffect(() => {
-    if (!slug || !problem) return;
+    if (!slug || !problem || !solved || !userPlan) return;
     let alive = true;
     fetch(`/api/packs/answers/problem/${encodeURIComponent(slug)}`, { credentials: 'same-origin' })
       .then((r) => (r.ok ? r.json() : null))
@@ -102,7 +102,17 @@ export function PracticeProblemClient() {
       })
       .catch(() => {});
     return () => { alive = false; };
-  }, [slug, problem, solved]);
+  }, [slug, problem, solved, userPlan]);
+
+  function checkEditorialIfSignedIn() {
+    if (!slug || unlockedAnswers || !userPlan) return;
+    fetch(`/api/packs/answers/problem/${encodeURIComponent(slug)}`, { credentials: 'same-origin' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d?.editorial) setUnlockedAnswers(d);
+      })
+      .catch(() => {});
+  }
 
   async function revealEditorial() {
     if (!slug) return;
@@ -292,7 +302,10 @@ export function PracticeProblemClient() {
           </div>
         </section>
 
-        <details className="qf-card-flat overflow-hidden group">
+        <details
+          className="qf-card-flat overflow-hidden group"
+          onToggle={(e) => { if (e.currentTarget.open) checkEditorialIfSignedIn(); }}
+        >
           <summary className="flex cursor-pointer select-none items-center gap-2.5 px-4 py-2 list-none [&::-webkit-details-marker]:hidden">
             <span className="icon-tile-sm icon-tile-neutral !h-8 !w-8"><Lightbulb className="!h-4 !w-4" strokeWidth={2.5} /></span>
             <span className="text-[15px] font-extrabold">Hints</span>
@@ -306,7 +319,10 @@ export function PracticeProblemClient() {
           </ul>
         </details>
 
-        <details className="qf-card-flat overflow-hidden group">
+        <details
+          className="qf-card-flat overflow-hidden group"
+          onToggle={(e) => { if (e.currentTarget.open) checkEditorialIfSignedIn(); }}
+        >
           <summary className="flex cursor-pointer select-none items-center gap-2.5 px-4 py-2 list-none [&::-webkit-details-marker]:hidden">
             <span className="icon-tile-sm icon-tile-neutral !h-8 !w-8"><GraduationCap className="!h-4 !w-4" strokeWidth={2.5} /></span>
             <span className="text-[15px] font-extrabold">Editorial &amp; solutions</span>

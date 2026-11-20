@@ -284,6 +284,11 @@ export function LessonPlayer({
     void submitQuiz();
   }
 
+  function clearSavedProgress() {
+    try { window.localStorage.removeItem(storageKey); } catch { /* ignore */ }
+    void saveLessonPosition(lessonId, 0, 0);
+  }
+
   async function submitQuiz() {
     setSubmitting(true);
     const exDone = state.exercises.guided || state.exercises.independent;
@@ -297,7 +302,7 @@ export function LessonPlayer({
           status: 'pending_sync',
           xpAwarded: rec.xp,
         });
-        try { window.localStorage.removeItem(storageKey); } catch { /* ignore */ }
+        clearSavedProgress();
         return;
       }
 
@@ -315,6 +320,7 @@ export function LessonPlayer({
           status: 'guest_preview',
           xpAwarded: 0,
         });
+        clearSavedProgress();
         return;
       }
       if (!res.ok) {
@@ -338,7 +344,7 @@ export function LessonPlayer({
         streakCount: data.streakCount ?? null,
         perQuestion: data.perQuestion,
       });
-      try { window.localStorage.removeItem(storageKey); } catch { /* ignore */ }
+      clearSavedProgress();
     } catch {
       const rec = recordLessonAttempt(lessonId, state.answers);
       ensureLocalCards(lessonId, flashcards);
@@ -348,7 +354,7 @@ export function LessonPlayer({
         status: 'pending_sync',
         xpAwarded: rec.xp,
       });
-      try { window.localStorage.removeItem(storageKey); } catch { /* ignore */ }
+      clearSavedProgress();
     } finally {
       setSubmitting(false);
     }

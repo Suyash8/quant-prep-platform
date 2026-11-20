@@ -9,7 +9,7 @@ import { ShieldAlert, ShieldCheck } from 'lucide-react';
 export const metadata = { title: 'Admin. QuantFoundry' };
 
 export default async function AdminPage() {
-  const user = await getCurrentUser();
+  const user = await getCurrentUser().catch(() => null);
   if (!user) redirect('/login?next=/admin');
   if (user.role !== 'admin') {
     return (

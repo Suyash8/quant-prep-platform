@@ -53,7 +53,7 @@ export default function AboutPage() {
     { icon: Database, cls: 'icon-tile-info', title: 'Production-grade stack', text: 'Next.js 16 App Router + TypeScript, Prisma ORM on PostgreSQL.' },
   ];
 
-  const body = (
+  return (
     <div className="max-w-5xl mx-auto px-4 lg:px-6 py-8">
       <header className="page-hero">
         <span className="icon-tile icon-tile-accent"><Info className="h-7 w-7" /></span>

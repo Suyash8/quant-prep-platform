@@ -8,7 +8,7 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useParams, usePathname, useSearchParams } from 'next/navigation';
 import {
   Clock, Target, AlertTriangle, Building2, TrendingUp, Layers, ArrowLeft, Code2, ChevronRight, Lock, Sparkles, CheckCircle2, X,
 } from 'lucide-react';
@@ -39,16 +39,21 @@ interface Loaded {
   relatedProblems: ProblemLite[];
 }
 
-function currentLessonId(): string {
-  if (typeof window === 'undefined') return '';
-  const m = window.location.pathname.match(/^\/learn\/([^/?#]+)/);
-  return m ? decodeURIComponent(m[1]) : '';
+function resolveLessonId(paramId?: string | string[], pathname?: string | null, fallback?: string): string {
+  if (pathname && pathname.startsWith('/learn/')) {
+    const seg = pathname.slice('/learn/'.length).split('/')[0];
+    if (seg) return decodeURIComponent(seg);
+  }
+  const p = Array.isArray(paramId) ? paramId[0] : paramId;
+  return p || fallback || '';
 }
 
 export function LearnClient({ initialLessonId }: { initialLessonId?: string }) {
+  const params = useParams();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const mode = searchParams.get('mode');
-  const [lessonId, setLessonId] = React.useState(initialLessonId ?? '');
+  const lessonId = resolveLessonId(params?.lessonId, pathname, initialLessonId);
   const [data, setData] = React.useState<Loaded | null>(null);
   const [missing, setMissing] = React.useState(false);
   const [, setProgressTick] = React.useState(0);
@@ -78,9 +83,7 @@ export function LearnClient({ initialLessonId }: { initialLessonId?: string }) {
   }, []);
 
   React.useEffect(() => {
-    const id = currentLessonId();
-    if (id && id !== lessonId) { setLessonId(id); return; }
-    if (!id) return;
+    if (!lessonId) return;
     let alive = true;
     setData(null);
     setMissing(false);
@@ -95,8 +98,9 @@ export function LearnClient({ initialLessonId }: { initialLessonId?: string }) {
         const graph = buildCurriculumGraph(map as CurriculumMap, registry.lessons ?? []);
         const node = graph.byId.get(lessonId);
         if (!node) { setMissing(true); return; }
-        const mod = (map as CurriculumMap).phases.flatMap(p => p.modules).find(m => m.id === lesson.moduleId)!;
-        const phase = (map as CurriculumMap).phases.find(p => p.modules.includes(mod))!;
+        const mod = (map as CurriculumMap).phases.flatMap(p => p.modules).find(m => m.id === lesson.moduleId);
+        const phase = mod ? (map as CurriculumMap).phases.find(p => p.modules.includes(mod)) : undefined;
+        if (!mod || !phase) { setMissing(true); return; }
         const idx = mod.lessons.findIndex(l => l.id === lessonId);
         const next = idx < mod.lessons.length - 1 ? mod.lessons[idx + 1] : null;
         const prev = idx > 0 ? mod.lessons[idx - 1] : null;
@@ -161,7 +165,10 @@ export function LearnClient({ initialLessonId }: { initialLessonId?: string }) {
   React.useEffect(() => subscribe(() => setProgressTick(t => t + 1)), []);
 
   React.useEffect(() => {
-    if (!data) return;
+    if (!data || !userPlan) {
+      setQuizAnswers(null);
+      return;
+    }
     const p = lessonProgressOf(lessonId);
     if (!p || !['passed', 'mastered'].includes(p.status)) {
       setQuizAnswers(null);
@@ -175,7 +182,7 @@ export function LearnClient({ initialLessonId }: { initialLessonId?: string }) {
       })
       .catch(() => {});
     return () => { alive = false; };
-  }, [data, lessonId]);
+  }, [data, lessonId, userPlan]);
 
   async function openTestOut() {
     if (!data) return;
@@ -420,6 +427,7 @@ export function LearnClient({ initialLessonId }: { initialLessonId?: string }) {
     const cards = buildLessonCards(lesson);
     return (
       <LessonPlayer
+        key={lessonId}
         lessonId={lessonId}
         title={lesson.title}
         moduleTitle={data.moduleTitle}
@@ -434,7 +442,7 @@ export function LearnClient({ initialLessonId }: { initialLessonId?: string }) {
   }
 
   return (
-    <div className="max-w-3xl mx-auto px-4 lg:px-6 py-8">
+    <main className="max-w-3xl mx-auto px-4 lg:px-6 py-8">
       <nav className="text-[13px] text-faint mb-3 flex items-center gap-1.5 flex-wrap" aria-label="Breadcrumb">
         <Link href="/curriculum" className="hover:text-muted">Curriculum</Link> ›
         <span>{data.phaseTitle}</span> ›
@@ -500,7 +508,7 @@ export function LearnClient({ initialLessonId }: { initialLessonId?: string }) {
 
       <h2 className="h-lesson">Knowledge check</h2>
       <p className="text-[15px] text-muted -mt-4 mb-4">
-        Score at least <strong>80%</strong> to pass. Graded instantly on your device; progress syncs when you&apos;re online.
+        Score at least <strong>80%</strong> to pass. Graded server-side when online; offline attempts queue automatically until reconnection.
       </p>
       <Quiz payload={{ lessonId }} questions={safeQuestions} fullQuestions={lesson.quiz} />
 
@@ -589,7 +597,7 @@ export function LearnClient({ initialLessonId }: { initialLessonId?: string }) {
           <Link href={`/learn/${data.next.id}`} className="btn3d btn3d-sm">{data.next.title} →</Link>
         ) : <span />}
       </nav>
-    </div>
+    </main>
   );
 }
 

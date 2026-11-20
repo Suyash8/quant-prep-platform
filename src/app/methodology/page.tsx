@@ -41,7 +41,7 @@ export default function MethodologyPage() {
     { title: 'Retention', icon: RefreshCcw, tile: 'icon-tile-violet', numCls: 'bg-violet text-on-violet', from: 16, to: 20 },
   ];
 
-  const body = (
+  return (
     <div className="max-w-4xl mx-auto px-4 lg:px-6 py-8">
       <header className="page-hero">
         <span className="icon-tile icon-tile-violet"><GraduationCap className="h-7 w-7" /></span>

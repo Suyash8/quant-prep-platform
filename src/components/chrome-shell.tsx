@@ -26,12 +26,10 @@ const PROTECTED_PREFIXES = [
   '/drills',
   '/practice',
   '/assessments',
-  '/projects/',
   '/analytics',
   '/planner',
   '/settings',
   '/admin',
-  '/learn/',
 ];
 
 const PREFETCH_ROUTES = [
@@ -124,6 +122,7 @@ export function ChromeShell({ children }: { children: React.ReactNode }) {
         return;
       }
       if (!res.ok) {
+        if (res.status >= 500) setNetworkOffline(true);
         setVerifiedOnline(true);
         return;
       }

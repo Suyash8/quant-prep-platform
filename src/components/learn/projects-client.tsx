@@ -63,7 +63,10 @@ export function ProjectsClient({ initialProjects }: { initialProjects?: ProjectC
     const sync = () => setProgressBy({ ...getState().projects });
     sync();
     const unsub = subscribe(sync);
-    if (navigator.onLine) {
+    const hasCachedUser = (() => {
+      try { return Boolean(window.localStorage.getItem('qf-chrome-user')); } catch { return false; }
+    })();
+    if (navigator.onLine && hasCachedUser) {
       fetch('/api/projects/progress', { credentials: 'same-origin' })
         .then((r) => (r.ok ? r.json() : null))
         .then((d: { progress?: { projectSlug: string; status: string; milestonesDone: number }[] } | null) => {

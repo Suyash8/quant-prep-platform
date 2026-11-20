@@ -1,10 +1,10 @@
 /* QuantFoundry Service Worker — seamless offline packs, dynamic shell fallback, background sync */
 
-const VERSION = 'qf4-v5';
+const VERSION = 'qf4-v6';
 const CACHE_PACKS = `${VERSION}-packs`;
 const CACHE_SHELL = `${VERSION}-shell`;
 const CACHE_STATIC = `${VERSION}-static`;
-const META_KEY = 'qf4-manifest-stamp-v5';
+const META_KEY = 'qf4-manifest-stamp-v6';
 
 const DEV_MODE = new URL(self.location.href).searchParams.get('mode') === 'dev';
 
@@ -276,82 +276,84 @@ async function runDownloadAll(force = false) {
         await broadcastMsg({ type: 'QF3_DL_PROGRESS', done, total });
       }
 
-      // 2. Cache navigation HTML shells + RSC Flight payloads + static JS/CSS chunks referenced by them
-      const seenAssets = new Set();
-      for (let i = 0; i < SHELL_ROUTES.length; i += 4) {
-        const slice = SHELL_ROUTES.slice(i, i + 4);
+      // 2. Cache navigation HTML shells + RSC payloads in production only (avoids starving next dev compilation)
+      if (!DEV_MODE) {
+        const seenAssets = new Set();
+        for (let i = 0; i < SHELL_ROUTES.length; i += 4) {
+          const slice = SHELL_ROUTES.slice(i, i + 4);
+          await Promise.all(
+            slice.map(async (route) => {
+              try {
+                const res = await fetch(route, { credentials: 'same-origin' });
+                if (isCacheablePage(res)) {
+                  const clone = res.clone();
+                  await shellCache.put(route, res);
+                  const text = await clone.text();
+                  await cacheAssetFromHtml(text, staticCache, seenAssets);
+                }
+              } catch { /* ignore individual route failure */ }
+              try {
+                const rscRes = await fetch(route, {
+                  credentials: 'same-origin',
+                  headers: { RSC: '1', Accept: 'text/x-component' },
+                });
+                const ct = (rscRes.headers.get('content-type') || '').toLowerCase();
+                if (isCacheablePage(rscRes) && !ct.includes('text/html')) {
+                  const rscClone = rscRes.clone();
+                  await shellCache.put(`${route}::rsc`, rscRes);
+                  const rscText = await rscClone.text();
+                  await cacheAssetFromHtml(rscText, staticCache, seenAssets);
+                }
+              } catch { /* ignore individual RSC failure */ }
+              done++;
+            }),
+          );
+          await broadcastMsg({ type: 'QF3_DL_PROGRESS', done, total });
+        }
+
+        // 2b. Cache essential app icons & webmanifest so zero 503s occur offline
         await Promise.all(
-          slice.map(async (route) => {
+          ['/icons/icon.svg', '/icons/icon-192.png', '/icons/icon-512.png', '/favicon-32.png', '/favicon-64.png', '/manifest.json', '/manifest.webmanifest'].map(
+            async (assetUrl) => {
+              try {
+                if (await staticCache.match(assetUrl)) return;
+                const r = await fetch(assetUrl);
+                if (r.ok) await staticCache.put(assetUrl, r);
+              } catch { /* ignore */ }
+            },
+          ),
+        );
+
+        // 3. Seed canonical dynamic shells (HTML + RSC) so any /learn/*, /practice/*, /assessments/*, /projects/*, /career/* works offline
+        await Promise.all(
+          DYNAMIC_SHELLS.map(async (entry) => {
             try {
-              const res = await fetch(route, { credentials: 'same-origin' });
-              if (isCacheablePage(res)) {
-                const clone = res.clone();
-                await shellCache.put(route, res);
+              const htmlRes = await fetch(entry.seed, { credentials: 'same-origin' });
+              if (isCacheablePage(htmlRes)) {
+                const clone = htmlRes.clone();
+                await shellCache.put(entry.htmlKey, htmlRes);
+                await shellCache.put(entry.seed, clone.clone());
                 const text = await clone.text();
                 await cacheAssetFromHtml(text, staticCache, seenAssets);
               }
-            } catch { /* ignore individual route failure */ }
+            } catch { /* ignore */ }
             try {
-              const rscRes = await fetch(route, {
+              const rscRes = await fetch(entry.seed, {
                 credentials: 'same-origin',
                 headers: { RSC: '1', Accept: 'text/x-component' },
               });
-              const ct = (rscRes.headers.get('content-type') || '').toLowerCase();
-              if (isCacheablePage(rscRes) && !ct.includes('text/html')) {
+              if (isCacheablePage(rscRes)) {
                 const rscClone = rscRes.clone();
-                await shellCache.put(`${route}::rsc`, rscRes);
+                await shellCache.put(entry.rscKey, rscRes);
+                await shellCache.put(`${entry.seed}::rsc`, rscClone.clone());
                 const rscText = await rscClone.text();
                 await cacheAssetFromHtml(rscText, staticCache, seenAssets);
               }
-            } catch { /* ignore individual RSC failure */ }
+            } catch { /* ignore */ }
             done++;
           }),
         );
-        await broadcastMsg({ type: 'QF3_DL_PROGRESS', done, total });
       }
-
-      // 2b. Cache essential app icons & webmanifest so zero 503s occur offline
-      await Promise.all(
-        ['/icons/icon.svg', '/icons/icon-192.png', '/icons/icon-512.png', '/favicon-32.png', '/favicon-64.png', '/manifest.json', '/manifest.webmanifest'].map(
-          async (assetUrl) => {
-            try {
-              if (await staticCache.match(assetUrl)) return;
-              const r = await fetch(assetUrl);
-              if (r.ok) await staticCache.put(assetUrl, r);
-            } catch { /* ignore */ }
-          },
-        ),
-      );
-
-      // 3. Seed canonical dynamic shells (HTML + RSC) so any /learn/*, /practice/*, /assessments/*, /projects/*, /career/* works offline
-      await Promise.all(
-        DYNAMIC_SHELLS.map(async (entry) => {
-          try {
-            const htmlRes = await fetch(entry.seed, { credentials: 'same-origin' });
-            if (isCacheablePage(htmlRes)) {
-              const clone = htmlRes.clone();
-              await shellCache.put(entry.htmlKey, htmlRes);
-              await shellCache.put(entry.seed, clone.clone());
-              const text = await clone.text();
-              await cacheAssetFromHtml(text, staticCache, seenAssets);
-            }
-          } catch { /* ignore */ }
-          try {
-            const rscRes = await fetch(entry.seed, {
-              credentials: 'same-origin',
-              headers: { RSC: '1', Accept: 'text/x-component' },
-            });
-            if (isCacheablePage(rscRes)) {
-              const rscClone = rscRes.clone();
-              await shellCache.put(entry.rscKey, rscRes);
-              await shellCache.put(`${entry.seed}::rsc`, rscClone.clone());
-              const rscText = await rscClone.text();
-              await cacheAssetFromHtml(rscText, staticCache, seenAssets);
-            }
-          } catch { /* ignore */ }
-          done++;
-        }),
-      );
 
       await packCache.put(META_KEY, new Response(stamp));
       await broadcastMsg({ type: 'QF3_DL_PROGRESS', done: total, total });
@@ -492,7 +494,7 @@ self.addEventListener('fetch', (event) => {
           if (isCacheablePage(res) && !ct.includes('text/html')) {
             await cache.put(key, res.clone());
             const dyn = matchDynamicShell(url.pathname);
-            if (dyn && !request.headers.get('next-router-segment-prefetch')) {
+            if (dyn && !request.headers.get('next-router-segment-prefetch') && !request.headers.get('next-router-prefetch')) {
               await cache.put(dyn.rscKey, res.clone());
             }
           }
