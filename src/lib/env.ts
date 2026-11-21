@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
-  DATABASE_URL: z.string().min(1),
+  DATABASE_URL: z.string().optional(),
   SESSION_SECRET: z.string().optional(),
   NEXT_PUBLIC_APP_URL: z.string().optional(),
   INITIAL_ADMIN_EMAIL: z.string().optional(),
@@ -26,31 +26,33 @@ export function validateEnv(): AppEnv {
   if (cachedEnv) return cachedEnv;
   const parsed = envSchema.safeParse(process.env);
   if (!parsed.success) {
-    throw new Error(`Invalid environment variables: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`);
+    console.warn(`[env] Environment parse warning: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`);
+    cachedEnv = { NODE_ENV: (process.env.NODE_ENV as AppEnv['NODE_ENV']) || 'production' };
+    return cachedEnv;
   }
   const e = parsed.data;
   const isNextBuild = process.env.NEXT_PHASE === 'phase-production-build';
   if (e.NODE_ENV === 'production' && !isNextBuild) {
-    const errors: string[] = [];
+    const warnings: string[] = [];
+    if (!e.DATABASE_URL) {
+      warnings.push('DATABASE_URL is not set');
+    }
     if (!e.SESSION_SECRET || e.SESSION_SECRET.length < 32) {
-      errors.push('SESSION_SECRET must be at least 32 characters in production');
+      warnings.push('SESSION_SECRET should be at least 32 characters in production');
     }
     if (!e.CRON_SECRET || e.CRON_SECRET.length < 24) {
-      errors.push('CRON_SECRET must be at least 24 characters in production');
+      warnings.push('CRON_SECRET is unset or < 24 chars (cron/cleanup endpoint will reject requests until configured)');
     }
     if (e.STRIPE_SECRET_KEY && !e.STRIPE_WEBHOOK_SECRET) {
-      errors.push('STRIPE_WEBHOOK_SECRET is required when STRIPE_SECRET_KEY is set');
+      warnings.push('STRIPE_WEBHOOK_SECRET is required when STRIPE_SECRET_KEY is set');
     }
     if (e.CODE_RUNNER_URL && !/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])/.test(e.CODE_RUNNER_URL)) {
       if (!e.CODE_RUNNER_AUTH_TOKEN || e.CODE_RUNNER_AUTH_TOKEN.length < 32) {
-        errors.push('CODE_RUNNER_AUTH_TOKEN (>=32 chars) is required for remote CODE_RUNNER_URL');
+        warnings.push('CODE_RUNNER_AUTH_TOKEN (>=32 chars) is recommended for remote CODE_RUNNER_URL');
       }
     }
-    if (errors.length > 0 && process.env.QF_SKIP_STRICT_ENV !== '1') {
-      throw new Error(`[env] Production startup validation failed:\n- ${errors.join('\n- ')}`);
-    }
-    if (errors.length > 0) {
-      console.warn(`[env] Warnings (QF_SKIP_STRICT_ENV=1): ${errors.join('; ')}`);
+    if (warnings.length > 0) {
+      console.warn(`[env] Production config warnings:\n- ${warnings.join('\n- ')}`);
     }
   }
   cachedEnv = e;

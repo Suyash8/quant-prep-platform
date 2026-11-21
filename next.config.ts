@@ -33,6 +33,7 @@ const nextConfig: NextConfig = {
       "./content/companies/**/*",
       "./content/problems/**/*",
       "./content/index.json",
+      "./content/registry.json",
     ],
   },
   async headers() {
