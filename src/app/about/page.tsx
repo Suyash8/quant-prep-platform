@@ -184,7 +184,7 @@ export default function AboutPage() {
         <span className="relative mx-auto icon-tile icon-tile-gold anim-bob"><GraduationCap className="h-7 w-7" /></span>
         <h2 className="relative mt-4 text-xl font-black tracking-tight">The path is long. It is also walkable.</h2>
         <p className="relative mt-2 text-[15px] font-semibold text-muted max-w-md mx-auto leading-relaxed">
-          Start with the diagnostic, it places you on the path in about 20 minutes.
+          Start with the 28-question diagnostic — it places you on the path in about 45 minutes.
         </p>
         <div className="relative mt-5 flex gap-3 justify-center flex-wrap">
           <AuthAwareLink

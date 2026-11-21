@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { CheckCircle2, XCircle, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
-import katex from 'katex';
+import { ClientMd } from '@/components/gamified/client-md';
 import type { QuizQuestion } from '@/lib/content';
 import { gradeAnswer } from '@/lib/grading';
 import { scoreQuiz } from '@/lib/mastery';
@@ -270,37 +270,9 @@ export function Quiz({ endpoint, payload, questions, fullQuestions, onResult, on
   );
 }
 
-/** Renders quiz text with inline math via KaTeX (client-side), \$ escapes currency. */
+/** Renders quiz text with inline math, **bold**, `code`, and links via ClientMd. */
 export function QMath({ text }: { text: string }) {
-  const html = React.useMemo(() => {
-    try {
-      const src = text.replace(/\\\$/g, '\u0000'); // escaped currency -> sentinel
-
-
-      let out = '';
-      let i = 0;
-      let buf = '';
-      while (i < src.length) {
-        if (src[i] === '$') {
-          const end = findClose(src, i + 1);
-          if (end > i) {
-            out += escapeHtml(buf);
-            out += katex.renderToString(src.slice(i + 1, end), { throwOnError: false, output: 'html', strict: false });
-            buf = '';
-            i = end + 1;
-            continue;
-          }
-        }
-        buf += src[i];
-        i++;
-      }
-      out += escapeHtml(buf);
-      return out.replace(/\u0000/g, '$');
-    } catch {
-      return escapeHtml(text);
-    }
-  }, [text]);
-  return <span dangerouslySetInnerHTML={{ __html: html }} />;
+  return <ClientMd text={text} />;
 }
 
 function findClose(s: string, from: number): number {

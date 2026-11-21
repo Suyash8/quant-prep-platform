@@ -85,28 +85,36 @@ export function DistributionViewer({ params }: { params: Record<string, unknown>
   const [shade, setShade] = React.useState(2); // shade P(-shade, shade) in sigmas
 
 
+  const pdf = (x: number) => (dist === 'normal' ? normPdf(x, mu, sigma) : uniformPdf(x, mu, sigma));
+  const cdf = (x: number) => {
+    if (dist === 'normal') return normCdf(x, mu, sigma);
+    const half = Math.sqrt(3) * sigma;
+    if (x <= mu - half) return 0;
+    if (x >= mu + half) return 1;
+    return (x - (mu - half)) / (2 * half || 1);
+  };
+  const peak = Math.max(pdf(mu), 0.45) * 1.12;
   const toX = (x: number) => P + ((x - (mu - 4 * sigma)) / (8 * sigma || 1)) * (W - 2 * P);
-  const toY = (p: number) => H - P - (p / 0.45) * (H - 2 * P);
+  const toY = (p: number) => H - P - (p / peak) * (H - 2 * P);
   const pts: string[] = [];
   for (let i = 0; i <= 250; i++) {
     const x = mu - 4 * sigma + (8 * sigma * i) / 250;
-    const p = dist === 'normal' ? normPdf(x, mu, sigma) : uniformPdf(x, mu, sigma);
-    pts.push(`${toX(x)},${toY(p)}`);
+    pts.push(`${toX(x)},${toY(pdf(x))}`);
   }
-  const within = normCdf(mu + shade * sigma, mu, sigma) - normCdf(mu - shade * sigma, mu, sigma);
+  const within = cdf(mu + shade * sigma) - cdf(mu - shade * sigma);
   const bandPts: string[] = [];
   for (let i = 0; i <= 120; i++) {
     const x = mu - shade * sigma + (2 * shade * sigma * i) / 120;
-    bandPts.push(`${toX(x)},${toY(normPdf(x, mu, sigma))}`);
+    bandPts.push(`${toX(x)},${toY(pdf(x))}`);
   }
   return (
-    <LabFrame title={`${dist === 'normal' ? 'N(μ, σ²)' : 'Uniform'} density`} caption={`P(μ−${shade}σ ≤ X ≤ μ+${shade}σ) = ${within.toFixed(4)}. Drag σ and watch the 68-95-99.7 bands move.`}>
+    <LabFrame title={`${dist === 'normal' ? 'N(μ, σ²)' : 'Uniform'} density`} caption={`P(μ−${shade}σ ≤ X ≤ μ+${shade}σ) = ${within.toFixed(4)}. Drag σ and watch the probability bands move.`}>
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto">
         <line x1={P} y1={toY(0)} x2={W - P} y2={toY(0)} stroke={FAINT} />
         <polygon points={`${toX(mu - shade * sigma)},${toY(0)} ${bandPts.join(' ')} ${toX(mu + shade * sigma)},${toY(0)}`} fill={ACCENT} opacity={0.18} />
         <polyline fill="none" stroke={INK} strokeWidth={2} points={pts.join(' ')} />
-        <line x1={toX(mu)} y1={toY(0)} x2={toX(mu)} y2={toY(normPdf(mu, mu, sigma))} stroke={MUTED} strokeDasharray="3 3" />
-        <text x={toX(mu)} y={toY(normPdf(mu, mu, sigma)) - 6} textAnchor="middle" fontSize="12" fill={MUTED}>μ</text>
+        <line x1={toX(mu)} y1={toY(0)} x2={toX(mu)} y2={toY(pdf(mu))} stroke={MUTED} strokeDasharray="3 3" />
+        <text x={toX(mu)} y={toY(pdf(mu)) - 6} textAnchor="middle" fontSize="12" fill={MUTED}>μ</text>
       </svg>
       <div className="mt-2 grid sm:grid-cols-3 gap-3">
         <Slider label="μ" value={mu} min={-5} max={5} step={0.1} onChange={setMu} />
@@ -190,7 +198,7 @@ export function BrownianMotion({ params }: { params: Record<string, unknown> }) 
         <line x1={P} y1={H - P} x2={W - P} y2={H - P} stroke={FAINT} />
         <polyline fill="none" stroke={ACCENT} strokeWidth={1.8}
           points={data.map((v, i) => `${toX(i)},${toY(v)}`).join(' ')} />
-        <text x={toX(steps) - 4} y={toY(data[steps - 1])} textAnchor="end" fontSize="12" fill={ACCENT}>{fmt(data[steps - 1], 1)}</text>
+        <text x={toX(steps) - 4} y={toY(data[steps])} textAnchor="end" fontSize="12" fill={ACCENT}>{fmt(data[steps], 1)}</text>
       </svg>
       <div className="mt-2 grid sm:grid-cols-3 gap-3">
         <Slider label="drift μ" value={drift} min={-0.1} max={0.3} step={0.01} onChange={setDrift} />
@@ -201,12 +209,34 @@ export function BrownianMotion({ params }: { params: Record<string, unknown> }) 
   );
 }
 
+/** Acklam rational approximation to standard normal quantile Φ⁻¹(p) for p ∈ (0, 1). */
+function invNorm(p: number): number {
+  const clamped = Math.min(0.999999, Math.max(0.000001, p));
+  const a = [-3.969683028665376e1, 2.209460984245205e2, -2.759285104469687e2, 1.383577518672690e2, -3.066479806614716e1, 2.506628277459239];
+  const b = [-5.447609879822406e1, 1.615858368580409e2, -1.556989798598866e2, 6.680131188771972e1, -1.328068155288572e1];
+  const c = [-7.784894002430293e-3, -3.223964580411365e-1, -2.400758277161838, -2.549732539343734, 4.374664141464968, 2.938163982698783];
+  const d = [7.784695709041462e-3, 3.224671290700398e-1, 2.445134137142996, 3.754408661907416];
+  const pLow = 0.02425;
+  const pHigh = 1 - pLow;
+  if (clamped < pLow) {
+    const q = Math.sqrt(-2 * Math.log(clamped));
+    return (((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1);
+  }
+  if (clamped <= pHigh) {
+    const q = clamped - 0.5;
+    const r = q * q;
+    return ((((((a[0] * r + a[1]) * r + a[2]) * r + a[3]) * r + a[4]) * r + a[5]) * q) / (((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r + 1);
+  }
+  const q = Math.sqrt(-2 * Math.log(1 - clamped));
+  return -(((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1);
+}
+
 /* ---------------- ConfidenceIntervalLab ---------------- */
 export function ConfidenceIntervalLab({ params }: { params: Record<string, unknown> }) {
   const [diff, setDiff] = React.useState((params.diff as number) ?? 0.005);
   const [se, setSe] = React.useState((params.se as number) ?? 0.004);
   const [conf, setConf] = React.useState((params.confidence as number) ?? 0.95);
-  const z = { 0.9: 1.6449, 0.95: 1.96, 0.99: 2.5758 }[conf as 0.9 | 0.95 | 0.99] ?? 1.96;
+  const z = invNorm((1 + conf) / 2);
   const half = z * se;
   const significant = Math.abs(diff) > half;
   // plotting window in units of se
@@ -303,7 +333,7 @@ export function NormalConvergence({ params }: { params: Record<string, unknown> 
     const b = Math.floor(((m - min) / (max - min)) * bins);
     if (b >= 0 && b < bins) hist[b]++;
   }
-  const maxCount = Math.max(...hist);
+  const maxCount = Math.max(...hist, 1);
   const mean = data.reduce((s, v) => s + v, 0) / (data.length || 1);
   const sd = Math.sqrt(data.reduce((s, v) => s + (v - mean) ** 2, 0) / (data.length || 1));
   const bw = (W - 2 * P) / bins;
@@ -390,7 +420,7 @@ export function RegressionLab({ params }: { params: Record<string, unknown> }) {
         <polyline fill="none" stroke={ACCENT} strokeWidth={2} points={fitPath.join(' ')} />
       </svg>
       <div className="mt-2 grid sm:grid-cols-2 gap-3">
-        <Slider label="poly degree" value={deg} min={1} max={12} step={1} onChange={setDeg} format={v => v.toFixed(0)} />
+        <Slider label="poly degree" value={deg} min={1} max={9} step={1} onChange={setDeg} format={v => v.toFixed(0)} />
         <button onClick={() => setSeed(s => s + 1)} className="text-[13px] px-3 py-1.5 border rounded-md hover:bg-surface-2 w-fit self-center">New sample</button>
       </div>
     </LabFrame>
@@ -400,7 +430,7 @@ export function RegressionLab({ params }: { params: Record<string, unknown> }) {
 /* ---------------- TimeSeriesDecompose ---------------- */
 export function TimeSeriesDecompose({ params }: { params: Record<string, unknown> }) {
   const n = (params.n as number) ?? 48;
-  const trend = (params.trend as number) ?? 0.4;
+  const [trend, setTrend] = React.useState((params.trend as number) ?? 0.4);
   const seasonalAmp = (params.seasonalAmp as number) ?? 2;
   const noise = (params.noise as number) ?? 0.8;
   const period = (params.period as number) ?? 4;
@@ -431,7 +461,7 @@ export function TimeSeriesDecompose({ params }: { params: Record<string, unknown
         {line('se', '#9a6d0b', '4 3')}
       </svg>
       <div className="mt-2 grid sm:grid-cols-2 gap-3">
-        <Slider label="trend slope" value={trend} min={-1} max={1.5} step={0.05} onChange={() => {}} />
+        <Slider label="trend slope" value={trend} min={-1} max={1.5} step={0.05} onChange={setTrend} />
         <button onClick={() => setSeed(s => s + 1)} className="text-[13px] px-3 py-1.5 border rounded-md hover:bg-surface-2 w-fit self-center">Resample noise</button>
       </div>
     </LabFrame>

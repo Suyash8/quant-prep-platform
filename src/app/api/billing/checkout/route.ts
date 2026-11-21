@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { createHash } from 'crypto';
 import { getCurrentUser, rateLimitShared } from '@/lib/auth';
 import { assertSameOrigin } from '@/lib/origin';
+import { getAppOrigin } from '@/lib/site-url';
+import { isPaidPlan } from '@/lib/entitlements';
 
 const schema = z.object({
   interval: z.enum(['monthly', 'annual']).default('annual'),
@@ -20,6 +22,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       { error: 'Please verify your email address in Settings before upgrading.' },
       { status: 403 },
+    );
+  }
+  if (isPaidPlan(user) && user.subscriptionId) {
+    return NextResponse.json(
+      {
+        error: 'You already have an active subscription. Use the Billing Portal to change or cancel your plan.',
+        portalUrl: '/api/billing/portal',
+      },
+      { status: 409 },
     );
   }
   if (!(await rateLimitShared(`checkout:${user.id}`, 6, 0.1))) {
@@ -44,7 +55,7 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  const appUrl = (process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin).replace(/\/$/, '');
+  const appUrl = getAppOrigin(req);
   const form = new URLSearchParams({
     mode: 'subscription',
     'line_items[0][price]': priceId,
@@ -68,16 +79,25 @@ export async function POST(req: NextRequest) {
     .digest('hex')
     .slice(0, 32);
 
-  const stripeRes = await fetch('https://api.stripe.com/v1/checkout/sessions', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${secretKey}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Stripe-Version': '2024-11-20.acacia',
-      'Idempotency-Key': idemKey,
-    },
-    body: form.toString(),
-  });
+  let stripeRes: Response;
+  try {
+    stripeRes = await fetch('https://api.stripe.com/v1/checkout/sessions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${secretKey}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Stripe-Version': '2024-11-20.acacia',
+        'Idempotency-Key': idemKey,
+      },
+      body: form.toString(),
+      signal: AbortSignal.timeout(15_000),
+    });
+  } catch {
+    return NextResponse.json(
+      { error: 'Unable to reach Stripe right now. Please try again in a moment.' },
+      { status: 502 },
+    );
+  }
 
   const payload = (await stripeRes.json().catch(() => ({}))) as { url?: string; error?: { message?: string } };
   if (!stripeRes.ok || !payload.url) {

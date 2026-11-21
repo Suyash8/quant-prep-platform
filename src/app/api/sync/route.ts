@@ -11,6 +11,8 @@ import { assertSameOrigin } from '@/lib/origin';
 import { z } from 'zod';
 import { Prisma } from '@prisma/client';
 
+export const maxDuration = 60;
+
 /**
  * Authoritative Offline Sync Endpoint (A1, A6, A10):
  * - Events carry EVIDENCE (answers maps, card grades, drill counts), NEVER client-claimed pct/XP/problem solves.
@@ -217,11 +219,13 @@ async function applyEventBody(tx: Tx, user: { id: string; plan: string; role: st
 
     case 'reviews': {
       const now = new Date();
+      let validReviewed = 0;
       for (const r of e.reviews) {
         const card = await tx.cardState.findUnique({
           where: { userId_cardKey: { userId: user.id, cardKey: r.cardKey } },
         });
         if (!card) continue;
+        validReviewed++;
         const wasDue = card.dueAt <= now;
         const next = sm2(
           { ease: card.ease, intervalDays: card.intervalDays, repetitions: card.repetitions, lapses: card.lapses },
@@ -248,13 +252,13 @@ async function applyEventBody(tx: Tx, user: { id: string; plan: string; role: st
           });
         }
       }
-      const xp = Math.min(Math.round((e.reviews.length / 10) * XP_TABLE.revisionPer10), XP_TABLE.revisionCap);
+      const xp = Math.min(Math.round((validReviewed / 10) * XP_TABLE.revisionPer10), XP_TABLE.revisionCap);
       if (xp > 0) await awardXp(user.id, xp, 'revision', undefined, tx, `rev-sync:${e.id}`);
       break;
     }
 
     case 'drill_session': {
-      if (e.answered >= 10 && e.durationS > 0 && e.durationS < Math.floor(e.answered * 0.25)) {
+      if (e.answered >= 5 && e.durationS < Math.max(1, Math.floor(e.answered * 0.25))) {
         throw new SyncQuarantineError('implausible_drill_duration');
       }
       await tx.drillSession.create({

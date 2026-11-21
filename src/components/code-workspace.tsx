@@ -272,14 +272,14 @@ export function CodeWorkspace({ slug, stubs, examples, timeLimitMs }: WorkspaceP
                 </pre>
               </div>
             )}
-            <div role="region" aria-label={`Code editor for ${fileLabel}`} className="flex-1 min-h-0">
+            <div role="region" aria-label={`Code editor for ${fileLabel}`} className="flex-1 min-h-[260px] h-full">
               <MonacoCodeEditor
                 value={code}
                 language={monacoLang}
                 onChange={setCode}
                 onRunShortcut={doRun}
                 onSubmitShortcut={doSubmit}
-                height={editorHeight}
+                height="100%"
               />
             </div>
           </div>

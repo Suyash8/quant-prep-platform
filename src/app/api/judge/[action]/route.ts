@@ -8,6 +8,8 @@ import { awardXp, XP_TABLE } from '@/lib/gamification';
 import { can } from '@/lib/entitlements';
 import { assertSameOrigin } from '@/lib/origin';
 
+export const maxDuration = 60;
+
 const submitSchema = z.object({
   slug: z.string().min(1).max(120),
   language: z.enum(['cpp17', 'cpp20', 'python', 'sql']),

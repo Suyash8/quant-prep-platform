@@ -37,9 +37,15 @@ export async function POST(req: NextRequest) {
     where: { userId_targetType_targetId: { userId: user.id, targetType: 'lesson', targetId: lessonId } },
   });
   if (existing) {
-    await db.bookmark.delete({ where: { id: existing.id } });
+    await db.bookmark.deleteMany({ where: { id: existing.id } });
     return NextResponse.json({ ok: true, bookmarked: false });
   }
-  await db.bookmark.create({ data: { userId: user.id, targetType: 'lesson', targetId: lessonId } });
+  try {
+    await db.bookmark.create({ data: { userId: user.id, targetType: 'lesson', targetId: lessonId } });
+  } catch (err: unknown) {
+    if (typeof err !== 'object' || err === null || (err as { code?: string }).code !== 'P2002') {
+      throw err;
+    }
+  }
   return NextResponse.json({ ok: true, bookmarked: true });
 }

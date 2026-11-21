@@ -251,9 +251,13 @@ export function LearnClient({ initialLessonId }: { initialLessonId?: string }) {
   if (!data) return <LessonSkeleton />;
 
   const done = doneSet();
+  const isFreePhase = data.phaseId === 'ph0' || data.phaseId === 'ph1';
   const hasEntitlement = can(userPlan, 'lesson', { phaseId: data.phaseId });
 
+  if (!isFreePhase && !planChecked) return <LessonSkeleton />;
+
   if (planChecked && !hasEntitlement) {
+    const totalLessons = data.graph.byId.size;
     return (
       <div className="max-w-3xl mx-auto px-4 py-16">
         <div className="qf-card p-8 text-center">
@@ -263,7 +267,7 @@ export function LearnClient({ initialLessonId }: { initialLessonId?: string }) {
           <p className="mt-4 text-[12px] font-black uppercase tracking-[0.14em] text-warning">{data.phaseTitle} · Pro curriculum</p>
           <h1 className="mt-1 text-2xl font-black tracking-tight">{data.lesson.title}</h1>
           <p className="mt-2 text-muted text-[15px] max-w-lg mx-auto font-semibold">
-            Phases 0 &amp; 1 (84 lessons) are free forever. Upgrade to Pro to unlock {data.phaseTitle}, all 358 lessons, firm assessments, and the full coding bank.
+            Phases 0 &amp; 1 (84 lessons) are free forever. Upgrade to Pro to unlock {data.phaseTitle}, all {totalLessons} lessons, firm assessments, and the full coding bank.
           </p>
           <div className="mt-6 flex flex-wrap justify-center gap-3">
             <Link href="/pricing" className="btn3d">

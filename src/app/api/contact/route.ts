@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { db } from '@/lib/db';
 import { getCurrentUser, rateLimitShared } from '@/lib/auth';
 import { clientIp } from '@/lib/client-ip';
+import { assertSameOrigin } from '@/lib/origin';
 import { sendEmail } from '@/lib/email';
 
 const schema = z.object({
@@ -14,6 +15,9 @@ const schema = z.object({
 });
 
 export async function POST(req: NextRequest) {
+  if (!assertSameOrigin(req)) {
+    return NextResponse.json({ error: 'Invalid request origin.' }, { status: 403 });
+  }
   const ip = clientIp(req);
   if (!(await rateLimitShared(`contact:${ip}`, 5, 0.05))) {
     return NextResponse.json({ error: 'Too many messages sent recently. Please wait before trying again.' }, { status: 429 });
@@ -54,11 +58,15 @@ export async function POST(req: NextRequest) {
     }).catch(() => {});
   }
 
-  await sendEmail({
-    to: senderEmail,
-    subject: `Received: ${parsed.data.subject}`,
-    text: `Hi ${parsed.data.name},\n\nWe received your message (Reference ${created.id}) and typically respond within 2 business days.\n\n— QuantFoundry Support`,
-  }).catch(() => {});
+  // Only send receipt auto-reply to verified signed-in accounts matching their own email
+  // to prevent unauthenticated third-party email-relay abuse.
+  if (user && user.emailVerifiedAt && user.email.toLowerCase() === senderEmail) {
+    await sendEmail({
+      to: senderEmail,
+      subject: `Received: ${parsed.data.subject}`,
+      text: `Hi ${parsed.data.name},\n\nWe received your message (Reference ${created.id}) and typically respond within 2 business days.\n\n— QuantFoundry Support`,
+    }).catch(() => {});
+  }
 
   return NextResponse.json({ ok: true, id: created.id }, { status: 201 });
 }

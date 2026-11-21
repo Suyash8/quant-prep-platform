@@ -5,29 +5,65 @@ import { Slider, LabFrame, compileExpression, ExprNotice, fmt, INK, MUTED, FAINT
 
 /* ---------------- MemoryLayout ---------------- */
 export function MemoryLayout({ params }: { params: Record<string, unknown> }) {
+  // Support custom struct / cache-line / region diagrams passed by 34 systems & C++ lessons
+  const rawSegments = (params.segments ?? params.regions) as
+    | Array<{ label?: string; name?: string; bytes?: number; size?: number; offset?: number; kind?: string; color?: string }>
+    | undefined;
+  if (Array.isArray(rawSegments) && rawSegments.length > 0) {
+    const title = (params.title as string) || 'Memory layout';
+    const totalBytes =
+      (params.totalBytes as number) ||
+      rawSegments.reduce((s, seg) => s + (seg.bytes ?? seg.size ?? 1), 0) ||
+      1;
+    const palette = ['bg-accent-soft border-accent/40', 'bg-info-soft border-info/40', 'bg-warning-soft border-warning/40', 'bg-surface-2 border-border'];
+    return (
+      <LabFrame
+        title={title}
+        caption={`${totalBytes} bytes total across ${rawSegments.length} region${rawSegments.length === 1 ? '' : 's'}.`}
+      >
+        <div className="flex flex-wrap gap-1.5">
+          {rawSegments.map((seg, i) => {
+            const label = seg.label ?? seg.name ?? `region ${i}`;
+            const size = seg.bytes ?? seg.size ?? 1;
+            const pct = Math.max(8, Math.round((size / totalBytes) * 100));
+            const isPad = label.toLowerCase().includes('pad') || seg.kind === 'padding';
+            return (
+              <div
+                key={i}
+                className={`rounded-lg border px-2.5 py-2 text-center min-w-[72px] ${isPad ? 'bg-surface-2/60 border-dashed border-border text-faint' : palette[i % palette.length]}`}
+                style={{ flexGrow: pct }}
+              >
+                <div className="text-[12px] font-extrabold truncate">{label}</div>
+                <div className="text-[11px] tnum text-muted">{size} B</div>
+              </div>
+            );
+          })}
+        </div>
+      </LabFrame>
+    );
+  }
+
   const type = (params.type as string) ?? 'double';
   const value = (params.value as number) ?? 42.17;
   const info = typeInfo(type);
-  const bits = Array.from({ length: info.bytes * 8 }, () => false);
-  // For double/int show real byte patterns (little-endian)
-
-
+  const elemType = type.replace(/\[\d+\]$/, '');
   const bytes = (() => {
     const out: number[] = [];
     try {
       const view = new DataView(new ArrayBuffer(info.bytes));
-      if (info.bytes === 8 && !type.includes('[')) {
+      if (elemType === 'double' && info.bytes >= 8) {
         view.setFloat64(0, value, true);
-      } else if (info.bytes === 4 && !type.includes('[')) {
+      } else if (elemType === 'float' && info.bytes >= 4) {
+        view.setFloat32(0, value, true);
+      } else if (elemType === 'long' && info.bytes >= 8) {
+        view.setBigInt64(0, BigInt(Math.trunc(value)), true);
+      } else if (elemType === 'int' && info.bytes >= 4) {
         view.setInt32(0, Math.round(value) | 0, true);
-      } else if (info.bytes === 2) {
+      } else if (elemType === 'short' && info.bytes >= 2) {
         view.setInt16(0, Math.round(value) | 0, true);
-      } else if (info.bytes === 1) {
+      } else if ((elemType === 'char' || elemType === 'bool') && info.bytes >= 1) {
         view.setInt8(0, Math.round(value) | 0);
-      } else {
-        // array: first element
-
-
+      } else if (info.bytes >= 8) {
         view.setFloat64(0, value, true);
       }
       for (let i = 0; i < info.bytes; i++) out.push(view.getUint8(i));
@@ -82,7 +118,8 @@ export function ComplexityCompare({ params }: { params: Record<string, unknown> 
   const [n, setN] = React.useState(Math.min(100, nMax));
   const fns = exprs.map(e => ({ e, f: safe(e) }));
   const raw = fns.map(({ f }) => f(n));
-  const maxRaw = Math.max(...fns.map(({ f }) => f(nMax)), 1);
+  const finiteMaxes = fns.map(({ f }) => f(nMax)).filter((v) => Number.isFinite(v) && v >= 0);
+  const maxRaw = Math.max(...finiteMaxes, 1);
   const normalized = raw.map(v => v / maxRaw);
   const W = 560, H = 250, P = 36;
   const colors = ['var(--accent)', '#9a6d0b', 'var(--success)', 'var(--danger)', '#6d28d9'];
@@ -105,11 +142,15 @@ export function ComplexityCompare({ params }: { params: Record<string, unknown> 
           <polyline key={i} fill="none" stroke={c.color} strokeWidth={2} points={c.pts.join(' ')} />
         ))}
         <line x1={P + (n / nMax) * (W - 2 * P)} y1={P} x2={P + (n / nMax) * (W - 2 * P)} y2={H - P} stroke={MUTED} strokeDasharray="3 3" />
-        {curves.map((c, i) => (
-          <g key={i}>
-            <circle cx={P + (n / nMax) * (W - 2 * P)} cy={H - P - Math.min((c.at(n) / maxRaw) * (H - 2 * P), H - 2 * P)} r={4} fill={c.color} />
-          </g>
-        ))}
+        {curves.map((c, i) => {
+          const val = c.at(n);
+          if (!Number.isFinite(val) || val < 0) return null;
+          return (
+            <g key={i}>
+              <circle cx={P + (n / nMax) * (W - 2 * P)} cy={H - P - Math.min((val / maxRaw) * (H - 2 * P), H - 2 * P)} r={4} fill={c.color} />
+            </g>
+          );
+        })}
       </svg>
       <div className="mt-2 flex flex-wrap items-center gap-4">
         <div className="flex-1 min-w-48"><Slider label="n" value={n} min={1} max={nMax} step={1} onChange={setN} format={v => v.toFixed(0)} /></div>
@@ -131,15 +172,17 @@ function safe(expr: string): (n: number) => number {
 /* ---------------- SortingVisual ---------------- */
 export function SortingVisual({ params }: { params: Record<string, unknown> }) {
   const initial = ((params.data as number[]) ?? [43, 42, 41, 45, 38, 47]).map((v, i) => ({ v, id: i }));
-  const [arr, setArr] = React.useState(initial);
+  const [state, setState] = React.useState({ arr: initial, comparisons: 0, done: false });
   const [algo, setAlgo] = React.useState((params.algorithm as string) ?? 'bubble');
-  const [comparisons, setComparisons] = React.useState(0);
   const [running, setRunning] = React.useState(false);
   const timer = React.useRef<ReturnType<typeof setInterval> | null>(null);
+  const arr = state.arr;
+  const comparisons = state.comparisons;
   const maxV = Math.max(...arr.map(a => a.v), 1);
-  const step = () => {
-    setArr(prev => {
-      const a = [...prev];
+
+  const step = React.useCallback(() => {
+    setState((prev) => {
+      const a = [...prev.arr];
       let done = true;
       let comps = 0;
       if (algo === 'bubble') {
@@ -151,14 +194,8 @@ export function SortingVisual({ params }: { params: Record<string, unknown> }) {
             break;
           }
         }
-        // full pass check
-
-
         for (let i = 0; i < a.length - 1; i++) if (a[i].v > a[i + 1].v) done = false;
       } else if (algo === 'insertion') {
-        // one insertion step from current partial order: find first inversion from left
-
-
         for (let i = 1; i < a.length; i++) {
           comps++;
           if (a[i].v < a[i - 1].v) {
@@ -170,13 +207,14 @@ export function SortingVisual({ params }: { params: Record<string, unknown> }) {
         }
         for (let i = 0; i < a.length - 1; i++) if (a[i].v > a[i + 1].v) done = false;
       } else {
-        // selection: move min of suffix
-
-
+        // selection: move min of suffix and count comparisons
         for (let i = 0; i < a.length - 1; i++) {
-          if (a[i].v > a[i + 1].v) {
-            let minI = i;
-            for (let j = i + 1; j < a.length; j++) if (a[j].v < a[minI].v) minI = j;
+          let minI = i;
+          for (let j = i + 1; j < a.length; j++) {
+            comps++;
+            if (a[j].v < a[minI].v) minI = j;
+          }
+          if (minI !== i) {
             [a[i], a[minI]] = [a[minI], a[i]];
             done = false;
             break;
@@ -184,11 +222,18 @@ export function SortingVisual({ params }: { params: Record<string, unknown> }) {
         }
         for (let i = 0; i < a.length - 1; i++) if (a[i].v > a[i + 1].v) done = false;
       }
-      setComparisons(c => c + comps);
-      if (done && timer.current) { clearInterval(timer.current); timer.current = null; setRunning(false); }
-      return a;
+      return { arr: a, comparisons: prev.comparisons + comps, done };
     });
-  };
+  }, [algo]);
+
+  React.useEffect(() => {
+    if (state.done && timer.current) {
+      clearInterval(timer.current);
+      timer.current = null;
+      setRunning(false);
+    }
+  }, [state.done]);
+
   function toggle() {
     if (running) {
       if (timer.current) clearInterval(timer.current);
@@ -205,7 +250,7 @@ export function SortingVisual({ params }: { params: Record<string, unknown> }) {
     <LabFrame title={`${algo} sort, one comparison per step`} caption={`Comparisons so far: ${comparisons}. ${algo === 'bubble' ? 'Bubble sort is O(n²), watch how many steps the last few elements need.' : algo === 'insertion' ? 'Insertion sort is excellent on nearly-sorted data, try it after one swap.' : 'Selection sort makes exactly n−1 swaps but still compares O(n²) times.'}`}>
       <div className="flex items-end gap-1 h-32 justify-center">
         {arr.map((a, i) => (
-          <div key={a.id} className="flex flex-col items-center gap-1" style={{ width: `${Math.max(120 / arr.length, 4)}%` }}>
+          <div key={a.id} className="flex-1 min-w-0 max-w-12 flex flex-col items-center gap-1">
             <div className="w-full rounded-t-sm transition-all duration-200"
               style={{ height: `${(a.v / maxV) * 100}%`, background: sortedIdx[i] ? 'var(--success)' : ACCENT, opacity: 0.85 }} />
             <span className="text-[12px] tnum text-faint">{a.v}</span>
@@ -214,13 +259,13 @@ export function SortingVisual({ params }: { params: Record<string, unknown> }) {
       </div>
       <div className="mt-3 flex justify-center gap-2">
         {['bubble', 'insertion', 'selection'].map(a => (
-          <button key={a} onClick={() => { setAlgo(a); setArr(initial); setComparisons(0); if (timer.current) { clearInterval(timer.current); timer.current = null; setRunning(false); } }}
+          <button key={a} onClick={() => { setAlgo(a); setState({ arr: initial, comparisons: 0, done: false }); if (timer.current) { clearInterval(timer.current); timer.current = null; setRunning(false); } }}
             className={algo === a ? 'text-[13px] px-3 py-1.5 rounded-md bg-accent text-accent-foreground' : 'text-[13px] px-3 py-1.5 rounded-md border hover:bg-surface-2'}>
             {a}
           </button>
         ))}
         <button onClick={toggle} className="text-[13px] px-3 py-1.5 rounded-md border hover:bg-surface-2">{running ? 'Pause' : 'Sort'}</button>
-        <button onClick={() => { setArr(initial); setComparisons(0); if (timer.current) { clearInterval(timer.current); timer.current = null; setRunning(false); } }} className="text-[13px] px-3 py-1.5 rounded-md border hover:bg-surface-2">Reset</button>
+        <button onClick={() => { setState({ arr: initial, comparisons: 0, done: false }); if (timer.current) { clearInterval(timer.current); timer.current = null; setRunning(false); } }} className="text-[13px] px-3 py-1.5 rounded-md border hover:bg-surface-2">Reset</button>
       </div>
     </LabFrame>
   );

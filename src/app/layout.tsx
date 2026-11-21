@@ -8,15 +8,20 @@ import { ThemeProvider } from '@/components/theme-provider';
 import { Toaster } from '@/components/ui/sonner';
 import { ServiceWorkerRegistrar } from '@/components/sw-registrar';
 import { ChromeShell } from '@/components/chrome-shell';
+import { getSiteUrl } from '@/lib/site-url';
 
-const siteUrl = (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000').replace(/\/$/, '');
+const siteUrl = getSiteUrl();
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
-  title: 'QuantFoundry. Zero to Quantitative Developer',
+  title: {
+    default: 'QuantFoundry · Zero to Quantitative Developer',
+    template: '%s · QuantFoundry',
+  },
   description:
     'A rigorous, interactive learning platform that takes you from absolute zero to professional-level quantitative software engineering: mathematics, C++, Python, systems and finance.',
   applicationName: 'QuantFoundry',
+  alternates: { canonical: '/' },
   manifest: '/manifest.json',
   openGraph: {
     type: 'website',
@@ -34,6 +39,7 @@ export const metadata: Metadata = {
   },
   icons: {
     icon: [
+      { url: '/favicon.ico', sizes: '32x32' },
       { url: '/icons/icon.svg', type: 'image/svg+xml' },
       { url: '/favicon-32.png', sizes: '32x32', type: 'image/png' },
       { url: '/favicon-64.png', sizes: '64x64', type: 'image/png' },

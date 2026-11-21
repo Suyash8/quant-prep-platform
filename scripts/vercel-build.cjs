@@ -10,7 +10,11 @@ if (process.env.DATABASE_URL) {
     console.log('[vercel-build] Running prisma migrate deploy...');
     execSync('npx prisma migrate deploy', { stdio: 'inherit' });
   } catch (err) {
-    console.warn('[vercel-build] prisma migrate deploy warning (continuing build):', err?.message || err);
+    if (process.env.VERCEL_ENV === 'production') {
+      console.error('[vercel-build] FATAL: prisma migrate deploy failed in production:', err?.message || err);
+      process.exit(1);
+    }
+    console.warn('[vercel-build] prisma migrate deploy warning (non-production build):', err?.message || err);
   }
 }
 

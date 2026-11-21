@@ -75,6 +75,9 @@ function readCachedUser(): ChromeUser | null {
         name: u.name,
         email: u.email ?? '',
         role: u.role ?? 'learner',
+        plan: u.plan,
+        emailVerified: u.emailVerified,
+        onboardingDone: u.onboardingDone,
       };
     }
   } catch { /* ignore */ }
@@ -182,12 +185,14 @@ export function ChromeShell({ children }: { children: React.ReactNode }) {
     }
   }, [hydrated, verifiedOnline, networkOffline, pathname, user, router]);
 
-  // Idle prefetch of core routes & content pack indexes for instant zero-stall navigation
+  // Idle prefetch of core routes & content pack indexes once per session for instant zero-stall navigation
+  const prefetchedRef = React.useRef(false);
   React.useEffect(() => {
-    if (typeof window === 'undefined' || isAuthPage(pathname)) return;
+    if (typeof window === 'undefined' || isAuthPage(pathname) || prefetchedRef.current) return;
     let cancelled = false;
     const runPrefetch = () => {
-      if (cancelled) return;
+      if (cancelled || prefetchedRef.current) return;
+      prefetchedRef.current = true;
       prefetchAllIndexes();
       for (const route of PREFETCH_ROUTES) {
         try { router.prefetch(route); } catch { /* ignore */ }

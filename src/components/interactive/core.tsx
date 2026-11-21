@@ -228,7 +228,7 @@ export function PlotArea({ width = 560, height = 300, padding = 34, children, xL
 }
 
 export function fmt(v: number, d = 2): string {
-  if (!Number.isFinite(v)) return ', ';
+  if (!Number.isFinite(v)) return '—';
   if (Math.abs(v) >= 1e6) return v.toExponential(2);
   return v.toFixed(d);
 }

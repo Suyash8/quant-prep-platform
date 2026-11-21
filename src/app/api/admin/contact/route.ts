@@ -30,12 +30,19 @@ export async function PATCH(req: NextRequest) {
   if (!parsed.success) {
     return NextResponse.json({ error: 'Invalid input.' }, { status: 400 });
   }
-  const updated = await db.contactMessage.update({
-    where: { id: parsed.data.id },
-    data: {
-      status: parsed.data.status,
-      repliedAt: parsed.data.status === 'answered' ? new Date() : null,
-    },
-  });
-  return NextResponse.json({ message: updated });
+  try {
+    const updated = await db.contactMessage.update({
+      where: { id: parsed.data.id },
+      data: {
+        status: parsed.data.status,
+        repliedAt: parsed.data.status === 'answered' ? new Date() : null,
+      },
+    });
+    return NextResponse.json({ message: updated });
+  } catch (err: unknown) {
+    if (typeof err === 'object' && err !== null && (err as { code?: string }).code === 'P2025') {
+      return NextResponse.json({ error: 'Contact message not found.' }, { status: 404 });
+    }
+    throw err;
+  }
 }

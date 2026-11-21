@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCurrentUser, currentSessionId, revokeOtherSessions } from '@/lib/auth';
+import { cookies } from 'next/headers';
+import { getCurrentUser, currentSessionId, revokeOtherSessions, sessionTag } from '@/lib/auth';
 import { assertSameOrigin } from '@/lib/origin';
 import { db } from '@/lib/db';
 
@@ -16,7 +17,7 @@ export async function GET() {
 
   return NextResponse.json({
     sessions: rows.map((r) => ({
-      id: r.id,
+      id: sessionTag(r.id),
       current: r.id === curId,
       userAgent: r.userAgent ?? 'Browser session',
       lastUsedAt: r.lastUsedAt.toISOString(),
@@ -34,10 +35,23 @@ export async function DELETE(req: NextRequest) {
   if (!user) return NextResponse.json({ error: 'Sign in first.' }, { status: 401 });
 
   const curId = await currentSessionId();
-  const sessionId = req.nextUrl.searchParams.get('id');
-  if (sessionId) {
-    await db.session.deleteMany({ where: { id: sessionId, userId: user.id } });
-    return NextResponse.json({ ok: true, revokedCurrent: sessionId === curId });
+  const tagParam = req.nextUrl.searchParams.get('id');
+  if (tagParam) {
+    const userSessions = await db.session.findMany({
+      where: { userId: user.id },
+      select: { id: true },
+    });
+    const matched = userSessions.find((s) => sessionTag(s.id) === tagParam || s.id === tagParam);
+    if (!matched) {
+      return NextResponse.json({ ok: true, revokedCurrent: false });
+    }
+    await db.session.deleteMany({ where: { id: matched.id, userId: user.id } });
+    const revokedCurrent = matched.id === curId;
+    if (revokedCurrent) {
+      const jar = await cookies();
+      jar.delete('qf_session');
+    }
+    return NextResponse.json({ ok: true, revokedCurrent });
   }
 
   const revoked = await revokeOtherSessions(user.id, curId);

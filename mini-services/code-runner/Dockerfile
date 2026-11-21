@@ -27,6 +27,6 @@ ENV QF_RUNNER_HOST=0.0.0.0
 EXPOSE 3010
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD curl -fsS http://127.0.0.1:3010/health || exit 1
+  CMD curl -fsS http://127.0.0.1:3010/healthz || exit 1
 
 CMD ["bun", "index.ts"]

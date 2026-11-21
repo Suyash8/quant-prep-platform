@@ -1,8 +1,9 @@
 'use client';
-import LAB_PARAMS from '@/lib/lab-params.generated.json';
 
 import * as React from 'react';
 import { LabFrame } from './core';
+import { normalizeLabParams } from './param-aliases';
+import { ClientMd } from '@/components/gamified/client-md';
 import { NumberLine, FractionVisual, CompoundGrowth, FunctionPlotter, DerivativeLab, IntegralLab, TaylorLab, VectorVisual, MatrixTransform, MonteCarloPi } from './math-labs';
 import { ProbabilitySimulator, DistributionViewer, RandomWalk, BrownianMotion, ConfidenceIntervalLab, MarkovChainSim, NormalConvergence, RegressionLab, TimeSeriesDecompose } from './probability-labs';
 import { BlackScholesLab, PayoffDiagram, GreeksLab, YieldCurveLab, EfficientFrontier, BinomialTreeLab, VolatilitySmile, OrderBookVisual, MatchingSim } from './finance-labs';
@@ -32,18 +33,15 @@ export function InteractiveBlock({ component, params, caption }: { component: st
       </LabFrame>
     );
   }
-  // The lab only reads the params it declares. Anything else in the lesson's config is ignored, so say so
-  // instead of silently showing default values as if they were the lesson's.
-  const supported = (LAB_PARAMS as Record<string, string[]>)[component];
-  const ignored = supported ? Object.keys(params ?? {}).filter(k => !supported.includes(k)) : [];
+  const normalized = normalizeLabParams(component, params);
   return (
-    <>
-      <Comp params={params ?? {}} />
-      {ignored.length > 0 && (
-        <p role="note" className="mt-2 text-[12px] font-bold text-faint">
-          This lesson sets options this demo does not read yet ({ignored.join(', ')}), so the demo may not match the lesson text.
-        </p>
+    <figure className="my-2">
+      <Comp params={normalized} />
+      {caption && (
+        <figcaption className="mt-2 text-[13px] font-semibold text-muted">
+          <ClientMd text={caption} />
+        </figcaption>
       )}
-    </>
+    </figure>
   );
 }

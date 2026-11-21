@@ -7,6 +7,7 @@ import {
   hashPasswordAsync,
   destroySession,
   revokeOtherSessions,
+  rateLimitShared,
 } from '@/lib/auth';
 import { assertSameOrigin } from '@/lib/origin';
 import { db } from '@/lib/db';
@@ -66,6 +67,9 @@ export async function POST(req: NextRequest) {
   if (targetTrack !== undefined) profilePatch.targetTrack = targetTrack;
 
   if (newPassword || currentPassword) {
+    if (!(await rateLimitShared(`settings-pw:${user.id}`, 5, 0.05))) {
+      return NextResponse.json({ error: 'Too many password attempts. Please wait a minute.' }, { status: 429 });
+    }
     if (!currentPassword || !newPassword) {
       return NextResponse.json({ error: 'Both current password and new password are required.' }, { status: 400 });
     }
@@ -101,6 +105,9 @@ export async function DELETE(req: NextRequest) {
   }
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: 'Sign in first.' }, { status: 401 });
+  if (!(await rateLimitShared(`settings-del:${user.id}`, 5, 0.05))) {
+    return NextResponse.json({ error: 'Too many deletion attempts. Please wait a minute.' }, { status: 429 });
+  }
 
   const body = await req.json().catch(() => null);
   const parsed = deleteSchema.safeParse(body);

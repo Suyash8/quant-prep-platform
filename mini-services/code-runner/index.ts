@@ -235,6 +235,10 @@ Bun.serve({
   hostname: HOST,
   async fetch(req) {
     const url = new URL(req.url);
+    // Minimal unauthenticated liveness probe for Docker HEALTHCHECK & Fly.io checks
+    if (req.method === 'GET' && url.pathname === '/healthz') {
+      return Response.json({ ok: true });
+    }
     if (!checkToken(req.headers.get('authorization'))) {
       return Response.json({ error: 'unauthorized' }, { status: 401 });
     }
@@ -327,6 +331,7 @@ Bun.serve({
           try { rmSync(dir, { recursive: true, force: true }); } catch {}
         }
       }, memoryLimitMb); } catch (e) { if (e instanceof Busy) return Response.json({ error: 'busy' }, { status: 503 }); throw e; }
+      if (result instanceof Response) return result;
       return Response.json(result);
     }
     return Response.json({ error: 'not found' }, { status: 404 });

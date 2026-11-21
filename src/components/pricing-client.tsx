@@ -118,6 +118,8 @@ export function PricingClient({
       if (data.configured === false) {
         router.push(data.contactUrl ?? '/contact?subject=Pro%20Access');
       }
+    } catch {
+      setNotice('Network error while connecting to checkout. Check your connection and try again.');
     } finally {
       setLoading(false);
     }
@@ -134,6 +136,8 @@ export function PricingClient({
         return;
       }
       window.location.href = data.url;
+    } catch {
+      setNotice('Network error while opening the billing portal. Please try again.');
     } finally {
       setPortalLoading(false);
     }

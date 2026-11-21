@@ -17,6 +17,7 @@ WORKDIR /app
 RUN useradd -m -u 10001 app
 COPY --from=build --chown=app:app /app/.next/standalone ./
 COPY --from=build --chown=app:app /app/prisma ./prisma
+COPY --from=build --chown=app:app /app/scripts/validate-content.mjs ./scripts/validate-content.mjs
 USER app
 EXPOSE 3000
 

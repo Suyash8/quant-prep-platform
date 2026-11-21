@@ -568,3 +568,67 @@ test('packs isolation: built public/packs/v3 contains zero secret answer keys or
   assert.equal('solutions' in packProblem, false);
   assert.equal('editorial' in packProblem, false);
 });
+
+test('client-ip: ignores spoofable x-vercel-forwarded-for outside Vercel', () => {
+  const { clientIp } = loadTsModule('src/lib/client-ip.ts');
+  const prevVercel = process.env.VERCEL;
+  const prevTrust = process.env.TRUST_PROXY;
+  delete process.env.VERCEL;
+  delete process.env.TRUST_PROXY;
+  try {
+    const req = { headers: new Map([['x-vercel-forwarded-for', '1.2.3.4']]) };
+    assert.equal(clientIp(req), 'local');
+    process.env.VERCEL = '1';
+    assert.equal(clientIp(req), '1.2.3.4');
+  } finally {
+    if (prevVercel !== undefined) process.env.VERCEL = prevVercel; else delete process.env.VERCEL;
+    if (prevTrust !== undefined) process.env.TRUST_PROXY = prevTrust; else delete process.env.TRUST_PROXY;
+  }
+});
+
+test('site-url: resolves VERCEL_PROJECT_PRODUCTION_URL when NEXT_PUBLIC_APP_URL is unset', () => {
+  const { getSiteUrl } = loadTsModule('src/lib/site-url.ts');
+  const prevApp = process.env.NEXT_PUBLIC_APP_URL;
+  const prevProd = process.env.VERCEL_PROJECT_PRODUCTION_URL;
+  delete process.env.NEXT_PUBLIC_APP_URL;
+  process.env.VERCEL_PROJECT_PRODUCTION_URL = 'quant-prep-platform.bysuyash.xyz';
+  try {
+    assert.equal(getSiteUrl(), 'https://quant-prep-platform.bysuyash.xyz');
+  } finally {
+    if (prevApp !== undefined) process.env.NEXT_PUBLIC_APP_URL = prevApp; else delete process.env.NEXT_PUBLIC_APP_URL;
+    if (prevProd !== undefined) process.env.VERCEL_PROJECT_PRODUCTION_URL = prevProd; else delete process.env.VERCEL_PROJECT_PRODUCTION_URL;
+  }
+});
+
+test('entitlements: admin role has paid plan access', () => {
+  const ent = loadTsModule('src/lib/entitlements.ts');
+  assert.equal(ent.isPaidPlan({ plan: 'free', role: 'admin' }), true);
+  assert.equal(ent.can({ plan: 'free', role: 'admin' }, 'lesson', { phaseId: 'ph10' }), true);
+});
+
+test('interactive param aliases: normalizes common lesson param variants', () => {
+  const { normalizeLabParams } = loadTsModule('src/components/interactive/param-aliases.ts');
+  assert.equal(normalizeLabParams('FunctionPlotter', { expr: 'x^2' }).expression, 'x^2');
+  assert.equal(normalizeLabParams('BlackScholesLab', { volatility: 0.25 }).vol, 0.25);
+  assert.equal(normalizeLabParams('MonteCarloPi', { samples: 2000 }).points, 2000);
+  const ci = normalizeLabParams('ConfidenceIntervalLab', { estimate: 0.5, sd: 2, n: 100 });
+  assert.equal(ci.diff, 0.5);
+  assert.equal(ci.se, 0.2);
+});
+
+test('audit hardening regressions: cron, stripe, code-runner healthz, and ClientMd safety', () => {
+  const cronSrc = readFileSync(path.join(ROOT, 'src/app/api/cron/cleanup/route.ts'), 'utf8');
+  assert.equal(cronSrc.includes('Cron secret not configured'), false, 'Cron must not leak config state');
+  assert.match(cronSrc, /timingSafeEqual/, 'Cron must use timingSafeEqual');
+
+  const stripeSrc = readFileSync(path.join(ROOT, 'src/app/api/webhooks/stripe/route.ts'), 'utf8');
+  assert.match(stripeSrc, /no_payment_required/, 'Stripe webhook must accept no_payment_required');
+  assert.match(stripeSrc, /v1Sigs/, 'Stripe webhook must support multiple v1 signatures for secret rotation');
+
+  const runnerSrc = readFileSync(path.join(ROOT, 'mini-services/code-runner/index.ts'), 'utf8');
+  assert.ok(runnerSrc.indexOf("'/healthz'") < runnerSrc.indexOf('!checkToken('), 'Runner /healthz must precede !checkToken');
+
+  const clientMdSrc = readFileSync(path.join(ROOT, 'src/components/gamified/client-md.tsx'), 'utf8');
+  assert.match(clientMdSrc, /findMathClose/, 'ClientMd must use escape-aware findMathClose');
+  assert.match(clientMdSrc, /if \(html === null\)/, 'ClientMd must not pass raw tex to dangerouslySetInnerHTML');
+});

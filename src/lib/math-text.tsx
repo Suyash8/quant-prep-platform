@@ -12,12 +12,16 @@ export function renderMath(tex: string, display = false): string {
   });
 }
 
+function isSafeHref(url: string): boolean {
+  const t = url.trim();
+  return t.startsWith('https://') || t.startsWith('http://') || t.startsWith('/');
+}
+
 /**
  * Parse a markdown-lite string into React nodes with KaTeX math.
- * Supports: **bold**, *italic*, `code`, $inline math$, and plain text.
+ * Supports: **bold**, *italic*, `code`, [label](url), $inline math$, and plain text.
  * `\$` is an escaped literal dollar (currency) both outside and inside math.
- * Builds React nodes directly (no dangerouslySetInnerHTML for text),
- * so user-facing content is XSS-safe by construction.
+ * Tokenizes `code` spans alongside `$math$` so `$` inside code never collides with KaTeX.
  */
 export function mathText(md: string): ReactNode[] {
   const nodes: ReactNode[] = [];
@@ -29,6 +33,15 @@ export function mathText(md: string): ReactNode[] {
     buffer = '';
   };
   while (i < md.length) {
+    if (md[i] === '`') {
+      const end = md.indexOf('`', i + 1);
+      if (end > i + 1 && !md.slice(i + 1, end).includes('\n')) {
+        flush();
+        nodes.push(<code key={`c${nodes.length}`}>{md.slice(i + 1, end)}</code>);
+        i = end + 1;
+        continue;
+      }
+    }
     if (md[i] === '\\' && md[i + 1] === '$') {
       buffer += '$';
       i += 2;
@@ -36,7 +49,7 @@ export function mathText(md: string): ReactNode[] {
     }
     if (md[i] === '$') {
       const end = findMathClose(md, i + 1);
-      if (end > i && !md.slice(i + 1, end).includes('\n')) {
+      if (end > i + 1 && !md.slice(i + 1, end).includes('\n')) {
         flush();
         const tex = md.slice(i + 1, end);
         nodes.push(
@@ -61,6 +74,7 @@ export function mathText(md: string): ReactNode[] {
 function findMathClose(s: string, from: number): number {
   let i = from;
   while (i < s.length) {
+    if (s[i] === '\n') return -1;
     if (s[i] === '\\' && s[i + 1] === '$') { i += 2; continue; }
     if (s[i] === '$') return i;
     i += 1;
@@ -69,20 +83,37 @@ function findMathClose(s: string, from: number): number {
 }
 
 function styled(text: string, key: string): ReactNode[] {
-  // **bold**, *italic*, `code`
-
-
+  // [label](url), **bold**, *italic*
   const out: ReactNode[] = [];
-  const re = /(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g;
+  const re = /(\[[^\]]+\]\([^)\s]+\)|\*\*[^*]+\*\*|\*[^*]+\*)/g;
   let last = 0;
   let m: RegExpExecArray | null;
   let idx = 0;
   while ((m = re.exec(text))) {
     if (m.index > last) out.push(text.slice(last, m.index));
     const tok = m[0];
-    if (tok.startsWith('**')) out.push(<strong key={`${key}b${idx++}`}>{tok.slice(2, -2)}</strong>);
-    else if (tok.startsWith('`')) out.push(<code key={`${key}c${idx++}`}>{tok.slice(1, -1)}</code>);
-    else out.push(<em key={`${key}i${idx++}`}>{tok.slice(1, -1)}</em>);
+    if (tok.startsWith('[')) {
+      const lm = tok.match(/^\[([^\]]+)\]\(([^)\s]+)\)$/);
+      if (lm && isSafeHref(lm[2])) {
+        const external = lm[2].startsWith('http://') || lm[2].startsWith('https://');
+        out.push(
+          <a
+            key={`${key}l${idx++}`}
+            href={lm[2]}
+            className="text-accent-deep dark:text-accent underline decoration-accent/50 underline-offset-2 hover:decoration-accent font-bold"
+            {...(external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+          >
+            {lm[1]}
+          </a>,
+        );
+      } else {
+        out.push(tok);
+      }
+    } else if (tok.startsWith('**')) {
+      out.push(<strong key={`${key}b${idx++}`}>{tok.slice(2, -2)}</strong>);
+    } else {
+      out.push(<em key={`${key}i${idx++}`}>{tok.slice(1, -1)}</em>);
+    }
     last = m.index + tok.length;
   }
   if (last < text.length) out.push(text.slice(last));

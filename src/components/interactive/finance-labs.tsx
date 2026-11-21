@@ -65,8 +65,19 @@ export function BlackScholesLab({ params }: { params: Record<string, unknown> })
         <text x={mapX(S, Smin, Smax) + 6} y={mapY(bs.price) - 6} fontSize="12" fill={ACCENT}>{fmt(bs.price, 3)}</text>
       </svg>
       <div className="mt-2 grid sm:grid-cols-2 gap-3">
-        <Slider label="spot S" value={S} min={K * 0.4} max={K * 1.6} step={0.5} onChange={setS} />
-        <Slider label="strike K" value={K} min={50} max={200} step={1} onChange={setK} format={v => v.toFixed(0)} />
+        <Slider label="spot S" value={Math.min(Math.max(S, K * 0.4), K * 1.6)} min={K * 0.4} max={K * 1.6} step={0.5} onChange={setS} />
+        <Slider
+          label="strike K"
+          value={K}
+          min={50}
+          max={200}
+          step={1}
+          onChange={(nextK) => {
+            setK(nextK);
+            setS((cur) => Math.min(Math.max(cur, nextK * 0.4), nextK * 1.6));
+          }}
+          format={v => v.toFixed(0)}
+        />
         <Slider label="rate r" value={r} min={0} max={0.15} step={0.005} onChange={setR} format={v => `${(v * 100).toFixed(1)}%`} />
         <Slider label="vol σ" value={vol} min={0.05} max={0.8} step={0.01} onChange={setVol} format={v => `${(v * 100).toFixed(0)}%`} />
         <Slider label="maturity T" value={T} min={0.05} max={3} step={0.05} onChange={setT} format={v => `${v.toFixed(2)}y`} />
@@ -259,8 +270,8 @@ export function BinomialTreeLab({ params }: { params: Record<string, unknown> })
     const levels: { s: number; v: number }[][] = [];
     const dt = 1 / periods;
     const R = Math.exp(rate * dt);
-    const p = (R - d) / (u - d); // risk-neutral
-
+    const arbitrageFree = d < R && R < u;
+    const p = arbitrageFree ? (R - d) / (u - d) : NaN; // risk-neutral
 
     for (let i = 0; i <= periods; i++) {
       const level: { s: number; v: number }[] = [];
@@ -271,33 +282,39 @@ export function BinomialTreeLab({ params }: { params: Record<string, unknown> })
       }
       levels.push(level);
     }
-    for (let i = periods - 1; i >= 0; i--) {
-      for (let j = 0; j <= i; j++) {
-        const cont = (p * levels[i + 1][j].v + (1 - p) * levels[i + 1][j + 1].v) / R;
-        const s = levels[i][j].s;
-        const intrinsic = isCall ? Math.max(s - K, 0) : Math.max(K - s, 0);
-        levels[i][j].v = cont; // European for the lab; lesson covers American
-
-
+    if (arbitrageFree) {
+      for (let i = periods - 1; i >= 0; i--) {
+        for (let j = 0; j <= i; j++) {
+          const cont = (p * levels[i + 1][j].v + (1 - p) * levels[i + 1][j + 1].v) / R;
+          levels[i][j].v = cont; // European for the lab; lesson covers American
+        }
       }
     }
-    return { levels, p };
+    return { levels, p, arbitrageFree };
   })();
   const price = tree.levels[0][0].v;
-  const nodeW = W / (periods + 1);
+  const nodeW = (W - 2 * P) / Math.max(periods, 1);
+  const vStep = Math.min(44, (H - 48) / Math.max(periods, 1));
   return (
-    <LabFrame title={`${periods}-period binomial tree (${isCall ? 'call' : 'put'}, European)`} caption={`Risk-neutral p = ${fmt(tree.p, 4)}. Option value today: ${fmt(price, 4)}.`}>
+    <LabFrame
+      title={`${periods}-period binomial tree (${isCall ? 'call' : 'put'}, European)`}
+      caption={
+        tree.arbitrageFree
+          ? `Risk-neutral p = ${fmt(tree.p, 4)}. Option value today: ${fmt(price, 4)}.`
+          : `Arbitrage condition violated (require d < e^{rΔt} < u). Adjust u, d, or rate.`
+      }
+    >
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto">
         {tree.levels.map((level, i) =>
           level.map((node, j) => {
             const x = P + i * nodeW;
-            const y = H / 2 + (j - i / 2) * 44;
+            const y = H / 2 + (j - i / 2) * vStep;
             return (
               <g key={`${i}-${j}`}>
                 {i < periods && (
                   <>
-                    <line x1={x} y1={y} x2={x + nodeW} y2={y - 22} stroke={FAINT} />
-                    <line x1={x} y1={y} x2={x + nodeW} y2={y + 22} stroke={FAINT} />
+                    <line x1={x} y1={y} x2={x + nodeW} y2={y - vStep / 2} stroke={FAINT} />
+                    <line x1={x} y1={y} x2={x + nodeW} y2={y + vStep / 2} stroke={FAINT} />
                   </>
                 )}
                 <circle cx={x} cy={y} r={17} fill={i === 0 ? ACCENT : 'var(--surface)'} stroke={ACCENT} />
@@ -353,14 +370,13 @@ export function VolatilitySmile({ params }: { params: Record<string, unknown> })
 export function OrderBookVisual({ params }: { params: Record<string, unknown> }) {
   const [bids, setBids] = React.useState((params.bids as number[][]) ?? [[99.98, 1200], [99.97, 800], [99.96, 2500]]);
   const [asks, setAsks] = React.useState((params.asks as number[][]) ?? [[100.02, 900], [100.03, 1500], [100.05, 700]]);
-  const bestBid = bids[0]?.[0] ?? 0;
-  const bestAsk = asks[0]?.[0] ?? 0;
-  const spread = bestAsk - bestBid;
-  const mid = (bestBid + bestAsk) / 2;
+  const bestBid = bids[0]?.[0] ?? null;
+  const bestAsk = asks[0]?.[0] ?? null;
+  const spread = bestBid !== null && bestAsk !== null ? bestAsk - bestBid : NaN;
+  const mid = bestBid !== null && bestAsk !== null ? (bestBid + bestAsk) / 2 : NaN;
   const maxQty = Math.max(...bids.map(b => b[1]), ...asks.map(a => a[1]), 1);
-  const rowH = 26;
   return (
-    <LabFrame title="Limit order book (Level 2 depth)" caption={`Best bid ${fmt(bestBid)} × ${fmt(bids[0]?.[1] ?? 0, 0)}, best ask ${fmt(bestAsk)} × ${fmt(asks[0]?.[1] ?? 0, 0)}. Spread ${fmt(spread)}, mid ${fmt(mid)}.`}>
+    <LabFrame title="Limit order book (Level 2 depth)" caption={`Best bid ${bestBid !== null ? `${fmt(bestBid)} × ${fmt(bids[0]?.[1] ?? 0, 0)}` : '—'}, best ask ${bestAsk !== null ? `${fmt(bestAsk)} × ${fmt(asks[0]?.[1] ?? 0, 0)}` : '—'}. Spread ${fmt(spread)}, mid ${fmt(mid)}.`}>
       <div className="grid grid-cols-2 gap-4 max-w-md mx-auto text-[13px]">
         <div>
           <div className="text-center font-medium mb-1 text-success">Bids</div>
@@ -448,24 +464,46 @@ function simulate(orders: { side: string; qty: number; price: number }[]) {
     let note: string | undefined;
     if (o.side === 'buy') {
       asks.sort((a, b) => a.price - b.price || a.seq - b.seq);
-      if (asks.length && asks[0].price <= o.price) {
-        const fill = Math.min(o.qty, asks[0].qty);
-        trade = { qty: fill, price: asks[0].price };
+      let rem = o.qty;
+      let totalFill = 0;
+      let notional = 0;
+      while (rem > 0 && asks.length && asks[0].price <= o.price) {
+        const fill = Math.min(rem, asks[0].qty);
+        totalFill += fill;
+        notional += fill * asks[0].price;
         asks[0].qty -= fill;
+        rem -= fill;
         if (asks[0].qty === 0) asks.shift();
-        if (fill < o.qty) bids.push({ price: o.price, qty: o.qty - fill, seq });
+      }
+      if (totalFill > 0) {
+        trade = { qty: totalFill, price: notional / totalFill };
+        if (rem > 0) {
+          bids.push({ price: o.price, qty: rem, seq });
+          note = `partial fill (${totalFill}), ${rem} resting on bid`;
+        }
       } else {
         bids.push({ price: o.price, qty: o.qty, seq });
         note = 'no cross, resting on bid side';
       }
     } else {
       bids.sort((a, b) => b.price - a.price || a.seq - b.seq);
-      if (bids.length && bids[0].price >= o.price) {
-        const fill = Math.min(o.qty, bids[0].qty);
-        trade = { qty: fill, price: bids[0].price };
+      let rem = o.qty;
+      let totalFill = 0;
+      let notional = 0;
+      while (rem > 0 && bids.length && bids[0].price >= o.price) {
+        const fill = Math.min(rem, bids[0].qty);
+        totalFill += fill;
+        notional += fill * bids[0].price;
         bids[0].qty -= fill;
+        rem -= fill;
         if (bids[0].qty === 0) bids.shift();
-        if (fill < o.qty) asks.push({ price: o.price, qty: o.qty - fill, seq });
+      }
+      if (totalFill > 0) {
+        trade = { qty: totalFill, price: notional / totalFill };
+        if (rem > 0) {
+          asks.push({ price: o.price, qty: rem, seq });
+          note = `partial fill (${totalFill}), ${rem} resting on ask`;
+        }
       } else {
         asks.push({ price: o.price, qty: o.qty, seq });
         note = 'no cross, resting on ask side';

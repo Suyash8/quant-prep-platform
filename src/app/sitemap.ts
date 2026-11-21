@@ -1,19 +1,21 @@
 import type { MetadataRoute } from 'next';
-import { getRegistry, listCompanies, listProblems } from '@/lib/content';
-
-const siteUrl = (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000').replace(/\/$/, '');
+import { getRegistry, listCompanies, listProjects } from '@/lib/content';
+import { getSiteUrl } from '@/lib/site-url';
 
 export default function sitemap(): MetadataRoute.Sitemap {
+  const siteUrl = getSiteUrl();
   const now = new Date();
   const reg = getRegistry();
   const companies = listCompanies();
-  const problems = listProblems();
+  const projects = listProjects();
 
   const staticRoutes = [
     { path: '', priority: 1.0, freq: 'weekly' as const },
     { path: '/curriculum', priority: 0.9, freq: 'weekly' as const },
     { path: '/pricing', priority: 0.9, freq: 'weekly' as const },
+    { path: '/projects', priority: 0.8, freq: 'weekly' as const },
     { path: '/career', priority: 0.8, freq: 'weekly' as const },
+    { path: '/lab', priority: 0.8, freq: 'weekly' as const },
     { path: '/methodology', priority: 0.7, freq: 'monthly' as const },
     { path: '/diagnostic', priority: 0.8, freq: 'monthly' as const },
     { path: '/about', priority: 0.6, freq: 'monthly' as const },
@@ -24,7 +26,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { path: '/register', priority: 0.6, freq: 'monthly' as const },
   ];
 
-  const entries: MetadataRoute.Sitemap = staticRoutes.map(r => ({
+  const entries: MetadataRoute.Sitemap = staticRoutes.map((r) => ({
     url: `${siteUrl}${r.path || '/'}`,
     lastModified: now,
     changeFrequency: r.freq,
@@ -40,18 +42,18 @@ export default function sitemap(): MetadataRoute.Sitemap {
     });
   }
 
-  for (const lesson of reg.lessons) {
+  for (const project of projects) {
     entries.push({
-      url: `${siteUrl}/learn/${lesson.id}`,
+      url: `${siteUrl}/projects/${project.slug}`,
       lastModified: now,
       changeFrequency: 'monthly',
-      priority: 0.6,
+      priority: 0.7,
     });
   }
 
-  for (const problem of problems) {
+  for (const lesson of reg.lessons) {
     entries.push({
-      url: `${siteUrl}/practice/${problem.slug}`,
+      url: `${siteUrl}/learn/${lesson.id}`,
       lastModified: now,
       changeFrequency: 'monthly',
       priority: 0.6,

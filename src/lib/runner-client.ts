@@ -77,7 +77,7 @@ export async function runnerPost<T>(endpoint: '/submit' | '/run', body: unknown)
     method: 'POST',
     headers: runnerHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(180_000),
+    signal: AbortSignal.timeout(55_000),
   });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
@@ -92,7 +92,7 @@ let rtCache: { at: number; v: { ok: boolean; reason?: string } } | null = null;
 export async function judgeRuntimeStatus(): Promise<{ ok: boolean; reason?: string }> {
   if (rtCache && Date.now() - rtCache.at < 5000) return rtCache.v;
   let v: { ok: boolean; reason?: string };
-  if (process.env.CODE_RUNNER_DEV === '1') v = { ok: true };
+  if (process.env.NODE_ENV !== 'production' && process.env.CODE_RUNNER_DEV === '1') v = { ok: true };
   else if (!(await ensureRunner())) v = { ok: false, reason: 'The code runner is not running.' };
   else {
     try {

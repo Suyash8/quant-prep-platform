@@ -1,8 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { after, NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { db } from '@/lib/db';
 import { createPasswordResetToken, rateLimitShared } from '@/lib/auth';
 import { clientIp } from '@/lib/client-ip';
+import { assertSameOrigin } from '@/lib/origin';
+import { getAppOrigin } from '@/lib/site-url';
 import { sendEmail } from '@/lib/email';
 
 const schema = z.object({
@@ -10,6 +12,9 @@ const schema = z.object({
 });
 
 export async function POST(req: NextRequest) {
+  if (!assertSameOrigin(req)) {
+    return NextResponse.json({ error: 'Invalid request origin.' }, { status: 403 });
+  }
   const ip = clientIp(req);
   if (!(await rateLimitShared(`forgot:${ip}`, 5, 0.05))) {
     return NextResponse.json({ error: 'Too many requests. Wait a minute before trying again.' }, { status: 429 });
@@ -22,20 +27,30 @@ export async function POST(req: NextRequest) {
   }
 
   const email = parsed.data.email.toLowerCase();
-  const user = await db.user.findUnique({ where: { email } });
+  if (!(await rateLimitShared(`forgot-email:${email}`, 3, 0.01))) {
+    // Return same generic 200 to prevent email enumeration
+    return NextResponse.json({
+      ok: true,
+      message: 'If an account matches that email, a reset link has been sent.',
+    });
+  }
 
+  const user = await db.user.findUnique({ where: { email } });
   let devResetPath: string | undefined;
 
   if (user) {
     const token = createPasswordResetToken(user);
     const resetPath = `/reset-password?token=${encodeURIComponent(token)}`;
-    const origin = (process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin).replace(/\/$/, '');
+    const origin = getAppOrigin(req);
     const resetUrl = `${origin}${resetPath}`;
 
-    await sendEmail({
-      to: user.email,
-      subject: 'Reset your QuantFoundry password',
-      text: `Reset your QuantFoundry password (link expires in 30 minutes):\n\n${resetUrl}\n\nIf you did not request this, ignore this email.`,
+    // Dispatch email after response to eliminate response-time oracle between existing vs non-existing accounts
+    after(async () => {
+      await sendEmail({
+        to: user.email,
+        subject: 'Reset your QuantFoundry password',
+        text: `Reset your QuantFoundry password (link expires in 30 minutes):\n\n${resetUrl}\n\nIf you did not request this, ignore this email.`,
+      }).catch(() => {});
     });
 
     if (process.env.NODE_ENV !== 'production' && !process.env.RESEND_API_KEY) {

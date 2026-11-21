@@ -194,6 +194,7 @@ export function DerivativeLab({ params }: { params: Record<string, unknown> }) {
 
   const lineY = (x: number, x0: number, y0: number, slope: number) => y0 + slope * (x - x0);
   const segLine = (slope: number, color: string, dash?: string) => {
+    if (!Number.isFinite(fp) || !Number.isFinite(slope)) return null;
     const xa = xMin, xb = xMax;
     const ya = Math.max(ymin, Math.min(ymax, lineY(xa, point, fp, slope)));
     const yb = Math.max(ymin, Math.min(ymax, lineY(xb, point, fp, slope)));
@@ -208,8 +209,8 @@ export function DerivativeLab({ params }: { params: Record<string, unknown> }) {
         <polyline fill="none" stroke={INK} strokeWidth={2} points={path} />
         {segLine((fp1 - fp) / (h || 1), 'var(--warning)', '5 3')}
         {segLine(deriv, ACCENT)}
-        <circle cx={toX(point)} cy={toY(fp)} r={4.5} fill={ACCENT} />
-        <circle cx={toX(point + h)} cy={toY(fp1)} r={3.5} fill="var(--warning)" />
+        {Number.isFinite(fp) && <circle cx={toX(point)} cy={toY(fp)} r={4.5} fill={ACCENT} />}
+        {Number.isFinite(fp1) && <circle cx={toX(point + h)} cy={toY(fp1)} r={3.5} fill="var(--warning)" />}
       </svg>
       <div className="mt-2 grid sm:grid-cols-2 gap-3">
         <Slider label="point x" value={point} min={xMin + 0.05} max={xMax - 0.05} step={0.05} onChange={setPoint} />
@@ -268,6 +269,7 @@ export function IntegralLab({ params }: { params: Record<string, unknown> }) {
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto">
         <line x1={P} y1={toY(0)} x2={W - P} y2={toY(0)} stroke={FAINT} />
         {bars.map((bar, i) => {
+          if (!Number.isFinite(bar.y)) return null;
           const yTop = Math.min(Math.max(toY(bar.y), P), H - P);
           return (
             <rect key={i} x={toX(bar.x)} y={Math.min(yTop, toY(0))} width={Math.max((W - 2 * P) / n - 0.5, 0.5)} height={Math.abs(toY(0) - yTop)} fill={ACCENT} opacity={0.25} stroke={ACCENT} strokeOpacity={0.5} strokeWidth={0.5} />

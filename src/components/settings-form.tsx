@@ -147,7 +147,7 @@ export function SettingsForm({ user }: { user?: SettingsUser }) {
     setSwState((s) => ({ ...s, refreshing: true }));
     try {
       const reg = await navigator.serviceWorker.ready;
-      reg.active?.postMessage({ type: 'QF3_DOWNLOAD_ALL' });
+      reg.active?.postMessage({ type: 'QF3_DOWNLOAD_ALL', force: true });
       toast.success('Refreshing offline lessons, problems, and study packs in the background.');
       setTimeout(() => {
         inspectOfflineCache();
@@ -272,7 +272,14 @@ export function SettingsForm({ user }: { user?: SettingsUser }) {
       }
       try { window.localStorage.removeItem('qf-chrome-user'); } catch {}
       await wipeLocalLearningData();
-      window.dispatchEvent(new CustomEvent('qf:auth-refresh'));
+      try {
+        navigator.serviceWorker?.controller?.postMessage({ type: 'QF3_CLEAR_SHELL' });
+        if ('caches' in window) {
+          const keys = await window.caches.keys();
+          await Promise.all(keys.filter((k) => k.endsWith('-shell')).map((k) => window.caches.delete(k)));
+        }
+      } catch {}
+      window.dispatchEvent(new CustomEvent('qf:auth-refresh', { detail: null }));
       broadcast('auth-changed', null);
       toast.success('Your account and all associated data have been deleted.');
       router.push('/register');
@@ -289,9 +296,30 @@ export function SettingsForm({ user }: { user?: SettingsUser }) {
     }).catch(() => {});
     try { window.localStorage.removeItem('qf-chrome-user'); } catch {}
     await wipeLocalLearningData();
-    window.dispatchEvent(new CustomEvent('qf:auth-refresh'));
+    try {
+      navigator.serviceWorker?.controller?.postMessage({ type: 'QF3_CLEAR_SHELL' });
+      if ('caches' in window) {
+        const keys = await window.caches.keys();
+        await Promise.all(keys.filter((k) => k.endsWith('-shell')).map((k) => window.caches.delete(k)));
+      }
+    } catch {}
+    window.dispatchEvent(new CustomEvent('qf:auth-refresh', { detail: null }));
     broadcast('auth-changed', null);
     router.push('/login');
+  }
+
+  async function openBillingPortal() {
+    try {
+      const res = await fetch('/api/billing/portal', { method: 'POST' });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok || !d.url) {
+        toast.error(d.error || 'No active Stripe billing portal found. Visit Pricing to manage your plan.');
+        return;
+      }
+      window.location.href = d.url;
+    } catch {
+      toast.error('Network error while connecting to billing portal.');
+    }
   }
 
   async function setGoal(xp: number) {
@@ -416,7 +444,29 @@ export function SettingsForm({ user }: { user?: SettingsUser }) {
               onChange={(e) => setTimezone(e.target.value)}
               className="qf-select min-w-0 flex-1"
             >
-              {['UTC', 'America/New_York', 'America/Chicago', 'America/Los_Angeles', 'Europe/London', 'Europe/Paris', 'Asia/Kolkata', 'Asia/Singapore', 'Asia/Tokyo', 'Australia/Sydney'].map((tz) => (
+              {Array.from(
+                new Set([
+                  'UTC',
+                  timezone,
+                  ...(typeof Intl !== 'undefined' && typeof (Intl as unknown as { supportedValuesOf?: (k: string) => string[] }).supportedValuesOf === 'function'
+                    ? (Intl as unknown as { supportedValuesOf: (k: string) => string[] }).supportedValuesOf('timeZone')
+                    : [
+                        'America/New_York',
+                        'America/Chicago',
+                        'America/Denver',
+                        'America/Los_Angeles',
+                        'America/Toronto',
+                        'Europe/London',
+                        'Europe/Paris',
+                        'Europe/Berlin',
+                        'Asia/Kolkata',
+                        'Asia/Singapore',
+                        'Asia/Shanghai',
+                        'Asia/Tokyo',
+                        'Australia/Sydney',
+                      ]),
+                ].filter(Boolean)),
+              ).map((tz) => (
                 <option key={tz} value={tz}>{tz}</option>
               ))}
             </select>
@@ -446,6 +496,21 @@ export function SettingsForm({ user }: { user?: SettingsUser }) {
           <div className="flex items-center justify-between gap-3 rounded-xl bg-surface-2/60 px-3 py-2">
             <dt className="text-muted">Role</dt>
             <dd><span className="chip chip-info">{activeUser?.role ?? 'learner'}</span></dd>
+          </div>
+          <div className="flex items-center justify-between gap-3 rounded-xl bg-surface-2/60 px-3 py-2">
+            <dt className="text-muted">Plan &amp; Billing</dt>
+            <dd className="flex items-center gap-2">
+              <span className="chip chip-success uppercase">{(activeUser as { plan?: string } | null)?.plan ?? 'free'}</span>
+              {((activeUser as { plan?: string } | null)?.plan === 'pro' || (activeUser as { plan?: string } | null)?.plan === 'team') ? (
+                <button type="button" onClick={openBillingPortal} className="text-[13px] font-extrabold text-accent-deep dark:text-accent hover:underline">
+                  Manage / Cancel
+                </button>
+              ) : (
+                <a href="/pricing" className="text-[13px] font-extrabold text-accent-deep dark:text-accent hover:underline">
+                  Upgrade
+                </a>
+              )}
+            </dd>
           </div>
           {activeUser?.memberSince && (
             <div className="flex items-center justify-between gap-3 rounded-xl bg-surface-2/60 px-3 py-2">
@@ -659,7 +724,7 @@ export function SettingsForm({ user }: { user?: SettingsUser }) {
             {!deleteConfirm && (
               <button
                 onClick={() => setDeleteConfirm(true)}
-                className="btn3d btn3d-sm !border-danger/50 !text-danger hover:!bg-danger-soft shrink-0"
+                className="btn3d btn3d-ghost btn3d-sm !border-danger/50 !text-danger hover:!bg-danger-soft shrink-0"
               >
                 <Trash2 className="h-4 w-4" /> Delete account
               </button>

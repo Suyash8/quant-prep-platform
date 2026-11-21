@@ -9,6 +9,7 @@ import {
 } from '@/lib/auth';
 import { clientIp } from '@/lib/client-ip';
 import { assertSameOrigin } from '@/lib/origin';
+import { getAppOrigin } from '@/lib/site-url';
 import { sendEmail } from '@/lib/email';
 
 const schema = z.object({
@@ -37,12 +38,12 @@ export async function POST(req: NextRequest) {
   const { name, email, password, timezone } = parsed.data;
   const normalizedEmail = email.toLowerCase();
   const safeTz = timezone && timezone.length > 0 ? timezone : 'UTC';
+  const origin = getAppOrigin(req);
 
   // Always compute the password hash so existing vs new emails take equal time (B5).
   const passwordHash = await hashPasswordAsync(password);
   const existing = await db.user.findUnique({ where: { email: normalizedEmail } });
   if (existing) {
-    const origin = (process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin).replace(/\/$/, '');
     await sendEmail({
       to: normalizedEmail,
       subject: 'Sign-in reminder for QuantFoundry',
@@ -58,26 +59,38 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Never auto-promote the first registered user to admin (B1).
-  const initialAdmin = (process.env.INITIAL_ADMIN_EMAIL || '').trim().toLowerCase();
-  const role = initialAdmin && normalizedEmail === initialAdmin ? 'admin' : 'learner';
-
-  const user = await db.user.create({
-    data: {
-      name,
-      email: normalizedEmail,
-      passwordHash,
-      role,
-      timezone: safeTz,
-      emailVerifySentAt: new Date(),
-    },
-  });
+  // Never grant admin role on unverified signup — INITIAL_ADMIN_EMAIL promotion happens only
+  // after email ownership is verified in /api/auth/verify (or via `npm run admin:grant`).
+  let user;
+  try {
+    user = await db.user.create({
+      data: {
+        name,
+        email: normalizedEmail,
+        passwordHash,
+        role: 'learner',
+        timezone: safeTz,
+        emailVerifySentAt: new Date(),
+      },
+    });
+  } catch (err: unknown) {
+    if (typeof err === 'object' && err !== null && (err as { code?: string }).code === 'P2002') {
+      return NextResponse.json(
+        {
+          ok: true,
+          pendingVerification: true,
+          message: 'Check your email to verify or sign in to your account.',
+        },
+        { status: 202 },
+      );
+    }
+    throw err;
+  }
 
   await createSession(user.id, req.headers.get('user-agent'));
 
   const token = createEmailVerifyToken({ id: user.id, email: user.email });
   const verifyPath = `/verify-email?token=${encodeURIComponent(token)}`;
-  const origin = (process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin).replace(/\/$/, '');
   const verifyUrl = `${origin}${verifyPath}`;
 
   await sendEmail({

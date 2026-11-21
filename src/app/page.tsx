@@ -372,9 +372,9 @@ export default function LandingPage() {
           <div className="qf-card bg-dots qf-closing p-8 lg:p-10">
             <div className="flex flex-col items-center gap-3">
               <Mascot pose="wave" size={104} />
-              <h2 className="text-2xl lg:text-3xl font-black tracking-tight text-center">Start with the 10-minute diagnostic</h2>
+              <h2 className="text-2xl lg:text-3xl font-black tracking-tight text-center">Start with the placement diagnostic</h2>
               <p className="max-w-lg text-[15px] font-semibold text-muted text-center">
-                It maps what you already know across 7 areas and drops you at the right phase. No account needed to look at the curriculum.
+                28 questions across 7 areas (~45 min, no stakes) that map what you already know and drop you at the right phase. No account needed to browse the curriculum.
               </p>
               <div className="mt-2 flex flex-wrap items-center justify-center gap-3">
                 <AuthAwareLink

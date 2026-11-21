@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { getCurrentUser } from '@/lib/auth';
+import { getCurrentUser, rateLimitShared } from '@/lib/auth';
+import { assertSameOrigin } from '@/lib/origin';
 import { db } from '@/lib/db';
 import { getCurriculumGraph, getRegistry } from '@/lib/content';
 import { buildStudyPlan, type PlannerLessonNode } from '@/lib/planner-core';
@@ -30,8 +31,14 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  if (!assertSameOrigin(req)) {
+    return NextResponse.json({ error: 'Invalid request origin.' }, { status: 403 });
+  }
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: 'Sign in first.' }, { status: 401 });
+  if (!(await rateLimitShared(`planner:${user.id}`, 10, 0.2))) {
+    return NextResponse.json({ error: 'Too many plan updates. Please wait a moment.' }, { status: 429 });
+  }
   const parsed = schema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: 'Invalid plan configuration.' }, { status: 400 });
   const { hoursPerWeek, daysPerWeek, track, mode, targetDate } = parsed.data;

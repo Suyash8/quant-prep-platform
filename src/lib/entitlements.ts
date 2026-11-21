@@ -47,7 +47,7 @@ export interface EntitlementResource {
 
 export function isPaidPlan(user: EntitlementUser | null | undefined): boolean {
   if (!user) return false;
-  return user.plan === 'pro' || user.plan === 'team';
+  return user.plan === 'pro' || user.plan === 'team' || user.role === 'admin';
 }
 
 export function can(

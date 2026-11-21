@@ -30,9 +30,16 @@ export async function PATCH(req: NextRequest) {
   if (!parsed.success) {
     return NextResponse.json({ error: 'Invalid input.' }, { status: 400 });
   }
-  const updated = await db.contentReport.update({
-    where: { id: parsed.data.id },
-    data: { status: parsed.data.status },
-  });
-  return NextResponse.json({ report: updated });
+  try {
+    const updated = await db.contentReport.update({
+      where: { id: parsed.data.id },
+      data: { status: parsed.data.status },
+    });
+    return NextResponse.json({ report: updated });
+  } catch (err: unknown) {
+    if (typeof err === 'object' && err !== null && (err as { code?: string }).code === 'P2025') {
+      return NextResponse.json({ error: 'Report not found.' }, { status: 404 });
+    }
+    throw err;
+  }
 }

@@ -1,6 +1,6 @@
 import type { NextConfig } from "next";
 
-const CSP_REPORT_ONLY = [
+const CSP_POLICY = [
   "default-src 'self'",
   "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:",
   "style-src 'self' 'unsafe-inline'",
@@ -23,7 +23,7 @@ const nextConfig: NextConfig = {
   experimental: {
     reactDebugChannel: false,
   },
-  // Trace only runtime curriculum content and metadata indexes (exclude QA reports)
+  // Scope large problem test suites (87 MB) strictly to routes that need them
   outputFileTracingIncludes: {
     "/**": [
       "./content/map/**/*",
@@ -31,10 +31,13 @@ const nextConfig: NextConfig = {
       "./content/assessments/**/*",
       "./content/projects/**/*",
       "./content/companies/**/*",
-      "./content/problems/**/*",
       "./content/index.json",
       "./content/registry.json",
     ],
+    "/api/judge/**": ["./content/problems/**/*"],
+    "/api/packs/answers/**": ["./content/problems/**/*"],
+    "/practice/**": ["./content/problems/**/*"],
+    "/api/admin/validate": ["./scripts/validate-content.mjs", "./content/problems/**/*"],
   },
   async headers() {
     return [
@@ -49,7 +52,7 @@ const nextConfig: NextConfig = {
             key: "Strict-Transport-Security",
             value: "max-age=63072000; includeSubDomains; preload",
           },
-          { key: "Content-Security-Policy-Report-Only", value: CSP_REPORT_ONLY },
+          { key: "Content-Security-Policy", value: CSP_POLICY },
         ],
       },
     ];

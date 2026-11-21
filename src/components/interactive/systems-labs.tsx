@@ -118,7 +118,7 @@ export function PermissionBits({ params }: { params: Record<string, unknown> }) 
   }, [initial]);
   return (
     <LabFrame title="Permission bits: who can do what"
-      caption="chmod 755 = owner rwx, group r-x, other r-x. The leading digit (setuid/setuid/sticky) is omitted here for clarity.">
+      caption="chmod 755 = owner rwx, group r-x, other r-x. The leading digit (setuid/setgid/sticky) is omitted here for clarity.">
       <div className="grid sm:grid-cols-3 gap-3">
         {owners.map((who, i) => (
           <div key={who} className="border rounded-lg p-3">
@@ -189,15 +189,15 @@ export function PacketJourney({ params }: { params: Record<string, unknown> }) {
         </label>
         <button onClick={simulate} className="px-3 py-1.5 rounded-md bg-accent text-accent-foreground text-[13px] font-medium">Send 10 packets</button>
       </div>
-      <div className="grid grid-cols-9 gap-1.5">
-        {Array.from({ length: 9 }).map((_, i) => {
-          const reached = last && i < Math.round((last.delivered / last.sent) * 9);
+      <div className="grid grid-cols-10 gap-1.5">
+        {Array.from({ length: 10 }).map((_, i) => {
+          const reached = last && i < last.delivered;
           return <div key={i} className={`h-8 rounded border ${reached ? 'bg-accent-soft border-accent/40' : 'bg-surface-2 border-border'}`}></div>;
         })}
       </div>
       {last && (
         <p className="mt-3 text-[13px] text-muted tnum">
-          delivered {last.delivered}/{last.sent} packets · {last.retrans} retransmissions · {last.time} total sends , {' '}
+          delivered {last.delivered}/{last.sent} packets · {last.retrans} retransmissions · {last.time} total sends —{' '}
           {proto === 'tcp'
             ? 'TCP kept retrying: everything arrives, but loss directly adds latency.'
             : 'UDP moved on: some quotes are simply gone, the next one replaces them.'}
@@ -515,13 +515,20 @@ export function FloatErrorLab({ params }: { params: Record<string, unknown> }) {
       sq32 = Math.fround(sq32 + Math.fround(f32[i] * f32[i]));
       if (i > 0) { const d = v - values[i - 1]; if (Math.abs(d) < Math.abs(minDiff)) minDiff = d; if (Math.abs(d) > Math.abs(maxDiff)) maxDiff = d; }
     }
+    let maxDiffIdx = 1;
+    for (let i = 1; i < n; i++) {
+      if (Math.abs(values[i] - values[i - 1]) === Math.abs(maxDiff)) { maxDiffIdx = i; break; }
+    }
+    const f32Diff = n > 1 ? Math.fround(f32[maxDiffIdx] - f32[maxDiffIdx - 1]) : 0;
     const mean64 = s64 / n, mean32 = s32 / n;
     const var64 = sq64 / n - mean64 * mean64;
     const var32 = sq32 / n - mean32 * mean32;
+    const exactMean = values.reduce((a, b) => a + b, 0) / n;
+    const exactVar = values.reduce((a, b) => a + (b - exactMean) ** 2, 0) / n;
     return {
-      mean: { f64: mean64, f32: mean32, truth: values.reduce((a, b) => a + b, 0) / n },
-      variance: { f64: var64, f32: var32, truth: values.reduce((a, b) => a + (b - values.reduce((x, y) => x + y, 0) / n) ** 2, 0) / n },
-      subtract: { f64: maxDiff, f32: Math.fround(maxDiff), truth: maxDiff },
+      mean: { f64: mean64, f32: mean32, truth: exactMean },
+      variance: { f64: var64, f32: var32, truth: exactVar },
+      subtract: { f64: maxDiff, f32: f32Diff, truth: maxDiff },
     };
   }, [n, spread]);
   const rows = mode === 'mean'
@@ -584,6 +591,7 @@ export function MemoryPool({ params }: { params: Record<string, unknown> }) {
   const MALLOC_COST_NS = 70;
   const POOL_COST_NS = 4;
   function allocate() {
+    if (mode === 'pool' && allocs.length >= POOL_SLOTS) return;
     const size = 16 + Math.floor(Math.random() * 6) * 16;
     const t = now + 1;
     setAllocs(a => [...a, { id: nextId.current++, size, t }]);
@@ -591,7 +599,8 @@ export function MemoryPool({ params }: { params: Record<string, unknown> }) {
     setNow(t);
   }
   function freeSome() {
-    setAllocs(a => a.slice(Math.max(0, a.length - 4)));
+    if (allocs.length === 0) return;
+    setAllocs(a => a.slice(0, Math.max(0, a.length - 4)));
     setCost(c => c + (mode === 'malloc' ? 60 : 0));
     setNow(n => n + 1);
   }

@@ -41,9 +41,9 @@ export async function POST(req: NextRequest) {
   const d = parsed.data;
   if (d.correct > d.total) return NextResponse.json({ error: 'Invalid counts.' }, { status: 400 });
 
-  // Server-side plausibility guard (A1): cannot answer large batches in zero seconds
+  // Server-side plausibility guard (A1): cannot answer large batches in zero or implausibly few seconds
   const minPlausibleSeconds = Math.floor(d.total * 0.25);
-  if (d.total >= 10 && d.durationS > 0 && d.durationS < minPlausibleSeconds) {
+  if (d.total >= 5 && d.durationS < Math.max(1, minPlausibleSeconds)) {
     return NextResponse.json({ error: 'Drill session duration implausible.' }, { status: 400 });
   }
 

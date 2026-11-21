@@ -47,6 +47,8 @@ export function ContactForm({ defaultName = '', defaultEmail = '', defaultSubjec
       }
       setSentId(data.id ?? 'submitted');
       setMessage('');
+    } catch {
+      setError('Network error while submitting your message. Check your connection and try again.');
     } finally {
       setBusy(false);
     }

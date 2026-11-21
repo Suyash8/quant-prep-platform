@@ -97,16 +97,24 @@ export async function PUT(req: NextRequest) {
 
   let xpAwarded = 0;
   if (parsed.data.reviewed >= 10) {
-    const amount = Math.min(Math.floor(parsed.data.reviewed / 10) * XP_TABLE.revisionPer10, XP_TABLE.revisionCap);
-    const award = await awardXp(
-      user.id,
-      amount,
-      'revision',
-      `${parsed.data.reviewed} cards reviewed`,
-      undefined,
-      `rev:${today}:${Math.floor(Date.now() / 60000)}`,
-    ).catch(() => null);
-    xpAwarded = award?.amount ?? 0;
+    // Verify actual recent reviews in DB rather than trusting raw client count
+    const recentWindow = new Date(Date.now() - 2 * 3600_000);
+    const verifiedReviewed = await db.cardState.count({
+      where: { userId: user.id, lastReviewedAt: { gte: recentWindow } },
+    });
+    const effectiveReviewed = Math.min(parsed.data.reviewed, verifiedReviewed);
+    if (effectiveReviewed >= 10) {
+      const amount = Math.min(Math.floor(effectiveReviewed / 10) * XP_TABLE.revisionPer10, XP_TABLE.revisionCap);
+      const award = await awardXp(
+        user.id,
+        amount,
+        'revision',
+        `${effectiveReviewed} cards reviewed`,
+        undefined,
+        `rev:${today}:${Math.floor(Date.now() / 60000)}`,
+      ).catch(() => null);
+      xpAwarded = award?.amount ?? 0;
+    }
   }
   return NextResponse.json({ ok: true, xpAwarded });
 }

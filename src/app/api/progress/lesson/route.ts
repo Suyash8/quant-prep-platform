@@ -103,11 +103,13 @@ export async function POST(req: NextRequest) {
     select: { repetitions: true, intervalDays: true },
   });
   const spacedMasteryEarned = Boolean(prev?.retrievalDone || hasEarnedSpacedMastery(existingCards));
+  let finalStatus = progress.status;
   if (progress.status === 'passed' && spacedMasteryEarned) {
     await db.lessonProgress.update({
       where: { userId_lessonId: { userId: user.id, lessonId } },
       data: { retrievalDone: true, status: 'mastered' },
     });
+    finalStatus = 'mastered';
   }
 
   // Ensure spaced-repetition cards exist for this lesson using skipDuplicates
@@ -161,7 +163,7 @@ export async function POST(req: NextRequest) {
     correct: perQuestion ? Object.values(perQuestion).filter((q) => q.correct).length : undefined,
     total: lesson.quiz.length,
     perQuestion,
-    status: progress.status,
+    status: finalStatus,
     passThreshold: PASS_THRESHOLD,
     exerciseDone: progress.exerciseDone,
   });

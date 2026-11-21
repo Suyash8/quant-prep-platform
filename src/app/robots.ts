@@ -1,14 +1,28 @@
 import type { MetadataRoute } from 'next';
-
-const siteUrl = (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000').replace(/\/$/, '');
+import { getSiteUrl } from '@/lib/site-url';
 
 export default function robots(): MetadataRoute.Robots {
+  const siteUrl = getSiteUrl();
   return {
     rules: [
       {
         userAgent: '*',
         allow: '/',
-        disallow: ['/api/', '/admin', '/dashboard', '/settings', '/onboarding'],
+        disallow: [
+          '/api/',
+          '/admin',
+          '/dashboard',
+          '/settings',
+          '/analytics',
+          '/planner',
+          '/revision',
+          '/drills',
+          '/practice',
+          '/assessments',
+          '/forgot-password',
+          '/reset-password',
+          '/verify-email',
+        ],
       },
     ],
     sitemap: `${siteUrl}/sitemap.xml`,

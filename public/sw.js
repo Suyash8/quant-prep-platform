@@ -12,7 +12,6 @@ const SHELL_ROUTES = [
   '/',
   '/dashboard',
   '/curriculum',
-  '/learn',
   '/practice',
   '/assessments',
   '/projects',
@@ -29,7 +28,6 @@ const SHELL_ROUTES = [
   '/privacy',
   '/terms',
   '/contact',
-  '/settings',
   '/login',
   '/register',
 ];
@@ -77,7 +75,7 @@ function rscCacheKey(url) {
 
 function isCacheablePage(res) {
   if (!res || !res.ok) return false;
-  if (res.redirected && res.url && res.url.includes('/login')) return false;
+  if (res.redirected) return false;
   return true;
 }
 
@@ -313,7 +311,7 @@ async function runDownloadAll(force = false) {
 
         // 2b. Cache essential app icons & webmanifest so zero 503s occur offline
         await Promise.all(
-          ['/icons/icon.svg', '/icons/icon-192.png', '/icons/icon-512.png', '/favicon-32.png', '/favicon-64.png', '/manifest.json', '/manifest.webmanifest'].map(
+          ['/icons/icon.svg', '/icons/icon-192.png', '/icons/icon-512.png', '/favicon.ico', '/favicon-32.png', '/favicon-64.png', '/manifest.json'].map(
             async (assetUrl) => {
               try {
                 if (await staticCache.match(assetUrl)) return;
@@ -372,6 +370,12 @@ self.addEventListener('message', (event) => {
   if (!data || typeof data !== 'object') return;
   if (data.type === 'QF3_DOWNLOAD_ALL') {
     event.waitUntil(runDownloadAll(!!data.force));
+  } else if (data.type === 'QF3_CLEAR_SHELL') {
+    event.waitUntil(
+      (async () => {
+        await caches.delete(CACHE_SHELL);
+      })(),
+    );
   } else if (data.type === 'QF3_CLEAR_PACKS') {
     event.waitUntil(
       (async () => {

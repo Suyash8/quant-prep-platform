@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import type { Block } from '@/lib/content';
-import { ClientMd, ClientMathFigure } from '@/components/gamified/client-md';
+import { ClientMd, ClientMdBlocks, ClientMathFigure } from '@/components/gamified/client-md';
 
 /**
  * Client-side renderer for concept-card blocks (the subset that appears
@@ -12,7 +12,7 @@ import { ClientMd, ClientMathFigure } from '@/components/gamified/client-md';
 export function ClientBlock({ block }: { block: Block }) {
   switch (block.type) {
     case 'p':
-      return <div className="prose-qf my-3"><ClientMd text={block.md} /></div>;
+      return <div className="prose-qf my-3"><ClientMdBlocks text={block.md} /></div>;
     case 'h2':
       return <h2 className="text-xl font-extrabold tracking-tight mt-5 mb-2">{<ClientMd text={block.text} />}</h2>;
     case 'h3':
@@ -41,7 +41,7 @@ export function ClientBlock({ block }: { block: Block }) {
           <p className="text-[13px] font-extrabold uppercase tracking-wide mb-1 flex items-center gap-1.5" style={{ color: s.fg }}>
             {s.label}
           </p>
-          <div className="prose-qf text-[15px]"><ClientMd text={block.md} /></div>
+          <div className="prose-qf text-[15px]"><ClientMdBlocks text={block.md} /></div>
         </aside>
       );
     }

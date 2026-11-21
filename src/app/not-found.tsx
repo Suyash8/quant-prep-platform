@@ -12,13 +12,15 @@ export default function NotFound() {
           <p className="max-w-md text-[15px] font-semibold text-muted">
             The address you followed does not exist. It may have moved when the curriculum was updated.
           </p>
-          <form action="/learn" className="mt-1 flex w-full max-w-sm items-center gap-2" role="search">
+          <form action="/curriculum" className="mt-1 flex w-full max-w-sm items-center gap-2" role="search">
             <label htmlFor="nf-search" className="sr-only">Search lessons</label>
             <input id="nf-search" name="q" type="search" placeholder="Search lessons" className="qf-input" autoComplete="off" />
-            <span className="icon-tile-sm icon-tile-info flex-none"><Search aria-hidden /></span>
+            <button type="submit" aria-label="Search lessons" className="icon-tile-sm icon-tile-info flex-none cursor-pointer">
+              <Search aria-hidden />
+            </button>
           </form>
           <div className="mt-2 flex flex-wrap items-center justify-center gap-3">
-            <Link href="/learn" className="btn3d btn3d-lg">Back to my path</Link>
+            <Link href="/curriculum" className="btn3d btn3d-lg">Back to my path</Link>
             <Link href="/dashboard" className="btn3d btn3d-ghost">Go to my dashboard</Link>
           </div>
         </div>

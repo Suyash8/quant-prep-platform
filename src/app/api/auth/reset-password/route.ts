@@ -1,7 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { db } from '@/lib/db';
-import { createSession, decodeResetTokenUserId, hashPassword, rateLimit, verifyPasswordResetToken } from '@/lib/auth';
+import {
+  createSession,
+  decodeResetTokenUserId,
+  hashPasswordAsync,
+  rateLimitShared,
+  verifyPasswordResetToken,
+} from '@/lib/auth';
+import { clientIp } from '@/lib/client-ip';
+import { assertSameOrigin } from '@/lib/origin';
 
 const schema = z.object({
   token: z.string().min(10, 'Invalid or missing reset token.'),
@@ -9,8 +17,11 @@ const schema = z.object({
 });
 
 export async function POST(req: NextRequest) {
-  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'local';
-  if (!rateLimit(`reset:${ip}`, 8, 0.1)) {
+  if (!assertSameOrigin(req)) {
+    return NextResponse.json({ error: 'Invalid request origin.' }, { status: 403 });
+  }
+  const ip = clientIp(req);
+  if (!(await rateLimitShared(`reset:${ip}`, 8, 0.1))) {
     return NextResponse.json({ error: 'Too many attempts. Please wait a moment.' }, { status: 429 });
   }
 
@@ -31,12 +42,24 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'This reset link has expired or already been used.' }, { status: 400 });
   }
 
-  const newHash = hashPassword(password);
+  const newHash = await hashPasswordAsync(password);
   await db.$transaction([
     db.user.update({ where: { id: user.id }, data: { passwordHash: newHash } }),
     db.session.deleteMany({ where: { userId: user.id } }),
   ]);
 
-  await createSession(user.id);
-  return NextResponse.json({ ok: true, message: 'Password updated. Signing you in.' });
+  await createSession(user.id, req.headers.get('user-agent'));
+  return NextResponse.json({
+    ok: true,
+    message: 'Password updated. Signing you in.',
+    user: {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      plan: user.plan,
+      emailVerified: Boolean(user.emailVerifiedAt),
+      onboardingDone: user.onboardingDone,
+    },
+  });
 }

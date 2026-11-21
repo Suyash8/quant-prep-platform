@@ -91,6 +91,7 @@ export async function awardXp(
 
     const earnFreeze =
       streak.bump && streak.streakCount > 0 && streak.streakCount % 7 === 0 && user.streakFreezes < 2;
+    const freezeDelta = (earnFreeze ? 1 : 0) - (streak.usedFreeze ? 1 : 0);
 
     const updatedUser = await c.user.update({
       where: { id: userId },
@@ -99,8 +100,8 @@ export async function awardXp(
         streakCount: streak.streakCount,
         longestStreak: streak.longestStreak,
         lastStudyDate: new Date(),
-        ...(streak.usedFreeze ? { streakFreezes: { decrement: 1 }, freezeUsedAt: new Date() } : {}),
-        ...(earnFreeze ? { streakFreezes: { increment: 1 } } : {}),
+        ...(freezeDelta !== 0 ? { streakFreezes: { increment: freezeDelta } } : {}),
+        ...(streak.usedFreeze ? { freezeUsedAt: new Date() } : {}),
       },
       select: { xp: true, streakCount: true },
     });
@@ -146,7 +147,21 @@ export async function backfillXpIfNeeded(userId: string): Promise<number> {
     [...bestAssess.values()].reduce((n, s) => n + Math.round(s / 10), 0) +
     Math.min(cardStates, 100) * 2;
 
-  if (total <= 0) return 0;
+  if (total <= 0) {
+    // Write a 0-XP sentinel once so new users don't repeat 6 DB queries on every HUD fetch
+    await db.xpEvent
+      .create({
+        data: {
+          userId,
+          amount: 0,
+          source: 'backfill',
+          detail: 'No prior progress to backfill',
+          refId: 'initial-backfill',
+        },
+      })
+      .catch(() => {});
+    return 0;
+  }
   await awardXp(userId, total, 'backfill', 'Recognised your progress before XP tracking existed', undefined, 'initial-backfill');
   return total;
 }

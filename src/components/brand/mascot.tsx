@@ -12,12 +12,18 @@ export function Mascot({
   size = 96,
   className,
   label,
+  'aria-hidden': ariaHidden,
 }: {
   pose?: MascotPose;
   size?: number;
   className?: string;
   label?: string;
+  'aria-hidden'?: boolean;
 }) {
+  const uid = React.useId().replace(/:/g, '');
+  const bgId = `${uid}-bg`;
+  const sheenId = `${uid}-sheen`;
+  const shadowId = `${uid}-shadow`;
   const w = size;
   const h = size;
   const title = label ?? 'QuantFoundry Signature Emblem';
@@ -28,20 +34,21 @@ export function Mascot({
       height={h}
       viewBox="0 0 100 100"
       className={className}
-      role="img"
-      aria-label={title}
+      role={ariaHidden ? undefined : 'img'}
+      aria-label={ariaHidden ? undefined : title}
+      aria-hidden={ariaHidden || undefined}
     >
-      <title>{title}</title>
+      {!ariaHidden && <title>{title}</title>}
       <defs>
-        <linearGradient id="qf-emblem-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+        <linearGradient id={bgId} x1="0%" y1="0%" x2="100%" y2="100%">
           <stop offset="0%" stopColor="var(--accent-strong, #10b981)" />
           <stop offset="100%" stopColor="var(--accent-deep, #047857)" />
         </linearGradient>
-        <linearGradient id="qf-emblem-sheen" x1="0%" y1="0%" x2="0%" y2="100%">
+        <linearGradient id={sheenId} x1="0%" y1="0%" x2="0%" y2="100%">
           <stop offset="0%" stopColor="#ffffff" stopOpacity="0.28" />
           <stop offset="100%" stopColor="#ffffff" stopOpacity="0" />
         </linearGradient>
-        <filter id="qf-emblem-shadow" x="-20%" y="-20%" width="140%" height="140%">
+        <filter id={shadowId} x="-20%" y="-20%" width="140%" height="140%">
           <feDropShadow dx="0" dy="4" stdDeviation="6" floodColor="var(--accent-deep, #047857)" floodOpacity="0.4" />
         </filter>
       </defs>
@@ -53,8 +60,8 @@ export function Mascot({
         width="84"
         height="84"
         rx="26"
-        fill="url(#qf-emblem-bg)"
-        filter="url(#qf-emblem-shadow)"
+        fill={`url(#${bgId})`}
+        filter={`url(#${shadowId})`}
       />
 
       {/* Inner Bevel Border */}
@@ -72,7 +79,7 @@ export function Mascot({
       {/* Top Glass Sheen */}
       <path
         d="M 10 34 C 10 20.7 20.7 10 34 10 L 66 10 C 79.3 10 90 20.7 90 34 L 90 42 C 60 52 40 40 10 48 Z"
-        fill="url(#qf-emblem-sheen)"
+        fill={`url(#${sheenId})`}
         opacity="0.75"
       />
 

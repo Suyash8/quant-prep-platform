@@ -74,12 +74,14 @@ function useHud(enabled: boolean, refreshKey?: string) {
     const load = () => { if (alive) setData(localHud()); };
     load();
     const unsub = subscribe(load);
+    const onOnline = () => scheduleFlush(500);
     window.addEventListener('qf:hud-refresh', load);
-    window.addEventListener('online', () => scheduleFlush(500));
+    window.addEventListener('online', onOnline);
     return () => {
       alive = false;
       unsub();
       window.removeEventListener('qf:hud-refresh', load);
+      window.removeEventListener('online', onOnline);
     };
   }, [enabled, refreshKey]);
   return data;
@@ -188,10 +190,21 @@ function UserMenu({ name, isAdmin }: { name: string; isAdmin?: boolean }) {
       window.localStorage.removeItem('qf-chrome-user');
     } catch { /* ignore */ }
     await wipeLocalLearningData();
+    try {
+      navigator.serviceWorker?.controller?.postMessage({ type: 'QF3_CLEAR_SHELL' });
+      if ('caches' in window) {
+        const keys = await window.caches.keys();
+        await Promise.all(keys.filter((k) => k.endsWith('-shell')).map((k) => window.caches.delete(k)));
+      }
+    } catch { /* ignore */ }
     broadcast('auth-changed', null);
     window.dispatchEvent(new CustomEvent('qf:auth-refresh', { detail: null }));
     try {
-      await fetch('/api/auth/logout', { method: 'POST' });
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirmCurrent: true }),
+      });
     } catch {}
     router.push('/');
     router.refresh();
@@ -238,8 +251,9 @@ function UserMenu({ name, isAdmin }: { name: string; isAdmin?: boolean }) {
 
 export function AppShell({ user, children, isAdmin, offlinePreview }: { user: { name: string; email: string; role: string; emailVerified?: boolean }; children: React.ReactNode; isAdmin?: boolean; offlinePreview?: boolean }) {
   const pathname = usePathname();
-  const { theme, setTheme } = useTheme();
+  const { resolvedTheme, setTheme } = useTheme();
   const hud = useHud(true, pathname);
+  const [moreOpen, setMoreOpen] = React.useState(false);
 
   const tabs = [
     { href: '/dashboard', label: 'Home', icon: Home },
@@ -307,7 +321,7 @@ export function AppShell({ user, children, isAdmin, offlinePreview }: { user: { 
               </>
             )}
             <button
-              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+              onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
               className="press h-10 w-10 flex-none inline-flex items-center justify-center rounded-xl border-2 border-border hover:bg-surface-2"
               aria-label="Toggle theme"
             >
@@ -348,9 +362,9 @@ export function AppShell({ user, children, isAdmin, offlinePreview }: { user: { 
           <nav aria-label="Learn links" className="space-y-2.5">
             <p className="text-[13px] font-black uppercase tracking-wider text-faint">Learn</p>
             <Link href="/curriculum" className="block text-[15px] font-bold text-muted hover:text-foreground">Curriculum</Link>
-            <Link href="/learn" className="block text-[15px] font-bold text-muted hover:text-foreground">All lessons</Link>
             <Link href="/revision" className="block text-[15px] font-bold text-muted hover:text-foreground">Spaced repetition</Link>
             <Link href="/drills" className="block text-[15px] font-bold text-muted hover:text-foreground">Mental math drills</Link>
+            <Link href="/diagnostic" className="block text-[15px] font-bold text-muted hover:text-foreground">Diagnostic</Link>
           </nav>
           <nav aria-label="Practice links" className="space-y-2.5">
             <p className="text-[13px] font-black uppercase tracking-wider text-faint">Practice</p>
@@ -383,10 +397,66 @@ export function AppShell({ user, children, isAdmin, offlinePreview }: { user: { 
         </div>
       </footer>
 
+      {/* mobile "More" drawer so mobile users can reach every workspace & legal page */}
+      {moreOpen && (
+        <div className="lg:hidden fixed inset-0 z-50 flex flex-col justify-end bg-black/50 backdrop-blur-xs" onClick={() => setMoreOpen(false)}>
+          <div
+            className="bg-surface border-t-2 border-border rounded-t-3xl p-5 pb-8 max-h-[80vh] overflow-y-auto space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <p className="text-[16px] font-black">All sections</p>
+              <button
+                type="button"
+                onClick={() => setMoreOpen(false)}
+                className="btn3d btn3d-ghost btn3d-sm"
+                aria-label="Close menu"
+              >
+                Close
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { href: '/lab', label: 'Interactive labs' },
+                { href: '/drills', label: 'Mental math drills' },
+                { href: '/assessments', label: 'Assessments' },
+                { href: '/projects', label: 'Projects' },
+                { href: '/career', label: 'Career explorer' },
+                { href: '/analytics', label: 'Analytics' },
+                { href: '/planner', label: 'Study planner' },
+                { href: '/diagnostic', label: 'Diagnostic' },
+                { href: '/pricing', label: 'Pricing' },
+                { href: '/settings', label: 'Settings' },
+                ...(isAdmin ? [{ href: '/admin', label: 'Admin' }] : []),
+              ].map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={() => setMoreOpen(false)}
+                  className={cn(
+                    'rounded-xl border-2 border-border px-3 py-2.5 text-[14px] font-extrabold hover:bg-surface-2',
+                    pathname.startsWith(item.href) && 'border-accent bg-accent-soft text-accent-deep dark:text-accent',
+                  )}
+                >
+                  {item.label}
+                </Link>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-x-4 gap-y-1.5 pt-2 border-t border-border text-[13px] font-bold text-muted">
+              <Link href="/methodology" onClick={() => setMoreOpen(false)}>Methodology</Link>
+              <Link href="/about" onClick={() => setMoreOpen(false)}>About</Link>
+              <Link href="/contact" onClick={() => setMoreOpen(false)}>Contact</Link>
+              <Link href="/privacy" onClick={() => setMoreOpen(false)}>Privacy</Link>
+              <Link href="/terms" onClick={() => setMoreOpen(false)}>Terms</Link>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* mobile bottom tab bar */}
       <nav className="lg:hidden fixed bottom-0 inset-x-0 z-40 border-t-2 border-border bg-surface tabbar-safe" aria-label="Mobile tabs">
         <div className="grid grid-cols-5">
-          {tabs.map(tab => {
+          {tabs.slice(0, 4).map(tab => {
             const active = pathname.startsWith(tab.href);
             return (
               <Link
@@ -403,6 +473,20 @@ export function AppShell({ user, children, isAdmin, offlinePreview }: { user: { 
               </Link>
             );
           })}
+          <button
+            type="button"
+            onClick={() => setMoreOpen((o) => !o)}
+            aria-expanded={moreOpen}
+            aria-label="More navigation sections"
+            className={cn(
+              'flex flex-col items-center justify-center gap-0.5 min-h-[3.25rem] relative transition-colors',
+              moreOpen ? 'text-accent-deep dark:text-accent' : 'text-faint',
+            )}
+          >
+            {moreOpen && <span className="absolute top-0 h-1 w-8 rounded-full bg-accent" />}
+            <Settings className="h-6 w-6" />
+            <span className="text-[13px] font-extrabold">More</span>
+          </button>
         </div>
       </nav>
     </div>

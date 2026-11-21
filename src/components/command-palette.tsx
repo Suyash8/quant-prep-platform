@@ -29,11 +29,24 @@ const NAV_PAGES = [
 export function CommandPalette() {
   const router = useRouter();
   const [open, setOpen] = React.useState(false);
+  const [query, setQuery] = React.useState('');
   const [lessons, setLessons] = React.useState<RegistryLite['lessons']>([]);
   const [problems, setProblems] = React.useState<ProblemLite[]>([]);
   const [companies, setCompanies] = React.useState<CompanyFull[]>([]);
   const [assessments, setAssessments] = React.useState<AssessmentLite[]>([]);
   const loadedRef = React.useRef(false);
+
+  const visibleLessons = React.useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return lessons.slice(0, 80);
+    return lessons
+      .filter((l) =>
+        l.title.toLowerCase().includes(q) ||
+        l.id.toLowerCase().includes(q) ||
+        l.skills.some((s) => s.toLowerCase().includes(q)),
+      )
+      .slice(0, 80);
+  }, [lessons, query]);
 
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -74,7 +87,11 @@ export function CommandPalette() {
       title="Search QuantFoundry"
       description="Jump to lessons, coding problems, career profiles, or pages."
     >
-      <CommandInput placeholder="Jump to a lesson, problem, firm, or page… (Esc to close)" />
+      <CommandInput
+        value={query}
+        onValueChange={setQuery}
+        placeholder="Jump to a lesson, problem, firm, or page… (Esc to close)"
+      />
       <CommandList className="max-h-[380px]">
         <CommandEmpty>No matching lessons, problems, or pages.</CommandEmpty>
         <CommandGroup heading="Pages">
@@ -91,8 +108,8 @@ export function CommandPalette() {
         {lessons.length > 0 && (
           <>
             <CommandSeparator />
-            <CommandGroup heading="Lessons">
-              {lessons.slice(0, 120).map((l) => (
+            <CommandGroup heading={`Lessons (${lessons.length})`}>
+              {visibleLessons.map((l) => (
                 <CommandItem
                   key={l.id}
                   value={`lesson ${l.title} ${l.skills.join(' ')}`}

@@ -132,6 +132,8 @@ export async function destroySessionFor(opts: { tag?: string; confirmCurrent?: b
     return 'skipped';
   }
   await db.session.deleteMany({ where: { id } });
+  const jar = await cookies();
+  jar.delete(SESSION_COOKIE);
   return 'ended';
 }
 
@@ -192,31 +194,19 @@ export function rateLimit(key: string, capacity = 10, refillPerSec = 0.2): boole
   return true;
 }
 
-/** Multi-instance token bucket via Postgres RateLimitBucket, with graceful local fallback. */
+/** Multi-instance atomic token bucket via Postgres RateLimitBucket, with graceful local fallback. */
 export async function rateLimitShared(key: string, capacity = 10, refillPerSec = 0.2): Promise<boolean> {
   try {
-    const allowed = await db.$transaction(async (tx) => {
-      const now = new Date();
-      const row = await tx.rateLimitBucket.findUnique({ where: { key } });
-      const prevTokens = row ? row.tokens : capacity;
-      const elapsedSec = row ? Math.max(0, (now.getTime() - row.updatedAt.getTime()) / 1000) : 0;
-      const refilled = Math.min(capacity, prevTokens + elapsedSec * refillPerSec);
-      if (refilled < 1) {
-        await tx.rateLimitBucket.upsert({
-          where: { key },
-          create: { key, tokens: refilled, updatedAt: now },
-          update: { tokens: refilled, updatedAt: now },
-        });
-        return false;
-      }
-      await tx.rateLimitBucket.upsert({
-        where: { key },
-        create: { key, tokens: refilled - 1, updatedAt: now },
-        update: { tokens: refilled - 1, updatedAt: now },
-      });
-      return true;
-    });
-    return allowed;
+    const res = await db.$queryRaw<Array<{ key: string }>>`
+      INSERT INTO "RateLimitBucket" ("key", "tokens", "updatedAt")
+      VALUES (${key}, ${Math.max(0, capacity - 1)}, NOW())
+      ON CONFLICT ("key") DO UPDATE SET
+        "tokens" = LEAST(${capacity}::double precision, "RateLimitBucket"."tokens" + GREATEST(0, EXTRACT(EPOCH FROM (NOW() - "RateLimitBucket"."updatedAt"))) * ${refillPerSec}::double precision) - 1,
+        "updatedAt" = NOW()
+      WHERE LEAST(${capacity}::double precision, "RateLimitBucket"."tokens" + GREATEST(0, EXTRACT(EPOCH FROM (NOW() - "RateLimitBucket"."updatedAt"))) * ${refillPerSec}::double precision) >= 1
+      RETURNING "key"
+    `;
+    return res.length > 0;
   } catch {
     return rateLimit(key, capacity, refillPerSec);
   }

@@ -39,7 +39,10 @@ export function MonacoCodeEditor({
           (window as unknown as { MonacoEnvironment: unknown }).MonacoEnvironment = {
             getWorker(_workerId: string, _label: string) {
               const blob = new Blob(['self.onmessage = () => {};'], { type: 'application/javascript' });
-              return new Worker(URL.createObjectURL(blob));
+              const blobUrl = URL.createObjectURL(blob);
+              const worker = new Worker(blobUrl);
+              setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+              return worker;
             },
           };
         }
@@ -93,7 +96,7 @@ export function MonacoCodeEditor({
           lineHeight: 22,
           fontFamily: "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
           fontLigatures: true,
-          tabSize: language === 'python' ? 4 : 4,
+          tabSize: 4,
           insertSpaces: true,
           automaticLayout: true,
           scrollBeyondLastLine: false,

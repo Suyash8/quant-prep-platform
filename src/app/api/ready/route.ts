@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'crypto';
 import { NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -5,11 +6,16 @@ import { getRegistry } from '@/lib/content';
 
 export const dynamic = 'force-dynamic';
 
+function isCronAuthorized(authHeader: string | null, cronSecret: string | undefined): boolean {
+  if (!cronSecret || cronSecret.length < 16 || !authHeader) return false;
+  const a = Buffer.from(authHeader, 'utf8');
+  const b = Buffer.from(`Bearer ${cronSecret}`, 'utf8');
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
 /** Detailed readiness/ops endpoint restricted to administrators or valid CRON_SECRET bearer. */
 export async function GET(req: Request) {
-  const cronSecret = process.env.CRON_SECRET;
-  const auth = req.headers.get('authorization');
-  const cronOk = Boolean(cronSecret && auth === `Bearer ${cronSecret}`);
+  const cronOk = isCronAuthorized(req.headers.get('authorization'), process.env.CRON_SECRET);
   if (!cronOk) {
     const user = await getCurrentUser().catch(() => null);
     if (!user || user.role !== 'admin') {
